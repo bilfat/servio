@@ -1,26 +1,206 @@
 @import "tailwindcss";
 
+@theme {
+  /* Brand Tokens */
+  --color-primary: #0F4C81;
+  --color-primary-dark: #0B3860;
+  --color-primary-light: #1A64A3;
+  --color-secondary: #F43F5E;
+  --color-secondary-dark: #E11D48;
+  --color-secondary-light: #FB7185;
+  --color-sky: #E0F2FE;
+  --color-sky-light: #F0F9FF;
+  --color-ivory: #FFF8F1;
+  --color-ivory-light: #FFFCF9;
+
+  /* Neutral Tokens */
+  --color-neutral-dark: #172033;
+  --color-neutral-slate: #64748B;
+  --color-neutral-muted: #94A3B8;
+  --color-neutral-disabled: #CBD5E1;
+  --color-neutral-border: #E2E8F0;
+  --color-neutral-subtle: #F8FAFC;
+  --color-neutral-soft: #F1F5F9;
+
+  /* Semantic Status Tokens */
+  --color-success: #10B981;
+  --color-success-subtle: #ECFDF5;
+  --color-warning: #F59E0B;
+  --color-warning-subtle: #FFFBEB;
+  --color-error: #EF4444;
+  --color-error-subtle: #FEF2F2;
+  --color-info: #8B5CF6;
+  --color-info-subtle: #F5F3FF;
+
+  /* Typography */
+  --font-display: var(--font-sora), sans-serif;
+  --font-heading: var(--font-sora), sans-serif;
+  --font-sora: var(--font-sora), sans-serif;
+  --font-body: var(--font-plus-jakarta), sans-serif;
+  --font-sans: var(--font-plus-jakarta), sans-serif;
+  --font-jakarta: var(--font-plus-jakarta), sans-serif;
+  --font-brand-latin: var(--font-satisfy), 'Satisfy', 'Dancing Script', cursive, sans-serif;
+
+  /* Radii */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-3xl: 32px;
+  --radius-pill: 9999px;
+
+  /* Breakpoints */
+  --breakpoint-xs: 360px;
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --breakpoint-2xl: 1536px;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand Tokens */
+  --color-primary: #0F4C81;
+  --color-secondary: #F43F5E;
+  --color-sky: #E0F2FE;
+  --color-ivory: #FFF8F1;
+
+  /* Neutral Tokens */
+  --text-primary: #172033;
+  --text-secondary: #64748B;
+  --text-muted: #94A3B8;
+  --text-disabled: #CBD5E1;
+  --border: #E2E8F0;
+  --background: #FFFFFF;
+  --surface-subtle: #F8FAFC;
+  --surface-soft: #F1F5F9;
+
+  /* Semantic Tokens */
+  --success: #10B981;
+  --warning: #F59E0B;
+  --error: #EF4444;
+  --info: #8B5CF6;
+
+  /* Motion Timing (ms) */
+  --motion-instant: 80ms;
+  --motion-micro: 120ms;
+  --motion-fast: 180ms;
+  --motion-default: 220ms;
+  --motion-comfort: 280ms;
+  --motion-complex: 360ms;
+  --motion-hero-min: 450ms;
+  --motion-hero-max: 600ms;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* Base Body Setup */
+body {
+  background-color: #FFFFFF;
+  color: #172033;
+  font-family: var(--font-plus-jakarta), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+h1, h2, h3, h4, h5, h6, .font-display, .font-heading {
+  font-family: var(--font-sora), sans-serif;
+}
+
+/* Glassmorphism Utilities */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.76);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.60);
+  box-shadow: 0 4px 16px rgba(15, 76, 129, 0.04);
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(226, 232, 240, 0.75);
+  box-shadow: 0 4px 12px rgba(15, 76, 129, 0.04);
+}
+
+.glass-card-hover {
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1), border-color 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px -4px rgba(15, 76, 129, 0.08), 0 4px 8px -2px rgba(15, 76, 129, 0.03);
+  border-color: rgba(15, 76, 129, 0.20);
+}
+
+/* Brand Gradient Utilities */
+.brand-gradient {
+  background: linear-gradient(135deg, #F43F5E 0%, #0F4C81 100%);
+}
+
+.brand-gradient-hover {
+  background: linear-gradient(135deg, #F43F5E 0%, #0F4C81 100%);
+  background-size: 150% 150%;
+  transition: background-position 280ms ease, transform 220ms ease;
+}
+
+.brand-gradient-hover:hover {
+  background-position: 100% 100%;
+}
+
+.brand-gradient-text {
+  background: linear-gradient(135deg, #F43F5E 0%, #0F4C81 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Ambient Glow Backgrounds */
+.ambient-glow-sky {
+  background: radial-gradient(circle at 50% -20%, rgba(224, 242, 254, 0.65) 0%, rgba(255, 255, 255, 0) 70%);
+}
+
+.ambient-glow-coral {
+  background: radial-gradient(circle at 100% 0%, rgba(244, 63, 94, 0.08) 0%, rgba(255, 255, 255, 0) 60%);
+}
+
+.ambient-glow-mesh {
+  background: 
+    radial-gradient(at 0% 0%, rgba(224, 242, 254, 0.5) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(255, 248, 241, 0.6) 0px, transparent 50%),
+    radial-gradient(at 50% 20%, rgba(244, 63, 94, 0.04) 0px, transparent 60%),
+    #FFFFFF;
+}
+
+/* Soft Elevation System */
+.shadow-servio-sm {
+  box-shadow: 0 2px 6px rgba(15, 76, 129, 0.05);
+}
+
+.shadow-servio-md {
+  box-shadow: 0 8px 18px -3px rgba(15, 76, 129, 0.08), 0 3px 6px -2px rgba(15, 76, 129, 0.03);
+}
+
+.shadow-servio-lg {
+  box-shadow: 0 16px 32px -4px rgba(15, 76, 129, 0.10), 0 6px 12px -3px rgba(15, 76, 129, 0.04);
+}
+
+/* Accessibility & Reduced Motion Support (P1.5) */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Brand Script / Latin Typography for App Name (Servio) */
+.font-brand-latin {
+  font-family: var(--font-satisfy), 'Satisfy', 'Great Vibes', 'Dancing Script', cursive, sans-serif !important;
+  font-style: normal;
 }
+

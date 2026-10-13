@@ -1,0 +1,83 @@
+import { ChatMessage } from "@/components/features/chat/ChatThread";
+
+export const MOCK_CHAT_THREADS: Record<string, ChatMessage[]> = {
+  "order-normal-progress": [
+    {
+      id: "msg-101",
+      senderId: "worker-budi",
+      senderName: "Budi Santoso (Teknisi)",
+      senderRole: "worker",
+      message: "Selamat pagi Bu Sarah, saya Budi dari Bintang Teknik sudah dalam perjalanan ke lokasi. Perkiraan sampai 15 menit lagi.",
+      timestamp: "09:35",
+      isRead: true,
+    },
+    {
+      id: "msg-102",
+      senderId: "cust-sarah",
+      senderName: "Sarah Annisa (Pelanggan)",
+      senderRole: "customer",
+      message: "Pagi Pak Budi. Silakan langsung masuk ke gerbang hitam ya, satpam sudah saya infokan.",
+      timestamp: "09:37",
+      isRead: true,
+    },
+    {
+      id: "msg-103",
+      senderId: "worker-budi",
+      senderName: "Budi Santoso (Teknisi)",
+      senderRole: "worker",
+      message: "Baik Bu, saya sudah tiba di depan gerbang. Membawa peralatan steam cleaner.",
+      timestamp: "09:55",
+      isRead: true,
+    },
+    {
+      id: "msg-104",
+      senderId: "worker-budi",
+      senderName: "Budi Santoso (Teknisi)",
+      senderRole: "worker",
+      message: "Ini hasil cek suhu awal AC ruang tamu sebelum mulai dicuci ya Bu, tercatat 24.5°C.",
+      timestamp: "10:05",
+      attachmentUrl: "/mocks/sop-temp-test.jpg",
+      attachmentName: "foto-uji-suhu-awal.jpg",
+      isRead: true,
+    },
+  ],
+
+  "order-disputed": [
+    {
+      id: "msg-201",
+      senderId: "cust-bambang",
+      senderName: "Bambang Sudiro (Pelanggan)",
+      senderRole: "customer",
+      message: "Halo CS Servio, AC saya setelah dicuci malah bocor air sangat banyak membasahi dokumen di meja.",
+      timestamp: "19 Sep 17:45",
+      isRead: true,
+    },
+    {
+      id: "msg-202",
+      senderId: "cs-rina",
+      senderName: "Rina Kusuma (Mediasi CS Servio)",
+      senderRole: "support",
+      message: "Selamat malam Pak Bambang, mohon maaf sekali atas ketidaknyamanannya. Keluhan Bapak telah kami terima dan dana pembayaran telah otomatis kami bekukan di sistem escrow Servio demi keamanan Bapak.",
+      timestamp: "19 Sep 17:50",
+      isRead: true,
+    },
+    {
+      id: "msg-203",
+      senderId: "cs-rina",
+      senderName: "Rina Kusuma (Mediasi CS Servio)",
+      senderRole: "support",
+      message: "Kami telah mengontak pimpinan Bintang Teknik Mandiri. Mereka siap mengirimkan teknisi senior besok pagi pukul 09:00 untuk pembersihan ulang dan perbaikan talang drainase tanpa biaya. Apakah Bapak bersedia di jam tersebut?",
+      timestamp: "20 Sep 09:15",
+      isRead: true,
+    },
+    {
+      id: "msg-204",
+      senderId: "cust-bambang",
+      senderName: "Bambang Sudiro (Pelanggan)",
+      senderRole: "customer",
+      message: "Baik Bu Rina, saya ada di rumah jam 09:00 pagi. Tolong pastikan teknisinya bawa tangga dan pipa cadangan.",
+      timestamp: "20 Sep 09:30",
+      isRead: false,
+    },
+  ],
+};

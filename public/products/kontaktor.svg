@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F8FAFC" />
+      <stop offset="100%" stop-color="#EFF6FF" />
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#F1F5F9" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563EB" />
+      <stop offset="100%" stop-color="#0F4C81" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-opacity="0.08" />
+    </filter>
+  </defs>
+
+  <rect width="400" height="300" fill="url(#bgGrad)" rx="16" />
+
+  <!-- Background decorative technical circle -->
+  <circle cx="200" cy="140" r="90" fill="#E2E8F0" opacity="0.4" />
+  <circle cx="200" cy="140" r="65" fill="#CBD5E1" opacity="0.3" />
+
+  <!-- Central Card Component -->
+  <g filter="url(#shadow)">
+    <rect x="60" y="35" width="280" height="210" rx="16" fill="url(#cardGrad)" stroke="#E2E8F0" stroke-width="1.5" />
+  </g>
+
+  <!-- Product Illustration Art -->
+  <g transform="translate(140, 75)">
+    <rect x="25" y="20" width="70" height="80" rx="8" fill="#1E293B" stroke="#0F172A" stroke-width="2" />
+           <rect x="40" y="30" width="40" height="25" rx="4" fill="#3B82F6" />
+           <circle cx="45" cy="75" r="6" fill="#E2E8F0" />
+           <circle cx="75" cy="75" r="6" fill="#E2E8F0" />
+           <text x="60" y="47" font-family="sans-serif" font-size="11" font-weight="800" fill="#FFFFFF" text-anchor="middle">25A</text>
+  </g>
+
+  <!-- Tag Pill -->
+  <rect x="75" y="50" width="90" height="20" rx="10" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1" />
+  <text x="120" y="64" font-family="system-ui, sans-serif" font-size="9" font-weight="700" fill="#1E40AF" text-anchor="middle">SPAREPART ELEKTRIK</text>
+
+  <!-- Original Genuine Seal -->
+  <rect x="250" y="50" width="75" height="20" rx="10" fill="#ECFDF5" stroke="#A7F3D0" stroke-width="1" />
+  <text x="287" y="64" font-family="system-ui, sans-serif" font-size="9" font-weight="700" fill="#065F46" text-anchor="middle">100% ORIGINAL</text>
+
+  <!-- Product Title Bar -->
+  <rect x="60" y="200" width="280" height="45" rx="0" fill="#FFFFFF" opacity="0.95" />
+  <line x1="60" y1="200" x2="340" y2="200" stroke="#F1F5F9" stroke-width="1.5" />
+  <text x="200" y="222" font-family="system-ui, sans-serif" font-size="12" font-weight="800" fill="#0F172A" text-anchor="middle">Kontaktor Magnetik Heavy Duty</text>
+  <text x="200" y="236" font-family="system-ui, sans-serif" font-size="9" font-weight="600" fill="#64748B" text-anchor="middle">SERVIO OFFICIAL VERIFIED COMPONENT</text>
+</svg>

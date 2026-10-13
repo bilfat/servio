@@ -1,0 +1,56 @@
+{
+  "brand": {
+    "primary": "#0F4C81",
+    "secondary": "#F43F5E",
+    "sky": "#E0F2FE",
+    "ivory": "#FFF8F1"
+  },
+  "neutral": {
+    "textPrimary": "#172033",
+    "textSecondary": "#64748B",
+    "border": "#E2E8F0",
+    "background": "#FFFFFF",
+    "surfaceSubtle": "#F8FAFC",
+    "surfaceSoft": "#F1F5F9",
+    "textMuted": "#94A3B8",
+    "textDisabled": "#CBD5E1"
+  },
+  "semantic": {
+    "success": "#10B981",
+    "warning": "#F59E0B",
+    "error": "#EF4444",
+    "info": "#8B5CF6"
+  },
+  "typography": {
+    "display": "Sora",
+    "body": "Plus Jakarta Sans"
+  },
+  "motion_ms": {
+    "instant": 80,
+    "micro": 120,
+    "fast": 180,
+    "default": 220,
+    "comfort": 280,
+    "complex": 360,
+    "hero_min": 450,
+    "hero_max": 600
+  },
+  "radii_px": {
+    "xs": 6,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 20,
+    "2xl": 24,
+    "3xl": 32,
+    "pill": 9999
+  },
+  "breakpoints_px": {
+    "xs": 360,
+    "sm": 640,
+    "md": 768,
+    "lg": 1024,
+    "xl": 1280,
+    "2xl": 1536
+  }
+}

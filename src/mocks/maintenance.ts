@@ -1,0 +1,41 @@
+import { MaintenancePlan } from "@/types/domain";
+
+export const MOCK_MAINTENANCE_PLANS: MaintenancePlan[] = [
+  {
+    id: "plan-ac-ruang-tamu",
+    assetId: "asset-ac-ruang-tamu",
+    assetName: "AC Daikin Inverter 1 PK (Ruang Tamu)",
+    title: "Servis & Cuci Steam Rutin 3 Bulanan",
+    frequencyMonths: 3,
+    nextDueDate: "2026-09-25",
+    isOverdue: false,
+    isSnoozed: false,
+    recommendedServiceId: "srv-ac-cuci-standar",
+    lastServiceDate: "2026-06-12",
+  },
+  {
+    id: "plan-mobil-hrv",
+    assetId: "asset-mobil-honda-hrv",
+    assetName: "Honda HR-V 1.5 (2021)",
+    title: "Servis Berkala & Ganti Oli 6 Bulan / 5.000 KM",
+    frequencyMonths: 6,
+    nextDueDate: "2026-12-15",
+    isOverdue: false,
+    isSnoozed: false,
+    recommendedServiceId: "srv-ganti-oli-tuneup",
+    lastServiceDate: "2026-09-15",
+  },
+  {
+    id: "plan-kuras-toren",
+    assetId: "asset-pompa-air-sanyo",
+    assetName: "Pompa & Toren Air Shimizu",
+    title: "Kuras & Sterilisasi Toren Air 6 Bulanan",
+    frequencyMonths: 6,
+    nextDueDate: "2026-08-30",
+    isOverdue: true,
+    isSnoozed: true,
+    snoozeUntil: "2026-09-30",
+    recommendedServiceId: "srv-pipa-mampet",
+    lastServiceDate: "2026-02-28",
+  },
+];
