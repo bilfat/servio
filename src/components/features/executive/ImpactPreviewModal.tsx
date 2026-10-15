@@ -18,7 +18,7 @@ export function ImpactPreviewModal({ isOpen, onClose, proposal }: ImpactPreviewM
   const { impactSummary, schemaChanges } = proposal;
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Simulasi Dampak Tata Kelola Taksonomi" maxWidth="lg">
+    <Modal isOpen={isOpen} onClose={onClose} title="Simulasi Dampak Tata Kelola Kategori Jasa" maxWidth="lg">
       <div className="space-y-4">
         {/* Proposal Header Card */}
         <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">

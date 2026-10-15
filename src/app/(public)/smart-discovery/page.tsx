@@ -210,7 +210,7 @@ export default function SmartDiscoveryPage() {
             >
               <div className="p-3.5 rounded-2xl bg-slate-100 border border-slate-200 text-xs text-neutral-slate flex items-center gap-2">
                 <Sparkle size={16} className="text-primary animate-spin" />
-                <span>AI sedang mencocokkan taksonomi kerusakan & estimasi biaya...</span>
+                <span>AI sedang mencocokkan kategori jasa kerusakan & estimasi biaya...</span>
               </div>
             </motion.div>
           )}

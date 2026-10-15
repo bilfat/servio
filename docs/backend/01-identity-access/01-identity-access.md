@@ -1,26 +1,43 @@
 # SERVIO — BACKEND TECHNICAL SPECIFICATION
-## Modul 01 — Identity & Access Service
+## Modul 01 — Identity & Access Service (CR-02 FINAL LOCKED)
 
 | Metadata | Nilai |
 |---|---|
 | Kode modul | `01` |
 | Microservice | `identity-service` |
 | Output | `docs/backend/01-identity-access/01-identity-access.md` |
-| Business source of truth | `PHASE-01-IDENTITY-ACCESS-REVISI.md` — **LOCKED**, v1.0, 2026-10-05 |
+| Business source of truth | `PHASE-01-PLAN.md` — **LOCKED**, v1.1/CR-01; ditambah `PHASE-01-CR02-DECISIONS.md` — **APPROVED/LOCKED** 2026-10-13 |
 | Konteks global | `SERVIO_GLOBAL_DATA_PREPARATION.md` (gunakan dengan koreksi/keputusan global yang disetujui) |
-| Status dokumen ini | **TECHNICAL SPEC — READY FOR USER REVIEW** (bukan klaim implementasi berjalan) |
+| Status dokumen ini | **TECHNICAL_SPEC_FINAL_LOCKED** — ACC pengguna 2026-10-13; belum diimplementasikan |
+| Versi revisi | 1.3 — CR-02: CEO satu-satunya reviewer Employee KYC; NIK semua pengguna terkunci permanen setelah input pertama (meneruskan CR-01) |
 | Basis desain | Laravel microservice independen; MySQL **localhost**; Next.js 16 / React 19 / TypeScript |
 | Batasan | Hanya Modul 01; ASSET **tidak termasuk**; Recommendation adalah modul terpisah di masa depan |
 | Credential | Pengguna mengisi `BREVO_API_KEY` dan credential OAuth sendiri di `.env`; jangan taruh secret dalam dokumen/repository |
 | Konvensi status | **[B]** aturan bisnis LOCKED; **[T]** keputusan/usulan implementasi teknis; **[P]** pending verifikasi kode/keputusan/dependensi |
 
-> **Aturan prioritas:** Planning revisi yang LOCKED menentukan perilaku bisnis. Detail endpoint, tabel, struktur Laravel, angka keamanan, dan protokol di bawah merupakan **rancangan teknis [T]**, tidak otomatis mengubah planning. Konflik dengan dokumen global diselesaikan dengan keputusan terbaru pengguna dan dicatat; perubahan aturan bisnis butuh change review dan re-lock. **Satu modul = satu microservice = satu database milik service.** Kontrak antarservice yang belum dibahas adalah **PROVISIONAL**, bukan endpoint yang sudah diimplementasikan service tujuan.
+> **Aturan prioritas:** `PHASE-01-PLAN.md` v1.1/CR-01 yang LOCKED beserta perubahan terbatas `PHASE-01-CR02-DECISIONS.md` yang APPROVED/LOCKED menentukan perilaku bisnis. Untuk EC-17 dan akses verifikasi Employee KYC, keputusan CR-02 mengungguli kalimat CR-01 yang bertentangan. Detail endpoint, tabel, struktur Laravel, angka keamanan, dan protokol di bawah merupakan **rancangan teknis [T]**, tidak otomatis mengubah planning. Konflik dengan dokumen global diselesaikan dengan keputusan terbaru pengguna dan dicatat; perubahan aturan bisnis butuh change review dan re-lock. **Satu modul = satu microservice = satu database milik service.** Kontrak antarservice yang belum dibahas adalah **PROVISIONAL**, bukan endpoint yang sudah diimplementasikan service tujuan.
 
 ### Ringkasan sasaran implementasi
-- Lima jalur pembuatan akun: Customer self-register/Google + KYC/OTP; Business Provider/Merchant/Supplier + admin approval; Worker via Provider invitation; Internal Staff via CEO invitation/onboarding; CEO bootstrap melalui seed.
+- Lima jalur pembuatan akun: Customer self-register/Google + NIK 16 digit (validasi format saja) + OTP email Brevo 30 detik **tanpa KYC Customer**; Business Provider/Merchant/Supplier + review dokumen legal **manual Admin Operations**; Worker via undangan Provider 12 jam; Internal Staff via undangan CEO 12 jam/onboarding Employee KYC+NDA; CEO bootstrap melalui seed.
 - Identity memegang akun, role, permission, organization, membership, profil dasar, KYC, autentikasi, sesi, lifecycle, dan audit.
 - Authorization tidak hanya role: juga status akun, role assignment, organization, membership, permission, kepemilikan resource, serta business state yang dimiliki domain terkait.
 - Output teknis terdiri dari tepat **10 komponen utama** berikut; semua implementasi harus dapat ditelusuri dari requirement → DB → API → role/policy → UI → test.
+
+### Register keputusan CR-01 dan revisi implementasi (pengikat seluruh 10 komponen)
+
+| ID | Ketetapan | Dampak wajib |
+|---|---|---|
+| CR01-CUST | Customer memasukkan NIK **tepat 16 digit numerik** dan melakukan verifikasi OTP email Brevo sebelum `ACTIVE`. **Tidak ada Customer KYC**, e-KTP, Dukcapil, KYC vendor, atau approval manual Customer. | Gunakan `user_nik_records` untuk bukti **format valid saja**, bukan `identity_verification_requests` KYC; V11 menyimpan NIK terenkripsi; verifikasi OTP tetap V01–V03. |
+| CR01-OTP | OTP kedaluwarsa **30 detik sejak diterbitkan**; tidak ada batas kumulatif OTP salah per challenge ataupun status `LOCKED` karena jumlah salah. | `429` dan `Retry-After` untuk pembatasan kecepatan per identifier/IP; `410` expired; `422` salah; audit aman. Resend setelah challenge lama expired adalah **usulan teknis**, bukan business rule baru. |
+| CR01-INV | Undangan Worker **dan** Staff berlaku **12 jam sejak issuance**, sekali pakai. | Server menetapkan `expires_at=issued_at + 12 hours`; abaikan TTL yang dikirim klien. |
+| CR01-BIZ | Verifikasi dokumen legal Provider/Merchant/Supplier oleh **Admin Operations SERVIO secara manual**; tidak menggunakan pihak ketiga KYC/KYB atau pemeriksa legal otomatis. | Review melalui B09–B13, termasuk akses berizin ke dokumen legal, keputusan + reason + reviewer + waktu + histori; status hanya `APPROVED/REVISION_REQUIRED/REJECTED` dengan validasi state dan concurrency. |
+| CR01-STAFF | Employee KYC, NDA, konfirmasi akses internal staff tetap wajib. | Endpoint V04–V10 diperuntukkan Employee KYC; pemeriksaan internal sesuai otorisasi, tidak memerlukan vendor eksternal. |
+| CR02-CEO-KYC | **Hanya `CEO_PRODUCT_OWNER`** yang boleh membaca antrean bukti Employee KYC dan memutuskan `VERIFY/REJECT`. | V08–V09 berada pada route `/ceo/identity/verifications*`; V07/V10 document review hanya staff pemilik atau CEO berizin; permission `identity.kyc.review` eksklusif CEO, dengan version lock, audit dan larangan self-review. Admin Operations tidak mendapatkan grant ini. |
+| CR02-NIK-IMMUTABLE | **NIK bersifat write-once/immutable permanen sejak penyimpanan pertama yang berhasil** untuk setiap user; Customer tetap diperiksa format 16 digit tanpa Customer KYC. | Data di `user_nik_records` encrypted, PK user, insert-only; V11 dan first-write Employee KYC menolak input kedua/overwrite/reset sekalipun nilainya identik; P02/P03/P13 dan semua bulk/import/admin/CEO actions memblokir mutation NIK. Tidak ada endpoint perbaikan NIK atau bypass admin. |
+| CR01-AUTH | Browser menggunakan **Laravel Sanctum SPA stateful session**, cookie `HttpOnly` dan perlindungan CSRF; tidak memakai bearer fallback untuk sesi browser. | Integrasi Next.js diperiksa pada tahap terpisah sebelum dianggap berjalan. |
+| ARCH-DB | **MySQL localhost per logical microservice DB**. | Bukan MongoDB, tanpa cross-service FK atau koneksi/query langsung ke DB lain. |
+
+**Prioritas lintas dokumen:** Jika dokumen global lama atau contoh teknis versi lama bertentangan dengan CR-01, CR-02, dan keputusan manual terbaru, aturan pada tabel ini berlaku. Revisi ini **tidak mengubah planning LOCKED**. Semua kode API, tabel dan pesan di bawah yang bertanda `[T]` merupakan baseline rancangan teknis yang disetujui pada ACC dokumen ini (dengan `[P]` tetap terbuka sesuai catatannya). **Backend Laravel dan integrasi Next.js dikerjakan dengan dua prompt terpisah; §08 hanya pemetaan dalam tahap backend.**
 
 ---
 
@@ -28,14 +45,16 @@
 
 ## 1.1 Tanggung jawab, ownership, dan larangan
 
+**CR-02 wajib:** CEO saja menjadi reviewer Employee KYC; Admin Operations tetap reviewer manual dokumen legal bisnis. NIK yang telah tersimpan tidak dapat diubah oleh peran mana pun, termasuk CEO. Aturan ini juga harus dilindungi oleh service/model/database, bukan hanya UI.
+
 | Area | Identity owner? | Data/aksi yang dimiliki | Batasan |
 |---|---|---|---|
 | User/account | Ya | User ID, email/telepon, credential hash, account status | Bukan owner order/payment |
 | Authentication | Ya | Password, Google external identity, sessions, reset, OTP challenge | Google sign-in ≠ KYC |
-| Verification | Ya | NIK/e-KTP (akses terlindungi), verifikasi identity, riwayat perubahan verified field | Brevo hanya kanal delivery |
+| Customer NIK & Employee KYC | Ya | NIK tersimpan satu kali per user dalam **immutable user NIK record** (Customer hanya validasi format); Employee KYC dan review bukti internal staff | **CEO satu-satunya reviewer Employee KYC**; tidak ada KYC/e-KTP Customer; NIK tidak dapat diganti kapan pun; Brevo hanya OTP delivery |
 | RBAC/authorization | Ya | Role utama, permission registry/assignment, role membership, keputusan identitas/akses | Domain lain tetap memeriksa kepemilikan resource miliknya sendiri |
 | Organization/membership | Ya | Organization jenis Provider/Merchant/Supplier/Internal, user affiliation dan lifecycle | Bukan owner transaksi, katalog, saldo |
-| Business application | Ya | Pendaftaran, dokumen legal, review Admin, alasan keputusan, history | Persetujuan akun bukan persetujuan produk/jasa |
+| Business application | Ya | Pendaftaran, dokumen legal, **review manual Admin Operations**, alasan keputusan dan histori | Tidak ada integrasi KYC/KYB/legal-check eksternal; approval bukan persetujuan produk/jasa |
 | Worker & internal staff | Ya | Undangan, membership worker, pembuatan/onboarding staf, NDA acknowledgement | Task/dispatch worker milik Order/Service |
 | Profile | Ya | Profil personal, identitas legal/bisnis, verification state | Harga jasa, stok, rekening bank, rating di domain lain |
 | Session & account security | Ya | Logout, revoke, suspension, audit | Dilarang menyimpan plain password/OTP |
@@ -75,7 +94,7 @@ servio/
 ├── docs/backend/
 │   ├── SERVIO_GLOBAL_DATA_PREPARATION.md
 │   └── 01-identity-access/
-│       ├── PHASE-01-IDENTITY-ACCESS-REVISI.md
+│       ├── PHASE-01-PLAN.md
 │       └── 01-identity-access.md              <-- dokumen ini
 ├── backend/
 │   ├── services/
@@ -134,9 +153,9 @@ CEO_BOOTSTRAP_PASSWORD=
 
 ## 1.4 Keputusan mekanisme auth [T]
 
-**Rancangan utama:** browser web first-party menggunakan **Laravel Sanctum SPA stateful session** (cookie HTTP-only, CSRF protection), terintegrasi melalui Gateway/BFF. Next.js dapat melakukan render/middleware routing dari indikator sesi, tetapi tidak memutuskan otorisasi dari nilai `servio_active_role` yang bisa dimanipulasi. Untuk lintas-service, gateway meneruskan **trusted request identity context** setelah pemeriksaan session di Identity; service downstream menerapkan policy atas resource-nya. Antarservice wajib autentikasi machine-to-machine; jangan kirim cookie browser secara langsung ke service domain untuk dipercaya secara buta.
+**Keputusan CR-01 (LOCKED):** browser web first-party menggunakan **Laravel Sanctum SPA stateful session** (cookie HTTP-only, CSRF protection), terintegrasi melalui Gateway/BFF. Next.js dapat melakukan render/middleware routing dari indikator sesi, tetapi tidak memutuskan otorisasi dari nilai `servio_active_role` yang bisa dimanipulasi. Untuk lintas-service, gateway meneruskan **trusted request identity context** setelah pemeriksaan session di Identity; service downstream menerapkan policy atas resource-nya. Antarservice wajib autentikasi machine-to-machine; jangan kirim cookie browser secara langsung ke service domain untuk dipercaya secara buta.
 
-Alasan: frontend web adalah Next.js first-party, membutuhkan logout semua sesi dan pencabutan akses. **Sanctum SPA tidak menggunakan bearer token untuk sesi browser**; bila frontend existing masih bergantung pada `servio_token`, perlu adapter/migrasi UI terkontrol alih-alih mengklaim cookie itu token Sanctum. Rujukan: https://laravel.com/docs/sanctum . **[P]** Mekanisme final dan cookie names harus diaudit dari source `src/proxy.ts`, `RoleContext.tsx`, serta `servioApi.ts` sebelum coding UI.
+Alasan: frontend web adalah Next.js first-party, membutuhkan logout semua sesi dan pencabutan akses. **Sanctum SPA tidak menggunakan bearer token untuk sesi browser**; bila frontend existing masih bergantung pada `servio_token`, perlu adapter/migrasi UI terkontrol alih-alih mengklaim cookie itu token Sanctum. Rujukan: https://laravel.com/docs/sanctum . **[P]** Pilihan Sanctum SPA **sudah final**; hanya detail kompatibilitas host/cookie, gateway, CSRF, dan source `src/proxy.ts`, `RoleContext.tsx`, `servioApi.ts` yang wajib diaudit sebelum integrasi UI.
 
 **Kontrak session/introspection [T]:** gateway memperoleh keputusan Identity untuk request terlindungi, meneruskan user ID, active role assignment, org ID, authz version, trace ID melalui saluran internal tepercaya; service domain tetap mengecek resource ownership dan state. Caching konteks hanya TTL singkat dan invalidation saat revoke; kegagalan validasi = **fail closed**. Jangan gunakan HMAC key sama untuk OTP, internal service auth, dan session encryption.
 
@@ -156,14 +175,14 @@ Identity hanya mengirim **ID stabil dan status minimal** ke service lain; tidak 
 
 | ID | Topik | Status & penanganan |
 |---|---|---|
-| O-01 | KYC manual vs penyedia verifikasi pemerintah/vendor | **[P]** Planning mensyaratkan KYC, tetapi tidak menentukan mekanisme pembuktian legal. Rancang lifecycle dan review terproteksi; **jangan auto-verify NIK hanya karena format valid**. |
-| O-02 | Session auth Next.js sekarang (`servio_token`, `servio_session`) | **[P]** Audit kode frontend sebelum mengubah session adapter. Usulan Sanctum stateful session, bukan mengklaim sudah cocok. |
-| O-03 | Default angka OTP/login TTL/attempt | **[T]** Konfigurabel; usulan awal di §09, perlu konfirmasi sebelum dianggap kebijakan terkunci. |
+| O-01 | Customer NIK / verifikasi legal bisnis | **[B]** Customer tidak menjalani KYC; NIK hanya diperiksa 16 digit format tanpa klaim identitas verified. **[B]** Dokumen legal bisnis direview manual oleh Admin Operations, tanpa vendor KYC/KYB. Employee KYC internal tetap berlaku. |
+| O-02 | Session auth Next.js sekarang (`servio_token`, `servio_session`) | **[P]** Audit kode frontend sebelum mengubah session adapter. Metode Sanctum stateful session **sudah LOCKED**; kompatibilitas implementasi Next.js belum diverifikasi. |
+| O-03 | Parameter OTP/invitation dan login | **[B]** OTP TTL tepat 30 detik, tanpa total wrong-attempt cap/lock; undangan Worker/Staff 12 jam. **[T]** Angka throttle kecepatan login/OTP dan reset grant masih usulan. |
 | O-04 | Penyimpanan e-KTP/legal file | **[T]** Laravel private disk lokal saat dev, object storage private saat produksi; metadata di MySQL. |
 | O-05 | Notification Service vs Brevo | **[B]** Identitas/OTP milik Identity dan Brevo mengirim OTP; event status bisa dikonsumsi Notification, tetapi tidak memindahkan OTP verification. |
 | O-06 | Route frontend global vs plan (`/auth/login` vs `/login`) | **[P]** Kontrak backend satu, UI mapping final setelah verifikasi source aktual; jangan menghapus route berdasarkan daftar dokumentasi saja. |
 | O-07 | Employee KYC/NDA dan business documents | **[B]** Wajib sebelum operational-ready. **[T]** Bukti ditautkan dengan versi dokumen, persetujuan, serta audit. |
-| O-08 | Kebutuhan S-Pay, KYC provider, akses master katalog | Di luar scope implementasi Modul 01 kecuali identitas/authority yang diperlukan. |
+| O-08 | Kebutuhan S-Pay dan katalog | Di luar scope Modul 01; legal review Provider/Merchant/Supplier **tetap dalam Identity** oleh Admin, tanpa verifikasi vendor. |
 
 ---
 
@@ -178,6 +197,7 @@ Identity hanya mengirim **ID stabil dan status minimal** ke service lain; tidak 
 ```mermaid
 erDiagram
   users ||--|| user_profiles : has
+  users ||--o| user_nik_records : has_permanent_nik
   users ||--o{ external_auth_identities : links
   users ||--o{ role_assignments : granted
   roles ||--o{ role_assignments : assigned
@@ -208,6 +228,13 @@ erDiagram
     varchar512 photo_path
     varchar40 employee_id
     varchar100 department
+  }
+  user_nik_records {
+    char36 user_id PK,FK
+    text nik_ciphertext
+    datetime locked_at
+    datetime format_validated_at
+    datetime updated_at
   }
   organizations {
     char36 id PK
@@ -286,7 +313,7 @@ erDiagram
   }
 ```
 
-### B. KYC, aplikasi bisnis, invitation, onboarding dan lifecycle
+### B. Employee KYC, NIK format-only Customer, aplikasi bisnis, invitation, onboarding dan lifecycle
 
 ```mermaid
 erDiagram
@@ -314,10 +341,9 @@ erDiagram
   identity_verification_requests {
     char36 id PK
     char36 user_id FK
-    varchar24 kind
+    varchar24 kind "EMPLOYEE_KYC_ONLY"
     varchar24 status
-    varchar255 nik_ciphertext
-    char64 nik_lookup_hash
+    text employee_identity_ciphertext
   }
   identity_documents {
     char36 id PK
@@ -362,6 +388,8 @@ erDiagram
     varchar32 kind
     char64 token_hash UK
     varchar24 status
+    datetime issued_at
+    datetime expires_at
   }
   staff_onboarding {
     char36 id PK
@@ -380,7 +408,9 @@ erDiagram
     varchar32 purpose
     char64 otp_hmac
     varchar24 status
-    int attempts
+    int failed_attempts_audit_only
+    datetime issued_at
+    datetime expires_at
   }
   password_reset_grants {
     char36 id PK
@@ -415,6 +445,7 @@ flowchart LR
 | Hubungan | Kardinalitas | Invariant |
 |---|---|---|
 | User–Profile | 1:1 | Profil wajib setelah onboarding, dapat dibuat pending saat akun awal dibuat |
+| User–NIK permanen | 1:0..1 | NIK per user, terenkripsi, pertama kali disimpan tidak dapat diganti atau dihapus; input Customer hanya validasi `^[0-9]{16}$` **bukan verified identity/KYC**. NIK pada Employee KYC jika diminta harus konsisten dengan record permanen ini. |
 | User–External OAuth | 1:N | `(provider, provider_subject)` unik global, tidak boleh terhubung dua user |
 | User–Membership–Organization | N:M melalui membership | Hanya membership ACTIVE yang memberi org authority |
 | User–Role | N:M melalui role_assignment | Penugasan dapat global atau context-specific, tidak boleh self-elevate |
@@ -434,7 +465,7 @@ flowchart LR
 
 - MySQL **8.4 LTS** disarankan pada localhost, InnoDB dan `utf8mb4`; `timestamps(6)` UTC; `CHAR(36)` untuk ID (opsi optimasi `BINARY(16)` **bukan** perubahan diam-diam).
 - `PK` UUID service-owned, `FK` hanya tabel dalam `servio_identity_db`; setiap sensitive document disimpan di **private disk**, tabel menyimpan storage pointer + checksum + mime + encryption metadata.
-- PII seperti NIK, NPWP, kontak legal, KTP/identity snapshot dienkripsi at rest via application-level encryption dan encrypted storage; exact lookup gunakan blind index/HMAC terpisah (bukan query ciphertext nondeterministik).
+- PII seperti **NIK Customer** (format saja, tanpa pembuktian keaslian), NPWP/NIB bisnis, kontak legal dan dokumen **Employee KYC** dienkripsi saat disimpan. Jika exact lookup benar-benar diperlukan dan disetujui, gunakan blind index/HMAC terpisah; **jangan mengasumsikan NIK Customer adalah identitas yang diverifikasi**.
 - Password memakai Laravel `Hash` (Argon2id/bcrypt konfigurabel), OTP dan invitation/reset token **hash/HMAC only**, never log raw values.
 - Semua tabel bisnis yang perlu audit memakai `created_at`, `updated_at`; record historis wajib mempertahankan jejak; `deleted_at` hanya pada item yang aman secara compliance, **tidak** untuk menyembunyikan perubahan keputusan, audit atau ledger akses.
 - Status sebagai string (`VARCHAR`) + application enum/validation & state transition policy; jangan campur `account_status` dengan `application_status`, `membership_status`, `onboarding_status`.
@@ -447,7 +478,8 @@ flowchart LR
 | Tabel | Kolom penting (tipe) | Key, constraint, index | Lifecycle/catatan |
 |---|---|---|---|
 | `users` | `id`, `email VARCHAR(191) NULL`, `phone_e164 VARCHAR(20) NULL`, `password_hash VARCHAR(255) NULL`, `status VARCHAR(32)`, `authz_version BIGINT DEFAULT 1`, `email_verified_at`, `phone_verified_at`, `last_login_at`, `suspended_at` | UK email ter-normalisasi, UK phone; IX status | `PENDING`, `VERIFICATION_REQUIRED`, `ACTIVE`, `SUSPENDED`, `DEACTIVATED`; salah satu email/phone wajib; Google-only boleh tanpa password |
-| `user_profiles` | `user_id CHAR(36) PK/FK`, `display_name VARCHAR(160)`, `photo_path VARCHAR(512) NULL`, `employee_id VARCHAR(40) NULL`, `department VARCHAR(100) NULL`, `locale VARCHAR(12) NULL` | FK users, UK employee_id bila terisi | Identity profile personal; verified fields dari tabel verifikasi, bukan update bebas |
+| `user_profiles` | `user_id CHAR(36) PK/FK`, `display_name VARCHAR(160)`, `photo_path VARCHAR(512) NULL`, `employee_id VARCHAR(40) NULL`, `department VARCHAR(100) NULL`, `locale VARCHAR(12) NULL` | FK users, UK employee_id bila terisi | Profil dasar; Customer NIK disimpan terpisah, tidak dianggap identity verified |
+| `user_nik_records` | `user_id CHAR(36) PK/FK`, `nik_ciphertext TEXT NOT NULL`, `format_validated_at DATETIME(6) NOT NULL`, `locked_at DATETIME(6) NOT NULL`, `created_at`, `updated_at` | PK/FK `users.id` (satu NIK per user); **tanpa UNIQUE pada nilai NIK** karena Customer tidak menjalani verifikasi identitas. DB trigger atau kontrol setara harus menolak UPDATE nilai NIK dan DELETE row, di samping policy service. | **Insert-once immutable** bagi semua user yang menyimpan NIK. Customer hanya `FORMAT_VALID` setelah validasi 16 digit; Employee KYC terpisah tetap perlu persetujuan CEO. Tidak boleh upsert, replace, reset, atau edit oleh Admin/CEO. |
 | `external_auth_identities` | `id`, `user_id FK`, `provider VARCHAR(24)`, `provider_subject VARCHAR(191)`, `provider_email VARCHAR(191) NULL`, `email_verified_at`, `linked_at`, `unlinked_at` | UK `(provider,provider_subject)`; IX user_id | Google `sub` immutable, jangan gunakan email sebagai primary external key |
 | `roles` | `id`, `code VARCHAR(64)`, `name VARCHAR(100)`, `is_system BOOLEAN`, `is_active BOOLEAN` | UK code | Seed 9 role dari baseline; tidak ada role arbitrer via public API |
 | `permissions` | `id`, `code VARCHAR(128)`, `resource VARCHAR(64)`, `action VARCHAR(32)`, `scope_type VARCHAR(24)`, `owner_service VARCHAR(40)`, `is_active` | UK code; IX owner_service/resource | Registry identity/authorization; permission domain lain ditentukan saat modulnya siap |
@@ -460,13 +492,13 @@ flowchart LR
 | `application_revisions` | `id`, `application_id FK`, `revision_no INT`, `snapshot_ciphertext LONGTEXT`, `submitted_at`, `submitted_by FK` | UK `(application_id,revision_no)` | Snapshot submitted immutable; metadata no secrets/PII logs |
 | `application_documents` | `id`, `application_id FK`, `revision_no`, `doc_type VARCHAR(40)`, `private_storage_key VARCHAR(512)`, `sha256 CHAR(64)`, `mime VARCHAR(80)`, `size_bytes BIGINT`, `verification_status` | IX application/revision/doc_type | Private object; signed/authorized retrieval; malware/file validation |
 | `application_decisions` | `id`, `application_id FK`, `reviewer_user_id FK`, `decision VARCHAR(32)`, `reason TEXT`, `required_changes_json JSON NULL`, `from_status`, `to_status`, `lock_version`, `decided_at` | IX application/decided_at | Append-only audit of APPROVE/REVISION/REJECT; approved state creates organization in same transaction |
-| `identity_verification_requests` | `id`, `user_id FK`, `kind VARCHAR(32)`, `status VARCHAR(24)`, `nik_ciphertext TEXT NULL`, `nik_lookup_hash CHAR(64) NULL`, `reviewed_by FK NULL`, `reviewed_at`, `rejection_reason` | IX user/kind/status; IX nik_lookup_hash if uniqueness policy approved | Cannot mark verified only because NIK format valid; reviewer/vendor attestation required |
-| `identity_documents` | `id`, `verification_request_id FK`, `type VARCHAR(32)`, `private_storage_key`, `sha256`, `mime`, `size_bytes`, `uploaded_at` | IX verification/type | e-KTP/employee KYC sensitive; private delivery only |
-| `profile_change_requests` | `id`, `user_id FK`, `target_type VARCHAR(24)`, `target_id`, `requested_fields_ciphertext LONGTEXT`, `status`, `reviewed_by FK NULL`, `review_reason`, `reviewed_at` | IX `(user_id,status)` | Verified NIK/NIB/NPWP edited only via review |
-| `invitations` | `id`, `kind VARCHAR(24)`, `issuer_user_id FK`, `recipient_user_id FK NULL`, `recipient_email VARCHAR(191)`, `organization_id FK NULL`, `target_role`, `token_hash CHAR(64)`, `status`, `expires_at`, `accepted_at`, `revoked_at` | UK token_hash; IX recipient/status, org/kind/status | `WORKER/STAFF`; token one-time, invitation expiry; no dup active invite |
+| `identity_verification_requests` | `id`, `user_id FK`, `kind VARCHAR(32)` dibatasi `EMPLOYEE_KYC`, `status VARCHAR(24)`, `employee_identity_ciphertext LONGTEXT NULL` (**tidak menjadi tempat mutable NIK**), `reviewed_by FK NULL`, `reviewed_at`, `rejection_reason`, `lock_version` | IX user/kind/status; `reviewed_by` wajib merujuk CEO yang terotorisasi pada keputusan | **Employee KYC saja**; **CEO saja reviewer/decision maker**, tanpa vendor. NIK staff jika dikumpulkan ditulis pertama kali ke `user_nik_records` dan tidak dapat diganti melalui resubmission KYC. |
+| `identity_documents` | `id`, `verification_request_id FK`, `type VARCHAR(32)`, `private_storage_key`, `sha256`, `mime`, `size_bytes`, `uploaded_at` | IX verification/type | Hanya dokumen Employee KYC/identitas staf yang disyaratkan; **tidak menerima e-KTP Customer** |
+| `profile_change_requests` | `id`, `user_id FK`, `target_type VARCHAR(24)`, `target_id`, `requested_fields_ciphertext LONGTEXT`, `status`, `reviewed_by FK NULL`, `review_reason`, `reviewed_at` | IX `(user_id,status)`; allowlist field ketat, reject JSON path `nik`/`nik_ciphertext`/alias | **TIDAK untuk NIK dalam kondisi apa pun.** Hanya perubahan data sensitif lain yang diizinkan; NIB/NPWP bisnis direview **Admin Operations** secara manual. Employee KYC ditangani V08/V09 oleh CEO, bukan P13. |
+| `invitations` | `id`, `kind VARCHAR(24)`, `issuer_user_id FK`, `recipient_user_id FK NULL`, `recipient_email VARCHAR(191)`, `organization_id FK NULL`, `target_role`, `token_hash CHAR(64)`, `status`, `issued_at DATETIME(6) NOT NULL`, `expires_at DATETIME(6) NOT NULL`, `accepted_at`, `revoked_at` | UK token_hash; IX recipient/status, org/kind/status | `WORKER/STAFF`: `expires_at=issued_at+12 jam` **LOCKED**, sekali pakai, token lama invalid saat resend yang menghasilkan token baru |
 | `staff_onboarding` | `id`, `staff_user_id FK`, `status VARCHAR(32)`, `completed_at`, `created_by FK`, `last_verified_at` | UK staff_user_id | `INVITED/ONBOARDING/OPERATIONAL_READY/SUSPENDED/DEACTIVATED` |
 | `staff_onboarding_steps` | `id`, `onboarding_id FK`, `step_key VARCHAR(32)`, `status`, `evidence_document_id FK NULL`, `document_version NULL`, `completed_at`, `reviewed_by FK NULL` | UK `(onboarding_id,step_key)` | PROFILE, EMPLOYEE_KYC, NDA, ACCESS_CONFIRMATION; persetujuan NDA versioned |
-| `otp_challenges` | `id`, `user_id FK NULL`, `identifier_hash CHAR(64)`, `purpose VARCHAR(32)`, `otp_hmac CHAR(64)`, `status`, `attempts INT`, `expires_at`, `resend_available_at`, `consumed_at`, `delivery_message_id VARCHAR(255) NULL`, `delivery_state` | IX identifier/purpose/status, expires_at | Hash OTP; per-purpose rate limits; store no raw OTP |
+| `otp_challenges` | `id`, `user_id FK NULL`, `identifier_hash CHAR(64)`, `purpose VARCHAR(32)`, `otp_hmac CHAR(64)`, `status`, `failed_attempts_audit_only INT DEFAULT 0`, `issued_at DATETIME(6) NOT NULL`, `expires_at DATETIME(6) NOT NULL`, `resend_available_at DATETIME(6) NULL`, `consumed_at`, `delivery_message_id VARCHAR(255) NULL`, `delivery_state` | IX identifier/purpose/status, expires_at | `expires_at=issued_at + 30 detik` **LOCKED**; counter hanya telemetry, **bukan lock/limit total percobaan**; enforce burst rate limiting per IP/identifier dan one-time verification |
 | `password_reset_grants` | `id`, `user_id FK`, `challenge_id FK`, `grant_token_hash CHAR(64)`, `expires_at`, `consumed_at` | UK grant_token_hash; IX user/expires | OTP verify mints restricted one-time reset grant, no password reset with OTP reused |
 | `sessions` | Laravel `id VARCHAR(255) PK`, `user_id FK NULL`, `ip_address`, `user_agent`, `payload LONGTEXT`, `last_activity INT` | IX user_id/last_activity | Laravel database session driver; no raw tokens logged |
 | `auth_sessions` | `id`, `session_id VARCHAR(255) FK/UK`, `user_id FK`, `active_role_assignment_id FK NULL`, `active_organization_id FK NULL`, `device_name`, `created_ip`, `last_seen_at`, `revoked_at` | IX user/revoked_at | Server-side persona; listing and revocation, `logout-all` deletes matching sessions |
@@ -475,7 +507,17 @@ flowchart LR
 | `outbox_events` | `id`, `aggregate_type`, `aggregate_id`, `event_type`, `schema_version`, `payload_json JSON`, `occurred_at`, `published_at`, `attempts`, `last_error` | IX published_at/occurred_at, aggregate ID | Write with same DB transaction as mutation |
 | `inbox_consumptions` | `id`, `consumer_name`, `source_event_id`, `processed_at`, `status`, `error_code` | UK `(consumer_name,source_event_id)` | Only for inbound consumed events; dedup repeat delivery |
 
-**Jumlah: 28 tabel** termasuk Laravel session, audit, dan reliable messaging. Penambahan/pengurangan tabel pada implementasi harus tetap menjaga seluruh invariant, bukan demi mencapai angka tertentu.
+**Jumlah: 29 tabel** termasuk tabel `user_nik_records`, Laravel session, audit, dan reliable messaging. Penambahan/pengurangan tabel pada implementasi harus tetap menjaga seluruh invariant, bukan demi mencapai angka tertentu.
+
+
+### CR-02: Immutability NIK pada MySQL + aplikasi (WAJIB)
+
+- **Satu user, maksimal satu rekaman NIK:** `user_nik_records.user_id` PK/FK ke `users.id`. Simpan ciphertext terenkripsi dan `locked_at` hanya saat INSERT pertama; tidak ada penggantian NIK oleh siapa pun, bahkan bila NIK semula salah ketik. Tidak menganggap NIK Customer valid secara hukum hanya karena 16 digit.
+- **Pengendalian race:** operasi input NIK dijalankan dalam transaction, `INSERT` eksklusif, tangani duplicate PK menjadi `409 IDENTITY_NIK_PERMANENTLY_LOCKED`, bukan `upsert`, `updateOrCreate`, `ON DUPLICATE KEY UPDATE`, atau overwrite data existing.
+- **Pertahanan MySQL:** implement `BEFORE UPDATE` dan `BEFORE DELETE` trigger pada `user_nik_records` yang melempar `SIGNAL SQLSTATE '45000'` untuk setiap perubahan atau penghapusan record, disertai privilege database minimal agar aplikasi tidak bisa melepas trigger. Perubahan teknis administratif tingkat database di luar jalur aplikasi harus tunduk proses keamanan/kepatuhan; tidak ada API override. Uji migrasi dan trigger pada database testing terisolasi.
+- **Jika staff mengirim NIK sebagai bagian Employee KYC:** tulis ke `user_nik_records` hanya jika belum ada; bila sudah tersimpan, jangan menulis NIK baru. Field `employee_identity_ciphertext` dan dokumen verifikasi tidak boleh menjadi cara menimpa NIK permanen; periksa kecocokan record dengan akses data minimal. CEO hanya memutuskan status Employee KYC, bukan mengedit NIK.
+- **Larangan API:** V11 ulang ditolak `409`; NIK pada P02/P03/P07/P13, bulk/import, staff KYC resubmission dan jalur role switch ditolak; tidak ada endpoint `PATCH/DELETE` NIK. Seluruh error tanpa echo nilai NIK mentah.
+- **Retensi/privacy:** "permanen terkunci" berarti **tidak dapat diedit dalam lifecycle aplikasi**. Kewajiban hukum yang mungkin mengatur penghapusan/retensi data pribadi harus diperlakukan sebagai proses kepatuhan terpisah, bukan sebagai izin penggantian NIK.
 
 ## 3.3 Model status dan transisi tegas
 
@@ -485,10 +527,10 @@ flowchart LR
 | Business application | `DRAFT → PENDING_REVIEW → APPROVED / REVISION_REQUIRED / REJECTED`; `REVISION_REQUIRED → PENDING_REVIEW` | edit saat `PENDING_REVIEW` tanpa review/revision, approve dua kali |
 | Worker membership | `INVITED → ACTIVE → DEACTIVATED`; undangan kedaluwarsa → `EXPIRED` | 2 ACTIVE Provider Worker pada user sama |
 | Staff onboarding | `INVITED → ONBOARDING → OPERATIONAL_READY` setelah 4 steps; `OPERATIONAL_READY → SUSPENDED/DEACTIVATED` | memberi operational access sebelum ready |
-| OTP | `ISSUED → SENT → VERIFIED/CONSUMED` atau `EXPIRED/LOCKED/DELIVERY_FAILED` | OTP expired/consumed dipakai ulang |
+| OTP | `ISSUED → SENT → VERIFIED/CONSUMED` atau `EXPIRED/DELIVERY_FAILED/CANCELLED` | OTP expired/consumed dipakai ulang; **tidak ada OTP lock berdasarkan jumlah salah** |
 | Role assignment | `ACTIVE → REVOKED`; grant baru memerlukan authorized actor | self-grant, self-escalation |
 
-**Ketelitian penting:** Sebelum business application di-APPROVE, reviewer wajib memastikan identity/verification prerequisites owner terpenuhi. Account owner yang sudah memenuhi syarat dan belum tersuspensi dapat menjadi `ACTIVE` dalam proses approval; **jangan** menghasilkan business membership operasional efektif untuk account yang masih `VERIFICATION_REQUIRED` atau `SUSPENDED`. Access memerlukan kombinasi account ACTIVE + org ACTIVE + membership ACTIVE + role assignment ACTIVE + permission. `Application ACTIVE` dalam diagram bisnis direpresentasikan sebagai *organization/membership activated after approval*; jangan memasukkan `ACTIVE` dua kali menjadi state approval ambigu.
+**Ketelitian penting:** Sebelum business application di-APPROVE, Admin Operations **secara manual** meninjau dokumen legal, data PIC, dan persyaratan akun pemohon sesuai planning, tanpa verifikasi KYC/KYB vendor. Account owner yang sudah memenuhi syarat dan belum tersuspensi dapat menjadi `ACTIVE` dalam proses approval; **jangan** menghasilkan business membership operasional efektif untuk account yang masih `VERIFICATION_REQUIRED` atau `SUSPENDED`. Access memerlukan kombinasi account ACTIVE + org ACTIVE + membership ACTIVE + role assignment ACTIVE + permission. `Application ACTIVE` dalam diagram bisnis direpresentasikan sebagai *organization/membership activated after approval*; jangan memasukkan `ACTIVE` dua kali menjadi state approval ambigu.
 
 ## 3.4 Constraint race-condition terpenting
 
@@ -561,13 +603,46 @@ DB::transaction(function () use ($applicationId, $expectedVersion, $reviewer, $d
 
 `restrictOnDelete` pada data historis, unique email ter-normalisasi (trim/lowercase, peraturan normalisasi domain) dan `phone_e164` dicek oleh FormRequest + service; MySQL collation case-sensitivity harus diputuskan secara eksplisit. Jangan jadikan kolom `name`/URL sebagai identifier kanonis.
 
+### Contoh migration NIK permanen (rancangan [T] konsisten dengan CR-01 + CR-02)
+
+```php
+Schema::create('user_nik_records', function (Blueprint $table) {
+    $table->uuid('user_id')->primary();
+    $table->foreign('user_id')->references('id')->on('users')->restrictOnDelete();
+    $table->text('nik_ciphertext');  // dienkripsi di application layer
+    $table->timestamp('format_validated_at', 6); // BUKAN identity_verified_at
+    $table->timestamp('locked_at', 6); // diisi pada INSERT pertama, tidak berubah
+    $table->timestamps(6);
+});
+```
+
+**MySQL guard wajib** (ilustrasi migration `DB::unprepared` setelah pembuatan tabel, pada DB testing terlebih dahulu):
+
+```sql
+CREATE TRIGGER user_nik_records_prevent_update
+BEFORE UPDATE ON user_nik_records
+FOR EACH ROW
+SIGNAL SQLSTATE '45000'
+SET MESSAGE_TEXT = 'NIK_RECORD_IMMUTABLE';
+
+CREATE TRIGGER user_nik_records_prevent_delete
+BEFORE DELETE ON user_nik_records
+FOR EACH ROW
+SIGNAL SQLSTATE '45000'
+SET MESSAGE_TEXT = 'NIK_RECORD_IMMUTABLE';
+```
+
+Rollback migration **khusus database pengujian/development kosong** wajib menjatuhkan kedua trigger sebelum drop tabel. Runtime DB user minimal privilege; migrator punya hak khusus. Ini defense-in-depth dan **bukan** pengganti otorisasi backend.
+
+Nilai `nik` harus lolos validasi string `regex:/^[0-9]{16}$/D` sebelum dienkripsi. `format_validated_at` merekam pengecekan pola, **bukan bukti NIK sah**. **CR-02:** `V11` hanya insert pertama pada onboarding Customer, tanpa `upsert`/`updateOrCreate`. Jalankan transaksi/unique-PK guard; ketika row sudah ada selalu tolak `409 IDENTITY_NIK_PERMANENTLY_LOCKED`, termasuk nilai NIK yang sama. `locked_at` ditetapkan pada insert pertama. DB-level no-update/no-delete trigger atau perlindungan setara perlu diuji pada MySQL. Saat Employee KYC mencakup NIK, lakukan first insert ke record yang sama jika belum ada, dan tolak nilai lain/overwrite; ini **bukan** mengganti NIK melalui proses review. Record permanen tidak dihapus oleh suspend/deactivate/reset. **Multi-role:** jika user sudah mempunyai NIK permanen karena onboarding role sebelumnya, flow Customer baru membaca status existing dan tidak meminta penulisan V11 ulang; NIK lama tetap tidak berubah. Pemenuhan permintaan hukum terkait data pribadi dinilai melalui kebijakan kepatuhan terpisah, bukan endpoint perubahan NIK biasa.
+
 ## 3.6 Seeder dan data keamanan
 
 1. Seed **9 role keys**: `CUSTOMER`, `SERVICE_PROVIDER`, `WORKER_TECHNICIAN`, `MERCHANT`, `SUPPLIER`, `CUSTOMER_SUPPORT`, `FINANCE_PAYMENT_OPS`, `ADMIN_OPERATIONS`, `CEO_PRODUCT_OWNER`.
 2. Seed Identity permissions yang memang diotorisasi planning, misalnya `identity.profile.read_own`, `identity.profile.update_own`, `identity.business.application.submit`, `identity.business.application.review`, `identity.provider.worker.invite`, `identity.staff.create`, `identity.staff.access.manage`, `identity.account.suspend`, `identity.audit.read_scoped` — **kode adalah kontrak teknis [T]**.
 3. Tidak otomatis me-seed semua 29 resource bisnis sebagai izin operasional aktif sebelum owner domain dan granularity-nya disetujui; global matrix menjadi referensi, **bukan wildcard `*`**.
 4. CEO seeded memakai email/password **dari `.env` lokal/provisioning**, `Hash::make()`, idempotent seed tanpa menimpa kredensial saat dijalankan ulang; force password rotation pada first login bila disepakati. Jangan copy password contoh dari dokumen global.
-5. Contoh data Customer/Provider/dsb sebaiknya factory sintetis `.env.testing`, bukan NIK nyata atau hardcoded private credential.
+5. Contoh data Customer/Provider/dsb sebaiknya factory sintetis `.env.testing`, bukan NIK nyata atau hardcoded private credential. Seeder **tidak** boleh otomatis menandai Customer sebagai KYC-verified; hanya NIK format-valid + OTP terverifikasi yang memberi aktivasi.
 6. Setiap migration dapat di-*rollback* lokal secara aman, tetapi **jangan menjalankan `migrate:fresh` pada database non-test yang berisi data nyata**.
 
 
@@ -577,7 +652,7 @@ DB::transaction(function () use ($applicationId, $expectedVersion, $reviewer, $d
 **Urutan migration yang disarankan** (agar seluruh FK internal valid):
 
 1. `users`, `roles`, `permissions`, `organizations` (tanpa optional back-reference approval yang membuat siklus).
-2. `user_profiles`, `organization_profiles`, `memberships`, `role_permissions`, `role_assignments`, `external_auth_identities`.
+2. `user_profiles`, `user_nik_records`, `organization_profiles`, `memberships`, `role_permissions`, `role_assignments`, `external_auth_identities`.
 3. `identity_verification_requests`, `identity_documents`, `business_applications`, `application_revisions`, `application_documents`, `application_decisions`, `profile_change_requests`.
 4. `invitations`, `staff_onboarding`, `staff_onboarding_steps`, `otp_challenges`, `password_reset_grants`, `sessions`, `auth_sessions`.
 5. `audit_logs`, `idempotency_records`, `outbox_events`, `inbox_consumptions`, lalu optional FK/back-reference cyclic setelah kedua tabel tersedia.
@@ -590,7 +665,7 @@ DB::transaction(function () use ($applicationId, $expectedVersion, $reviewer, $d
 | Role assignment consistency | FK user, role, membership + verifikasi matching membership user; UK aktif via generated key atau serialized transaction | mencegah duplikasi grant |
 | App revision identity | UK `(application_id,revision_no)` | revision stabil tanpa Application ID baru |
 | App review version | index `(id,status,lock_version)` + row lock | anti lost-update/approval bersamaan |
-| OTP one-active-per-purpose | `identifier_hash,purpose,status` lookup index + serialized locking/unique active marker | hanya challenge terbaru sah |
+| OTP one-active-per-purpose | `identifier_hash,purpose,status` lookup index + serialized locking/unique active marker | satu challenge aktif per identifier/purpose; expired setelah 30 detik, tanpa wrong-attempt lock |
 | Staff onboarding one per user | UK `staff_onboarding.staff_user_id` | tidak ada multiple parallel onboarding |
 | Session list/revocation | IX user ID + active/revoked, UK session_id | logout-all akurat |
 | Idempotency request | UK `(scope,actor_bucket,idempotency_key)` dengan actor_bucket **NOT NULL** | MySQL UNIQUE mengizinkan banyak NULL; anonymous request harus tetap terdedup |
@@ -636,7 +711,7 @@ Contoh error terpadu:
 }
 ```
 
-Status dasar: `200` read/action success; `201` created; `202` process queued/pending; `204` tanpa body; `400` malformed; `401` unauthenticated; `403` authenticated but forbidden; `404` tidak ditemukan/hidden resource; `409` state/version conflict; `410` expired token/invite; `422` invalid fields; `423` temporarily locked; `429` rate limit; `502` dependency failed; `503` temporarily unavailable. Jangan kembalikan detail apakah email user terdaftar pada endpoint recovery publik (anti-enumeration).
+Status dasar: `200` read/action success; `201` created; `202` process queued/pending; `204` tanpa body; `400` malformed; `401` unauthenticated; `403` authenticated but forbidden; `404` tidak ditemukan/hidden resource; `409` state/version conflict; `410` expired token/invite; `422` invalid fields; `423` temporarily locked pada mekanisme **non-OTP** yang secara terpisah diotorisasi (bukan wrong-attempt OTP); `429` rate limit; `502` dependency failed; `503` temporarily unavailable. Jangan kembalikan detail apakah email user terdaftar pada endpoint recovery publik (anti-enumeration).
 
 **ID:** UUID internal; business application `APP-YYYY-XXXXXX` manusiawi dengan transaksi/alokasi aman. **Pagination:** `?cursor=&limit=20` (maks 100) pada list; `sort` hanya allowlist; filter `status`, `role`, `organization_id` selalu dibatasi server-side scope. **PII:** field NIK mentah dan storage key tidak pernah ikut response biasa; `nik_masked` dan `verification_status` boleh bila perlu.
 
@@ -669,14 +744,14 @@ Contoh schema `USER_CONTEXT` untuk `GET /auth/me`:
 |---|---|---|
 | `AuthContext` | USER_CONTEXT di atas | hanya role assignment milik user; permission sesuai active context |
 | `SessionView` | `{id,device_name,created_at,last_seen_at,current,active_role,organization_id}` | tidak mengembalikan Laravel session ID/cookie |
-| `UserProfile` | `{id,name,email,phone_masked,photo_url,identity_verification_status,account_status}` | NIK masked; e-KTP hanya akses dokumen khusus |
+| `UserProfile` | `{id,name,email,phone_masked,photo_url,nik_masked,nik_format_status,nik_locked,email_otp_verified,account_status}` | `nik_format_status=FORMAT_VALID` **bukan KYC/verified identity**; tidak mengembalikan raw NIK/e-KTP |
 | `OrganizationView` | `{id,type,status,display_name,legal_name,verification_status}` | NIB/NPWP masked kecuali flow verifikasi berizin |
 | `ApplicationView` | `{id,application_code,target_role,status,revision_no,lock_version,applicant,pic,business,required_changes,submitted_at}` | legal docs menjadi descriptor/id, bukan public URL |
 | `ApplicationDecisionView` | `{decision,reason,required_changes,reviewer_id,decided_at,from_status,to_status}` | reviewer sesuai scope |
 | `InvitationView` | `{id,kind,target_role,organization,recipient_masked,status,expires_at}` | token mentah hanya di delivery/first-time invite link |
 | `WorkerView` | `{user_id,display_name,membership_id,organization_id,membership_status}` | bukan task/earning data |
 | `StaffView` | `{user_id,display_name,role,status,onboarding_status,department}` | email/sensitif dibatasi CEO/own |
-| `VerificationView` | `{id,kind,status,nik_masked,documents:[{id,type,verification_status}],reason_masked}` | private attachment akses dengan policy |
+| `VerificationView` | `{id,kind:"EMPLOYEE_KYC",status,documents:[{id,type,verification_status}],reason_masked}` | hanya Employee KYC untuk staff/reviewer; private attachment akses dengan policy |
 | `AuditView` | `{id,event_code,actor_user_id,target_type,target_id,result,occurred_at,safe_metadata}` | tidak memuat PII/sessions/secret |
 | `ListPage<T>` | `{items:[T],next_cursor,has_more}` | filter server-side, bukan filter frontend saja |
 | `MutationResult` | `{id,status,version?,effective_at?}` | tidak membocorkan internal error |
@@ -709,24 +784,25 @@ Contoh schema `USER_CONTEXT` untuk `GET /auth/me`:
 
 **Catatan A18:** Permintaan deactivation bukan hak menghapus data fisik; bila planning tidak mengatur self-service deactivation UI, endpoint ini **[T][P] optional**, jangan aktifkan/mapping UI tanpa authority yang disepakati. Google A05/A06 merupakan variasi implementasi aman dari Google Account Linking yang eksplisit dalam scope.
 
-### B. OTP, customer KYC dan protected documents — 10 endpoint
+### B. OTP, Customer NIK format-only, Employee KYC dan protected documents — 11 endpoint
 
 | ID | Method & URL | Auth | Input wajib / query | Response | Aturan penting |
 |---|---|---|---|---|---|
 | V01 | `POST /otp/challenges` | PUB/STEP/AUTH | `{purpose,identifier?}` (`ACCOUNT_VERIFICATION`,`PASSWORD_RESET`,`ACCOUNT_LINKING`,`STEP_UP`) | `202 {challenge_id,masked_destination,expires_at,resend_after}` | anti-enumeration; purpose/ownership validation; generated OTP hash-only |
-| V02 | `POST /otp/challenges/{id}/verify` | PUB/STEP/AUTH | `{otp}` | `200 {verified:true,next_step,reset_grant?}` | attempts, expiration, atomic consume; reset grant only PASSWORD_RESET |
-| V03 | `POST /otp/challenges/{id}/resend` | PUB/STEP/AUTH | `{}` | `202 {challenge_id,resend_after}` | cooldown & quota; previous challenge invalidated per policy |
-| V04 | `POST /identity/verifications` | AUTH/STEP | `{kind:"CUSTOMER_KYC"|"EMPLOYEE_KYC",nik?,legal_name?,document_ids:[...]}` | `201 VerificationView` | submission only; does NOT imply VERIFIED |
-| V05 | `GET /identity/verifications/me` | AUTH/STEP | `?kind=` | `200 ListPage<VerificationView>` | own data only |
-| V06 | `POST /identity/documents` | AUTH/STEP | multipart `file,document_type,verification_request_id?` | `201 {document_id,verification_status:"PENDING"}` | private storage, MIME/magic bytes, max size, anti-malware controls |
-| V07 | `GET /identity/documents/{id}/download` | AUTH/STAFF | path id | `200 binary` or `302` short signed URL | owner or scoped reviewer only; audit downloads |
-| V08 | `GET /admin/identity/verifications` | STAFF | `?status,kind,cursor,limit` | `200 ListPage<VerificationView>` | requires `identity.kyc.review`; **[P]** staff decision policy final |
-| V09 | `POST /admin/identity/verifications/{id}/decision` | STAFF | `{decision:"VERIFY"|"REJECT",reason,lock_version}` | `200 VerificationView` | real evidence review, version lock, audit; **[P]** reviewer authority final |
-| V10 | `GET /identity/verifications/{id}` | AUTH/STAFF | — | `200 VerificationView` | own or authorized reviewer only |
+| V02 | `POST /otp/challenges/{id}/verify` | PUB/STEP/AUTH | `{otp}` | `200 {verified:true,next_step,reset_grant?}` | `issued_at + 30 detik`; atomically consume; salah dapat diulang selama belum expired dengan rate-limit throughput, **tanpa attempt lock** |
+| V03 | `POST /otp/challenges/{id}/resend` | PUB/STEP/AUTH | `{}` | `202 {challenge_id,resend_after}` | **[T]** usulan resend setelah challenge lama expired (30 detik); challenge lama dibatalkan; throttle anti-abuse tanpa fixed 60-second cooldown |
+| V04 | `POST /identity/verifications` | AUTH/STEP | `{kind:"EMPLOYEE_KYC",employee_identity?,document_ids:[...]}` | `201 VerificationView` | **Staff Employee KYC saja**; reviewer internal sesuai otorisasi, tidak ada Customer KYC maupun vendor eksternal |
+| V05 | `GET /identity/verifications/me` | AUTH/STEP | `?kind=EMPLOYEE_KYC` | `200 ListPage<VerificationView>` | Employee KYC milik staff sendiri; bukan Customer NIK |
+| V06 | `POST /identity/documents` | AUTH/STEP | multipart `file,document_type,verification_request_id?` | `201 {document_id,verification_status:"PENDING"}` | dokumen Employee KYC **saja**; Customer **tidak perlu upload e-KTP**; private storage + validation |
+| V07 | `GET /identity/documents/{id}/download` | AUTH/STAFF | path id | `200 binary` or `302` short signed URL | staff pemilik bukti atau CEO dengan `identity.kyc.review` saja; audit downloads; Admin Operations tidak boleh mengunduh bukti Employee KYC staff lain |
+| V08 | `GET /ceo/identity/verifications` | STAFF (CEO only) | `?status,kind=EMPLOYEE_KYC,cursor,limit` | `200 ListPage<VerificationView>` | **Hanya CEO_PRODUCT_OWNER** dengan `identity.kyc.review`; Admin/role lain ditolak; daftar hanya Employee KYC |
+| V09 | `POST /ceo/identity/verifications/{id}/decision` | STAFF (CEO only) | `{decision:"VERIFY"|"REJECT",reason,lock_version}` | `200 VerificationView` | **CEO_PRODUCT_OWNER eksklusif**, manual check, no self-review, `lockForUpdate`/version lock, audit; Staff hanya `OPERATIONAL_READY` setelah seluruh onboarding terpenuhi |
+| V10 | `GET /identity/verifications/{id}` | AUTH/STAFF | — | `200 VerificationView` | Employee KYC milik staff sendiri atau CEO reviewer berizin saja |
+| V11 | `POST /identity/customer/nik` | STEP/AUTH | `{nik:"<16 digit numerik>"}` | `201 {nik_masked,nik_format_status:"FORMAT_VALID",nik_locked:true,next_step:"VERIFY_EMAIL_OTP"}` | **Hanya input pertama** (Customer onboarding email/password/Google); 16 digit, encrypt-at-rest, insert-once, DB unique user, `locked_at`; bila sudah pernah ada → `409 IDENTITY_NIK_PERMANENTLY_LOCKED` tanpa mengubah record; tidak ada e-KTP/KYC/vendor. Account tetap VERIFICATION_REQUIRED hingga OTP sah |
 
-**KYC dependency decision:** Aplikasi mewajibkan KYC, tetapi source tidak menentukan vendor otomatis atau langkah manual yang spesifik. Endpoint reviewer **[T][P]** adalah desain penutup flow, bukan klaim bahwa vendor atau UI verifikasi sudah ada. Bila reviewer belum tersedia, status tetap `PENDING_REVIEW`, **jangan aktifkan user palsu hanya untuk memuaskan acceptance test**.
+**Pemisahan semantik wajib:** `V11` adalah penyimpanan **NIK Customer berstatus `FORMAT_VALID`** (tidak pernah menjadi `KYC_VERIFIED`, `IDENTITY_VERIFIED`, atau `LEGAL_VERIFIED`). Tidak ada pengiriman NIK Customer ke service lain. Endpoint V04–V10 hanya untuk **Employee KYC internal staff**; **CEO saja** yang mereview bukti staf melalui V08/V09, bukan Admin. NIK first-write di setiap flow tidak boleh ditulis ulang. Verifikasi legal Provider/Merchant/Supplier **bukan** V04–V10 dan bukan API vendor: gunakan review application B09–B12 oleh Admin Operations SERVIO. Customer ACTIVE setelah NIK format valid **dan** OTP email Brevo berhasil; urutan kedua aksi boleh berbeda, tetapi kedua flag wajib ada.
 
-### C. Business registration & admin review — 12 endpoint
+### C. Business registration & admin review — 13 endpoint
 
 | ID | Method & URL | Auth | Input wajib / query | Response | Aturan penting |
 |---|---|---|---|---|---|
@@ -740,8 +816,11 @@ Contoh schema `USER_CONTEXT` untuk `GET /auth/me`:
 | B08 | `GET /business/applications/{id}/history` | AUTH/STAFF | — | `200 {revisions,decisions}` | own or reviewer only |
 | B09 | `GET /admin/business/applications` | STAFF | `?target_role,status,cursor,limit` | `200 ListPage<ApplicationView>` | ADMIN_OPERATIONS permission, scoped queue |
 | B10 | `GET /admin/business/applications/{id}` | STAFF | — | `200 ApplicationView` + document metadata/history | no approval without authorization |
-| B11 | `POST /admin/business/applications/{id}/decisions` | STAFF | `{decision:"APPROVE"|"REQUEST_REVISION"|"REJECT",reason,required_changes?,lock_version}` + idempotency | `200 {application,decision,organization_id?}` | PENDING_REVIEW only; lockForUpdate/version, reviewer cannot approve own app |
+| B11 | `POST /admin/business/applications/{id}/decisions` | STAFF | `{decision:"APPROVE"|"REQUEST_REVISION"|"REJECT",reason,required_changes?,lock_version}` + idempotency | `200 {application,decision,organization_id?}` | **Admin Operations memeriksa legal bisnis manual**, PENDING_REVIEW only; reason/reviewer/timestamp/history; `lockForUpdate`/version, no self-approval |
 | B12 | `GET /admin/business/applications/{id}/history` | STAFF | — | `200 {revisions,decisions}` | audit review access |
+| B13 | `GET /business/applications/{id}/documents/{document_id}/download` | AUTH/STAFF | application & document IDs | `200 binary` atau `302` private signed short-lived URL | hanya applicant pemilik atau Admin Operations reviewer berizin; gunakan private storage, record akses audit, jangan gunakan Employee KYC V07 |
+
+**Ketentuan review legal manual yang wajib dipertahankan:** `B09` menampilkan antrean `PENDING_REVIEW` ke Admin Operations berizin. `B10` mengembalikan rincian PIC/legal & daftar `application_documents`, `B13` menyediakan pratinjau/unduh lampiran melalui otorisasi dan audit. Admin membandingkan data/dokumen **secara manual** dan merekam catatan evaluasi. `B11` menolak tindakan tanpa keputusan yang sah, alasan/reviewer/timestamp dan `lock_version` terbaru; `APPROVE` hanya setelah persyaratan dokumen terpenuhi, `REQUEST_REVISION` mencatat bagian perbaikan, `REJECT` menyimpan alasan. Tidak ada callback KYB/KYC vendor atau aktivasi otomatis hanya karena dokumen diunggah. Status aplikasi `APPROVED` memicu aktivasi organization/membership secara transaksional. **Belum ada pemeriksaan eksternal untuk legal bisnis dan jangan menambahkannya.**
 
 `/register/business` UI menggunakan akun owner yang sudah ada atau A01 dengan `registration_type=BUSINESS_APPLICANT` (akun individual tanpa business role), lalu B01–B07. Business applicant yang masih pending hanya mendapat session terbatas untuk proses aplikasi; kelayakan identitas diperiksa sebelum Admin approve. **Tidak membuat `POST /auth/register-provider` yang otomatis memberi Provider role**.
 
@@ -750,9 +829,9 @@ Contoh schema `USER_CONTEXT` untuk `GET /auth/me`:
 | ID | Method & URL | Auth | Input | Response | Aturan penting |
 |---|---|---|---|---|---|
 | P01 | `GET /profiles/me` | AUTH/STEP | — | `200 UserProfile` | user sendiri |
-| P02 | `PATCH /profiles/me` | AUTH | allowlisted `{display_name,photo_document_id?,phone?}` | `200 UserProfile` | verified NIK/e-KTP, role, permission bukan editable |
-| P03 | `POST /profiles/change-requests` | AUTH | `{target_type,target_id,fields,reason,document_ids?}` | `201 {id,status:"PENDING_REVIEW"}` | verified NIK/NIB/NPWP only via review |
-| P04 | `GET /profiles/change-requests/{id}` | AUTH/STAFF | — | `200 {id,status,requested_fields_masked,review_reason}` | own/reviewer; decision reviewer UI **[P]** |
+| P02 | `PATCH /profiles/me` | AUTH | allowlisted `{display_name,photo_document_id?,phone?}` | `200 UserProfile` | **NIK permanently immutable**: reject input field NIK/aliases walaupun user belum ACTIVE, CEO/Admin, atau nilai sama; Employee KYC evidence/role/permission juga tidak editable |
+| P03 | `POST /profiles/change-requests` | AUTH | `{target_type,target_id,fields,reason,document_ids?}` | `201 {id,status:"PENDING_REVIEW"}` | **Tidak menerima NIK atau alias NIK** sebagai field change request; penolakan `422 IDENTITY_NIK_IMMUTABLE_FIELD`; NIB/NPWP bisnis bisa direview manual Admin Operations sesuai policy |
+| P04 | `GET /profiles/change-requests/{id}` | AUTH/STAFF | — | `200 {id,status,requested_fields_masked,review_reason}` | pemohon atau reviewer legal bisnis Admin Operations berizin, tanpa raw NIK |
 | P05 | `GET /organizations/me` | AUTH | — | `200 ListPage<OrganizationView>` | only organizations through valid memberships |
 | P06 | `GET /organizations/{id}` | AUTH | — | `200 OrganizationView` | own org or explicit reviewer |
 | P07 | `PATCH /organizations/{id}/profile` | AUTH | editable `{display_name,contact,address}` | `200 OrganizationView` | owner org; verified legal fields via P03 |
@@ -760,8 +839,8 @@ Contoh schema `USER_CONTEXT` untuk `GET /auth/me`:
 | P09 | `GET /roles/me` | AUTH/STEP | — | `200 {roles:[{assignment_id,code,organization_id,status}]}` | no other user's grants |
 | P10 | `GET /permissions/me` | AUTH/STEP | — | `200 {active_role,permissions,scope,authorization_version}` | effective only; never accept client permission claim |
 | P11 | `POST /profiles/me/avatar` | AUTH | multipart `{file}` | `200 {photo_url,profile_version}` | personal avatar only, file validation & private/media delivery policy; never use KYC upload for public avatar |
-| P12 | `GET /admin/profiles/change-requests` | STAFF | `?status,target_type,cursor,limit` | `200 ListPage<{id,requester,fields_masked,status}>` | explicitly authorized reviewer; **[P]** reviewer scope final |
-| P13 | `POST /admin/profiles/change-requests/{id}/decisions` | STAFF | `{decision:"APPROVE"|"REJECT",reason,lock_version}` | `200 {id,status,profile_version}` | protect verified fields, review evidence, version lock, audit; **[P]** policy authority final |
+| P12 | `GET /admin/profiles/change-requests` | STAFF (Admin Operations) | `?status,target_type,cursor,limit` | `200 ListPage<{id,requester,fields_masked,status}>` | Admin Operations berizin, **hanya perubahan profil legal bisnis NIB/NPWP yang diizinkan**, tidak ada NIK atau Employee KYC |
+| P13 | `POST /admin/profiles/change-requests/{id}/decisions` | STAFF (Admin Operations) | `{decision:"APPROVE"|"REJECT",reason,lock_version}` | `200 {id,status,profile_version}` | Admin Operations memutuskan **hanya perubahan NIB/NPWP bisnis** yang diizinkan; NIK dan Employee KYC tidak termasuk; version lock, reason/audit, reject payload legacy NIK |
 
 ### E. Provider invitations / worker membership — 8 endpoint
 
@@ -769,9 +848,9 @@ Contoh schema `USER_CONTEXT` untuk `GET /auth/me`:
 |---|---|---|---|---|---|
 | W01 | `GET /provider/workers` | AUTH | `?status,cursor,limit` | `200 ListPage<WorkerView>` | Provider organization bound |
 | W02 | `GET /provider/workers/{membership_id}` | AUTH | — | `200 WorkerView` | own organization only |
-| W03 | `POST /provider/worker-invitations` | AUTH | `{organization_id,recipient_email,expiration?}` + idempotency | `201 InvitationView` | Provider authority, same org, dedup active invitations |
+| W03 | `POST /provider/worker-invitations` | AUTH | `{organization_id,recipient_email}` + idempotency | `201 InvitationView` | server menetapkan TTL **12 jam**; Provider authority, same org, dedup active invitations; client tidak bisa override TTL |
 | W04 | `GET /provider/worker-invitations` | AUTH | `?status,cursor,limit` | `200 ListPage<InvitationView>` | own org |
-| W05 | `POST /provider/worker-invitations/{id}/resend` | AUTH | `{}` | `202 AcceptedResult` | resend cooldown/expiry new token; no duplicate ACTIVE membership |
+| W05 | `POST /provider/worker-invitations/{id}/resend` | AUTH | `{}` | `202 AcceptedResult` | resend token baru dengan TTL **12 jam sejak token baru issued**, token lama invalid; rate-limit anti-abuse |
 | W06 | `GET /invitations/{token}/preview` | PUB | opaque token | `200 {kind,organization_name,masked_recipient,expires_at}` | one-time short token, no sensitive user lookup disclosure |
 | W07 | `POST /invitations/{token}/accept` | AUTH/STEP | `{accept:true}` | `200 {kind,user_id,membership_id?,next_step}` | existing user link / new registration & verified recipient; enforce single active Provider; staff invitation uses same endpoint |
 | W08 | `POST /provider/workers/{membership_id}/deactivate` | AUTH | `{reason}` | `200 WorkerView` DEACTIVATED | revoke role assignment/context/derived access; audit + event |
@@ -782,7 +861,7 @@ Contoh schema `USER_CONTEXT` untuk `GET /auth/me`:
 
 | ID | Method & URL | Auth | Input | Response | Aturan penting |
 |---|---|---|---|---|---|
-| S01 | `POST /ceo/staff` | STAFF (CEO) | `{name,email,role:"ADMIN_OPERATIONS"|"CUSTOMER_SUPPORT"|"FINANCE_PAYMENT_OPS",department,access_template?}` + idempotency | `201 StaffView` INVITED | CEO only, no password exposure, invitation |
+| S01 | `POST /ceo/staff` | STAFF (CEO) | `{name,email,role:"ADMIN_OPERATIONS"|"CUSTOMER_SUPPORT"|"FINANCE_PAYMENT_OPS",department,access_template?}` + idempotency | `201 StaffView` INVITED | CEO only, no password exposure, invitation **12 jam** sejak issued, tetap Employee KYC/NDA |
 | S02 | `GET /ceo/staff` | STAFF (CEO) | `?role,status,cursor,limit` | `200 ListPage<StaffView>` | CEO-only scoped |
 | S03 | `GET /ceo/staff/{user_id}` | STAFF (CEO) | — | `200 StaffView` | CEO-only |
 | S04 | `PATCH /ceo/staff/{user_id}/access` | STAFF (CEO) | `{role_assignments,permission_overrides?,reason,lock_version}` | `200 {user_id,authorization_version}` | least privilege, prevent self-alteration, audit/revoke effective access |
@@ -815,7 +894,7 @@ Internal endpoints memakai port/jaringan internal dan autentikasi service creden
 
 ## 4.4 Contoh JSON request/response per alur penting
 
-### Customer register → KYC → OTP → ACTIVE
+### Customer register/Google → NIK format-only → OTP Brevo → ACTIVE
 
 ```http
 POST /api/v1/auth/register
@@ -835,35 +914,28 @@ Content-Type: application/json
 {
   "success": true,
   "code": "IDENTITY_REGISTRATION_CREATED",
-  "data": {
-    "user_id": "be9ef771-a0cb-4a6d-8eb9-f8f8fa17347a",
-    "status": "VERIFICATION_REQUIRED",
-    "next_step": "SUBMIT_KYC"
-  },
+  "data": { "user_id": "be9ef771-a0cb-4a6d-8eb9-f8f8fa17347a", "status": "VERIFICATION_REQUIRED", "next_step": "SUBMIT_NIK_FORMAT" },
   "meta": { "request_id": "req_001", "version": "v1" }
 }
 ```
 
 ```http
-POST /api/v1/identity/verifications
+POST /api/v1/identity/customer/nik
 Content-Type: application/json
 
-{
-  "kind": "CUSTOMER_KYC",
-  "nik": "[PRIVATE_NIK_INPUT]",
-  "legal_name": "Contoh Pelanggan",
-  "document_ids": ["doc-uuid"]
-}
+{ "nik": "1234567890123456" }
 ```
 
 ```json
 {
   "success": true,
-  "code": "IDENTITY_KYC_SUBMITTED",
-  "data": { "id": "verification-uuid", "kind": "CUSTOMER_KYC", "status": "PENDING_REVIEW" },
+  "code": "IDENTITY_CUSTOMER_NIK_FORMAT_VALID",
+  "data": { "nik_masked": "************3456", "nik_format_status": "FORMAT_VALID", "next_step": "VERIFY_EMAIL_OTP" },
   "meta": { "request_id": "req_002", "version": "v1" }
 }
 ```
+
+Contoh NIK di atas **sintetis**, dicek hanya tepat 16 digit angka. Data disimpan terenkripsi dalam `user_nik_records`, tidak diperiksa ke Dukcapil/vendor, tidak diminta e-KTP, tidak melalui review Admin, **tidak dilabeli identitas VERIFIED**.
 
 ```http
 POST /api/v1/otp/challenges
@@ -876,7 +948,7 @@ Content-Type: application/json
 {
   "success": true,
   "code": "IDENTITY_OTP_REQUEST_ACCEPTED",
-  "data": { "challenge_id": "otp-uuid", "masked_destination": "p***@example.test", "expires_at": "2026-10-12T08:30:00Z", "resend_after": "2026-10-12T08:21:00Z" },
+  "data": { "challenge_id": "otp-uuid", "masked_destination": "p***@example.test", "issued_at": "2026-10-13T08:20:00Z", "expires_at": "2026-10-13T08:20:30Z", "resend_after": "2026-10-13T08:20:30Z" },
   "meta": { "request_id": "req_003", "version": "v1" }
 }
 ```
@@ -892,12 +964,12 @@ Content-Type: application/json
 {
   "success": true,
   "code": "IDENTITY_OTP_VERIFIED",
-  "data": { "verified": true, "next_step": "WAIT_KYC_RESULT" },
+  "data": { "verified": true, "next_step": "CUSTOMER_ACTIVE", "account_status": "ACTIVE" },
   "meta": { "request_id": "req_004", "version": "v1" }
 }
 ```
 
-**Aturan aktivasi:** Customer ACTIVE hanya bila **kedua** kondisi terpenuhi: persyaratan KYC terbukti VERIFIED dan OTP verification valid/consumed. Urutannya boleh async sehingga jika OTP selesai sebelum hasil KYC, status belum ACTIVE. Ini menerjemahkan business rule tanpa memalsukan verifikasi.
+**Aturan aktivasi CR-01:** Customer `ACTIVE` **hanya** jika `nik_format_status=FORMAT_VALID` **dan** OTP email `ACCOUNT_VERIFICATION` sah serta telah dikonsumsi sekali pakai dalam jendela **30 detik**. Jika OTP diverifikasi lebih dulu, proses menunggu NIK format-valid; jika NIK lebih dulu, proses menunggu OTP. Google OAuth untuk Customer baru **tetap wajib dua langkah ini**; akun Google bukan bukti identitas NIK. Response `next_step` disesuaikan kondisi state aktual, tidak boleh mengaku aktif sebelum kedua syarat terpenuhi.
 
 ### Login, active role switch, dan logout
 
@@ -1016,7 +1088,7 @@ Content-Type: application/json
 {
   "success": true,
   "code": "IDENTITY_WORKER_INVITED",
-  "data": { "id": "inv-uuid", "kind": "WORKER", "organization": { "id": "org-provider-uuid" }, "status": "INVITED", "expires_at": "2026-10-15T12:00:00Z" },
+  "data": { "id": "inv-uuid", "kind": "WORKER", "organization": { "id": "org-provider-uuid" }, "status": "INVITED", "issued_at": "2026-10-13T12:00:00Z", "expires_at": "2026-10-14T00:00:00Z" },
   "meta": { "request_id": "req_invite", "version": "v1" }
 }
 ```
@@ -1080,31 +1152,33 @@ Content-Type: application/json
 }
 ```
 
+**Error CR-02:** `409 IDENTITY_NIK_PERMANENTLY_LOCKED` untuk ulang tulis V11 (termasuk sama nilainya); `422 IDENTITY_NIK_IMMUTABLE_FIELD` bila mutation NIK disisipkan ke request profil/change request; `403 IDENTITY_PERMISSION_DENIED` untuk reviewer Employee KYC selain CEO. Jangan tampilkan isi NIK dalam body error.
+
 ## 4.5 Validator per kelompok endpoint
 
 | Kelompok | Validasi wajib |
 |---|---|
 | Account | canonical email/phone, password policy, unique, Google claims verified, account status, anti-automated abuse |
-| OTP | purpose whitelisted, challenge binding to identifier/user, expiry, attempts, resend and frequency policies |
-| KYC | data legal ada, file legal mime/size/virus restrictions, verified decision only after actual review |
-| Business | allowed role type, PIC & legal required, document freshness, status/version, duplicate submit and applicant cannot approve self |
+| OTP | purpose whitelisted, challenge binding to identifier/user, expiry **30 detik**, one-time consume, rate-limit kecepatan per identifier/IP (`429`), **tanpa batas salah total** |
+| Customer NIK format & Employee KYC | Customer: `^[0-9]{16}$` saja, simpan encrypted tanpa e-KTP/reviewer. Employee: dokumen KYC staff dengan validasi file dan review internal sesuai authority; **tanpa vendor eksternal** |
+| Business | allowed role type, PIC & legal required, **manual legal review Admin Operations** (tanpa KYC/KYB eksternal), document completeness, status/version, audit decisions, duplicate submit/no self-approval |
 | Worker | provider membership authorized, recipient proof, invitation valid, no concurrent second ACTIVE Provider |
 | Staff | CEO only, role in 3 internal roles, onboarding completion and NDA version, permission changes audit |
-| Profile | editable field allowlist, verified fields must use change request, file IDs belong to actor and purpose |
+| Profile | editable field allowlist, sensitive Customer NIK (walau format-only), Employee KYC dan legal fields melalui change request, file IDs belong to actor and purpose |
 | Session | CSRF/cookie hardening, valid session, context valid per request, revoke on suspension/reset |
 | Internal | service auth, rate limit, allowed calling service/audience, response minimization, trace ID |
 
 ## 4.6 Inventaris API dan jumlah untuk audit
 
 - A01–A18: **18** endpoints authentication/session (A18 `[P] optional`).
-- V01–V10: **10** endpoints OTP/KYC (V08/V09 reviewer authority `[P]`).
-- B01–B12: **12** endpoints business application.
+- V01–V11: **11** endpoints OTP/Customer NIK/Employee KYC (V08/V09 reviewer authority Employee KYC `[P]`).
+- B01–B13: **13** endpoints business application.
 - P01–P13: **13** endpoints profile/organization/RBAC (P12/P13 reviewer policy `[P]`).
 - W01–W08: **8** endpoints worker/invitation.
 - S01–S16: **16** endpoints staff/account governance.
 - U01 dan I01–I04: **5** endpoints audit/internal.
 
-**Total rancangan: 82 endpoint operasi** (termasuk internal dan optional/pending). Bukan berarti 79 HTTP request terjadi pada setiap page; UI memanggil yang diperlukan, menggunakan cache/context dan reuse endpoint. Endpoint dapat digabung/direfaktor bila semantik, otorisasi, dan kontraknya tetap terpenuhi; setiap perubahan harus diperbarui pada mapping dan pengujian. Tidak ada endpoint Asset atau fitur domain lain.
+**Total rancangan: 84 endpoint operasi** (termasuk internal dan optional/pending). Bukan berarti 79 HTTP request terjadi pada setiap page; UI memanggil yang diperlukan, menggunakan cache/context dan reuse endpoint. Endpoint dapat digabung/direfaktor bila semantik, otorisasi, dan kontraknya tetap terpenuhi; setiap perubahan harus diperbarui pada mapping dan pengujian. Tidak ada endpoint Asset atau fitur domain lain.
 
 
 ---
@@ -1115,7 +1189,7 @@ Content-Type: application/json
 
 | Role key | Jalur memperoleh role | Cakupan dan pembatasan utama |
 |---|---|---|
-| `CUSTOMER` | Self-registration/Google + KYC & OTP | `OWN` profile, transaksi milik sendiri di domain terkait |
+| `CUSTOMER` | Self-registration/Google + NIK 16 digit format-only + email OTP Brevo | `OWN` profile, transaksi milik sendiri di domain terkait; **tanpa KYC Customer** |
 | `SERVICE_PROVIDER` | Business application approved + membership owner ACTIVE | `ORGANIZATION` hanya Provider sendiri, worker invitation |
 | `WORKER_TECHNICIAN` | Undangan Provider + membership ACTIVE | `ASSIGNED` task di domain lain; 1 provider ACTIVE baseline |
 | `MERCHANT` | Business application approved | `ORGANIZATION` Merchant sendiri, bukan Merchant lain |
@@ -1133,11 +1207,14 @@ Keterangan `O` own/self, `ORG` organisasi sendiri, `REV` reviewer, `CEO` master-
 
 | Aktivitas (API IDs) | Customer | Provider | Worker | Merchant | Supplier | CS | Finance | Admin | CEO |
 |---|---|---|---|---|---|---|---|---|---|
-| Register Customer / OTP awal (A01,V01–V03) | PUB/O | PUB/O | PUB/O | PUB/O | PUB/O | PUB/O | PUB/O | PUB/O | PUB/O |
+| Public Customer registration and OTP flows (A01,V01–V03) | PUB/O | PUB/O | PUB/O | PUB/O | PUB/O | PUB/O | PUB/O | PUB/O | PUB/O |
+| Customer NIK format-only onboarding (V11) | O* | - | - | - | - | - | - | - | - |
 | Login/Google/reset/session (A02–A17) | O | O | O | O | O | O | O | O | O |
-| Own profile/own verification (P01–P04,P11,V04–V07) | O | O | O | O | O | O | O | O | O |
+| Own profile (P01–P04,P11) | O | O | O | O | O | O | O | O | O |
+| Employee KYC own submission/read (V04–V07,V10) | - | - | - | - | - | O | O | O | - |
 | Own roles/permissions/context (A08,A09,P09,P10) | O | O | O | O | O | O | O | O | O |
 | Create/edit/submit business application (B01–B08) | O | O* | - | O* | O* | - | - | - | - |
+| Read private legal document B13 | O* | O* | - | O* | O* | - | - | REV | authority** |
 | Review business application (B09–B12) | - | - | - | - | - | - | - | REV | oversight** |
 | Manage org business profile (P05–P08) | - | ORG | - | ORG | ORG | - | - | assigned authority | oversight** |
 | Invite/deactivate worker (W01–W05,W08) | - | ORG | - | - | - | - | - | - | authority** |
@@ -1145,24 +1222,26 @@ Keterangan `O` own/self, `ORG` organisasi sendiri, `REV` reviewer, `CEO` master-
 | Create/manage staff/access (S01–S07) | - | - | - | - | - | - | - | - | CEO |
 | Complete own staff onboarding (S08–S12) | - | - | - | - | - | O | O | O | - |
 | Admin suspend/read users (S13–S16) | - | - | - | - | - | - | - | REV | authority** |
-| Reviewer KYC (V08,V09) | - | - | - | - | - | - | - | `[P]` | oversight** |
+| Reviewer Employee KYC internal (V08,V09) | - | - | - | - | - | - | - | - | CEO (exclusive) |
 | Audit read (U01) | - | - | - | - | - | - | - | permissioned | permissioned |
 | Internal service API (I01–I04) | - | - | - | - | - | - | - | - | - (SYS only) |
 
-`*` berarti hanya aplikasi atas **user/business miliknya**, bukan reviewer atau bypass approval; user dapat memiliki multi-role. `**` artinya sesuai authority khusus planning, **bukan wildcard akses**. Endpoint customer registration bersifat publik, tetapi tidak menciptakan role selain CUSTOMER; login/OTP tersedia lintas actor tanpa membocorkan data user lain.
+`*` berarti hanya konteks **user/business miliknya**, bukan reviewer atau bypass approval; akun multi-role dapat mengakses V11 **hanya bila mempunyai penugasan Customer yang sah dan sedang menyelesaikan onboarding Customer**, bukan karena role bisnis/staff sendiri. `**` artinya sesuai authority khusus planning, **bukan wildcard akses**. Endpoint customer registration bersifat publik, tetapi tidak menciptakan role selain CUSTOMER; login/OTP tersedia lintas actor tanpa membocorkan data user lain.
 
 ## 5.3 Permission codes dan action → API
 
 | Code [T] | Endpoint operasional | Policy utama |
 |---|---|---|
-| `identity.profile.read_own` | P01, V05, V10 (own) | `user_id = actor` |
-| `identity.profile.update_own` | P02,P03,P11 | fields allowlist, sensitive verified blocked |
-| `identity.kyc.submit_own` | V04,V06 | own identity or staff onboarding requirement |
-| `identity.kyc.review` | V08,V09 (P12/P13 memerlukan explicit sensitive-change grant) | verified and explicitly authorized reviewer, no self-review |
-| `identity.profile.sensitive_change.review` | P12,P13 | protected KYC/legal change review, no self-review, decision audited |
+| `identity.profile.read_own` | P01, V05, V10 (own) | `user_id = actor`; V05/V10 Employee KYC hanya jika staf internal sah |
+| `identity.profile.update_own` | P02,P03,P11 | editable fields allowlist; **NIK selalu dilarang** bahkan tanpa verified state |
+| `identity.customer.nik.submit_format` | V11 | **one-time insert** pada Customer onboarding STEP/AUTH milik sendiri, 16 digit, bukan KYC; tidak boleh overwrite |
+| `identity.kyc.submit_own` | V04,V06 | **Employee KYC only**; first-write NIK staff jika diperlukan, record terkunci setelah insert |
+| `identity.kyc.review` | V07,V08,V09,V10 (reviewer scopes only) | **Eksklusif CEO_PRODUCT_OWNER**, Employee KYC staff saja, no self-review; Admin tidak pernah mendapat grant ini |
+| `identity.profile.sensitive_change.review` | P12,P13 | **Admin Operations** untuk perubahan data legal bisnis NIB/NPWP saja; **NIK permanen tidak boleh berubah**, Employee KYC hanya V08/V09 oleh CEO, no self-review |
 | `identity.business.application.create` | B01 | must be eligible account; target business role whitelisted |
 | `identity.business.application.update_own` | B03–B08 | applicant ID, version, editable state |
-| `identity.business.application.review` | B09–B12 | ADMIN_OPERATIONS, no own application, valid state |
+| `identity.business.application.document.read_scoped` | B13 | applicant sendiri atau Admin reviewer aplikasi yang berwenang; no cross-application/organization leaks |
+| `identity.business.application.review` | B09–B12 | ADMIN_OPERATIONS, no own application, valid state; B13 untuk dokumen dalam review |
 | `identity.organization.profile.manage` | P06–P08 | membership owner active & same organization |
 | `identity.provider.worker.manage` | W01–W05,W08 | Provider active membership, org exact match |
 | `identity.staff.create` | S01 | CEO only, allowed role set |
@@ -1175,6 +1254,14 @@ Keterangan `O` own/self, `ORG` organisasi sendiri, `REV` reviewer, `CEO` master-
 | `identity.auth.session.manage_own` | A09–A13 | actor=current session owner, switch within own grants |
 
 Login, account recovery, OTP redemption tetap tunduk **purpose-based operation policy** meski belum mempunyai role ACTIVE; jangan memblokir proses verifikasi user yang belum aktif dengan middleware `mustBeActive` terlalu dini.
+
+
+### CR-02: Pembatasan Employee KYC dan NIK pada authorization (WAJIB)
+
+1. `V08/V09` dan akses reviewer pada `V07/V10` mensyaratkan `role.code === CEO_PRODUCT_OWNER`, role assignment efektif, akun ACTIVE, dan permission eksplisit `identity.kyc.review`. Semua role lain termasuk `ADMIN_OPERATIONS` harus memperoleh `403` (atau `404` untuk menyamarkan resource sesuai kontrak). Review tidak boleh dilakukan oleh staff yang mengajukan sendiri.
+2. `P12/P13` hanya untuk Admin Operations dengan `identity.profile.sensitive_change.review` dan resource **legal bisnis NIB/NPWP**, bukan NIK atau Employee KYC. Tidak ada grant NIK edit pada role mana pun.
+3. Jangan percaya `servio_active_role`, header client, atau RoleContext sebagai bukti identitas CEO. Audit setiap keputusan CEO (`actor_user_id`, decision, reason, reviewed_at, request_id, lock_version) tanpa menyimpan raw NIK.
+4. Deny-by-default NIK field bukan hanya pada FormRequest: validasi ulang allowlist di application action, model persistence, dan DB trigger untuk menolak jalur write yang terlewat.
 
 ## 5.4 Policy/gate pseudo-code (backend Laravel)
 
@@ -1232,8 +1319,11 @@ flowchart TD
   AUTH[Auth + Session] --> ACCOUNT[Account Status]
   REGISTER[Registration] --> ACCOUNT
   GOOGLE[Google External Identity] --> ACCOUNT
-  OTP[OTP Challenge / Brevo] --> VERIFY[Identity Verification]
-  VERIFY --> ACCOUNT
+  OTP[OTP Challenge / Brevo] --> CUST[Customer NIK + Email OTP Gate]
+  NIK[Customer NIK format-only] --> CUST
+  CUST --> ACCOUNT
+  OTP --> STAFFVERIFY[Employee KYC Only]
+  STAFFVERIFY --> STAFF
   BIZ[Business Application] --> REVIEW[Admin Decision]
   REVIEW --> ORG[Organization]
   ORG --> MEMBERSHIP[Membership]
@@ -1255,23 +1345,24 @@ flowchart TD
 
 | Trigger | Komponen internal yang berinteraksi | Perubahan data/status | Transaction boundary & proteksi |
 |---|---|---|---|
-| Customer register | Registration → User/Profile → RoleAssignment | `users=VERIFICATION_REQUIRED`; CUSTOMER role assignment restricted until verified | atomic create; unique email/phone + idempotency |
-| KYC request | Profile → IdentityVerification → Documents | `PENDING_REVIEW`; protected evidence | upload & DB metadata; orphan cleanup jika gagal |
+| Customer register | Registration → User/Profile → RoleAssignment | `users=VERIFICATION_REQUIRED`; CUSTOMER role restricted until **NIK 16 digit format-valid + email OTP verified** | atomic create; unique email/phone + idempotency |
+| Customer NIK submitted | Customer onboarding → `user_nik_records` | `FORMAT_VALID` saja (bukan verified identity/KYC); menunggu email OTP jika belum terverifikasi | **insert-only atomik** dengan unique `user_id`, no upsert/update/delete, locked forever, `409` bila sudah ada; tidak ada e-KTP/vendor/review |
+| Employee KYC request | Staff onboarding → IdentityVerification → Documents | `PENDING_REVIEW` staff; protected evidence | NIK staff jika diminta harus first-write/consistent dengan `user_nik_records`; **CEO** melakukan manual review V08/V09, tidak boleh mengubah NIK |
 | OTP send | OTP → Outbound Brevo Adapter | ISSUED → SENT/DELIVERY_FAILED | challenge committed before send, async retry safety; delivery ≠ verified |
-| OTP verified + KYC confirmed | OTP/KYC → Account | eligible account → ACTIVE | atomic condition check, mark challenge consumed, audit/outbox |
+| OTP verified + Customer NIK format-valid | OTP/NIK → Customer Account | eligible Customer → ACTIVE | atomic condition check for both flags, mark OTP consumed, audit/outbox; no Customer KYC |
 | Google login/new account | ExternalIdentity → Account → Onboarding | link existing or create PENDING account | unique Google subject + secure link flow |
 | Business draft/submit | Application → Document → RevisionSnapshot | DRAFT → PENDING_REVIEW | idempotent submit, version check, immutable snapshot |
-| Admin approve | Review → Organization/Profile → Membership/Role | PENDING_REVIEW → APPROVED, business context ACTIVE | single MySQL transaction & outbox; no double approve |
+| Admin approve | **Manual legal document review** → Organization/Profile → Membership/Role | PENDING_REVIEW → APPROVED, business context ACTIVE | Admin Operations checks business evidence manually; reason/history, single MySQL transaction & outbox; no vendor API |
 | Admin request revision | Review → ApplicationRevision | PENDING_REVIEW → REVISION_REQUIRED | decision history + consistent Application ID |
-| Worker invite | ProviderContext → Invitation | invitation INVITED, membership not yet ACTIVE | rate limit, dedup, one-time token |
+| Worker invite | ProviderContext → Invitation | INVITED, membership not yet ACTIVE, expiry issued_at+12 jam | rate limit, dedup, one-time token |
 | Worker accept | Invitation → ExistingUser/new onboarding → Membership/Role | INVITED → ACTIVE | lock user + generated uniqueness worker guard |
-| CEO staff create | StaffCreate → Invitation → Onboarding | INVITED → ONBOARDING | never assign full operational access before ready |
-| Staff completes 4 steps | KYC/NDA/Access → StaffOnboarding → Authz | ONBOARDING → OPERATIONAL_READY | step evidence + re-evaluate all requirements atomically |
+| CEO staff create | StaffCreate → Invitation → Onboarding | INVITED (12 jam TTL) → ONBOARDING | never assign full operational access before Employee KYC + NDA + confirmation ready |
+| Staff completes 4 steps | KYC/NDA/Access → StaffOnboarding → Authz | ONBOARDING → OPERATIONAL_READY | Employee KYC ditetapkan `VERIFIED` **oleh CEO saja**, NDA+profil+access confirmation lengkap; atomically evaluate requirements |
 | Active role switch | Session → RoleAssignment → Org/Membership | session role/org updated only | regenerate session if needed; no privilege escalation |
 | Account suspended | User → Sessions/AuthzVersion → Audit/Outbox | ACTIVE → SUSPENDED, sessions revoked | transaction plus safe outbox; downstream invalidation |
 | Membership revoked | Membership → RoleAssignment/SessionContext | membership DEACTIVATED, related grants ineffective | authz_version bump, context invalidation, audit |
 | Password reset | OTP → ResetGrant → Password → Sessions | new password hash, all sessions revoked | grant one-use, atomically consume, audit |
-| Profile sensitive edit | ChangeRequest → Reviewer → Profile/Verification | verified data protected until approval | preserve old value/version, audit evidence |
+| Profile sensitive edit | ChangeRequest → Admin Operations → Business Legal Profile | perubahan NIB/NPWP bisnis terbatas, **bukan NIK** | reject NIK field at request/controller/service/model/DB; review legal bisnis by Admin with audit/version check |
 
 ## 6.3 Lifecycle/sequence diagram penting
 
@@ -1299,15 +1390,17 @@ sequenceDiagram
   end
   U->>UI: Enter OTP
   UI->>I: POST /otp/challenges/{id}/verify
-  I->>DB: Lock challenge, check attempts/expiry/HMAC
+  I->>DB: Lock challenge, check expiry (30s)/HMAC + request rate limit
   alt Valid
     I->>DB: Consume OTP, update verification state
     I-->>UI: Verified; next onboarding step
   else Invalid or expired
-    I->>DB: Increment attempts / lock / expire
-    I-->>UI: 422/410/423
+    I->>DB: Audit failed attempt (tanpa lock jumlah total) / expire bila TTL habis
+    I-->>UI: 422 salah / 410 expired / 429 burst rate-limit
   end
 ```
+
+**CR-01 Customer activation gate:** Setelah OTP valid dan consumed, Identity memeriksa `user_nik_records.format_validated_at` dan `email_verified_at` secara transaksional. Jika Customer baru belum memasukkan NIK valid, simpan status verifikasi email dan biarkan account `VERIFICATION_REQUIRED`; jangan memanggil V04/V08/V09 untuk Customer.
 
 ### Business approval konsisten
 
@@ -1317,7 +1410,7 @@ sequenceDiagram
   participant I as Identity
   participant DB as Identity MySQL
   participant Q as Outbox Publisher
-  A->>I: APPROVE application with lock_version
+  A->>I: Review manual dokumen NIB/NPWP/lampiran lalu APPROVE dengan lock_version
   I->>DB: BEGIN + lock application
   alt PENDING_REVIEW and version matches
     I->>DB: Decision + org + owner membership + role assignment
@@ -1354,7 +1447,7 @@ sequenceDiagram
 ## 6.4 Invariants di boundary use-case
 
 - `APPROVED` application tidak diterbitkan sebelum `organization + membership + role assignment` dibuat secara konsisten atau dijadwalkan aman via compensating flow jika ada dependency eksternal (tidak diperlukan untuk tabel intra-Identity).
-- Brevo timeout **bukan** konfirmasi delivery dan **bukan** OTP verification. Retry pengiriman tidak boleh menyebabkan challenge ganda yang sama-sama aktif.
+- Brevo timeout **bukan** konfirmasi delivery dan **bukan** OTP verification. Retry pengiriman tidak boleh menyebabkan challenge ganda yang sama-sama aktif; expiry dihitung dari `issued_at`, **bukan saat email diterima**.
 - Worker membership change wajib memicu perhitungan ulang active session/context dan invalidate derived permission.
 - Account `SUSPENDED/DEACTIVATED` diblokir pada backend meskipun sesi lama belum kedaluwarsa.
 - Internal staff belum `OPERATIONAL_READY` hanya dapat menjalankan onboarding/self endpoints yang eksplisit; access matrix UI tidak menggantikan filter backend.
@@ -1365,6 +1458,8 @@ sequenceDiagram
 # 07. Inter-Microservice API/Event Contract
 
 ## 7.1 Prinsip integrasi
+
+**Larangan integrasi KYC/KYB eksternal:** Tidak perlu API Dukcapil, vendor KYC identitas Customer, KYB perusahaan, auto-approve NIB/NPWP, atau service penilai dokumen legal pihak ketiga. **Pengecualian layanan eksternal yang tetap berlaku:** Google OAuth untuk autentikasi dan Brevo untuk OTP email; keduanya **bukan** verifikator legal bisnis. Employee KYC berjalan sebagai proses review internal sebagaimana planning. Jangan memindahkan review bisnis ke Modul 10 Notification atau membuat service tambahan.
 
 1. **Identitas adalah source of truth untuk user, organization, membership, access status dan assignments.** Tidak ada service lain yang meng-`UPDATE servio_identity_db`.
 2. **Business domain masing-masing memiliki resource.** Identity dapat mengevaluasi status/persetujuan identitas; Order/Finance/Product/Service harus mengecek ownership dan business state miliknya sendiri.
@@ -1381,7 +1476,7 @@ sequenceDiagram
 | 03 Product/Catalog | Merchant org ACTIVE, owner membership, operator identity | Module 03 → I02/I03/I04 + events | **PROVISIONAL** |
 | 04 Service/Jasa | Provider + Worker affiliation/active membership, permission context | Module 04 → I02/I03/I04 + member revoke event | **PROVISIONAL**; skill/capability domain Service |
 | 05 Order/Pesanan | Customer ID, provider/merchant org, valid session actor, membership status | Module 05 → I01/I03/I04 + events | **PROVISIONAL**; order ownership di Modul 05 |
-| 06 Finance & Payment | Finance staff permission/ready, user/org verified & not suspended | Module 06 → I02/I03/I04 + events | **PROVISIONAL**; saldo/kartu/bank bukan identity |
+| 06 Finance & Payment | Finance staff permission/ready, user/org eligibility (legal bisnis APPROVED, account ACTIVE) & not suspended | Module 06 → I02/I03/I04 + events | **PROVISIONAL**; saldo/kartu/bank bukan identity |
 | 07 After-Sales & Feedback | Pengaju/penilai, organisasi mitra, account status | Module 07 → I02/I03/I04 | **PROVISIONAL** |
 | 08 Affiliate | Referral actor identity/eligibility dasar | Module 08 → I03 + status events | **PROVISIONAL**; attribution/commission bukan identity |
 | 09 Support & Dispute | CS staff identity/ready, related user IDs, case permission | Module 09 → I02/I03 | **PROVISIONAL**; ticket/dispute bukan identity |
@@ -1419,7 +1514,7 @@ sequenceDiagram
 | `identity.staff.operational_ready.v1` | staff | `user_id,role_code,authz_version` | Support/Finance | invalidate staff eligibility caches |
 | `identity.security.sessions_revoked.v1` | user | `user_id,reason,authz_version` | Gateway | emergency invalidate sessions/cache |
 
-**Tidak diterbitkan:** raw NIK, e-KTP, NPWP, password, OTP, secret token, Google access/refresh tokens, raw session cookie atau sensitive document URL.
+**Tidak diterbitkan:** raw NIK Customer (format-only), dokumen Employee KYC, NIB/NPWP bisnis, password, OTP, secret token, Google access/refresh tokens, raw session cookie atau sensitive document URL. Event `identity.user.activated.v1` **tidak menyiratkan KYC Customer pernah terjadi**.
 
 ```json
 {
@@ -1471,6 +1566,8 @@ Pengecualian hanya untuk proses migrasi/admin tooling yang terpisah dan diaudit,
 
 ## 8.1 Sumber UI dan aturan audit
 
+**Batas dua prompt implementasi:** Tahap **Prompt 01 — Backend** memakai tabel mapping §08 untuk menyiapkan API, kontrak dan test, **tanpa mengedit frontend**. Tahap **Prompt 02 — Frontend–Backend Integration** baru menghubungkan halaman/aksi Next.js setelah backend direview dan di-ACC. Status `SUPPORTED_BY_MOD01_DESIGN` **tidak menyatakan API terimplementasi**.
+
 - **Planning Modul 01** menyebut rute seperti `/login`, `/register`, `/forgot-password`, `/verify-otp`, `/customer/profile`, `/register/business`, `/admin/applications`, `/provider/workers`, `/worker/activate`, `/ceo/staff` serta `/profile` (lihat UI specification pada sumber).
 - **Dokumen global Next.js App Router** menyebut sebagian rute berbeda, misalnya `/auth/login`, `/auth/register`, `(customer)/profile`, dan route groups. Karena file `src/app/**`, `src/proxy.ts`, `src/context/RoleContext.tsx`, dan adapter `servioApi.ts` **belum diperiksa langsung**, rute pada tabel di bawah adalah **UI alias planning**; verifikasi URL fisik menjadi tugas pertama implementasi, bukan alasan menambah endpoint atau menghapus UI yang valid.
 - Komponen action/form/list harus menggunakan **satu sumber shared API client** dengan typed interfaces dan error mapping. GET context `A08` dapat dipakai navbar, route guard, role switcher, dan profile header (anti-redundansi fetch).
@@ -1482,12 +1579,12 @@ Pengecualian hanya untuk proses migrasi/admin tooling yang terpisah dan diaudit,
 |---|---|---|---|---|
 | `/login` atau `/auth/login` | Email/phone + password; submit; remember redirect | A02,A08 | loading; wrong credentials; account suspended; onboarding required | SUPPORTED_BY_MOD01_DESIGN / PENDING_UI_AUDIT |
 | Same login screen | Tombol Continue with Google | A03,A04 | provider redirect; callback failure; user linking/onboarding | SUPPORTED_BY_MOD01_DESIGN |
-| `/register` atau `/auth/register` | Customer form, submit | A01 | disabled pending; duplicate account guidance; validation | SUPPORTED_BY_MOD01_DESIGN |
-| `/register` Google entry | New customer Google onboarding | A03,A04,V04,V01–V03 | pending KYC/OTP, not active prematurely | SUPPORTED_BY_MOD01_DESIGN |
-| `/verify-otp` | Input OTP digits, verify | V02 | incorrect/expired/locked; resend available | SUPPORTED_BY_MOD01_DESIGN |
-| `/verify-otp` | Resend OTP | V03 | countdown from server `resend_after`, throttle error | SUPPORTED_BY_MOD01_DESIGN |
-| `/customer/profile` / `/profile` | Load own profile, masked KYC | P01,V05,A08 | skeleton, verification pending, error | SUPPORTED_BY_MOD01_DESIGN / PENDING_UI_AUDIT |
-| `/customer/profile` / `/profile` | Edit editable personal fields | P02,P11 (avatar) | inline validation, success; verified field read-only | SUPPORTED_BY_MOD01_DESIGN |
+| `/register` atau `/auth/register` | Customer form, submit + NIK 16 digit pada onboarding | A01,V11 | disabled pending; validation 16 digits, duplicate account, OTP next step | SUPPORTED_BY_MOD01_DESIGN |
+| `/register` Google entry | New Customer Google onboarding: NIK 16 digit format-only + OTP | A03,A04,V11,V01–V03 | menunggu NIK/OTP; tanpa Customer KYC, tidak ACTIVE prematur | SUPPORTED_BY_MOD01_DESIGN |
+| `/verify-otp` | Input OTP digits, verify | V02 | salah 422, expired 410, burst throttle 429; **tidak ada locked karena total salah** | SUPPORTED_BY_MOD01_DESIGN |
+| `/verify-otp` | Resend OTP | V03 | countdown server 30 detik [T] sesudah expired; throttle 429, challenge lama invalid | SUPPORTED_BY_MOD01_DESIGN |
+| `/customer/profile` / `/profile` | Load own profile, masked NIK & `FORMAT_VALID` (bukan KYC) | P01,A08 | skeleton, email OTP status, error | SUPPORTED_BY_MOD01_DESIGN / PENDING_UI_AUDIT |
+| `/customer/profile` / `/profile` | Edit editable personal fields | P02,P11 (avatar) | NIK **readonly permanen** setelah V11 first-save, tidak tampil tombol ubah/reset; backend reject semua NIK mutations | SUPPORTED_BY_MOD01_DESIGN |
 | `/customer/security` | Change password | A16 | strength validation, step-up, success | SUPPORTED_BY_MOD01_DESIGN |
 | `/customer/security` | List device sessions; logout one/all | A12,A13,A11 | modal confirmation, revoked indicator | SUPPORTED_BY_MOD01_DESIGN |
 | `/forgot-password` | Submit identifier | A14 | generic accepted response, no enumeration | SUPPORTED_BY_MOD01_DESIGN |
@@ -1497,11 +1594,11 @@ Pengecualian hanya untuk proses migrasi/admin tooling yang terpisah dan diaudit,
 | Header / role switcher | Switch active persona | A09,A08 | spinner, 403 when revoked, refresh role-specific nav | SUPPORTED_BY_MOD01_DESIGN |
 | `/register/business` | Create owner account (registration_type `BUSINESS_APPLICANT`) if new, then draft PIC/legal/specialization | A01,B01 | wizard draft autosave; no business role until approval | SUPPORTED_BY_MOD01_DESIGN |
 | `/application/:id` | View/edit/save draft | B03,B04 | `lock_version` conflict, draft saved, invalid doc | SUPPORTED_BY_MOD01_DESIGN |
-| `/application/:id` | Upload legal documents | B05 | upload progress, file invalid, secure preview | SUPPORTED_BY_MOD01_DESIGN |
+| `/application/:id` | Upload dan unduh dokumen legal milik sendiri | B05,B13 | upload progress, file invalid, secure preview | SUPPORTED_BY_MOD01_DESIGN |
 | `/application/:id/status` | Status tracker | B03,B08 | pending/approved/rejected; no privileged data | SUPPORTED_BY_MOD01_DESIGN |
 | `/application/:id/revision` | Correct fields and resubmit | B03,B04,B07 | required changes, preserve `application_code` | SUPPORTED_BY_MOD01_DESIGN |
 | `/admin/applications` | Review queue/filter/pagination | B09 | empty state, loading, scope denied | SUPPORTED_BY_MOD01_DESIGN |
-| `/admin/applications/:id` | View PIC, docs, history | B10,B12,V07 for authorized documents | redact sensitive; reviewer read auditing | SUPPORTED_BY_MOD01_DESIGN |
+| `/admin/applications/:id` | View PIC, docs, history | B10,B12,B13 for authorized legal-business documents | redact sensitive; reviewer read auditing | SUPPORTED_BY_MOD01_DESIGN |
 | `/admin/applications/:id` | Approve, Request Revision, Reject | B11 | reason required, double click guarded, conflict refresh | SUPPORTED_BY_MOD01_DESIGN |
 | `/provider/workers` | List active/invited workers | W01,W04 | filtered by org, error/empty state | SUPPORTED_BY_MOD01_DESIGN |
 | `/provider/workers/invite` | Invite Worker (new/existing) | W03 | cooldown, duplicate invitation, success | SUPPORTED_BY_MOD01_DESIGN |
@@ -1514,12 +1611,12 @@ Pengecualian hanya untuk proses migrasi/admin tooling yang terpisah dan diaudit,
 | `/ceo/staff/:id` | Suspend/activate/deactivate | S05–S07 | confirm reason, no access bypass | SUPPORTED_BY_MOD01_DESIGN |
 | Staff invitation link / onboarding wizard | Complete profile/KYC/NDA/access acknowledgement | W06,W07,S08–S12 | stage-progress; cannot enter ops before ready | SUPPORTED_BY_MOD01_DESIGN / PENDING_UI_AUDIT |
 | Admin user governance (`/admin/users` global) | List users, inspect, suspend/re-enable | S15,S16,S13,S14 | protected target/read scope, audit | SUPPORTED_BY_MOD01_DESIGN / PENDING_UI_AUDIT |
-| KYC reviewer UI (not explicitly designed) | Review identity proof | V08,V09 | pending decision/legality | **PENDING_UI_AUDIT / POLICY_DECISION** |
-| Change verified data form (not explicit screen) | Request change to NIK/NIB/NPWP | P03,P04 | await reviewer; original verified data stable | **PENDING_UI_AUDIT** |
-| Admin verified profile change-review (not explicit screen) | List & decide verified-field changes | P12,P13 | reason required; verified original protected until approved | **PENDING_UI_AUDIT / POLICY_DECISION** |
-| Profile photo upload | Upload avatar user sendiri | P11 (avatar-specific), **bukan** V06 KYC | progress, MIME/size invalid, refresh profile | **SUPPORTED_BY_MOD01_DESIGN / PENDING_UI_AUDIT** |
+| CEO Employee KYC reviewer UI (not explicitly designed) | CEO review **staff Employee KYC** secara manual | V07,V08,V09,V10 | hanya CEO; reviewer reason/version/audit; Admin tidak boleh melihat antrean; bukan Customer KYC | **PENDING_UI_AUDIT** |
+| Change sensitive business legal data form (not explicit screen) | Request change NIB/NPWP bisnis saja | P03,P04 | permintaan/field NIK atau aliasnya ditolak; tidak ada jalur edit NIK | **PENDING_UI_AUDIT** |
+| Admin business legal profile change-review (not explicit screen) | List & decide **NIB/NPWP bisnis** only | P12,P13 | review manual Admin Operations; NIK tidak dapat diubah; reason/audit | **PENDING_UI_AUDIT** |
+| Profile photo upload | Upload avatar user sendiri | P11 (avatar-specific), **bukan** V06 Employee KYC | progress, MIME/size invalid, refresh profile | **SUPPORTED_BY_MOD01_DESIGN / PENDING_UI_AUDIT** |
 
-**Avatar vs KYC:** `P11 /profiles/me/avatar` adalah media personal (restricted upload, format/size allowlist), terpisah dari `V06 /identity/documents` yang **khusus** bukti identitas sensitif. P02 boleh memperbarui `display_name` dan metadata editable; perubahan avatar berkas selalu menggunakan P11. Tidak ada penambahan domain baru.
+**Avatar vs Employee KYC:** `P11 /profiles/me/avatar` adalah media personal (restricted upload, format/size allowlist), terpisah dari `V06 /identity/documents` yang **khusus** bukti Employee KYC sensitif. Customer tidak melakukan upload e-KTP. P02 boleh memperbarui `display_name` dan metadata editable; perubahan avatar berkas selalu menggunakan P11. Tidak ada penambahan domain baru.
 
 ## 8.3 Scope audit UI lintas modul (jangan buat API fiktif)
 
@@ -1567,7 +1664,7 @@ export type ActiveContext = {
 3. `src/proxy.ts` memutuskan redirect/route visibility secara konservatif. **Backend selalu melakukan authoritative authorization**; jangan mempercayai `servio_guest=0` atau `servio_active_role=CEO` sebagai bukti izin.
 4. Panggilan form selalu menangani `401` (redirect login), `403` (no access), `409` (reload/reconcile), `410` (new invitation/OTP), `422` (form errors), `429` (countdown), `502/503` (retry/backoff/user-facing maintenance).
 5. Semua list memakai server-filtered scope+cursor; jangan ambil seluruh records lintas organisasi lalu memfilter di React.
-6. File KYC tidak boleh diletakkan pada `public/`, CORS terbuka, atau URL yang dapat dibagikan permanen.
+6. File **Employee KYC** dan dokumen legal bisnis tidak boleh diletakkan pada `public/`, CORS terbuka, atau URL yang dapat dibagikan permanen.
 
 ## 8.5 Batas concurrency dan optimisasi request
 
@@ -1591,9 +1688,8 @@ export type ActiveContext = {
 | `IDENTITY_ACCOUNT_SUSPENDED` | 403 | suspend | revoke session; do not allow operations |
 | `IDENTITY_PERMISSION_DENIED` | 403 | RBAC/ownership fail | no privileged details |
 | `IDENTITY_AUTH_UNAUTHENTICATED` | 401 | no valid session | redirect login |
-| `IDENTITY_OTP_INVALID` | 422 | OTP salah | count attempts, generic message |
+| `IDENTITY_OTP_INVALID` | 422 | OTP salah | audit aman; boleh ulang selama 30 detik dan dalam throughput limit, tanpa total-attempt lock |
 | `IDENTITY_OTP_EXPIRED` | 410 | OTP expired | request new challenge |
-| `IDENTITY_OTP_LOCKED` | 423 | threshold exceeded | temporary lock/cooldown |
 | `IDENTITY_OTP_DELIVERY_FAILED` | 502/503 | Brevo failure | not verified, controlled retry |
 | `IDENTITY_RATE_LIMITED` | 429 | excessive attempts | Retry-After header |
 | `IDENTITY_EMAIL_ALREADY_REGISTERED` | 409 | account duplicate (registration) | login/recovery hint; recovery endpoints generic |
@@ -1605,7 +1701,7 @@ export type ActiveContext = {
 | `IDENTITY_APPLICATION_INVALID_STATE` | 409 | invalid transition | show current status |
 | `IDENTITY_GOOGLE_LINK_CONFLICT` | 409 | `sub` bound to different user | secure account recovery, no auto-merge |
 | `IDENTITY_ONBOARDING_INCOMPLETE` | 403 | staff not ready | onboarding only |
-| `IDENTITY_KYC_REVIEW_REQUIRED` | 409/202 | evidence not yet confirmed | no activation until verified |
+| `IDENTITY_EMPLOYEE_KYC_REVIEW_REQUIRED` | 409/202 | Employee KYC staff belum diperiksa | staff tetap ONBOARDING hingga review internal; **tidak berlaku untuk Customer** |
 | `IDENTITY_IDEMPOTENCY_KEY_REUSED` | 409 | same key/different body | client generate new logical command ID |
 | `IDENTITY_RESOURCE_NOT_FOUND` | 404 | IDOR/inaccessible record | avoid existence leak |
 | `IDENTITY_DEPENDENCY_UNAVAILABLE` | 503 | DB/Google/internal dependency | fail closed for auth changes |
@@ -1616,19 +1712,19 @@ export type ActiveContext = {
 | Item | Usulan konfigurasi awal [T] | Tetap wajib meskipun angka berubah |
 |---|---|---|
 | OTP generation | 6-digit secure RNG | HMAC/hash stored, expiry, purpose binding |
-| OTP TTL | 10 menit | expired ditolak |
-| OTP attempt | maksimum 5 per challenge | lock/throttle audited |
-| OTP resend | minimal 60 detik | old challenge invalidated if single-active policy |
+| OTP TTL | **30 detik sejak `issued_at` [B/LOCKED]** | expired ditolak meskipun Brevo delivery terlambat |
+| OTP wrong attempts | **Tanpa batas total salah per challenge [B/LOCKED]** | tidak ada `LOCKED` karena wrong count; rate limiting kecepatan per identifier/IP (`429`) |
+| OTP resend | **[T]** setelah challenge lama expired (30 detik) | tidak ada cooldown tetap 60 detik; challenge lama dibatalkan ketika diterbitkan pengganti |
 | OTP sends | max 5/jam/identifier + per-IP cap | anti-abuse, enumeration-safe |
 | Login | 5 percobaan/15 menit/identifier+IP (sliding) | rate limit plus progressive temporary protection |
-| Invitation TTL | 72 jam | expiring one-time token, delivery resend controlled |
+| Invitation TTL | **12 jam sejak issuance untuk Worker & Staff [B/LOCKED]** | token sekali pakai dan tidak berlaku setelah expiry |
 | Reset grant TTL | 10 menit, single-use | no replay, revoke sessions on success |
 | Web session | Laravel session lifetime 120 menit inactivity proposal | configurable policy; revoke all devices supported |
 | Internal auth introspection cache | maks 15 detik | event bust + revocation barrier; fail closed sensitive actions |
 | Uploaded docs | MIME allowlist, max 10 MiB/file proposal | private storage, malware protections, encryption |
 | Google linking | verified `sub`, state/nonce, verified email + reauth | no automatic duplicate linking |
 
-**Keputusan bisnis yang LOCKED:** OTP harus expire, attempts dibatasi, resend policy, session revocation, no duplicate account, Google≠KYC. **Nilai numerik di atas bukan berasal dari planning**; sebelum production lock, review bersama user/security policy. Uji konfigurasi melalui config/env bukan literal angka hardcoded di controller.
+**Keputusan bisnis yang LOCKED (CR-01):** OTP expire **30 detik**, **tidak ada batas jumlah OTP salah total** dan tetap memakai rate limiting kecepatan per identifier/IP; undangan Worker & Staff **12 jam**. Customer Google/password memerlukan NIK **format valid** + OTP email (bukan KYC). Angka throttle teknis, login, reset grant dan detail [T] lainnya bukan business rule terkunci; review angka tersebut sebelum production. Uji konfigurasi melalui config/env bukan literal angka hardcoded di controller.
 
 ## 9.3 Pemetaan semua 25 Business Rules ke implementasi & test
 
@@ -1636,19 +1732,19 @@ export type ActiveContext = {
 |---|---|---|
 | BR-01 Unique Account | `users` UK, `external_auth_identities` UK, A01/A04/W07 | duplicate email/phone/external `sub` tidak mencipta user kedua |
 | BR-02 Role Cannot Be Self-Selected | A01/B01, role seed/policy | public payload `ADMIN_OPERATIONS` ditolak |
-| BR-03 Business Requires Approval | B06/B11, organization & role activation | submitted tidak punya provider permission sebelum APPROVED |
+| BR-03 Business Requires Approval | B06/B09–B13, manual Admin legal review, organization & role activation | submitted tidak punya provider permission sebelum APPROVED, tidak ada vendor |
 | BR-04 Worker No Public Registration | W03/W07, no worker registration endpoint | anonymous request role WORKER ditolak |
 | BR-05 Staff No Public Registration | S01 CEO guard | user umum tidak create staff |
 | BR-06 CEO Seeded | seed idempotent | public CEO register 422/403; seeded account exists sekali |
-| BR-07 Google Does Not Bypass KYC | A04,V04,V02 | Google-new remains verification required |
+| BR-07 Google Does Not Bypass Customer Onboarding | A04,V11,V02 | Google-new belum ACTIVE sampai NIK 16 digit format-valid + email OTP, **tanpa KYC/e-KTP** |
 | BR-08 Brevo Is Delivery | OTP service, Brevo adapter | mocked Brevo success tidak otomatis VERIFY |
-| BR-09 OTP Must Expire | otp_challenges expires_at | expired challenge 410 |
-| BR-10 OTP Attempt Limit | otp challenges attempts + throttle | wrong OTP over cap 423 |
+| BR-09 OTP Must Expire at 30 Seconds | `expires_at=issued_at+30s` | OTP pada/di atas expiry ditolak `410`; uji boundary tepat |
+| BR-10 Unlimited Wrong OTP per Challenge + Rate Limit Speed | V02 + throughput limiter + audit counter only | tidak ada max wrong count/`423`; wrong masih boleh selama TTL, burst `429` + `Retry-After` |
 | BR-11 Existing Account Not Duplicated | OAuth `sub` and invitation matching | existing email invite links one user only |
 | BR-12 Application ID Persists | B04,B07 + code UK | same code across revisions |
 | BR-13 Application Decision Audited | decisions + audit + outbox | approve/revision/reject each records actor/reason/time |
 | BR-14 Profile Self Access | P01 scope | own yes, others no |
-| BR-15 Sensitive Profile Protected | P02/P03 + verification | direct edit verified NIK/NIB blocked |
+| BR-15 Sensitive Profile Protected **+ CR-02 override** | P02/P03/P13 + insert-only user NIK | **Semua perubahan NIK selalu ditolak** meski belum identity-verified, termasuk Admin/CEO; NIB/NPWP hanya review Admin |
 | BR-16 No Self Role Change | S04/role assignment policy | own arbitrary change denied |
 | BR-17 No Self Authorization Escalation | role_permissions/assignments policy | user cannot grant permission |
 | BR-18 Organization Isolation | memberships, policy & I04 | Provider A cannot read B |
@@ -1664,8 +1760,8 @@ export type ActiveContext = {
 
 | Edge Case sumber | Tes failure/handling yang wajib | Expected |
 |---|---|---|
-| EC-01 OTP Expired | clock advanced beyond TTL | `410`, challenge inactive |
-| EC-02 Multiple Wrong OTP | verify wrong until cap | counter atomic, `423` after cap |
+| EC-01 OTP Expired | clock advanced to `issued_at+30s` | `410`, challenge inactive |
+| EC-02 Multiple Wrong OTP | percobaan salah berulang selama 30 detik, termasuk melewati lima kali | tidak pernah locked karena total salah; bila kecepatan berlebihan `429`, jika expired `410` |
 | EC-03 Email Already Registered | duplicate A01 | `409`, no second user |
 | EC-04 Browser Closed During Registration | reopen account/application draft | restore unexpired draft; no duplicate |
 | EC-05 Double Submit Application | same idempotency key twice / concurrent | only one submission/revision |
@@ -1680,7 +1776,7 @@ export type ActiveContext = {
 | EC-14 Suspend While Logged In | suspend session on another device | next protected call blocked; sessions revoked |
 | EC-15 Worker Membership Revoked | revoke W08 mid-session | provider-scoped action 403, history intact |
 | EC-16 Organization Deactivated | org.status=DEACTIVATED | membership grants ineffective immediately |
-| EC-17 Sensitive Data Change | PATCH verified NIK/NPWP | denied, P03 review flow required |
+| EC-17 Sensitive Data Change **+ CR-02 override** | PATCH NIK Customer/staff, POST ulang V11, P03/P13 NIK, direct DB update/delete; NIB/NPWP change request | **NIK ditolak permanen tanpa jalur review** (`409/422/403` sesuai konteks); hanya NIB/NPWP legal memakai P03/P13 Admin |
 | EC-18 Password Reset | complete A15 | all prior sessions invalidated |
 | EC-19 Invitation Existing User | same recipient account | no duplicate account; bound membership |
 | EC-20 Business Application Rejected | reject B11 | no org activation/role assignment |
@@ -1689,21 +1785,33 @@ export type ActiveContext = {
 | EC-23 Duplicate Google Link | `sub` already owned | `409`, no duplicate linked identity |
 | EC-24 Brevo API Failure | mock 5xx/timeout | `DELIVERY_FAILED`/retry; OTP not marked verified |
 
+
+### CR-02: Test tambahan yang bersifat blocking untuk `READY_FOR_REVIEW`
+
+| Test wajib | Hasil yang harus dibuktikan |
+|---|---|
+| `NikPermanentLockTest` | V11 pertama `201`, V11 kedua NIK sama/berbeda `409`; setelah login/logout, password reset, suspend/reactivate, invitation, role switch tetap tak dapat ubah NIK |
+| `NikNoAdministrativeOverrideTest` | Customer, Admin, CEO, staff dan internal API tidak bisa PATCH/DELETE/reset NIK; P02/P03/P13 dan mass assignment dengan alias/field nested ditolak |
+| `NikDbImmutabilityTest` | MySQL UPDATE/DELETE row NIK gagal karena trigger; race dua request menghasilkan tepat satu INSERT yang sukses; data lama tetap sama |
+| `EmployeeNikFirstWriteTest` | NIK staff jika dikumpulkan terkunci setelah input pertama; submit ulang KYC atau keputusan CEO tidak bisa mengubahnya |
+| `EmployeeKycCeoOnlyTest` | CEO berizin dapat GET queue/detail/doc lalu VERIFY/REJECT dengan lock/version/audit; Admin, CS, Finance, Worker, Provider, Merchant, Supplier, Customer memperoleh deny |
+| `BusinessLegalReviewerSeparationTest` | Admin berizin tetap boleh review legal bisnis serta NIB/NPWP change request; CEO-only KYC review tidak mencampuri kontrak legal bisnis; tidak ada rute edit NIK |
+
 ## 9.5 Test suite yang harus tersedia
 
 | Level | Kode usulan | Cakupan wajib |
 |---|---|---|
 | Unit | `IdentityAuthorizationPolicyTest` | truth table role/account/member/org/scope/grant/status |
-| Unit | `OtpChallengeServiceTest` | hash, expires, attempts, consume atomically, resend |
+| Unit | `OtpChallengeServiceTest` | HMAC, exact 30s expiry, unlimited wrong count, throttle 429, consume atomically, resend after expiry [T] |
 | Unit | `BusinessApplicationTransitionTest` | lifecycle legal/illegal, immutable ID & revisions |
 | Unit | `WorkerMembershipInvariantTest` | only one active Provider membership |
 | Unit | `GoogleAccountLinkPolicyTest` | verified `sub`, email proof, no auto-merge |
-| Feature | `CustomerRegistrationFeatureTest` | complete A01,V04,V01–V03, activation gating |
+| Feature | `CustomerRegistrationFeatureTest` | complete A01,V11 first-write only (`201`), second V11 (`409`) even same NIK; NIK format-only + OTP; no e-KTP/KYC |
 | Feature | `AuthenticationSessionFeatureTest` | login/logout/session switch/revoke/forgot/reset |
-| Feature | `BusinessApplicationFeatureTest` | all B01–B12 including decisions and version lock |
+| Feature | `BusinessApplicationFeatureTest` | B01–B13, **manual Admin legal review** (approve/revision/reject + private document access) with audit & version lock, no vendor checks |
 | Feature | `WorkerInvitationFeatureTest` | W01–W08 incl existing/new account |
-| Feature | `StaffOnboardingFeatureTest` | CEO creation, incomplete stages, ready activation |
-| Feature | `ProfileSecurityFeatureTest` | own fields, verified data edit restriction, docs private |
+| Feature | `StaffOnboardingFeatureTest` | CEO creation; Employee KYC `VERIFY/REJECT` CEO-only; Admin/Finance/CS/other denied; staff only ready after CEO verification + NDA/access |
+| Feature | `ProfileSecurityFeatureTest` | P02/P03/P13 reject NIK and aliases for all roles (including CEO), NIB/NPWP legal change only via Admin manual review; docs private |
 | Feature | `SuspensionRevocationFeatureTest` | all sessions plus permission revocation |
 | Contract | `IdentityPublicApiContractTest` | HTTP method/path/schema/status/code, OpenAPI consistency |
 | Contract | `IdentityInternalApiContractTest` | I01–I04, caller auth, redacted payload, fail closed |
@@ -1713,7 +1821,7 @@ export type ActiveContext = {
 | Integration | `DatabaseConcurrencyTest` | two admins/two invites/worker race/duplicate submit |
 | Security | `RBACHorizontalPrivilegeEscalationTest` | cross-user, cross-org, cross-provider, self-escalation |
 | Security | `SessionCookieCsrfTest` | HttpOnly/SameSite/CSRF/secure production flags |
-| Security | `SensitiveDataHandlingTest` | masked NIK, private files, no secrets in errors/logs |
+| Security | `SensitiveDataHandlingTest` | encrypted + masked immutable user NIK; DB trigger/no-update/no-delete verified; staff NIK also locked; Employee KYC files CEO-scoped; no secrets in logs |
 | Resilience | `IdentityFailureModeTest` | MySQL/Brevo/Google/internal down; no false positive auth |
 | E2E (when UI available) | `NextIdentityFlowsTest` | real browser forms, role switch, session expire, error states |
 
@@ -1733,7 +1841,7 @@ export type ActiveContext = {
 | Session fixation/CSRF | regenerate session on login/context-sensitive changes, CSRF session cookie | forged POST blocked |
 | OAuth login CSRF/account takeover | `state`, `nonce`, `sub`, issuer/audience verified, safe linking | invalid callback rejected |
 | Multi-tenant IDOR | check membership + owner server-side | Provider A cross-org tests |
-| OTP brute-force | secret RNG/HMAC, TTL, attempt caps, cooldown | expire/attempt/concurrent tests |
+| OTP brute-force | secret RNG/HMAC, **30s TTL**, per-identifier/IP **throughput throttle** tanpa cumulative wrong-attempt lock | expire/excess burst/429/no-total-lock/concurrent tests |
 | Duplicate staff or approval | idempotency + unique constraints + row locks | concurrent test |
 | Sensitive document exposure | private storage, signed short-lived URL, least privilege, logging redaction | fetch other user's KTP rejected |
 | Forged internal headers | gateway strips browser headers, internal caller credentials | browser cannot impersonate CEO |
@@ -1770,26 +1878,26 @@ Seluruh kriteria di planning perlu tercakup. Berikut pemetaan implementasi/tes, 
 |---|---|---|
 | Customer dapat self-register | users, A01, `CustomerRegistrationFeatureTest` | SPECIFIED |
 | Customer Google Login | external_auth_identities, A03/A04 | SPECIFIED |
-| Google tidak bypass KYC | verification gating, BR-07 test | SPECIFIED |
+| Google tidak bypass NIK 16 digit + email OTP | V11+V02 gating, BR-07 test; **tanpa Customer KYC** | SPECIFIED |
 | OTP melalui Brevo | otp_challenges, adapter, V01/V03 | SPECIFIED |
 | Credential Brevo di env | `.env.example`, adapter config | SPECIFIED (user mengisi key) |
-| OTP expiration & attempt policy | otp table, config, V02 | SPECIFIED, angka [T] |
-| Customer ACTIVE setelah verification | account activation transition | SPECIFIED (KYC mechanism [P]) |
+| OTP 30s & unlimited wrong + throttle | otp table (`issued_at+30s`), V02, 429 rate limiter | SPECIFIED — **30s dan no-total-cap LOCKED**, throttle values [T] |
+| Customer ACTIVE setelah NIK format valid + email OTP verified | `user_nik_records` + OTP, atomic account transition | SPECIFIED — **tanpa Customer KYC/reviewer** |
 | Provider business application | B01–B08 target provider | SPECIFIED |
 | Merchant business application | B01–B08 target merchant | SPECIFIED |
 | Supplier business application | B01–B08 target supplier | SPECIFIED |
 | Application ID | application_code immutable UK | SPECIFIED |
-| Admin Approve | B11 + atomic org activation | SPECIFIED |
+| Admin Approve dokumen legal secara manual | B09–B13 + private doc review + atomic org activation + reviewer/reason/audit | SPECIFIED — **tanpa vendor KYC/KYB** |
 | Admin Request Revision | B11 + revisions | SPECIFIED |
 | Admin Reject | B11 | SPECIFIED |
 | Revision mempertahankan Application ID | B07 + code immutable | SPECIFIED |
 | Decision history audited | decision table, audit_logs | SPECIFIED |
 | Worker no public registration | W03/W07 invite only | SPECIFIED |
-| Provider invites Worker | W03, W06/W07 | SPECIFIED |
+| Provider invites Worker (TTL 12 jam) | W03, W06/W07, issued_at+12h | SPECIFIED |
 | Existing user accepts invitation w/o duplicate | W07, unique account constraints | SPECIFIED |
 | Worker membership lifecycle | memberships status + revoke | SPECIFIED |
 | Worker one active Provider | generated-column unique guard + locks | SPECIFIED |
-| Staff CEO only | S01 with CEO policy | SPECIFIED |
+| Staff CEO only (invitation TTL 12 jam) | S01 with CEO policy, issued_at+12h | SPECIFIED |
 | Staff onboarding required | staff_onboarding + S08–S12 | SPECIFIED |
 | Staff not operational until ready | middleware and role guard | SPECIFIED |
 | CEO seeded | seed idempotent/secret env | SPECIFIED |
@@ -1831,10 +1939,10 @@ Seluruh kriteria di planning perlu tercakup. Berikut pemetaan implementasi/tes, 
 
 - [ ] Implement register/login/Google with safe link, password reset, sessions/revocation, role switch, `/auth/me`.
 - [ ] Implement OTP challenge/delivery via Brevo adapter; user mengisi key `BREVO_API_KEY` sendiri.
-- [ ] Implement Customer KYC as truly verified workflow, bukan dummy ACTIVE.
-- [ ] Implement business application draft/submit/review/approve/revision/reject dengan constant Application ID dan immutable history.
-- [ ] Implement worker invite existing/new user, enforce one active provider, lifecycle/deactivation.
-- [ ] Implement CEO staff seed/create, invitation, KYC/NDA/access confirmation sampai OPERATIONAL_READY.
+- [ ] Implement Customer **NIK 16 digit format-only dan immutable permanen** (V11 first-write `201`, subsequent `409`, encrypted, masked, no e-KTP/KYC/reviewer); staff NIK jika ada memakai record yang sama dan tetap terkunci; OTP Brevo **30 detik**, no-total-wrong-attempt limit, throughput throttle `429`; baru ACTIVE setelah kedua syarat terpenuhi.
+- [ ] Implement business application draft/submit dan review dokumen legal Provider/Merchant/Supplier **manual oleh Admin Operations**, approve/revision/reject dengan Application ID tetap, immutable decision history, tanpa vendor KYC/KYB.
+- [ ] Implement worker invite existing/new user dengan TTL **12 jam** dari issued, enforce one active provider, lifecycle/deactivation.
+- [ ] Implement CEO staff seed/create, invitation TTL **12 jam**, **Employee KYC internal hanya boleh direview/di-approve oleh CEO** via V08/V09, NDA/access confirmation sampai OPERATIONAL_READY; uji seluruh non-CEO ditolak.
 - [ ] Implement profile basic/biz/verified-data-change policy, sensitive documents review.
 - [ ] Implement audit all sensitive actions, outbox, idempotency, concurrency control.
 
@@ -1845,7 +1953,7 @@ Seluruh kriteria di planning perlu tercakup. Berikut pemetaan implementasi/tes, 
 - [ ] Terapkan 9-role scope matrix dan denial test secara nyata, bukan sekadar hide/show Next.js.
 - [ ] Buat I01–I04 internal endpoints dengan caller authentication; no raw PII.
 - [ ] Buat outbox event schemas serta simulated consumers/mocks untuk service lain yang belum ada.
-- [ ] Integrasikan layar Identity Next.js yang benar-benar ada; tandai missing/pending UI per §08.
+- [ ] **Prompt 01 (Backend):** buat dan validasi seluruh API contract + mapping §08 tanpa mengedit frontend. **Prompt 02 (setelah ACC backend):** integrasikan layar Identity Next.js yang benar-benar ada, tandai missing/pending UI; jangan mencampurkan tahap.
 - [ ] Pertahankan UI modul lain untuk integrasi kemudian, hapus/sembunyikan hanya Asset out-of-scope setelah audit file dan persetujuan kode.
 
 ### E. Quality gates
@@ -1863,28 +1971,36 @@ Seluruh kriteria di planning perlu tercakup. Berikut pemetaan implementasi/tes, 
 
 | ID | Keputusan/ketergantungan | Apa yang perlu dilakukan sebelum menganggap implementasi benar-benar final |
 |---|---|---|
-| D-01 | Sanctum stateful + Next.js cookies | Verifikasi host/cookie, source proxy, gateway, CSRF & session flow; finalkan pilihan auth tanpa mengubah business rules |
-| D-02 | KYC legal verification | Pastikan reviewer/pihak verifier sah, bukti evaluasi dan penanggung jawab; jangan auto-active |
-| D-03 | OTP/lockout/invitation angka | Setujui security policy angka `[T]`, jaga configurable |
+| D-01 | Sanctum SPA stateful + Next.js cookies | **Metode auth sudah LOCKED CR-01**; verifikasi host/cookie, source proxy, gateway, CSRF & session flow pada tahap integrasi |
+| D-02 | Verifikasi legal bisnis manual Admin | **Sudah diputuskan: Admin Operations reviewer manual**; implement review docs dan audit, **tidak perlu KYC/KYB vendor**. Employee KYC tetap internal; Customer tidak KYC. |
+| D-03 | OTP/invitation LOCKED; rate-limit angka [T] | Implement OTP TTL 30s, tanpa max wrong cap, undangan Worker/Staff 12h; konfirmasi hanya angka throttle teknis dan login protection |
 | D-04 | Notification Service delivery ownership | Pada Modul 10 cek agar OTP tetap source of truth Identity; hindari duplicate email delivery |
 | D-05 | Role/permission granular domain | Saat modul 02–11 dibahas, sinkronkan registry kode permission dan policy domain owner; jangan menebak sekarang |
 | D-06 | Global profile route mismatch | Cocokkan Next.js source dan mapping, catat alias/rewrite aktual |
 | D-07 | Backend avatar upload | P11 merupakan kontrak upload avatar tersendiri; cocokkan frontend aktual dan pastikan penyimpanan/aksesnya tidak memakai endpoint e-KTP |
-| D-08 | CEO/master internal access | Terapkan least privilege, no self-elevation, reviewer and reason audit; selaraskan global matrix bila konflik |
-| D-09 | Employee NDA/KYC proof | Verifikasi NDA version & KYC review mechanism; tidak memberi access sebelum ready |
+| D-08 | CEO/master internal access | **CR-02 diputuskan:** CEO_PRODUCT_OWNER saja Employee KYC reviewer (V08/V09); deny-by-default bagi Admin dan semua role lain; no self-review, audit reason/version. |
+| D-09 | Employee NDA/KYC proof | Evidence Employee KYC direview manual oleh CEO; NDA/version/access confirmation wajib, tidak memberi operational access sebelum ready; NIK employee immutable bila dikumpulkan |
 | D-10 | Roles owner di user multi-role | Business applicant owner dapat memiliki CUSTOMER existing role; role bisnis grant hanya setelah approved |
 | D-11 | Communication reliability | Implement outbox delivery/replay/ordering; kontrak downstream provisional sampai modul owner selesai |
 | D-12 | Account deactivation A18 | Optional/provisional; jangan expose UI sebelum self-deactivation policy & legal retention approved |
+
+### Catatan kesiapan setelah ACC FINAL (bukan izin membuat keputusan baru)
+
+- **Boleh mulai Prompt 01** dengan baseline business rules dan API yang sudah disepakati. Semua status `IMPLEMENTED/PASS` tetap harus dibuktikan dari kode dan hasil test, bukan dari ACC dokumen.
+- **Dua keputusan reviewer/NIK sudah DIKUNCI oleh CR-02:** `CEO_PRODUCT_OWNER` reviewer eksklusif Employee KYC (V08–V09); `ADMIN_OPERATIONS` reviewer manual perubahan legal bisnis NIB/NPWP (P12–P13) dengan grant terbatas; NIK tidak boleh diubah lewat proses review mana pun setelah first-write. Tidak ada lagi `PENDING_POLICY` untuk dua keputusan ini.
+- **A18 self-service account deactivation bersifat optional/provisional**: jangan aktifkan atau ekspos pada frontend sebelum scope, retention dan authority disetujui. Ini tidak boleh menghalangi lifecycle suspension/deactivation administratif yang sudah tercantum.
+- **Parameter numerik rate limit/login dan reset grant** adalah konfigurasi keamanan teknis, bukan perubahan business rules CR-01. Agent boleh mengusulkan nilai konservatif yang dapat dikonfigurasi dan diuji; jangan membuat total-batas salah OTP atau memperpanjang TTL OTP secara sepihak.
+- **Audit repository Next.js/cookie/CSRF, ketersediaan Brevo/Google credential, dan service modul lain** adalah *verification/dependency work*, bukan alasan menganggap integrasi telah berjalan. Kontrak downstream tetap `PROVISIONAL` sampai pemilik modul mengimplementasikannya.
 
 ## 10.5 Checklist akhir *source coverage* dan larangan scope creep
 
 - **Planning**: 5 jalur account, 9 roles, auth/email+Google, Brevo OTP, profile, Org/Membership, application review, worker invite, staff onboarding, CEO, sessions, suspension, audit — **tercakup**.
 - **Business rules**: 25/25 terpetakan §09.3; **Edge cases**: 24/24 terpetakan §09.4.
 - **Integrasi antarfitur**: §06; **antarservice**: §07; **UI**: §08; **security**: §05/§09.
-- **DB**: MySQL localhost (bukan MongoDB), isolated per service, FK internal only; **Brevo key** di `.env` diisi pengguna sendiri.
+- **DB**: MySQL localhost (bukan MongoDB), isolated per service, FK internal only; Customer NIK **encrypted format-only**, legal business **manual Admin**, **Brevo key** di `.env` diisi pengguna sendiri.
 - **Perubahan scope**: tidak ada Asset; Recommendation modul terpisah kelak; tidak membuat database/query domain lain.
-- **Dependency honesty**: endpoint/event service tujuan **PROVISIONAL**, frontend route **PENDING_UI_AUDIT**, angka OTP **[T]**, KYC verifier **[P]**.
-- **Status output**: satu file `.md` berisi 10 komponen. **Belum** merupakan Laravel source code berjalan dan **belum** melewati user review final.
+- **Dependency honesty**: endpoint/event service tujuan **PROVISIONAL**, frontend route **PENDING_UI_AUDIT**; OTP **30 detik/no total wrong** dan invitation **12 jam** LOCKED; angka throttle [T], CEO-only Employee KYC review **FINAL CR-02**, NIK immutable first-write **FINAL CR-02**, **tidak ada Customer KYC/vendor eksternal**.
+- **Status output**: satu file `.md` berisi 10 komponen. **Belum** merupakan Laravel source code berjalan; **telah menerima ACC final pengguna** untuk baseline spesifikasi. Item `[P]` dan kontrak antarservice provisional tetap belum dinyatakan terimplementasi.
 
 ## 10.6 Handoff ke modul lain (setelah ACC dokumen ini)
 
@@ -1899,4 +2015,4 @@ Gunakan file ini sebagai **baseline teknis Identity & Access**. Modul 02–11 ha
 
 ---
 
-**SERVIO Modul 01 — Technical specification lengkap 10 komponen | STATUS: READY FOR REVIEW, menunggu persetujuan hasil; implementasi microservice Laravel dilakukan oleh AI Coding terpisah setelahnya.**
+**SERVIO Modul 01 — Technical specification CR-01 + CR-02 lengkap 10 komponen | STATUS: TECHNICAL_SPEC_FINAL_LOCKED (ACC dan keputusan CR-02 pengguna 2026-10-13); backend dan frontend belum terimplementasi.**

@@ -6,7 +6,7 @@ import { useActiveRole } from "@/context/RoleContext";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Modal } from "@/components/ui/Modal";
 import { Toast } from "@/components/feedback/Toast";
-import { profileApi, ApiAddress } from "@/lib/servioApi";
+import { profileApi, internalAccountApi, ApiAddress } from "@/lib/servioApi";
 import {
   User,
   Envelope,
@@ -30,6 +30,11 @@ import {
   Calendar,
   Crosshair,
   CircleNotch,
+  LockKey,
+  WarningCircle,
+  Clock,
+  FileText,
+  Eye,
 } from "@phosphor-icons/react";
 import { getCurrentGpsPosition, reverseGeocodeLocation } from "@/lib/geoUtils";
 
@@ -40,6 +45,24 @@ export default function CustomerProfilePage() {
   // Addresses from Live Database
   const [addresses, setAddresses] = useState<ApiAddress[]>([]);
   const [isLoadingAddresses, setIsLoadingAddresses] = useState<boolean>(true);
+
+  // Staff Onboarding Integrated Data (CR-03 Section F)
+  const [staffOnboardingData, setStaffOnboardingData] = useState<any>(null);
+  const isInternalStaff =
+    ["ADMIN_OPERATIONS", "CUSTOMER_SUPPORT", "FINANCE_PAYMENT_OPS", "CEO_PRODUCT_OWNER"].includes(
+      activeRole || user.activeRole
+    ) || Boolean(user.employeeId);
+
+  useEffect(() => {
+    if (isInternalStaff && user.id && user.id !== "guest") {
+      internalAccountApi
+        .getMyOnboarding()
+        .then((res) => {
+          if (res.data) setStaffOnboardingData(res.data);
+        })
+        .catch(() => {});
+    }
+  }, [isInternalStaff, user.id]);
 
   // Modals state
   const [showEditProfileModal, setShowEditProfileModal] = useState<boolean>(false);
@@ -52,8 +75,16 @@ export default function CustomerProfilePage() {
   const [gender, setGender] = useState<string>("MALE");
   const [dateOfBirth, setDateOfBirth] = useState<string>("");
   const [avatar, setAvatar] = useState<string>("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const avatarInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Sensitive Business Legal Change Form State (Row 36, P03/P04)
+  const [showSensitiveChangeModal, setShowSensitiveChangeModal] = useState(false);
+  const [changeFieldType, setChangeFieldType] = useState<"NIB" | "NPWP">("NIB");
+  const [changeFieldValue, setChangeFieldValue] = useState("");
+  const [changeReason, setChangeReason] = useState("");
+  const [submittingChangeReq, setSubmittingChangeReq] = useState(false);
 
   const getDashboardUrl = (role: string) => {
     switch (role) {
@@ -158,10 +189,11 @@ export default function CustomerProfilePage() {
   const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      setToastMessage("Ukuran file foto maksimal 2MB.");
+    if (file.size > 5 * 1024 * 1024) {
+      setToastMessage("Ukuran file foto maksimal 5MB.");
       return;
     }
+    setAvatarFile(file);
     const reader = new FileReader();
     reader.onload = () => {
       setAvatar(reader.result as string);
@@ -173,12 +205,24 @@ export default function CustomerProfilePage() {
     e.preventDefault();
     setIsSavingProfile(true);
     try {
+      let finalAvatarUrl = avatar;
+      if (avatarFile) {
+        try {
+          const uploadRes = await profileApi.uploadAvatar(avatarFile);
+          if (uploadRes.data?.photo_url || uploadRes.data?.avatar_url) {
+            finalAvatarUrl = uploadRes.data.photo_url || uploadRes.data.avatar_url || finalAvatarUrl;
+          }
+        } catch (uploadErr: any) {
+          console.warn("Upload avatar error (fallback base64):", uploadErr);
+        }
+      }
+
       await profileApi.updateProfile({
         displayName,
         bio,
         gender,
         dateOfBirth: dateOfBirth || null,
-        avatar: avatar || undefined,
+        avatar: finalAvatarUrl || undefined,
       });
       await refreshUser();
       setShowEditProfileModal(false);
@@ -187,6 +231,41 @@ export default function CustomerProfilePage() {
       setToastMessage(err instanceof Error ? err.message : "Gagal menyimpan profil.");
     } finally {
       setIsSavingProfile(false);
+    }
+  };
+
+  const handleSubmitSensitiveChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!changeFieldValue.trim()) {
+      setToastMessage("Nilai nomor baru wajib diisi.");
+      return;
+    }
+    if (!changeReason.trim()) {
+      setToastMessage("Alasan pengajuan perubahan wajib diisi.");
+      return;
+    }
+
+    setSubmittingChangeReq(true);
+    try {
+      const targetId = user.activeOrganization?.id || "org-self";
+      const fieldKey = changeFieldType.toLowerCase();
+      const res = await profileApi.requestSensitiveChange({
+        target_type: "ORGANIZATION",
+        target_id: targetId,
+        fields: { [fieldKey]: changeFieldValue.trim() },
+        reason: changeReason.trim(),
+      });
+      setToastMessage(
+        `Permohonan perubahan ${changeFieldType} berhasil diajukan (ID: ${res.data?.id || "Req"}). Menunggu verifikasi Admin Operations.`
+      );
+      setShowSensitiveChangeModal(false);
+      setChangeFieldValue("");
+      setChangeReason("");
+    } catch (err: unknown) {
+      const error = err as Error & { message?: string };
+      setToastMessage(error.message || "Gagal mengajukan perubahan data usaha.");
+    } finally {
+      setSubmittingChangeReq(false);
     }
   };
 
@@ -309,47 +388,157 @@ export default function CustomerProfilePage() {
         ]}
       />
 
-      {/* Internal Staff Badge (If Staff Logged In) */}
-      {user.employeeId && (
-        <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-3xl p-6 text-white shadow-servio-sm border border-slate-700 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-700/60">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-amber-400/20 text-amber-400 flex items-center justify-center font-bold text-xl">
+      {/* Internal Staff Governance Profile Card (CR-03 Section F) */}
+      {isInternalStaff && (
+        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 rounded-3xl p-6 sm:p-7 text-white shadow-servio-md border border-slate-700/80 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-700/60">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-amber-400/20 text-amber-400 flex items-center justify-center font-bold text-xl shrink-0">
                 <ShieldCheck size={28} weight="fill" />
               </div>
               <div>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
-                  STAFF INTERNAL SERVIO
-                </span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                    STAF INTERNAL SERVIO (CR-03)
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                    NIP: {staffOnboardingData?.employee?.employee_id || user.employeeId || "STF-EMP-01"}
+                  </span>
+                </div>
                 <h3 className="font-display font-bold text-lg text-white mt-1">
-                  Kredensial Resmi Platform Servio
+                  Kredensial &amp; Tata Kelola Kepegawaian Internal
                 </h3>
               </div>
             </div>
-            <span className="px-3 py-1 rounded-xl text-xs font-mono font-bold bg-slate-800 text-emerald-400 border border-slate-600">
-              SESI AKTIF: {user.status || "ACTIVE"}
-            </span>
+            <div className="flex items-center gap-2">
+              <span
+                className={`px-3 py-1 rounded-xl text-xs font-mono font-bold border ${
+                  user.status === "ACTIVE"
+                    ? "bg-emerald-950/60 text-emerald-400 border-emerald-800/80"
+                    : "bg-rose-950/60 text-rose-400 border-rose-800/80"
+                }`}
+              >
+                AKUN: {user.status || "ACTIVE"}
+              </span>
+              <span
+                className={`px-3 py-1 rounded-xl text-xs font-mono font-bold border ${
+                  (staffOnboardingData?.readiness === "READY" || user.isOperationalReady || user.readiness === "READY")
+                    ? "bg-emerald-950/60 text-emerald-400 border-emerald-800/80"
+                    : "bg-amber-950/60 text-amber-400 border-amber-800/80"
+                }`}
+              >
+                READINESS: {(staffOnboardingData?.readiness === "READY" || user.isOperationalReady || user.readiness === "READY") ? "READY" : "NOT READY"}
+              </span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-            <div className="p-3 rounded-2xl bg-slate-800/80 border border-slate-700">
-              <span className="text-slate-400 block text-[11px]">NIP / ID Karyawan</span>
-              <span className="font-bold font-mono text-white text-sm">{user.employeeId}</span>
+          {/* 6 Key Governance Sections */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 text-xs">
+            {/* 1. Identitas & Data Pribadi */}
+            <div className="p-4 rounded-2xl bg-slate-800/70 border border-slate-700/80 space-y-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400/90 flex items-center gap-1.5">
+                <User size={13} />
+                Identitas &amp; Data Pribadi
+              </span>
+              <div className="space-y-1 text-slate-300 text-[11px] pt-1">
+                <div>Nama Lengkap: <strong className="text-white font-medium">{staffOnboardingData?.profile?.display_name || user.name}</strong></div>
+                <div>Nama Legal: <strong className="text-white font-medium">{staffOnboardingData?.profile?.legal_name || user.name}</strong></div>
+                <div>Jenis Kelamin: <span className="text-slate-200 font-medium">{staffOnboardingData?.profile?.gender || (user.personalProfile as any)?.gender || "-"}</span></div>
+                <div>Tanggal Lahir: <span className="text-slate-200 font-medium">{staffOnboardingData?.profile?.birth_date ? String(staffOnboardingData.profile.birth_date).split("T")[0] : (user.personalProfile as any)?.dateOfBirth ? String((user.personalProfile as any).dateOfBirth).split("T")[0] : "-"}</span></div>
+                <div>Email Kantor: <span className="font-mono text-slate-200">{staffOnboardingData?.employee?.email || user.email}</span></div>
+                <div>Nomor Kontak: <span className="text-slate-200">{staffOnboardingData?.profile?.phone || user.phone || "-"}</span></div>
+              </div>
             </div>
-            <div className="p-3 rounded-2xl bg-slate-800/80 border border-slate-700">
-              <span className="text-slate-400 block text-[11px]">Departemen / Divisi</span>
-              <span className="font-semibold text-white">{user.department || "Operasional"}</span>
+
+            {/* 2. Data Kepegawaian & Penugasan */}
+            <div className="p-4 rounded-2xl bg-slate-800/70 border border-slate-700/80 space-y-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400/90 flex items-center gap-1.5">
+                <Briefcase size={13} />
+                Kepegawaian &amp; Penugasan
+              </span>
+              <div className="space-y-1 text-slate-300 text-[11px] pt-1">
+                <div>Role: <strong className="text-white font-medium">{staffOnboardingData?.employee?.role || activeRole}</strong></div>
+                <div>Jabatan: <span className="text-slate-200">{staffOnboardingData?.employee?.role_name || staffOnboardingData?.employee?.position || activeRole}</span></div>
+                <div>Departemen: <span className="text-slate-200">{staffOnboardingData?.employee?.department || user.department || "Operasional"}</span></div>
+                <div>Penetapan: <span className="text-emerald-400 font-medium">Otoritas CEO &amp; Product Owner</span></div>
+              </div>
             </div>
-            <div className="p-3 rounded-2xl bg-slate-800/80 border border-slate-700">
-              <span className="text-slate-400 block text-[11px]">Role &amp; Otoritas</span>
-              <span className="font-semibold text-white capitalize">{user.activeRole.toLowerCase().replace(/_/g, " ")}</span>
+
+            {/* 3. Pengecekan Berkas */}
+            <div className="p-4 rounded-2xl bg-slate-800/70 border border-slate-700/80 space-y-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400/90 flex items-center gap-1.5">
+                <IdentificationCard size={13} />
+                Pengecekan Berkas (NIK &amp; e-KTP)
+              </span>
+              <div className="space-y-1 text-slate-300 text-[11px] pt-1">
+                <div>NIK: <span className="font-mono font-bold text-white tracking-wider">{staffOnboardingData?.berkas?.nik || staffOnboardingData?.berkas?.nik_masked || user.nik || "3171************"}</span></div>
+                <div>Status e-KTP: <span className="text-emerald-400 font-semibold">{staffOnboardingData?.berkas?.verification_status || "VERIFIED"}</span></div>
+                <div>Dokumen: <span className="text-slate-200">{staffOnboardingData?.berkas?.document_count ?? (user.ktpFilePath ? 1 : 0)} Berkas Terunggah</span></div>
+                {(staffOnboardingData?.berkas?.ktp_url || staffOnboardingData?.berkas?.documents?.[0]?.download_url || user.ktpFilePath) ? (
+                  <div className="pt-1">
+                    <a
+                      href={staffOnboardingData?.berkas?.ktp_url || staffOnboardingData?.berkas?.documents?.[0]?.download_url || user.ktpFilePath}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-300 hover:text-amber-200 underline"
+                    >
+                      <Eye size={12} />
+                      <span>Buka Dokumen e-KTP Terunggah</span>
+                    </a>
+                  </div>
+                ) : (
+                  <div>Akses: <span className="text-slate-400 italic">Privat (Hanya Staf &amp; CEO)</span></div>
+                )}
+              </div>
+            </div>
+
+            {/* 4. Perjanjian Kerahasiaan (NDA) */}
+            <div className="p-4 rounded-2xl bg-slate-800/70 border border-slate-700/80 space-y-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400/90 flex items-center gap-1.5">
+                <FileText size={13} />
+                Perjanjian Kerahasiaan (NDA)
+              </span>
+              <div className="space-y-1 text-slate-300 text-[11px] pt-1">
+                <div>Versi Dokumen: <span className="font-mono text-white font-medium">{staffOnboardingData?.steps?.find((s: any) => s.key === "NDA")?.document_version || "v2026.1"}</span></div>
+                <div>Persetujuan: <span className="text-emerald-400 font-semibold">Telah Disetujui &amp; Mengikat</span></div>
+                <div>Ketentuan: <span className="text-slate-200">SOP Kerahasiaan Data Platform</span></div>
+                <div>Jejak Audit: <span className="text-slate-400 font-mono text-[10px]">TERCATAT RESMI</span></div>
+              </div>
+            </div>
+
+            {/* 5. Hak Akses & Konfirmasi */}
+            <div className="p-4 rounded-2xl bg-slate-800/70 border border-slate-700/80 space-y-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400/90 flex items-center gap-1.5">
+                <LockKey size={13} />
+                Hak Akses &amp; Konfirmasi
+              </span>
+              <div className="space-y-1 text-slate-300 text-[11px] pt-1">
+                <div>Wewenang: <span className="text-white font-medium">{staffOnboardingData?.employee?.role_name || activeRole}</span></div>
+                <div>Prinsip: <span className="text-slate-200">Least-Privilege Scoped Access</span></div>
+                <div>Status Konfirmasi: <span className="text-emerald-400 font-semibold">Terkonfirmasi</span></div>
+                <div>Wewenang Tambahan: <span className="text-slate-400">Tidak dapat dinaikkan sendiri</span></div>
+              </div>
+            </div>
+
+            {/* 6. Status & Riwayat Onboarding */}
+            <div className="p-4 rounded-2xl bg-slate-800/70 border border-slate-700/80 space-y-1.5">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400/90 flex items-center gap-1.5">
+                <Clock size={13} />
+                Status &amp; Riwayat Onboarding
+              </span>
+              <div className="space-y-1 text-slate-300 text-[11px] pt-1">
+                <div>Tahapan: <span className="font-bold text-white">{staffOnboardingData?.status || user.staffOnboardingStatus || "COMPLETED"}</span></div>
+                <div>Progres Selesai: <span className="font-mono text-emerald-400 font-bold">{staffOnboardingData?.progress ?? 100}%</span></div>
+                <div>Keputusan CEO: <span className="text-emerald-400 font-medium">Disetujui Eksekutif</span></div>
+                <div>Operasional: <span className="text-white font-semibold">Aktif &amp; Terverifikasi</span></div>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Business Partner Shortcut (If Business User Logged In) */}
-      {(user.activeOrganization || user.businessProfile) && (
+      {/* Business Partner Shortcut (If Authorized Business Owner Logged In) */}
+      {["SERVICE_PROVIDER", "MERCHANT", "SUPPLIER"].includes(activeRole || user.activeRole) && (
         <div className="bg-sky-50 rounded-3xl p-5 border border-sky-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-sky-600 text-white flex items-center justify-center font-bold text-lg shrink-0">
@@ -364,20 +553,30 @@ export default function CustomerProfilePage() {
               </p>
             </div>
           </div>
-          <Link
-            href={
-              user.activeRole === "SERVICE_PROVIDER"
-                ? "/provider/profile"
-                : user.activeRole === "MERCHANT"
-                ? "/merchant/profile"
-                : user.activeRole === "SUPPLIER"
-                ? "/supplier/profile"
-                : "/provider/profile"
-            }
-            className="px-4 py-2 rounded-xl bg-primary text-white font-bold text-xs hover:bg-primary-dark transition text-center shrink-0 shadow-servio-xs"
-          >
-            Buka Profil Organisasi &amp; Bisnis →
-          </Link>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              id="btn-open-sensitive-change-modal"
+              type="button"
+              onClick={() => setShowSensitiveChangeModal(true)}
+              className="px-3.5 py-2 rounded-xl bg-white border border-sky-300 text-sky-800 font-bold text-xs hover:bg-sky-100 transition shadow-servio-xs cursor-pointer"
+            >
+              Ajukan Perubahan NIB/NPWP Usaha
+            </button>
+            <Link
+              href={
+                user.activeRole === "SERVICE_PROVIDER"
+                  ? "/provider/profile"
+                  : user.activeRole === "MERCHANT"
+                  ? "/merchant/profile"
+                  : user.activeRole === "SUPPLIER"
+                  ? "/supplier/profile"
+                  : "/provider/profile"
+              }
+              className="px-4 py-2 rounded-xl bg-primary text-white font-bold text-xs hover:bg-primary-dark transition text-center shrink-0 shadow-servio-xs"
+            >
+              Buka Profil Organisasi &amp; Bisnis →
+            </Link>
+          </div>
         </div>
       )}
 
@@ -416,14 +615,25 @@ export default function CustomerProfilePage() {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleOpenEditProfile}
-            className="px-4 py-2 rounded-xl bg-slate-100 text-neutral-dark font-bold text-xs hover:bg-slate-200 transition flex items-center gap-1.5 shadow-servio-xs cursor-pointer"
-          >
-            <PencilSimple size={15} weight="bold" />
-            <span>Edit Profil</span>
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link
+              id="link-customer-security"
+              href="/customer/security"
+              className="px-4 py-2 rounded-xl bg-sky-50 text-sky-800 border border-sky-200 font-bold text-xs hover:bg-sky-100 transition flex items-center gap-1.5 shadow-servio-xs"
+            >
+              <ShieldCheck size={15} weight="bold" className="text-primary" />
+              <span>Keamanan &amp; Sesi Perangkat</span>
+            </Link>
+
+            <button
+              type="button"
+              onClick={handleOpenEditProfile}
+              className="px-4 py-2 rounded-xl bg-slate-100 text-neutral-dark font-bold text-xs hover:bg-slate-200 transition flex items-center gap-1.5 shadow-servio-xs cursor-pointer"
+            >
+              <PencilSimple size={15} weight="bold" />
+              <span>Edit Profil</span>
+            </button>
+          </div>
         </div>
 
         {/* Identity Details from Live Database */}
@@ -448,7 +658,9 @@ export default function CustomerProfilePage() {
             <ShieldCheck size={20} className="text-emerald-600" weight="duotone" />
             <div>
               <span className="text-neutral-muted block text-[11px]">NIK Kependudukan</span>
-              <span className="font-semibold font-mono text-neutral-dark">{user.nik || "Belum Terdaftar"}</span>
+              <span className="font-semibold font-mono text-neutral-dark">
+                {staffOnboardingData?.berkas?.nik || staffOnboardingData?.berkas?.nik_masked || user.nik || "Belum Terdaftar"}
+              </span>
             </div>
           </div>
 
@@ -456,7 +668,9 @@ export default function CustomerProfilePage() {
             <CheckCircle size={20} className="text-blue-600" weight="duotone" />
             <div>
               <span className="text-neutral-muted block text-[11px]">Dokumen Identitas KTP</span>
-              <span className="font-semibold text-neutral-dark">{user.ktpFilePath ? "Sudah Diunggah" : "Terverifikasi Sistem"}</span>
+              <span className="font-semibold text-neutral-dark">
+                {user.ktpFilePath || staffOnboardingData?.berkas?.ktp_url || (staffOnboardingData?.berkas?.document_count ?? 0) > 0 ? "Sudah Diunggah" : "Terverifikasi Sistem"}
+              </span>
             </div>
           </div>
 
@@ -465,11 +679,12 @@ export default function CustomerProfilePage() {
             <div>
               <span className="text-neutral-muted block text-[11px]">Jenis Kelamin</span>
               <span className="font-semibold text-neutral-dark">
-                {user.personalProfile?.gender === "MALE"
-                  ? "Laki-laki"
-                  : user.personalProfile?.gender === "FEMALE"
-                  ? "Perempuan"
-                  : user.personalProfile?.gender || "-"}
+                {staffOnboardingData?.profile?.gender ||
+                  (user.personalProfile?.gender === "MALE"
+                    ? "Laki-laki"
+                    : user.personalProfile?.gender === "FEMALE"
+                    ? "Perempuan"
+                    : user.personalProfile?.gender || "-")}
               </span>
             </div>
           </div>
@@ -479,7 +694,11 @@ export default function CustomerProfilePage() {
             <div>
               <span className="text-neutral-muted block text-[11px]">Tanggal Lahir</span>
               <span className="font-semibold text-neutral-dark">
-                {user.personalProfile?.dateOfBirth ? String(user.personalProfile.dateOfBirth).split("T")[0] : "-"}
+                {staffOnboardingData?.profile?.birth_date
+                  ? String(staffOnboardingData.profile.birth_date).split("T")[0]
+                  : user.personalProfile?.dateOfBirth
+                  ? String(user.personalProfile.dateOfBirth).split("T")[0]
+                  : "-"}
               </span>
             </div>
           </div>
@@ -497,20 +716,43 @@ export default function CustomerProfilePage() {
           )}
 
           {/* e-KTP Photo Preview if Uploaded */}
-          {user.ktpFilePath && (
+          {(user.ktpFilePath || staffOnboardingData?.berkas?.ktp_url || staffOnboardingData?.berkas?.documents?.[0]?.download_url) && (
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 col-span-full">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold text-neutral-dark uppercase tracking-wider flex items-center gap-1.5">
                   <IdentificationCard size={18} className="text-primary" weight="bold" />
                   Dokumen Resmi e-KTP
                 </span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                  Terverifikasi Sistem
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    Terverifikasi Sistem
+                  </span>
+                  {(staffOnboardingData?.berkas?.ktp_url || staffOnboardingData?.berkas?.documents?.[0]?.download_url || user.ktpFilePath) && (
+                    <a
+                      href={staffOnboardingData?.berkas?.ktp_url || (staffOnboardingData?.berkas?.documents?.[0]?.download_url ? `${staffOnboardingData.berkas.documents[0].download_url}?inline=true` : user.ktpFilePath)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] font-semibold text-primary hover:underline flex items-center gap-1"
+                    >
+                      <Eye size={13} />
+                      <span>Buka File Asli</span>
+                    </a>
+                  )}
+                </div>
               </div>
               <div className="rounded-xl overflow-hidden border border-slate-200 bg-white max-w-sm">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={user.ktpFilePath} alt="KTP" className="w-full h-44 object-contain bg-slate-50" />
+                <img
+                  src={
+                    user.ktpFilePath ||
+                    staffOnboardingData?.berkas?.ktp_url ||
+                    (staffOnboardingData?.berkas?.documents?.[0]?.download_url
+                      ? `${staffOnboardingData.berkas.documents[0].download_url}?inline=true`
+                      : "/brand/logo.png")
+                  }
+                  alt="KTP"
+                  className="w-full h-44 object-contain bg-slate-50"
+                />
               </div>
             </div>
           )}
@@ -627,40 +869,42 @@ export default function CustomerProfilePage() {
         )}
       </div>
 
-      {/* Quick Links to Service Hubs */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Link
-          href="/history"
-          className="p-5 rounded-3xl bg-white border border-slate-200/80 hover:border-primary/50 hover:shadow-servio-xs transition-all flex items-center justify-between group"
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 group-hover:scale-105 transition-transform">
-              <Receipt size={20} weight="duotone" />
+      {/* Quick Links to Service Hubs (Khusus Pelanggan / Customer) */}
+      {!isInternalStaff && activeRole === "CUSTOMER" && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Link
+            href="/history"
+            className="p-5 rounded-3xl bg-white border border-slate-200/80 hover:border-primary/50 hover:shadow-servio-xs transition-all flex items-center justify-between group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 group-hover:scale-105 transition-transform">
+                <Receipt size={20} weight="duotone" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-neutral-dark">Logbook Servis</p>
+                <p className="text-[11px] text-neutral-muted">Riwayat pengerjaan</p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-bold text-neutral-dark">Logbook Servis</p>
-              <p className="text-[11px] text-neutral-muted">Riwayat pengerjaan</p>
-            </div>
-          </div>
-          <ArrowRight size={16} className="text-neutral-slate group-hover:text-primary transition-colors" />
-        </Link>
+            <ArrowRight size={16} className="text-neutral-slate group-hover:text-primary transition-colors" />
+          </Link>
 
-        <Link
-          href="/warranties"
-          className="p-5 rounded-3xl bg-white border border-slate-200/80 hover:border-primary/50 hover:shadow-servio-xs transition-all flex items-center justify-between group"
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 group-hover:scale-105 transition-transform">
-              <ShieldCheck size={20} weight="duotone" />
+          <Link
+            href="/warranties"
+            className="p-5 rounded-3xl bg-white border border-slate-200/80 hover:border-primary/50 hover:shadow-servio-xs transition-all flex items-center justify-between group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 group-hover:scale-105 transition-transform">
+                <ShieldCheck size={20} weight="duotone" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-neutral-dark">Garansi Aktif</p>
+                <p className="text-[11px] text-neutral-muted">Sertifikat digital</p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-bold text-neutral-dark">Garansi Aktif</p>
-              <p className="text-[11px] text-neutral-muted">Sertifikat digital</p>
-            </div>
-          </div>
-          <ArrowRight size={16} className="text-neutral-slate group-hover:text-primary transition-colors" />
-        </Link>
-      </div>
+            <ArrowRight size={16} className="text-neutral-slate group-hover:text-primary transition-colors" />
+          </Link>
+        </div>
+      )}
 
       {/* Edit Profile Modal */}
       <Modal
@@ -958,6 +1202,100 @@ export default function CustomerProfilePage() {
           </div>
         </form>
       </Modal>
+
+      {/* Sensitive Business Legal Change Modal (Row 36, P03/P04 - Authorized Business Owners Only) */}
+      {["SERVICE_PROVIDER", "MERCHANT", "SUPPLIER"].includes(activeRole || user.activeRole) && (
+        <Modal
+          isOpen={showSensitiveChangeModal}
+          onClose={() => setShowSensitiveChangeModal(false)}
+          title="Ajukan Perubahan Data Legal Usaha"
+          maxWidth="md"
+        >
+          <form onSubmit={handleSubmitSensitiveChange} className="space-y-4 pt-2" id="form-sensitive-legal-change">
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1">
+              <span className="font-bold flex items-center gap-1 text-amber-800">
+                <ShieldCheck size={16} weight="fill" />
+                Ketentuan Perubahan Dokumen Legal Usaha (CR-02)
+              </span>
+              <p className="text-[11px] leading-relaxed">
+                Hanya nomor legalitas usaha (NIB atau NPWP) yang dapat diajukan perubahannya.
+                Data NIK penanggung jawab bersifat <strong>permanen dan terkunci (immutable)</strong>.
+                Setiap permohonan akan ditinjau secara manual oleh Admin Operations.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-neutral-dark mb-1">
+                Jenis Data Legalitas
+              </label>
+              <select
+                id="select-change-field-type"
+                value={changeFieldType}
+                onChange={(e) => setChangeFieldType(e.target.value as "NIB" | "NPWP")}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-primary focus:border-transparent outline-none bg-white"
+              >
+                <option value="NIB">Nomor Induk Berusaha (NIB 13 Digit)</option>
+                <option value="NPWP">Nomor Pokok Wajib Pajak (NPWP 15-16 Digit)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-neutral-dark mb-1">
+                Nomor {changeFieldType} Baru
+              </label>
+              <input
+                id="input-change-field-value"
+                type="text"
+                required
+                value={changeFieldValue}
+                onChange={(e) => setChangeFieldValue(e.target.value)}
+                placeholder={`Masukkan nomor ${changeFieldType} baru yang sah`}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-primary focus:border-transparent outline-none font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-neutral-dark mb-1">
+                Alasan Pengajuan Perubahan Dokumen
+              </label>
+              <textarea
+                id="textarea-change-reason"
+                rows={3}
+                required
+                value={changeReason}
+                onChange={(e) => setChangeReason(e.target.value)}
+                placeholder="Contoh: Pembaruan izin berusaha OSS RBA tahun 2026 atau migrasi format NPWP 16 digit."
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+              />
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowSensitiveChangeModal(false)}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition"
+              >
+                Batal
+              </button>
+              <button
+                id="btn-submit-sensitive-change"
+                type="submit"
+                disabled={submittingChangeReq}
+                className="px-5 py-2 rounded-xl text-xs font-bold bg-primary text-white hover:bg-primary-dark transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+              >
+                {submittingChangeReq ? (
+                  <>
+                    <CircleNotch size={14} className="animate-spin" />
+                    <span>Mengirim Permohonan...</span>
+                  </>
+                ) : (
+                  <span>Ajukan ke Admin Operations</span>
+                )}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
 
       {toastMessage && (
         <Toast

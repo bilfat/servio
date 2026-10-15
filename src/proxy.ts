@@ -5,6 +5,7 @@ const PROTECTED_CUSTOMER_ROUTES = [
   "/orders",
   "/bookings",
   "/profile",
+  "/security",
   "/inbox",
   "/returns",
   "/warranties",
@@ -45,29 +46,8 @@ export function proxy(request: NextRequest) {
   );
   const isGuest = !isAuthenticated;
 
-  // If already authenticated and visiting login or register, redirect to appropriate role home
-  if ((pathname.startsWith("/auth/login") || pathname === "/login") && !isGuest) {
-    const activeRole = request.cookies.get("servio_active_role")?.value;
-    const dest =
-      activeRole === "CEO_PRODUCT_OWNER"
-        ? "/ceo/dashboard"
-        : activeRole === "ADMIN_OPERATIONS"
-        ? "/admin/dashboard"
-        : activeRole === "SERVICE_PROVIDER"
-        ? "/provider/dashboard"
-        : activeRole === "WORKER_TECHNICIAN"
-        ? "/worker/dashboard"
-        : activeRole === "MERCHANT"
-        ? "/merchant/dashboard"
-        : activeRole === "SUPPLIER"
-        ? "/supplier/dashboard"
-        : activeRole === "CUSTOMER_SUPPORT"
-        ? "/support/dashboard"
-        : activeRole === "FINANCE_PAYMENT_OPS"
-        ? "/finance/dashboard"
-        : "/";
-    return NextResponse.redirect(new URL(dest, request.url));
-  }
+  // Izinkan akses langsung ke /auth/login dan /login tanpa auto-redirect paksa
+
 
   // Alias /business/provider to /provider
   if (pathname.startsWith("/business/provider")) {
@@ -139,14 +119,65 @@ export function proxy(request: NextRequest) {
     return NextResponse.rewrite(targetUrl);
   }
 
+  // Modul 01 Aliases: /customer/profile -> /profile, /customer/security -> /security
+  if (pathname.startsWith("/customer/profile")) {
+    const targetUrl = new URL(pathname.replace("/customer/profile", "/profile"), request.url);
+    targetUrl.search = request.nextUrl.search;
+    return NextResponse.rewrite(targetUrl);
+  }
+
+  if (pathname.startsWith("/customer/security")) {
+    const targetUrl = new URL(pathname.replace("/customer/security", "/security"), request.url);
+    targetUrl.search = request.nextUrl.search;
+    return NextResponse.rewrite(targetUrl);
+  }
+
+  // Modul 01 Aliases: /ceo/staff -> /ceo/internal-team
+  if (pathname === "/ceo/staff" || pathname.startsWith("/ceo/staff/")) {
+    const targetUrl = new URL(pathname.replace("/ceo/staff", "/ceo/internal-team"), request.url);
+    targetUrl.search = request.nextUrl.search;
+    return NextResponse.rewrite(targetUrl);
+  }
+
+  // Modul 01 Aliases: /admin/applications -> /admin/registration-applications
+  if (pathname === "/admin/applications" || pathname.startsWith("/admin/applications/")) {
+    const targetUrl = new URL(pathname.replace("/admin/applications", "/admin/registration-applications"), request.url);
+    targetUrl.search = request.nextUrl.search;
+    return NextResponse.rewrite(targetUrl);
+  }
+
+  // Modul 01 Aliases: /register/business -> /auth/register
+  if (pathname === "/register/business") {
+    const targetUrl = new URL("/auth/register?role=business", request.url);
+    return NextResponse.rewrite(targetUrl);
+  }
+
+  // Modul 01 Aliases: /application/:id -> /registration/status
+  if (pathname.startsWith("/application/")) {
+    const parts = pathname.split("/").filter(Boolean);
+    const appId = parts[1] || "";
+    const targetUrl = new URL("/registration/status", request.url);
+    if (appId && appId !== "status" && appId !== "revision") {
+      targetUrl.searchParams.set("id", appId);
+    }
+    return NextResponse.rewrite(targetUrl);
+  }
+
+  // Modul 01 Aliases: /provider/workers/invite -> /provider/workers
+  if (pathname === "/provider/workers/invite") {
+    const targetUrl = new URL("/provider/workers", request.url);
+    return NextResponse.rewrite(targetUrl);
+  }
+
   // Check if current route is protected for customers or operational roles
   const isProtectedCustomer = PROTECTED_CUSTOMER_ROUTES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
   );
 
-  const isProtectedOperational = OPERATIONAL_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
-  );
+  const isProtectedOperational =
+    OPERATIONAL_PREFIXES.some(
+      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+    ) && !pathname.startsWith("/worker/activate");
 
   if ((isProtectedCustomer || isProtectedOperational) && isGuest) {
     const loginUrl = new URL("/auth/login", request.url);
@@ -162,6 +193,8 @@ export const config = {
     "/orders/:path*",
     "/bookings/:path*",
     "/profile/:path*",
+    "/security/:path*",
+    "/customer/:path*",
     "/inbox/:path*",
     "/returns/:path*",
     "/warranties/:path*",

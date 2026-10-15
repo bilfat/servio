@@ -35,6 +35,16 @@ export default function ServiceDetailPage() {
   const [selectedProviderIdState, setSelectedProviderId] = useState<string>("");
   const [selectedModeState, setSelectedMode] = useState<string>("");
   const [isFavorited, setIsFavorited] = useState(false);
+  const [relatedProducts, setRelatedProducts] = useState<ApiProduct[]>([]);
+
+  useEffect(() => {
+    productsApi
+      .list({ scope: "public" })
+      .then((res) => {
+        if (res.data) setRelatedProducts(res.data.slice(0, 3));
+      })
+      .catch(() => {});
+  }, []);
 
   const selectedMode = selectedModeState || service?.serviceModes?.[0] || "";
   const selectedProviderId = selectedProviderIdState || providers[0]?.id || "";
@@ -58,18 +68,6 @@ export default function ServiceDetailPage() {
       </div>
     );
   }
-
-  // Real related products from database
-  const [relatedProducts, setRelatedProducts] = useState<ApiProduct[]>([]);
-
-  useEffect(() => {
-    productsApi
-      .list({ scope: "public" })
-      .then((res) => {
-        if (res.data) setRelatedProducts(res.data.slice(0, 3));
-      })
-      .catch(() => {});
-  }, []);
 
   const handleBooking = () => {
     const pId = selectedProviderId || (providers[0]?.id ?? "prov-bintang-01");

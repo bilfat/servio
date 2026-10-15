@@ -187,7 +187,7 @@ export default function ProviderTaxonomyRequestPage() {
       <div className="flex items-center justify-between">
         <PageHeader
           title="Pengajuan Subkategori Baru"
-          description="Ajukan penambahan subkategori spesialisasi baru jika ruang lingkup keahlian bengkel Anda belum tersedia pada taksonomi aktif platform."
+          description="Ajukan penambahan subkategori spesialisasi baru jika ruang lingkup keahlian bengkel Anda belum tersedia pada kategori jasa aktif platform."
           breadcrumbs={[
             { label: "Mitra Bengkel", href: "/provider/dashboard" },
             { label: "Katalog Layanan", href: "/provider/services" },
@@ -268,7 +268,7 @@ export default function ProviderTaxonomyRequestPage() {
             </div>
 
             <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-600 text-[11px] space-y-1">
-              <p className="font-bold text-slate-700">Alur Tata Kelola Taksonomi:</p>
+              <p className="font-bold text-slate-700">Alur Tata Kelola Kategori Jasa:</p>
               <p>1. Diajukan oleh Mitra &bull; 2. Verifikasi Admin Operasi &bull; 3. Otorisasi CEO &bull; 4. Dipublikasikan</p>
             </div>
 
@@ -383,7 +383,7 @@ export default function ProviderTaxonomyRequestPage() {
                       </div>
                       <p className="text-[11px] text-rose-700">
                         <span className="font-semibold">Keterangan Admin: </span>
-                        {req.adminReviewNotes || "Pengajuan belum memenuhi kriteria standardisasi taksonomi saat ini."}
+                        {req.adminReviewNotes || "Pengajuan belum memenuhi kriteria standardisasi kategori jasa saat ini."}
                       </p>
                     </div>
                   )}

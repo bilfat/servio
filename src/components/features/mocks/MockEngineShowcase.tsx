@@ -144,7 +144,7 @@ export function MockEngineShowcase() {
                   : "bg-white border border-slate-200 text-neutral-slate hover:bg-slate-50"
               }`}
             >
-              6 Domain Taksonomi
+              6 Domain Kategori Jasa
             </button>
             <button
               onClick={() => setActiveSubTab("providers")}
@@ -629,11 +629,11 @@ export function MockEngineShowcase() {
         </div>
       )}
 
-      {/* Sub Tab: 6 Domain Taksonomi */}
+      {/* Sub Tab: 6 Domain Kategori Jasa */}
       {activeSubTab === "taxonomy" && (
         <div className="space-y-4">
           <h3 className="text-base font-bold font-display text-neutral-dark">
-            6 Domain Resmi Taksonomi Servio & Subkategori
+            6 Domain Resmi Kategori Jasa Servio & Subkategori
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {MOCK_TAXONOMY_DOMAINS.map((dom) => (

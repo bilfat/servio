@@ -3,6 +3,7 @@ import { WorkerTechnician } from "@/types/domain";
 export const MOCK_WORKERS: WorkerTechnician[] = [
   {
     id: "worker-budi",
+    employeeId: "BTM-BUDI-001",
     providerId: "prov-bintang-teknik",
     providerName: "Bintang Teknik Mandiri",
     name: "Budi Santoso",
@@ -20,6 +21,7 @@ export const MOCK_WORKERS: WorkerTechnician[] = [
   },
   {
     id: "worker-hendra",
+    employeeId: "SAH-HENDRA-002",
     providerId: "prov-sejuk-abadi",
     providerName: "Sejuk Abadi HVAC & Chiller",
     name: "Hendra Wijaya",
@@ -37,6 +39,7 @@ export const MOCK_WORKERS: WorkerTechnician[] = [
   },
   {
     id: "worker-ahmad",
+    employeeId: "APW-AHMAD-003",
     providerId: "prov-autopro",
     providerName: "AutoPro Mobile Workshop",
     name: "Ahmad Fauzi",
@@ -54,6 +57,7 @@ export const MOCK_WORKERS: WorkerTechnician[] = [
   },
   {
     id: "worker-rizky",
+    employeeId: "KKS-RIZKY-004",
     providerId: "prov-klinik-kasur",
     providerName: "Klinik Kasur & Sofa Higienis",
     name: "Rizky Pratama",
@@ -71,6 +75,7 @@ export const MOCK_WORKERS: WorkerTechnician[] = [
   },
   {
     id: "worker-doni",
+    employeeId: "PAH-DONI-005",
     providerId: "prov-pipa-ahli",
     providerName: "Ahli Pipa & Deteksi Bocor",
     name: "Doni Kusuma",

@@ -74,6 +74,7 @@ export default function WorkerProfilePage() {
   const displayEmail = user.email && user.activeRole === "WORKER_TECHNICIAN" ? user.email : worker.email;
   const displayPhone = user.phone && user.activeRole === "WORKER_TECHNICIAN" ? user.phone : worker.phone;
   const displayProvider = user.organizationName || worker.providerName || "PT Servio Mandiri Teknik";
+  const displayEmployeeId = (worker as any).employeeId || (user as any).employeeId || "WRK-001";
 
   // Fetch real-time capabilities from repo
   const capabilities = useMemo(() => {
@@ -212,15 +213,19 @@ export default function WorkerProfilePage() {
               {displayName.charAt(0)}
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-lg font-bold font-display text-slate-900">{displayName}</h2>
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                   Akun Terverifikasi
                 </span>
+                <span className="px-2.5 py-0.5 rounded-md font-mono text-[10px] font-bold bg-sky-100 text-[#0F4C81] border border-sky-200">
+                  ID: {displayEmployeeId}
+                </span>
               </div>
-              <p className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
-                <Buildings size={14} className="text-[#0F4C81]" />
-                <span>{displayProvider}</span>
+              <p className="text-xs text-slate-600 flex items-center gap-1.5 mt-1">
+                <Buildings size={15} className="text-[#0F4C81]" weight="duotone" />
+                <span className="font-medium text-slate-500">Mitra / Bengkel Induk:</span>
+                <span className="font-bold text-[#0F4C81]">{displayProvider}</span>
               </p>
             </div>
           </div>
@@ -256,6 +261,14 @@ export default function WorkerProfilePage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
           <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80">
             <span className="text-[11px] text-slate-500 flex items-center gap-1 font-medium">
+              <Buildings size={13} className="text-[#0F4C81]" />
+              Bengkel / Workshop
+            </span>
+            <p className="font-bold text-slate-800 mt-1 truncate">{displayProvider}</p>
+          </div>
+
+          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80">
+            <span className="text-[11px] text-slate-500 flex items-center gap-1 font-medium">
               <Phone size={13} className="text-[#0F4C81]" />
               Nomor Kontak
             </span>
@@ -265,28 +278,19 @@ export default function WorkerProfilePage() {
           <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80">
             <span className="text-[11px] text-slate-500 flex items-center gap-1 font-medium">
               <EnvelopeSimple size={13} className="text-[#0F4C81]" />
-              Email
+              Email Akun
             </span>
             <p className="font-bold text-slate-800 mt-1 truncate">{displayEmail}</p>
           </div>
 
           <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80">
             <span className="text-[11px] text-slate-500 flex items-center gap-1 font-medium">
-              <Star size={13} weight="fill" className="text-amber-500" />
-              Performa Servis
+              <ShieldCheck size={13} className="text-emerald-600" weight="fill" />
+              SOP &amp; Afiliasi
             </span>
-            <p className="font-bold text-slate-800 mt-1">
-              ⭐ {worker.rating} <span className="text-slate-400 font-normal">({worker.completedJobs} job selesai)</span>
-            </p>
-          </div>
-
-          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80">
-            <span className="text-[11px] text-slate-500 flex items-center gap-1 font-medium">
-              <Car size={13} className="text-[#0F4C81]" />
-              Kendaraan Dinas
-            </span>
-            <p className="font-bold text-slate-800 mt-1 truncate">
-              {worker.vehicleNumber || "B 4512 TKO (Honda Vario)"}
+            <p className="font-bold text-emerald-700 mt-1 flex items-center gap-1">
+              <span>SOP Disetujui</span>
+              <span className="text-[10px] text-slate-400 font-normal">● Aktif</span>
             </p>
           </div>
         </div>

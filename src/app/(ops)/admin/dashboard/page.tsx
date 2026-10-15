@@ -147,7 +147,7 @@ export default function AdminDashboardPage() {
           <Link href="/ops/admin/taxonomy">
             <Button variant="outline" size="sm" className="flex items-center gap-1.5 text-xs">
               <SlidersHorizontal size={16} />
-              <span>Kelola Taksonomi</span>
+              <span>Kelola Kategori Jasa</span>
             </Button>
           </Link>
           <Link href="/ops/admin/audit">

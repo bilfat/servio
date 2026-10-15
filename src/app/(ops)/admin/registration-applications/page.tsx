@@ -38,6 +38,14 @@ export default function AdminRegistrationApplicationsPage() {
   const [modalError, setModalError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type?: "success" | "error" | "warning" | "info" } | null>(null);
 
+  // Main Tab State (New Registrations vs Sensitive Change Requests)
+  const [activeMainTab, setActiveMainTab] = useState<"NEW_REGISTRATIONS" | "CHANGE_REQUESTS">("NEW_REGISTRATIONS");
+  const [changeRequests, setChangeRequests] = useState<any[]>([]);
+  const [loadingCR, setLoadingCR] = useState(false);
+  const [selectedCR, setSelectedCR] = useState<any | null>(null);
+  const [crDecisionReason, setCrDecisionReason] = useState("");
+  const [crActionLoading, setCrActionLoading] = useState(false);
+
   const formatDateTime = (isoString?: string | null) => {
     if (!isoString) return "-";
     try {
@@ -63,8 +71,9 @@ export default function AdminRegistrationApplicationsPage() {
       if (search) filters.search = search;
       const res = await opsApi.getApplications(filters);
       if (res.data) {
+        const rawList = Array.isArray(res.data) ? res.data : (res.data as any)?.items || [];
         // Enforce newest created at the very top (descending order)
-        const sorted = [...res.data].sort((a, b) => {
+        const sorted = [...rawList].sort((a, b) => {
           const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
           const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
           return tB - tA;
@@ -78,9 +87,47 @@ export default function AdminRegistrationApplicationsPage() {
     }
   };
 
+  const fetchChangeRequests = async () => {
+    setLoadingCR(true);
+    try {
+      const res = await opsApi.adminListChangeRequests();
+      if (res.data) {
+        setChangeRequests(Array.isArray(res.data) ? res.data : (res.data as any).items || []);
+      }
+    } catch {
+      // safe fallback
+    } finally {
+      setLoadingCR(false);
+    }
+  };
+
   useEffect(() => {
     fetchApplications();
+    fetchChangeRequests();
   }, [filterStatus]);
+
+  const handleDecisionCR = async (id: string, decision: "APPROVE" | "REJECT") => {
+    if (decision === "REJECT" && !crDecisionReason.trim()) {
+      setToast({ message: "Alasan penolakan perubahan legalitas wajib diisi.", type: "warning" });
+      return;
+    }
+    setCrActionLoading(true);
+    try {
+      await opsApi.adminDecisionChangeRequest(id, decision, crDecisionReason.trim() || undefined);
+      setToast({
+        message: `Permohonan perubahan data legalitas #${id} berhasil di-${decision === "APPROVE" ? "setujui" : "tolak"}. Data profil mitra otomatis diperbarui.`,
+        type: "success",
+      });
+      setCrDecisionReason("");
+      setSelectedCR(null);
+      await fetchChangeRequests();
+    } catch (err: unknown) {
+      const error = err as Error;
+      setToast({ message: error.message || "Gagal memproses permohonan perubahan.", type: "error" });
+    } finally {
+      setCrActionLoading(false);
+    }
+  };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -226,14 +273,228 @@ export default function AdminRegistrationApplicationsPage() {
         </div>
 
         <button
-          onClick={fetchApplications}
+          onClick={() => {
+            if (activeMainTab === "NEW_REGISTRATIONS") {
+              fetchApplications();
+            } else {
+              fetchChangeRequests();
+            }
+          }}
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-neutral-dark transition"
         >
-          {loading ? <SpinnerGap size={14} className="animate-spin" /> : null}
+          {(loading || loadingCR) ? <SpinnerGap size={14} className="animate-spin" /> : null}
           <span>Muat Ulang Data</span>
         </button>
       </div>
 
+      {/* Main Tab Switcher */}
+      <div className="flex border-b border-slate-200 gap-4">
+        <button
+          type="button"
+          id="tab-new-registrations-btn"
+          onClick={() => setActiveMainTab("NEW_REGISTRATIONS")}
+          className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition ${
+            activeMainTab === "NEW_REGISTRATIONS"
+              ? "border-primary text-primary"
+              : "border-transparent text-neutral-slate hover:text-neutral-dark"
+          }`}
+        >
+          <FileText size={18} />
+          <span>Pendaftaran Mitra Baru</span>
+          <span className="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-neutral-dark font-medium">
+            {applications.length}
+          </span>
+        </button>
+        <button
+          type="button"
+          id="tab-change-requests-btn"
+          onClick={() => {
+            setActiveMainTab("CHANGE_REQUESTS");
+            fetchChangeRequests();
+          }}
+          className={`pb-3 text-sm font-bold flex items-center gap-2 border-b-2 transition ${
+            activeMainTab === "CHANGE_REQUESTS"
+              ? "border-primary text-primary"
+              : "border-transparent text-neutral-slate hover:text-neutral-dark"
+          }`}
+        >
+          <ShieldCheck size={18} />
+          <span>Permohonan Perubahan Legalitas (NIB / NPWP)</span>
+          {changeRequests.length > 0 && (
+            <span className="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-800 font-bold">
+              {changeRequests.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeMainTab === "CHANGE_REQUESTS" ? (
+        <div className="space-y-6" id="change-requests-panel">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            <div className={`${selectedCR ? "lg:col-span-7" : "lg:col-span-12"} space-y-3`}>
+              <div className="bg-white rounded-3xl border border-slate-200/80 shadow-servio-xs overflow-hidden">
+                {loadingCR ? (
+                  <div className="py-16 text-center text-xs text-neutral-slate flex items-center justify-center gap-2">
+                    <SpinnerGap size={20} className="animate-spin text-primary" />
+                    <span>Memuat permohonan perubahan legalitas...</span>
+                  </div>
+                ) : changeRequests.length === 0 ? (
+                  <div className="py-16 text-center text-xs text-neutral-slate space-y-1">
+                    <ShieldCheck size={32} className="mx-auto text-slate-300 mb-2" weight="duotone" />
+                    <p className="font-semibold text-neutral-dark">Belum ada permohonan perubahan legalitas</p>
+                    <p>Mitra bisnis yang mengajukan perubahan NIB, NPWP, atau nama usaha akan tampil di sini.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs" id="change-requests-table">
+                      <thead className="bg-slate-50/80 border-b border-slate-100 text-[11px] font-bold text-neutral-slate uppercase tracking-wider">
+                        <tr>
+                          <th className="py-3.5 px-4">ID Permohonan</th>
+                          <th className="py-3.5 px-4">Pemohon</th>
+                          <th className="py-3.5 px-4">Data Yang Diubah</th>
+                          <th className="py-3.5 px-4">Status</th>
+                          <th className="py-3.5 px-4 text-right">Tindakan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-neutral-dark">
+                        {changeRequests.map((cr) => {
+                          const isSel = selectedCR?.id === cr.id;
+                          const st = (cr.status || "PENDING").toUpperCase();
+                          return (
+                            <tr
+                              key={cr.id}
+                              onClick={() => setSelectedCR(cr)}
+                              className={`cursor-pointer transition-all border-l-4 ${
+                                isSel
+                                  ? "bg-sky-50/90 border-l-primary shadow-sm"
+                                  : "hover:bg-slate-50/80 border-l-transparent"
+                              }`}
+                            >
+                              <td className="py-3.5 px-4 font-mono font-bold text-neutral-dark">
+                                #{cr.id?.slice(0, 8)}
+                              </td>
+                              <td className="py-3.5 px-4">
+                                <div className="font-semibold text-neutral-dark">{cr.user_name || cr.userName || cr.email || "Mitra"}</div>
+                                <div className="text-[11px] text-neutral-slate">{cr.organization_name || cr.user_email || cr.email}</div>
+                              </td>
+                              <td className="py-3.5 px-4">
+                                <div className="flex flex-wrap gap-1">
+                                  {Object.keys(cr.fields || cr.requested_fields || {}).map((f) => (
+                                    <span key={f} className="px-2 py-0.5 rounded bg-slate-100 text-[10px] font-mono text-neutral-dark font-semibold">
+                                      {f.toUpperCase()}
+                                    </span>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className="py-3.5 px-4">
+                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                  st === "APPROVED" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                                  st === "REJECTED" ? "bg-rose-50 text-rose-700 border border-rose-200" :
+                                  "bg-amber-50 text-amber-700 border border-amber-200"
+                                }`}>
+                                  {st}
+                                </span>
+                              </td>
+                              <td className="py-3.5 px-4 text-right">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedCR(cr);
+                                  }}
+                                  className="px-3 py-1 bg-primary text-white rounded-lg text-xs font-semibold hover:bg-primary/90 transition"
+                                >
+                                  Tinjau
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {selectedCR && (
+              <div className="lg:col-span-5 bg-white rounded-3xl border border-slate-200/80 shadow-servio-xs p-6 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="font-bold text-sm text-neutral-dark">Detail Pengajuan Perubahan Legalitas</h3>
+                    <p className="text-xs text-neutral-slate font-mono">ID: {selectedCR.id}</p>
+                  </div>
+                  <button
+                    onClick={() => setSelectedCR(null)}
+                    className="text-neutral-slate hover:text-neutral-dark text-xs font-semibold"
+                  >
+                    Tutup
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="p-3 bg-slate-50 rounded-xl space-y-1">
+                    <div className="text-neutral-slate font-medium">Alasan Pengajuan oleh Mitra:</div>
+                    <div className="font-medium text-neutral-dark italic">"{selectedCR.reason || "Tidak ada alasan spesifik"}"</div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="font-bold text-neutral-dark">Data Yang Diminta Perubahan:</div>
+                    <div className="bg-slate-50 rounded-xl p-3 space-y-2">
+                      {Object.entries(selectedCR.fields || selectedCR.requested_fields || {}).map(([k, v]: [string, any]) => (
+                        <div key={k} className="flex justify-between items-center border-b border-slate-200/50 pb-1.5 last:border-0 last:pb-0">
+                          <span className="font-mono text-neutral-slate uppercase">{k}:</span>
+                          <span className="font-bold text-neutral-dark font-mono">{String(v)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {selectedCR.status === "PENDING" && (
+                    <div className="space-y-3 pt-3 border-t border-slate-100">
+                      <div>
+                        <label className="font-semibold text-neutral-dark block mb-1">
+                          Catatan / Alasan (Wajib jika menolak):
+                        </label>
+                        <textarea
+                          id="cr-decision-reason-input"
+                          rows={2}
+                          value={crDecisionReason}
+                          onChange={(e) => setCrDecisionReason(e.target.value)}
+                          placeholder="Masukkan alasan verifikasi atau alasan penolakan..."
+                          className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-primary"
+                        />
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          id="cr-reject-btn"
+                          disabled={crActionLoading}
+                          onClick={() => handleDecisionCR(selectedCR.id, "REJECT")}
+                          className="flex-1 py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition disabled:opacity-50"
+                        >
+                          Tolak Perubahan
+                        </button>
+                        <button
+                          type="button"
+                          id="cr-approve-btn"
+                          disabled={crActionLoading}
+                          onClick={() => handleDecisionCR(selectedCR.id, "APPROVE")}
+                          className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition disabled:opacity-50"
+                        >
+                          Setujui Perubahan
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+      <>
       {/* Filter and Search Bar */}
       <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-servio-xs flex flex-col md:flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto">
@@ -294,7 +555,7 @@ export default function AdminRegistrationApplicationsPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
+                <table className="w-full text-left text-xs" id="applications-table">
                   <thead className="bg-slate-50/80 border-b border-slate-100 text-[11px] font-bold text-neutral-slate uppercase tracking-wider">
                     <tr>
                       <th className="py-3.5 px-4 whitespace-nowrap">No. Registrasi</th>
@@ -955,6 +1216,8 @@ export default function AdminRegistrationApplicationsPage() {
           type={toast.type}
           onClose={() => setToast(null)}
         />
+      )}
+      </>
       )}
     </div>
   );

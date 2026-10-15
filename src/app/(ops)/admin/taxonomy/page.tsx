@@ -453,11 +453,11 @@ export default function AdminTaxonomyPage() {
 
       {/* Page Header */}
       <PageHeader
-        title="Manajemen Taksonomi Operasional"
+        title="Manajemen Kategori Jasa Operasional"
         description="Kontrol operasional Subkategori, peninjauan pengajuan subkategori mitra, mapping kategori, dan pengawasan katalog jasa."
         breadcrumbs={[
           { label: "Operations", href: "/ops/admin/dashboard" },
-          { label: "Taksonomi", href: "/ops/admin/taxonomy" },
+          { label: "Kategori Jasa", href: "/ops/admin/taxonomy" },
         ]}
       />
 
@@ -530,7 +530,7 @@ export default function AdminTaxonomyPage() {
             <div>
               <h2 className="text-sm font-bold text-slate-900">Daftar Kategori Layanan Platform</h2>
               <p className="text-xs text-slate-500">
-                Pondasi taksonomi tingkat tertinggi. Kewenangan membuat dan mengubah struktur kategori berada di CEO.
+                Pondasi kategori jasa tingkat tertinggi. Kewenangan membuat dan mengubah struktur kategori berada di CEO.
               </p>
             </div>
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-xs font-semibold">
@@ -1219,9 +1219,9 @@ export default function AdminTaxonomyPage() {
       {activeTab === "analysis" && (
         <div className="space-y-6">
           <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
-            <h2 className="text-sm font-bold text-slate-900">Analisis Operasional Taksonomi &amp; Kualitas</h2>
+            <h2 className="text-sm font-bold text-slate-900">Analisis Operasional Kategori Jasa &amp; Kualitas</h2>
             <p className="text-xs text-slate-500">
-              Evaluasi utilisasi subkategori, volume pengajuan baru, dan deteksi taksonomi yang belum memiliki penawaran aktif.
+              Evaluasi utilisasi subkategori, volume pengajuan baru, dan deteksi kategori jasa yang belum memiliki penawaran aktif.
             </p>
           </div>
 

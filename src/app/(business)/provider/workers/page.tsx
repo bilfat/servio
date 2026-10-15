@@ -476,11 +476,18 @@ export default function ProviderWorkersPage() {
     try {
       setIsLoadingMasterServices(true);
       const res = await providerServiceApi.list({ status: "ACTIVE" });
-      if (res && res.data) {
-        setApiMasterServices(res.data);
-      }
+      const raw = res?.data;
+      const list = Array.isArray(raw)
+        ? raw
+        : Array.isArray((raw as any)?.items)
+        ? (raw as any).items
+        : Array.isArray((raw as any)?.services)
+        ? (raw as any).services
+        : [];
+      setApiMasterServices(list);
     } catch (err: any) {
       console.warn("Notice: Provider master services for workers could not be loaded (using local preview):", err?.message || err);
+      setApiMasterServices([]);
     } finally {
       setIsLoadingMasterServices(false);
     }
@@ -492,8 +499,9 @@ export default function ProviderWorkersPage() {
 
   // Provider's active Master Services for technician competency capability mapping
   const providerMasterServices: ProviderMasterService[] = useMemo(() => {
+    const list = Array.isArray(apiMasterServices) ? apiMasterServices : [];
     if (!isLoadingMasterServices) {
-      return apiMasterServices.map((s: any) => ({
+      return list.map((s: any) => ({
         id: s.id || s._id,
         providerId: s.providerId,
         providerName: s.providerName,
@@ -526,12 +534,19 @@ export default function ProviderWorkersPage() {
     setApiError(null);
     try {
       const res = await providerApi.getWorkers();
-      if (res.data) {
-        setApiWorkers(res.data);
-      }
+      const raw = res?.data;
+      const list = Array.isArray(raw)
+        ? raw
+        : Array.isArray((raw as any)?.items)
+        ? (raw as any).items
+        : Array.isArray((raw as any)?.workers)
+        ? (raw as any).workers
+        : [];
+      setApiWorkers(list);
     } catch (err: unknown) {
       const error = err as Error & { message?: string };
       setApiError(error.message || "Gagal memuat data teknisi dari server.");
+      setApiWorkers([]);
     } finally {
       setIsLoadingApiWorkers(false);
     }
@@ -644,17 +659,21 @@ export default function ProviderWorkersPage() {
   };
 
   const handleCreateWorker = async () => {
-    if (!workerEmail.trim()) {
-      setCapabilityError("Email teknisi wajib diisi untuk pendaftaran akun.");
+    if (!workerName.trim()) {
+      setStep1Error("Nama lengkap teknisi wajib diisi.");
       return;
     }
-    if (selectedMasterServiceIds.length === 0) {
-      setCapabilityError("Minimal pilih 1 layanan sebagai kompetensi teknisi.");
+    if (!workerPhone.trim() || workerPhone.trim().length < 8) {
+      setStep1Error("Nomor WhatsApp / telepon teknisi wajib diisi.");
+      return;
+    }
+    if (!workerEmail.trim() || !workerEmail.includes("@")) {
+      setStep1Error("Email teknisi wajib diisi dengan format valid.");
       return;
     }
 
     setIsSubmittingWorker(true);
-    setCapabilityError(null);
+    setStep1Error(null);
 
     try {
       const res = await providerApi.createWorker({
@@ -662,65 +681,62 @@ export default function ProviderWorkersPage() {
         email: workerEmail.trim(),
         phone: workerPhone.trim(),
         employeeId: workerEmployeeId.trim() || undefined,
-        position: workerPosition.trim() || "Teknisi Lapangan",
-        skills: [workerCertificate.trim() || "Teknisi Lapangan"],
-        specialization: workerSpecialization.trim() ? [workerSpecialization.trim()] : ["Umum"],
-        serviceDomain: workerServiceDomain.trim() || "Service & Maintenance",
-        experienceYears: Number(workerExperienceYears) || 1,
-        workingDays: workerWorkingDays,
-        workingHours: workerWorkingHours,
-        vehicleNumber: `${workerVehicleNumber.trim()} (${workerVehicle})`,
-        masterServiceIds: selectedMasterServiceIds,
+        position: "Teknisi Lapangan",
+        skills: ["Teknisi Lapangan"],
+        specialization: ["Teknisi Lapangan"],
+        serviceDomain: "Service & Maintenance",
       });
 
-      // Synchronize in domain repository bridge as well
-      addWorker(
-        {
-          providerId: currentProviderId,
-          providerName: providerName,
-          name: workerName.trim(),
-          phone: workerPhone.trim(),
-          email: workerEmail.trim(),
-          rating: 5.0,
-          completedJobs: 0,
-          skills: [workerCertificate || "Teknisi Lapangan"],
-          isOnline: workerInitialStatus === "ONLINE",
-          currentLocation: {
-            lat: -6.2,
-            lng: 106.8,
-            address: "Workshop Pusat",
-          },
-          vehicleNumber: `${workerVehicleNumber.trim()} (${workerVehicle})`,
+      // Synchronize in domain repository bridge
+      addWorker({
+        providerId: currentProviderId,
+        providerName: providerName,
+        name: workerName.trim(),
+        phone: workerPhone.trim(),
+        email: workerEmail.trim(),
+        rating: 5.0,
+        completedJobs: 0,
+        skills: ["Teknisi Lapangan"],
+        isOnline: true,
+        currentLocation: {
+          lat: -6.2,
+          lng: 106.8,
+          address: "Workshop Pusat",
         },
-        selectedMasterServiceIds
-      );
+        vehicleNumber: "Motor Operasional",
+      });
 
-      const payload = res as unknown as {
-        invitationUrl?: string;
-        invitationPath?: string;
-        debugInvitationToken?: string;
-        data?: { invitationUrl?: string; invitationPath?: string; debugInvitationToken?: string };
-      };
+      const resData = (res as any)?.data || res;
+      const rawToken =
+        resData?.invite_token ||
+        resData?.invitation_token ||
+        resData?.invitationToken ||
+        resData?.debugInvitationToken ||
+        (res as any)?.invite_token ||
+        (res as any)?.invitation_token ||
+        (res as any)?.invitationToken ||
+        (res as any)?.debugInvitationToken ||
+        "";
 
-      const invUrl = payload.invitationUrl || payload.data?.invitationUrl || `/auth/invitation?token=${payload.debugInvitationToken || payload.data?.debugInvitationToken || ""}`;
-      const invPath = payload.invitationPath || payload.data?.invitationPath || invUrl;
+      const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost:3000";
+      const fullInvUrl = rawToken ? `${origin}/auth/invitation?token=${rawToken}` : `${origin}/auth/invitation`;
 
       setInvitationModalData({
         workerName: workerName.trim(),
         workerEmail: workerEmail.trim(),
-        invitationUrl: invUrl,
-        invitationPath: invPath,
-        token: payload.debugInvitationToken || payload.data?.debugInvitationToken,
+        invitationUrl: fullInvUrl,
+        invitationPath: `/auth/invitation?token=${rawToken}`,
+        token: rawToken,
         copied: false,
       });
 
-      setToastMessage(`Teknisi ${workerName} berhasil didaftarkan! Tautan undangan telah dibuat.`);
       setShowAddModal(false);
       resetAddWorkerForm();
-      await fetchApiWorkers();
+      fetchApiWorkers();
+      setToastMessage(`Undangan teknisi ${workerName.trim()} berhasil dibuat!`);
     } catch (err: unknown) {
       const error = err as Error & { message?: string };
-      setCapabilityError(error.message || "Gagal mendaftarkan teknisi ke server.");
+      setStep1Error(error.message || "Gagal mengundang teknisi.");
     } finally {
       setIsSubmittingWorker(false);
     }
@@ -729,7 +745,7 @@ export default function ProviderWorkersPage() {
   // Open "Kelola Kompetensi" for a worker
   const handleOpenManageCompetency = (worker: WorkerTechnician) => {
     setManagingWorker(worker);
-    const apiWorker = apiWorkers.find((aw) => aw.id === worker.id);
+    const apiWorker = Array.isArray(apiWorkers) ? apiWorkers.find((aw) => aw.id === worker.id) : undefined;
     let initialIds: string[] = [];
 
     if (apiWorker && apiWorker.capabilities && apiWorker.capabilities.length > 0) {
@@ -831,8 +847,9 @@ export default function ProviderWorkersPage() {
 
   // Harmonized workers list prioritizing real data from MongoDB API
   const workersList: WorkerTechnician[] = useMemo(() => {
+    const list = Array.isArray(apiWorkers) ? apiWorkers : [];
     if (!isLoadingApiWorkers) {
-      return apiWorkers.map((aw) => ({
+      return list.map((aw) => ({
         id: aw.id,
         providerId: aw.providerId || currentProviderId,
         providerName: aw.providerName || providerName,
@@ -931,6 +948,7 @@ export default function ProviderWorkersPage() {
           </Button>
 
           <Button
+            id="btn-add-worker-modal"
             variant="primary"
             size="sm"
             onClick={handleOpenAddModal}
@@ -1204,9 +1222,18 @@ export default function ProviderWorkersPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        const match = apiWorkers.find((aw) => aw.id === worker.id);
+                        const match = Array.isArray(apiWorkers) ? apiWorkers.find((aw) => aw.id === worker.id || aw.userId === worker.id || (aw as any).name === worker.name) : undefined;
+                        const resolvedEmpId = match?.employeeId 
+                          || match?.workerCode 
+                          || (match as any)?.employee_id 
+                          || worker.employeeId 
+                          || `BTM-${(worker.name || "TEKNISI").split(/\s+/)[0].toUpperCase().slice(0, 8)}-${(worker.id || "001").slice(-3).toUpperCase()}`;
+
                         if (match) {
-                          setSelectedWorkerDetail(match);
+                          setSelectedWorkerDetail({
+                            ...match,
+                            employeeId: resolvedEmpId,
+                          });
                         } else {
                           setSelectedWorkerDetail({
                             id: worker.id,
@@ -1216,7 +1243,7 @@ export default function ProviderWorkersPage() {
                             phone: worker.phone,
                             role: "WORKER_TECHNICIAN",
                             status: worker.isOnline ? "ACTIVE" : "OFFLINE",
-                            employeeId: "WRK-" + worker.id.slice(-3).toUpperCase(),
+                            employeeId: resolvedEmpId,
                             position: "Teknisi Lapangan",
                             skills: worker.skills,
                             specialization: ["Teknisi Lapangan"],
@@ -1283,59 +1310,20 @@ export default function ProviderWorkersPage() {
       <Modal
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
-        title="Tambah Teknisi"
+        title="Tambah Teknisi Baru"
       >
-        <div className="space-y-4">
-          {/* Stepper Navigation */}
-          <div className="flex items-center justify-between pb-3 border-b border-slate-200 text-xs">
-            <button
-              type="button"
-              onClick={() => setAddStep(1)}
-              className={`flex items-center gap-2 font-bold px-3 py-1.5 rounded-xl transition-colors ${
-                addStep === 1
-                  ? "bg-[#0F4C81] text-white"
-                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-              }`}
-            >
-              <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px]">
-                1
-              </span>
-              <span>Data Identitas Teknisi</span>
-            </button>
-
-            <span className="text-slate-300 font-bold">&rarr;</span>
-
-            <button
-              type="button"
-              onClick={() => {
-                if (workerName && workerPhone && workerVehicleNumber) {
-                  setAddStep(2);
-                } else {
-                  handleNextStep();
-                }
-              }}
-              className={`flex items-center gap-2 font-bold px-3 py-1.5 rounded-xl transition-colors ${
-                addStep === 2
-                  ? "bg-[#0F4C81] text-white"
-                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-              }`}
-            >
-              <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-[10px]">
-                2
-              </span>
-              <span>Kompetensi Layanan</span>
-            </button>
+        <div className="space-y-4 text-xs">
+          <div className="p-3 bg-sky-50/70 border border-sky-200 rounded-xl text-slate-700 flex items-start gap-2.5">
+            <Info size={18} className="text-[#0F4C81] shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="font-semibold text-slate-800">
+                Undang Teknisi Internal ke Bengkel / Workshop Anda
+              </p>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                Cukup masukkan data identitas dasar teknisi. Teknisi akan menerima tautan undangan via email untuk membuat kata sandi, mengisi data diri dasar, dan menyetujui SOP kerja SERVIO.
+              </p>
+            </div>
           </div>
-
-          {/* STEP 1: DATA IDENTITAS WORKER */}
-          {addStep === 1 && (
-            <div className="space-y-3.5 text-xs">
-              <div className="p-3 bg-sky-50/70 border border-sky-200 rounded-xl text-slate-700 flex items-start gap-2">
-                <Info size={16} className="text-[#0F4C81] shrink-0 mt-0.5" />
-                <p>
-                  Isi data profil dan operasional teknisi. Setelah ini, Anda akan langsung menetapkan kompetensi Provider Master Service yang dikuasai teknisi.
-                </p>
-              </div>
 
               {step1Error && (
                 <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl font-semibold flex items-center gap-2">
@@ -1351,6 +1339,7 @@ export default function ProviderWorkersPage() {
                     Nama Lengkap Teknisi <span className="text-rose-500">*</span>
                   </label>
                   <input
+                    id="input-worker-name"
                     type="text"
                     placeholder="Contoh: Budi Santoso"
                     value={workerName}
@@ -1364,6 +1353,7 @@ export default function ProviderWorkersPage() {
                     Nomor WhatsApp / Telepon <span className="text-rose-500">*</span>
                   </label>
                   <input
+                    id="input-worker-phone"
                     type="tel"
                     placeholder="0812-3456-7890"
                     value={workerPhone}
@@ -1380,6 +1370,7 @@ export default function ProviderWorkersPage() {
                     Email Teknisi (Untuk Undangan) <span className="text-rose-500">*</span>
                   </label>
                   <input
+                    id="input-worker-email"
                     type="email"
                     placeholder="teknisi@servio.id"
                     value={workerEmail}
@@ -1390,320 +1381,55 @@ export default function ProviderWorkersPage() {
 
                 <div>
                   <label className="font-bold text-neutral-dark block mb-1">
-                    Employee ID / Worker ID (Opsional)
+                    Employee ID / Kode Teknisi
                   </label>
-                  <input
-                    type="text"
-                    placeholder="Otomatis jika kosong (misal: WRK-002)"
-                    value={workerEmployeeId}
-                    onChange={(e) => setWorkerEmployeeId(e.target.value)}
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
-                  />
-                </div>
-              </div>
-
-              {/* Technical Profile Section */}
-              <div className="pt-2 border-t border-slate-100 space-y-3">
-                <h4 className="font-bold text-[11px] uppercase tracking-wider text-slate-500">
-                  Profil Teknis &amp; Keahlian (Section 6)
-                </h4>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-bold text-neutral-dark block mb-1">
-                      Posisi / Jabatan
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Contoh: Teknisi Lapangan HVAC"
-                      value={workerPosition}
-                      onChange={(e) => setWorkerPosition(e.target.value)}
-                      className="w-full p-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
-                    />
+                  <div className="p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs flex items-center justify-between">
+                    <span className="font-mono text-slate-700 font-semibold text-[11px]">
+                      {workerName.trim()
+                        ? `${(providerName || "BENGKEL").split(/\s+/).filter(Boolean).map((w: string) => w[0]).join("").toUpperCase().slice(0, 3)}-${workerName.trim().split(/\s+/)[0].toUpperCase().slice(0, 8)}-[AUTO]`
+                        : "Dibuat otomatis di database"}
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-md">
+                      Auto-Generate
+                    </span>
                   </div>
-
-                  <div>
-                    <label className="font-bold text-neutral-dark block mb-1">
-                      Domain Layanan
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Contoh: HVAC & Pendingin"
-                      value={workerServiceDomain}
-                      onChange={(e) => setWorkerServiceDomain(e.target.value)}
-                      className="w-full p-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-neutral-dark block mb-1">
-                      Spesialisasi Keahlian
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Contoh: AC Split Inverter, VRV, Chiller"
-                      value={workerSpecialization}
-                      onChange={(e) => setWorkerSpecialization(e.target.value)}
-                      className="w-full p-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-neutral-dark block mb-1">
-                      Pengalaman Kerja (Tahun)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="3"
-                      value={workerExperienceYears}
-                      onChange={(e) => setWorkerExperienceYears(e.target.value)}
-                      className="w-full p-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Schedule & Availability Section */}
-              <div className="pt-2 border-t border-slate-100 space-y-2.5">
-                <h4 className="font-bold text-[11px] uppercase tracking-wider text-slate-500">
-                  Jadwal &amp; Ketersediaan Operasional
-                </h4>
-
-                <div>
-                  <label className="font-bold text-neutral-dark block mb-1">
-                    Hari Kerja Aktif:
-                  </label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"].map((day) => {
-                      const isChecked = workerWorkingDays.includes(day);
-                      return (
-                        <button
-                          key={day}
-                          type="button"
-                          onClick={() => {
-                            if (isChecked) {
-                              setWorkerWorkingDays(workerWorkingDays.filter((d) => d !== day));
-                            } else {
-                              setWorkerWorkingDays([...workerWorkingDays, day]);
-                            }
-                          }}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
-                            isChecked
-                              ? "bg-[#0F4C81] text-white border-[#0F4C81]"
-                              : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
-                          }`}
-                        >
-                          {day}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="font-bold text-neutral-dark block mb-1">
-                      Jam Kerja Operasional
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Contoh: 08:00 - 17:00 WIB"
-                      value={workerWorkingHours}
-                      onChange={(e) => setWorkerWorkingHours(e.target.value)}
-                      className="w-full p-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="font-bold text-neutral-dark block mb-1">
-                      Status Awal Kehadiran <span className="text-rose-500">*</span>
-                    </label>
-                    <div className="flex items-center gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => setWorkerInitialStatus("ONLINE")}
-                        className={`flex-1 py-2 px-3 rounded-xl font-bold border transition-colors ${
-                          workerInitialStatus === "ONLINE"
-                            ? "bg-emerald-50 text-emerald-800 border-emerald-300"
-                            : "bg-slate-100 text-slate-600 border-slate-200"
-                        }`}
-                      >
-                        ● Siap / On Duty
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setWorkerInitialStatus("OFFLINE")}
-                        className={`flex-1 py-2 px-3 rounded-xl font-bold border transition-colors ${
-                          workerInitialStatus === "OFFLINE"
-                            ? "bg-slate-200 text-slate-800 border-slate-300"
-                            : "bg-slate-100 text-slate-600 border-slate-200"
-                        }`}
-                      >
-                        ○ Cuti / Off
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Security Invitation Note */}
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-[11px] flex items-start gap-2">
-                <ShieldCheck size={18} className="text-amber-700 shrink-0 mt-0.5" weight="fill" />
-                <p>
-                  <strong>Aktivasi Mandiri (Section 7):</strong> Password tidak diinput oleh Provider. Sistem SERVIO secara otomatis mengenerate tautan undangan aktivasi akun agar teknisi dapat membuat kata sandi mandiri secara aman.
-                </p>
-              </div>
-
-              {/* Avatar Selector */}
-              <div>
-                <label className="font-bold text-neutral-dark block mb-1">
-                  Foto / Avatar Profil
-                </label>
-                <div className="flex items-center gap-3">
-                  {AVATAR_PRESETS.map((preset) => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => setWorkerAvatar(preset.id)}
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs transition-transform ${
-                        preset.color
-                      } ${
-                        workerAvatar === preset.id
-                          ? "ring-3 ring-[#0F4C81] ring-offset-2 scale-105"
-                          : "opacity-70 hover:opacity-100"
-                      }`}
-                    >
-                      {workerName ? workerName.charAt(0) : preset.label.charAt(preset.label.length - 1)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Vehicle & Plate Number */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-neutral-dark block mb-1">
-                    Jenis Kendaraan Operasional
-                  </label>
-                  <select
-                    value={workerVehicle}
-                    onChange={(e) => setWorkerVehicle(e.target.value)}
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 bg-white font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20"
-                  >
-                    <option value="Motor Operasional (Honda Vario)">Motor Operasional (Honda Vario)</option>
-                    <option value="Motor Operasional (Yamaha NMAX)">Motor Operasional (Yamaha NMAX)</option>
-                    <option value="Mobil Servis Van (Daihatsu Gran Max)">Mobil Servis Van (Daihatsu Gran Max)</option>
-                    <option value="Mobil Pickup Operasional (Suzuki Carry)">Mobil Pickup Operasional (Suzuki Carry)</option>
-                    <option value="Kendaraan Pribadi Teknisi">Kendaraan Pribadi Teknisi</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="font-bold text-neutral-dark block mb-1">
-                    Nomor Pelat Kendaraan <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Contoh: B 1234 ABC"
-                    value={workerVehicleNumber}
-                    onChange={(e) => setWorkerVehicleNumber(e.target.value)}
-                    className="w-full p-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
-                  />
-                </div>
-              </div>
-
-              {/* Certification */}
-              <div>
-                <label className="font-bold text-neutral-dark block mb-1">
-                  Sertifikasi Teknis (Opsional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="Contoh: BNSP Teknisi AC Level 2 / K3 Listrik"
-                  value={workerCertificate}
-                  onChange={(e) => setWorkerCertificate(e.target.value)}
-                  className="w-full p-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowAddModal(false)}
-                >
-                  Batal
-                </Button>
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  onClick={handleNextStep}
-                  className="bg-[#0F4C81] hover:bg-sky-900 text-white"
-                >
-                  Lanjut: Pilih Kompetensi Layanan &rarr;
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 2: KOMPETENSI LAYANAN (PROVIDER MASTER SERVICE MAPPING) */}
-          {addStep === 2 && (
-            <div className="space-y-4 text-xs">
-              <div className="p-3 bg-sky-50/70 border border-sky-200 rounded-xl text-slate-700 flex items-start gap-2">
-                <Info size={16} className="text-[#0F4C81] shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold text-slate-900">
-                    Pilih Provider Master Service yang Dikuasai Teknisi
-                  </p>
-                  <p className="text-[11px] text-slate-600 mt-0.5">
-                    Kategori &amp; Subkategori otomatis terdeteksi dari Master Service yang dipilih. Worker tidak memilih kategori secara manual.
+                  <p className="text-[10px] text-neutral-slate mt-1">
+                    ID dibuat otomatis oleh database dengan format inisial toko &amp; nama teknisi.
                   </p>
                 </div>
               </div>
 
-              <WorkerCompetencySelector
-                providerMasterServices={providerMasterServices}
-                selectedServiceIds={selectedMasterServiceIds}
-                onChangeSelectedServiceIds={(ids) => {
-                  setSelectedMasterServiceIds(ids);
-                  if (ids.length > 0) setCapabilityError(null);
-                }}
-                errorMessage={capabilityError}
-              />
+          <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowAddModal(false)}
+            >
+              Batal
+            </Button>
 
-              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setAddStep(1)}
-                >
-                  &larr; Kembali ke Data Teknisi
-                </Button>
+            <Button
+              id="btn-worker-submit"
+              type="button"
+              variant="primary"
+              size="sm"
+              disabled={isSubmittingWorker}
+              onClick={handleCreateWorker}
+              className="bg-[#0F4C81] hover:bg-sky-900 text-white flex items-center gap-1.5"
+            >
+              {isSubmittingWorker ? (
+                <>
+                  <SpinnerGap size={14} className="animate-spin" />
+                  <span>Mengirim Undangan...</span>
+                </>
+              ) : (
+                <span>Simpan &amp; Kirim Undangan Teknisi</span>
+              )}
+            </Button>
+          </div>
 
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  disabled={isSubmittingWorker}
-                  onClick={handleCreateWorker}
-                  className="bg-[#0F4C81] hover:bg-sky-900 text-white flex items-center gap-1.5"
-                >
-                  {isSubmittingWorker ? (
-                    <>
-                      <SpinnerGap size={14} className="animate-spin" />
-                      <span>Mendaftarkan Teknisi...</span>
-                    </>
-                  ) : (
-                    <span>Simpan Teknisi &amp; Buat Undangan</span>
-                  )}
-                </Button>
-              </div>
-            </div>
-          )}
+
         </div>
       </Modal>
 
@@ -1923,7 +1649,7 @@ export default function ProviderWorkersPage() {
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-500 font-mono mt-0.5">
-                  Employee ID: {selectedWorkerDetail.employeeId || selectedWorkerDetail.workerCode || "-"}
+                  Employee ID: {selectedWorkerDetail.employeeId || selectedWorkerDetail.workerCode || (selectedWorkerDetail as any).employee_id || `WRK-${(selectedWorkerDetail.fullName || selectedWorkerDetail.name || "TK").split(/\s+/)[0].toUpperCase().slice(0, 8)}-${(selectedWorkerDetail.id || "001").slice(-3).toUpperCase()}`}
                 </p>
               </div>
             </div>
@@ -2036,12 +1762,34 @@ export default function ProviderWorkersPage() {
               </div>
             </div>
 
-            <div className="flex items-center justify-end pt-2 border-t border-slate-100">
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+              {selectedWorkerDetail.status !== "DEACTIVATED" && (
+                <Button
+                  id="deactivate-worker-btn"
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    if (confirm(`Nonaktifkan teknisi ${selectedWorkerDetail.fullName || selectedWorkerDetail.name}?`)) {
+                      try {
+                        await providerApi.deactivateWorker(selectedWorkerDetail.id);
+                        setToastMessage("Teknisi berhasil dinonaktifkan.");
+                        setSelectedWorkerDetail(null);
+                        await fetchApiWorkers();
+                      } catch (err: any) {
+                        setToastMessage(err.message || "Gagal menonaktifkan teknisi.");
+                      }
+                    }
+                  }}
+                  className="border-rose-200 text-rose-600 hover:bg-rose-50"
+                >
+                  Nonaktifkan Teknisi
+                </Button>
+              )}
               <Button
                 variant="primary"
                 size="sm"
                 onClick={() => setSelectedWorkerDetail(null)}
-                className="bg-[#0F4C81] text-white hover:bg-sky-900"
+                className="bg-[#0F4C81] text-white hover:bg-sky-900 ml-auto"
               >
                 Tutup
               </Button>

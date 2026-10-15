@@ -30,14 +30,17 @@ import { CustomerProductWarrantyDetail } from "@/components/features/products/Cu
 
 export default function CustomerWarrantyDetailPage() {
   const params = useParams();
-  const searchParams = useSearchParams();
   const warrantyId = (params?.warrantyId as string) || "WAR-2026-1001";
 
-  // AC4-01: Strict domain boundary — If WRN- product warranty, render Product Warranty Certificate!
   if (warrantyId.startsWith("WRN-")) {
     return <CustomerProductWarrantyDetail warrantyId={warrantyId} />;
   }
 
+  return <ServiceWarrantyDetailContent warrantyId={warrantyId} />;
+}
+
+function ServiceWarrantyDetailContent({ warrantyId }: { warrantyId: string }) {
+  const searchParams = useSearchParams();
   const initialClaimOpen = searchParams.get("claim") === "true";
 
   const repo = useDomainRepository();

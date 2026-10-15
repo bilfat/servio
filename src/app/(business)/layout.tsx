@@ -16,8 +16,8 @@ export default function BusinessLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { activeRole, switchRole, isLoadingAuth, user } = useActiveRole();
   const pathname = usePathname();
+  const { activeRole, switchRole, isLoadingAuth, user } = useActiveRole();
 
   const isWorkerRoute = pathname?.startsWith("/worker") || pathname?.startsWith("/business/worker");
   const isProviderRoute = pathname?.startsWith("/provider") || pathname?.startsWith("/business/provider");
@@ -48,6 +48,7 @@ export default function BusinessLayout({
 
   // Auto switch role if authenticated user has target role
   React.useEffect(() => {
+    if (pathname?.startsWith("/worker/activate")) return;
     if (
       !isLoadingAuth &&
       (user.activeRole === targetRole || user.availableRoles?.includes(targetRole)) &&
@@ -55,7 +56,12 @@ export default function BusinessLayout({
     ) {
       switchRole(targetRole);
     }
-  }, [isLoadingAuth, user, activeRole, targetRole, switchRole]);
+  }, [isLoadingAuth, user, activeRole, targetRole, switchRole, pathname]);
+
+  // /worker/activate is a public invitation acceptance page, not an operational portal
+  if (pathname?.startsWith("/worker/activate")) {
+    return <>{children}</>;
+  }
 
   const isRoleMatching =
     user.activeRole === targetRole ||

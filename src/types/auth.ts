@@ -96,6 +96,9 @@ export interface UserContext {
   permissions?: string[];
   employeeId?: string;
   department?: string;
+  staffOnboardingStatus?: "INVITED" | "IN_PROGRESS" | "PENDING_REVIEW" | "REVISION_REQUIRED" | "REJECTED" | "COMPLETED" | "OPERATIONAL_READY" | string;
+  readiness?: "READY" | "NOT_READY" | string;
+  isOperationalReady?: boolean;
   organizationId?: string;
   organizationName?: string;
   avatarUrl?: string;

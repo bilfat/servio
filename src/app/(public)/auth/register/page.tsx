@@ -48,9 +48,18 @@ function RegisterContent() {
   const [custKtpFile, setCustKtpFile] = useState<File | null>(null);
   const [custOtp, setCustOtp] = useState("");
   const [custVerificationInfo, setCustVerificationInfo] = useState<{ id?: string; debugOtp?: string } | null>(null);
+  const [resendCountdown, setResendCountdown] = useState(30);
+  const [resending, setResending] = useState(false);
+  const [resendSuccess, setResendSuccess] = useState(false);
 
   // Business Form State (6 Steps)
   const [bizStep, setBizStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
+  const [bizEmailVerified, setBizEmailVerified] = useState(false);
+  const [bizOtpSent, setBizOtpSent] = useState(false);
+  const [bizOtp, setBizOtp] = useState("");
+  const [bizResendTimer, setBizResendTimer] = useState(30);
+  const [bizCanResend, setBizCanResend] = useState(false);
+  const [bizResending, setBizResending] = useState(false);
   const [bizAccount, setBizAccount] = useState({
     fullName: "",
     email: "",
@@ -109,6 +118,83 @@ function RegisterContent() {
     }
   }, [initialType]);
 
+  // Pulihkan sesi verifikasi OTP jika halaman ter-refresh dalam kurun waktu 1 jam
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem("servio_pending_verification");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const ageMs = Date.now() - (parsed.timestamp || 0);
+        const ONE_HOUR_MS = 60 * 60 * 1000;
+        if (ageMs < ONE_HOUR_MS && parsed.email) {
+          setFamily("CUSTOMER");
+          setCustStep(3);
+          setCustData((prev) => ({
+            ...prev,
+            fullName: parsed.fullName || prev.fullName,
+            email: parsed.email || prev.email,
+            phone: parsed.phone || prev.phone,
+            password: parsed.password || prev.password,
+            nik: parsed.nik || prev.nik,
+          }));
+          if (parsed.verificationInfo) {
+            setCustVerificationInfo(parsed.verificationInfo);
+          }
+        } else {
+          sessionStorage.removeItem("servio_pending_verification");
+        }
+      }
+
+      const storedBiz = sessionStorage.getItem("servio_pending_biz_verification");
+      if (storedBiz) {
+        const parsedBiz = JSON.parse(storedBiz);
+        const ageMs = Date.now() - (parsedBiz.timestamp || 0);
+        const ONE_HOUR_MS = 60 * 60 * 1000;
+        if (ageMs < ONE_HOUR_MS && parsedBiz.bizAccount?.email) {
+          setFamily("BUSINESS_FLOW");
+          if (parsedBiz.businessType) {
+            setBusinessType(parsedBiz.businessType);
+          }
+          setBizStep(1);
+          setBizOtpSent(true);
+          setBizAccount(parsedBiz.bizAccount);
+        } else {
+          sessionStorage.removeItem("servio_pending_biz_verification");
+        }
+      }
+    } catch {
+      // Ignore storage read error
+    }
+  }, []);
+
+  // Timer countdown untuk kirim ulang OTP (30 detik TTL Brevo)
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (custStep === 3 && resendCountdown > 0) {
+      timer = setTimeout(() => {
+        setResendCountdown((prev) => prev - 1);
+      }, 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [custStep, resendCountdown]);
+
+  // Timer countdown untuk kirim ulang OTP pendaftaran mitra bisnis via Brevo
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (bizOtpSent && !bizEmailVerified && bizResendTimer > 0) {
+      interval = setInterval(() => {
+        setBizResendTimer((prev) => {
+          if (prev <= 1) {
+            setBizCanResend(true);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [bizOtpSent, bizEmailVerified, bizResendTimer]);
+
   // Load document requirements when entering business flow
   useEffect(() => {
     if (family === "BUSINESS_FLOW") {
@@ -165,12 +251,80 @@ function RegisterContent() {
       if (res.data?.verification) {
         setCustVerificationInfo(res.data.verification);
       }
+      // Simpan session verifikasi sementara agar tidak hilang jika ter-refresh (berlaku 1 jam)
+      try {
+        sessionStorage.setItem(
+          "servio_pending_verification",
+          JSON.stringify({
+            family: "CUSTOMER",
+            email: custData.email,
+            phone: custData.phone,
+            fullName: custData.fullName,
+            password: custData.password,
+            nik: custData.nik,
+            verificationInfo: res.data?.verification,
+            timestamp: Date.now(),
+          })
+        );
+      } catch {}
+
+      setResendCountdown(30);
+      setResendSuccess(false);
       setCustStep(3);
     } catch (err: unknown) {
       const error = err as Error & { message?: string };
+      // Jika email ini sedang dalam proses verifikasi (belum lewat 1 jam), bantu pengguna langsung ke input OTP
+      if (error.message && error.message.includes("proses verifikasi OTP")) {
+        setErrorMsg(error.message);
+        setCustStep(3);
+        try {
+          sessionStorage.setItem(
+            "servio_pending_verification",
+            JSON.stringify({
+              family: "CUSTOMER",
+              email: custData.email,
+              phone: custData.phone,
+              fullName: custData.fullName,
+              password: custData.password,
+              nik: custData.nik,
+              timestamp: Date.now(),
+            })
+          );
+        } catch {}
+        return;
+      }
       setErrorMsg(error.message || "Gagal melakukan pendaftaran pelanggan.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    if (resendCountdown > 0 || resending) return;
+    setResending(true);
+    setErrorMsg(null);
+    setResendSuccess(false);
+
+    try {
+      const res = await authApi.resendOtp(custData.email, custVerificationInfo?.id);
+      if (res.data) {
+        setResendSuccess(true);
+        setResendCountdown(30);
+        const newChallengeId = res.data.challenge_id;
+        if (newChallengeId) {
+          setCustVerificationInfo((prev) => ({
+            ...prev,
+            id: newChallengeId,
+          }));
+        }
+      } else if (res.message) {
+        setErrorMsg(res.message);
+      }
+    } catch (err: unknown) {
+      const error = err as Error & { message?: string };
+      setErrorMsg(error.message || "Gagal mengirim ulang kode OTP.");
+    } finally {
+      setResending(false);
     }
   };
 
@@ -185,7 +339,25 @@ function RegisterContent() {
     setErrorMsg(null);
 
     try {
-      await authApi.verifyCode(custOtp, "EMAIL_VERIFICATION");
+      await authApi.verifyCode(custOtp, "ACCOUNT_VERIFICATION", custData.email);
+      try {
+        sessionStorage.removeItem("servio_pending_verification");
+      } catch {}
+
+      if (custData.password) {
+        try {
+          await authApi.login(custData.email, custData.password);
+        } catch (loginErr) {
+          console.warn("Auto-login sesi pelanggan setelah OTP:", loginErr);
+        }
+      }
+      if (custData.nik && custData.nik.length === 16) {
+        try {
+          await authApi.submitCustomerNik(custData.nik);
+        } catch (nikErr) {
+          console.warn("Pemberitahuan simpan NIK customer:", nikErr);
+        }
+      }
       router.push("/?welcome=1");
     } catch (err: unknown) {
       const error = err as Error & { message?: string };
@@ -203,11 +375,13 @@ function RegisterContent() {
     setBusinessType(type);
     setFamily("BUSINESS_FLOW");
     setBizStep(1);
+    setBizOtpSent(false);
+    setBizOtp("");
     setErrorMsg(null);
   };
 
-  // Step 1: Account
-  const handleBizStep1 = (e: React.FormEvent) => {
+  // Step 1: Kirim Pendaftaran Akun Mitra & Minta Kode OTP via Brevo
+  const handleBizRequestOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (bizAccount.password.length < 8) {
       setErrorMsg("Password minimal 8 karakter.");
@@ -217,14 +391,101 @@ function RegisterContent() {
       setErrorMsg("Konfirmasi password tidak cocok.");
       return;
     }
-    // Pre-fill PIC with account name/phone/email
-    if (!bizPic.fullName) {
+
+    setLoading(true);
+    setErrorMsg(null);
+
+    try {
+      // Daftarkan akun pemohon bisnis ke Laravel Identity Service
+      // Backend otomatis membuat challenge OTP dan mengirimkan email kode verifikasi resmi via Brevo
+      await authApi.register({
+        name: bizAccount.fullName,
+        email: bizAccount.email,
+        phone: bizAccount.phone,
+        password: bizAccount.password,
+        registration_type: "BUSINESS_APPLICANT",
+      });
+
+      setBizOtpSent(true);
+      setBizResendTimer(30);
+      setBizCanResend(false);
+    } catch (err: unknown) {
+      const error = err as Error & { message?: string; status?: number; code?: string };
+      if (error.code === "IDENTITY_EMAIL_ALREADY_REGISTERED") {
+        setErrorMsg("Email ini sudah terdaftar sebagai akun aktif. Silakan masuk (login) untuk melanjutkan pendaftaran bisnis.");
+      } else {
+        setErrorMsg(error.message || "Gagal mengirimkan kode verifikasi OTP ke email Anda.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Step 1: Kirim Ulang OTP via Brevo
+  const handleBizResendOtp = async () => {
+    if (!bizCanResend || loading) return;
+    setBizResending(true);
+    setErrorMsg(null);
+
+    try {
+      await authApi.resendOtp(bizAccount.email);
+      setBizResendTimer(30);
+      setBizCanResend(false);
+    } catch (err: unknown) {
+      const error = err as Error & { message?: string };
+      setErrorMsg(error.message || "Gagal mengirim ulang kode OTP ke email.");
+    } finally {
+      setBizResending(false);
+    }
+  };
+
+  // Step 1: Verifikasi Kode OTP dari Brevo sebelum melengkapi berkas toko & lanjut ke PIC
+  const handleBizVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanOtp = bizOtp.replace(/\D/g, "");
+    if (!cleanOtp || cleanOtp.length < 6) {
+      setErrorMsg("Masukkan 6 digit kode OTP yang diterima di email.");
+      return;
+    }
+
+    setLoading(true);
+    setErrorMsg(null);
+
+    try {
+      await authApi.verifyCode(cleanOtp, "ACCOUNT_VERIFICATION", bizAccount.email);
+      setBizEmailVerified(true);
+
+      // Auto login untuk mengamankan sesi pendaftaran aplikasi
+      try {
+        await authApi.login(bizAccount.email, bizAccount.password);
+      } catch (loginErr) {
+        console.warn("Notice: Auto-login sesi mitra setelah OTP:", loginErr);
+      }
+
+      // Pre-fill PIC dengan akun yang telah terverifikasi
       setBizPic((prev) => ({
         ...prev,
-        fullName: bizAccount.fullName,
-        phone: bizAccount.phone,
-        email: bizAccount.email,
+        fullName: prev.fullName || bizAccount.fullName,
+        phone: prev.phone || bizAccount.phone,
+        email: prev.email || bizAccount.email,
       }));
+
+      // Lanjut ke Step 2 (Data Penanggung Jawab)
+      setBizStep(2);
+    } catch (err: unknown) {
+      const error = err as Error & { message?: string };
+      setErrorMsg(error.message || "Kode OTP tidak valid atau telah kedaluwarsa. Silakan periksa kembali.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Step 1: Jika sudah terverifikasi, langsung lanjut
+  const handleBizStep1 = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bizEmailVerified) {
+      handleBizRequestOtp(e);
+      return;
     }
     setErrorMsg(null);
     setBizStep(2);
@@ -290,16 +551,28 @@ function RegisterContent() {
   };
 
   // Step 5: Document Upload
-  const handleFileSelect = (docType: string, file: File) => {
+  const handleFileSelect = (docType: string, file: File, maxMb = 5) => {
+    const maxBytes = maxMb * 1024 * 1024;
+    if (file.size > maxBytes) {
+      setUploadedFiles((prev) => ({
+        ...prev,
+        [docType]: { file, uploaded: false, error: `Ukuran berkas melebihi batas maksimal (${maxMb}MB).` },
+      }));
+      return;
+    }
     setUploadedFiles((prev) => ({
       ...prev,
-      [docType]: { file, uploaded: false },
+      [docType]: { file, uploaded: false, error: undefined },
     }));
   };
 
   const handleUploadSingleDoc = async (docType: string) => {
     const item = uploadedFiles[docType];
     if (!item || !bizAppId) return;
+    if (item.error) {
+      setErrorMsg(item.error);
+      return;
+    }
 
     try {
       await registrationApi.uploadDocument(bizAppId, docType, item.file);
@@ -323,6 +596,14 @@ function RegisterContent() {
       const item = uploadedFiles[req.documentType];
       if (!item) {
         setErrorMsg(`Dokumen wajib "${req.label}" belum dipilih.`);
+        return;
+      }
+    }
+
+    // Check if any file exceeds size limit or has errors
+    for (const [docType, item] of Object.entries(uploadedFiles)) {
+      if (item.error) {
+        setErrorMsg(`Berkas ${docType} bermasalah: ${item.error}`);
         return;
       }
     }
@@ -663,6 +944,44 @@ function RegisterContent() {
                   <span>Lanjut ke Verifikasi Identitas</span>
                   <ArrowRight size={16} />
                 </button>
+
+                {/* Divider */}
+                <div className="relative my-3 flex items-center justify-center">
+                  <div className="border-t border-slate-200 w-full"></div>
+                  <span className="bg-white px-2.5 text-[10px] text-neutral-slate font-medium uppercase tracking-wider">
+                    atau daftar dengan
+                  </span>
+                </div>
+
+                {/* Google OAuth Register Button (A03, A04, V11, V01-V03) */}
+                <button
+                  type="button"
+                  id="google-register-btn"
+                  onClick={() => {
+                    setErrorMsg("Integrasi Google OAuth live provider memerlukan konfigurasi client secret di environment.");
+                  }}
+                  className="w-full py-2.5 px-4 rounded-xl border border-slate-200 hover:bg-slate-50 text-neutral-dark font-medium text-xs transition flex items-center justify-center gap-2.5 shadow-sm"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+                    <path
+                      fill="#4285F4"
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                    />
+                    <path
+                      fill="#EA4335"
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                    />
+                  </svg>
+                  <span>Daftar dengan Google</span>
+                </button>
               </form>
             )}
 
@@ -710,7 +1029,15 @@ function RegisterContent() {
                       type="file"
                       accept=".jpg,.jpeg,.png,.pdf"
                       onChange={(e) => {
-                        if (e.target.files?.[0]) setCustKtpFile(e.target.files[0]);
+                        const f = e.target.files?.[0];
+                        if (f) {
+                          if (f.size > 5 * 1024 * 1024) {
+                            setErrorMsg("Ukuran berkas e-KTP maksimal 5MB.");
+                            return;
+                          }
+                          setErrorMsg(null);
+                          setCustKtpFile(f);
+                        }
                       }}
                       className="hidden"
                     />
@@ -806,6 +1133,60 @@ function RegisterContent() {
                     </>
                   )}
                 </button>
+
+                {/* Resend OTP Section */}
+                <div className="pt-2 text-center text-xs space-y-2 border-t border-slate-100">
+                  {resendSuccess && (
+                    <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-center justify-center gap-1.5 animate-fadeIn">
+                      <CheckCircle size={15} weight="fill" className="text-emerald-600 shrink-0" />
+                      <span>Kode OTP baru telah berhasil dikirimkan ke email Anda!</span>
+                    </div>
+                  )}
+
+                  <p className="text-neutral-slate">
+                    Tidak menerima kode verifikasi?{" "}
+                    {resendCountdown > 0 ? (
+                      <span className="font-semibold text-neutral-dark inline-flex items-center gap-1">
+                        <Clock size={13} className="text-primary shrink-0" />
+                        Kirim ulang dalam <strong className="text-primary font-mono">{resendCountdown}s</strong>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleResendOtp}
+                        disabled={resending}
+                        className="font-bold text-primary hover:underline hover:text-primary-hover disabled:opacity-50 inline-flex items-center gap-1 ml-1"
+                      >
+                        {resending ? (
+                          <>
+                            <SpinnerGap size={13} className="animate-spin" />
+                            <span>Mengirim kode baru...</span>
+                          </>
+                        ) : (
+                          <span>Kirim Ulang Kode</span>
+                        )}
+                      </button>
+                    )}
+                  </p>
+
+                  <div className="pt-2 flex flex-col items-center gap-1.5 text-[11px] text-neutral-slate border-t border-slate-50">
+                    <span>Sesi pendaftaran berlaku selama 1 jam.</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          sessionStorage.removeItem("servio_pending_verification");
+                        } catch {}
+                        setCustStep(1);
+                        setCustOtp("");
+                        setErrorMsg(null);
+                      }}
+                      className="text-primary hover:underline hover:text-primary-hover font-medium"
+                    >
+                      ← Ganti data atau daftar dari awal
+                    </button>
+                  </div>
+                </div>
               </form>
             )}
           </div>
@@ -837,7 +1218,7 @@ function RegisterContent() {
               <div className="text-right">
                 <span className="text-xs font-bold text-primary">Langkah {bizStep} / 6</span>
                 <p className="text-[11px] text-neutral-slate">
-                  {bizStep === 1 && "Akun"}
+                  {bizStep === 1 && (!bizOtpSent ? "Akun" : !bizEmailVerified ? "Verifikasi OTP Brevo" : "Email Terverifikasi")}
                   {bizStep === 2 && "Penanggung Jawab"}
                   {bizStep === 3 && "Data Bisnis"}
                   {bizStep === 4 && (businessType === "SERVICE_PROVIDER" ? "Data Layanan" : businessType === "MERCHANT" ? "Data Toko" : "Info Pasokan")}
@@ -862,95 +1243,222 @@ function RegisterContent() {
               </div>
             )}
 
-            {/* STEP 1: AKUN */}
+            {/* STEP 1: AKUN & VERIFIKASI EMAIL VIA BREVO OTP */}
             {bizStep === 1 && (
-              <form onSubmit={handleBizStep1} className="space-y-4">
-                <div className="text-xs font-semibold text-neutral-slate">
-                  01. Data Akun Pengguna Utama
-                </div>
+              <div>
+                {!bizOtpSent && !bizEmailVerified && (
+                  <form onSubmit={handleBizRequestOtp} className="space-y-4">
+                    <div className="text-xs font-semibold text-neutral-slate flex items-center justify-between">
+                      <span>01. Data Akun Pengguna Utama</span>
+                      <span className="text-[11px] text-primary bg-primary/10 px-2 py-0.5 rounded-md font-medium">
+                        Verifikasi OTP Brevo Wajib
+                      </span>
+                    </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-neutral-dark">
-                    Nama Lengkap Pemohon <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={bizAccount.fullName}
-                    onChange={(e) => setBizAccount({ ...bizAccount, fullName: e.target.value })}
-                    placeholder="Nama perwakilan / pemohon"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-neutral-dark focus:outline-none focus:border-primary focus:bg-white"
-                  />
-                </div>
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-semibold text-neutral-dark">
+                        Nama Lengkap Pemohon <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={bizAccount.fullName}
+                        onChange={(e) => setBizAccount({ ...bizAccount, fullName: e.target.value })}
+                        placeholder="Nama perwakilan / pemohon"
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-neutral-dark focus:outline-none focus:border-primary focus:bg-white"
+                      />
+                    </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-neutral-dark">
-                      Alamat Email Akun <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      value={bizAccount.email}
-                      onChange={(e) => setBizAccount({ ...bizAccount, email: e.target.value })}
-                      placeholder="kontak@mitra.com"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-neutral-dark focus:outline-none focus:border-primary focus:bg-white"
-                    />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold text-neutral-dark">
+                          Alamat Email Akun <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          value={bizAccount.email}
+                          onChange={(e) => setBizAccount({ ...bizAccount, email: e.target.value })}
+                          placeholder="kontak@mitra.com"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-neutral-dark focus:outline-none focus:border-primary focus:bg-white"
+                        />
+                        <p className="text-[10px] text-neutral-slate">
+                          Kode OTP resmi akan dikirimkan ke email ini via Brevo.
+                        </p>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold text-neutral-dark">
+                          Nomor Telepon Seluler <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="tel"
+                          required
+                          value={bizAccount.phone}
+                          onChange={(e) => setBizAccount({ ...bizAccount, phone: e.target.value })}
+                          placeholder="+628123456789"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-neutral-dark focus:outline-none focus:border-primary focus:bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold text-neutral-dark">
+                          Kata Sandi <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="password"
+                          required
+                          value={bizAccount.password}
+                          onChange={(e) => setBizAccount({ ...bizAccount, password: e.target.value })}
+                          placeholder="Minimal 8 karakter"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-neutral-dark focus:outline-none focus:border-primary focus:bg-white"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-semibold text-neutral-dark">
+                          Konfirmasi Kata Sandi <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          type="password"
+                          required
+                          value={bizAccount.password_confirmation}
+                          onChange={(e) => setBizAccount({ ...bizAccount, password_confirmation: e.target.value })}
+                          placeholder="Ulangi kata sandi"
+                          className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-neutral-dark focus:outline-none focus:border-primary focus:bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full py-3 px-4 rounded-xl bg-primary text-white font-semibold text-xs shadow-servio-sm hover:bg-primary-hover active:scale-[0.99] disabled:opacity-60 transition flex items-center justify-center gap-2"
+                    >
+                      {loading ? (
+                        <>
+                          <SpinnerGap size={16} className="animate-spin" />
+                          <span>Mendaftarkan & Mengirim OTP via Brevo...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Lanjut & Kirim Kode OTP Brevo</span>
+                          <ArrowRight size={16} />
+                        </>
+                      )}
+                    </button>
+                  </form>
+                )}
+
+                {/* Sub-step: Masukkan Kode OTP dari Brevo */}
+                {bizOtpSent && !bizEmailVerified && (
+                  <form onSubmit={handleBizVerifyOtp} className="space-y-5">
+                    <div className="p-4 rounded-2xl bg-sky-50 border border-sky-200/80 text-sky-900 text-xs space-y-1.5">
+                      <div className="flex items-center gap-2 font-bold text-sky-950">
+                        <ShieldCheck size={18} className="text-sky-600" weight="fill" />
+                        <span>Verifikasi Email Mitra Wajib Sebelum Melengkapi Berkas</span>
+                      </div>
+                      <p className="text-slate-600 leading-relaxed">
+                        Kode verifikasi resmi 6 digit telah dikirimkan ke email <strong>{bizAccount.email}</strong> melalui sistem Brevo. Silakan masukkan kode di bawah ini:
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="block text-xs font-semibold text-neutral-dark text-center">
+                        6 Digit Kode Verifikasi OTP
+                      </label>
+                      <div className="flex justify-center">
+                        <input
+                          type="text"
+                          maxLength={6}
+                          required
+                          autoFocus
+                          value={bizOtp}
+                          onChange={(e) => setBizOtp(e.target.value.replace(/\D/g, ""))}
+                          placeholder="• • • • • •"
+                          className="w-56 py-3 text-center text-2xl font-bold tracking-[8px] font-mono bg-slate-50 border-2 border-slate-200 rounded-2xl text-neutral-dark focus:outline-none focus:border-primary focus:bg-white focus:ring-4 focus:ring-primary/10 transition"
+                        />
+                      </div>
+                      <p className="text-[11px] text-center text-slate-500">
+                        Periksa kotak masuk atau spam email <strong>{bizAccount.email}</strong>
+                      </p>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading || bizOtp.length < 6}
+                      className="w-full py-3 px-4 rounded-xl bg-primary text-white font-semibold text-xs shadow-servio-sm hover:bg-primary-hover active:scale-[0.99] disabled:opacity-60 transition flex items-center justify-center gap-2"
+                    >
+                      {loading ? (
+                        <>
+                          <SpinnerGap size={16} className="animate-spin" />
+                          <span>Memverifikasi OTP...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Verifikasi OTP & Lanjut ke Penanggung Jawab</span>
+                          <CheckCircle size={16} weight="bold" />
+                        </>
+                      )}
+                    </button>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBizOtpSent(false);
+                          setErrorMsg(null);
+                        }}
+                        className="text-slate-500 hover:text-slate-800 inline-flex items-center gap-1 font-medium"
+                      >
+                        <ArrowLeft size={14} />
+                        <span>Ubah Data Akun / Email</span>
+                      </button>
+
+                      {bizCanResend ? (
+                        <button
+                          type="button"
+                          onClick={handleBizResendOtp}
+                          disabled={bizResending}
+                          className="text-primary hover:underline font-semibold"
+                        >
+                          {bizResending ? "Mengirim ulang..." : "Kirim Ulang OTP"}
+                        </button>
+                      ) : (
+                        <span className="text-slate-400">
+                          Kirim ulang dalam <strong className="text-slate-600">{bizResendTimer}s</strong>
+                        </span>
+                      )}
+                    </div>
+                  </form>
+                )}
+
+                {/* Sub-step: Email Sudah Terverifikasi */}
+                {bizEmailVerified && (
+                  <div className="space-y-4">
+                    <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2.5">
+                      <CheckCircle size={20} className="text-emerald-600 shrink-0" weight="fill" />
+                      <div>
+                        <div className="font-bold text-emerald-900">Email Akun Telah Terverifikasi Resmi</div>
+                        <p className="text-slate-600 mt-0.5">
+                          Email <strong>{bizAccount.email}</strong> telah diverifikasi via Brevo. Anda dapat melanjutkan melengkapi data penanggung jawab dan berkas toko.
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setBizStep(2)}
+                      className="w-full py-3 px-4 rounded-xl bg-primary text-white font-semibold text-xs shadow-servio-sm hover:bg-primary-hover flex items-center justify-center gap-2"
+                    >
+                      <span>Lanjut ke Data Penanggung Jawab</span>
+                      <ArrowRight size={16} />
+                    </button>
                   </div>
-
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-neutral-dark">
-                      Nomor Telepon Seluler <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="tel"
-                      required
-                      value={bizAccount.phone}
-                      onChange={(e) => setBizAccount({ ...bizAccount, phone: e.target.value })}
-                      placeholder="+628123456789"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-neutral-dark focus:outline-none focus:border-primary focus:bg-white"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-neutral-dark">
-                      Kata Sandi <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="password"
-                      required
-                      value={bizAccount.password}
-                      onChange={(e) => setBizAccount({ ...bizAccount, password: e.target.value })}
-                      placeholder="Minimal 8 karakter"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-neutral-dark focus:outline-none focus:border-primary focus:bg-white"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-neutral-dark">
-                      Konfirmasi Kata Sandi <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="password"
-                      required
-                      value={bizAccount.password_confirmation}
-                      onChange={(e) => setBizAccount({ ...bizAccount, password_confirmation: e.target.value })}
-                      placeholder="Ulangi kata sandi"
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-neutral-dark focus:outline-none focus:border-primary focus:bg-white"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full py-3 px-4 rounded-xl bg-primary text-white font-semibold text-xs shadow-servio-sm hover:bg-primary-hover flex items-center justify-center gap-2"
-                >
-                  <span>Lanjut ke Penanggung Jawab</span>
-                  <ArrowRight size={16} />
-                </button>
-              </form>
+                )}
+              </div>
             )}
 
             {/* STEP 2: PENANGGUNG JAWAB */}
@@ -1442,6 +1950,11 @@ function RegisterContent() {
                                     Kondisional / Opsional
                                   </span>
                                 )}
+                                {req.maxFileSizeMB && (
+                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                                    Maks {req.maxFileSizeMB} MB
+                                  </span>
+                                )}
                               </div>
                               <p className="text-[11px] text-neutral-slate mt-0.5">{req.description}</p>
                             </div>
@@ -1462,10 +1975,10 @@ function RegisterContent() {
                               <span className="text-[10px] font-semibold text-primary ml-2 shrink-0">Browse</span>
                               <input
                                 type="file"
-                                accept={req.allowedExtensions.map((e) => `.${e}`).join(",")}
+                                accept={(req.allowedExtensions || ["jpg", "jpeg", "png", "pdf"]).map((e) => `.${e}`).join(",")}
                                 onChange={(e) => {
                                   if (e.target.files?.[0]) {
-                                    handleFileSelect(req.documentType, e.target.files[0]);
+                                    handleFileSelect(req.documentType, e.target.files[0], req.maxFileSizeMB || 5);
                                   }
                                 }}
                                 className="hidden"
@@ -1482,6 +1995,10 @@ function RegisterContent() {
                               </button>
                             )}
                           </div>
+
+                          {item?.error && (
+                            <p className="text-[11px] text-rose-500 font-medium pl-1">{item.error}</p>
+                          )}
                         </div>
                       );
                     })}

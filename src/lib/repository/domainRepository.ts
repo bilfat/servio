@@ -884,9 +884,21 @@ export class CentralDomainStore {
     masterServiceIds?: string[]
   ): WorkerTechnician {
     const workerId = `worker-${Date.now().toString().slice(-4)}`;
+    const rawWorkerName = newWorker.name || "TEKNISI";
+    const initials = (newWorker.providerName || "BENGKEL")
+      .split(/[\s_-]+/)
+      .filter(Boolean)
+      .map((w: string) => w[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 3) || "WRK";
+    const workerSlug = (rawWorkerName.split(/[\s_-]+/)[0] || "TK").toUpperCase().slice(0, 8);
+    const autoEmpId = newWorker.employeeId || `${initials}-${workerSlug}-${Date.now().toString().slice(-3)}`;
+
     const createdWorker: WorkerTechnician = {
       ...newWorker,
       id: workerId,
+      employeeId: autoEmpId,
       rating: newWorker.rating ?? 5.0,
       completedJobs: newWorker.completedJobs ?? 0,
       capabilities: [],
@@ -4286,7 +4298,7 @@ export class CentralDomainStore {
       action: "TAXONOMY_GOVERNANCE_APPROVED",
       resource: "TAXONOMY_PROPOSAL",
       resourceId: proposalId,
-      reason: notes || "Persetujuan pembaruan taksonomi platform oleh CEO",
+      reason: notes || "Persetujuan pembaruan kategori jasa platform oleh CEO",
       details: {
         domainId: prop.domainId,
         subcategoryId: prop.subcategoryId,
@@ -4371,7 +4383,7 @@ export class CentralDomainStore {
       (c) => c.name.trim().toLowerCase() === data.name.trim().toLowerCase()
     );
     if (existing) {
-      throw new Error(`Kategori "${data.name}" sudah ada dalam taksonomi.`);
+      throw new Error(`Kategori "${data.name}" sudah ada dalam kategori jasa.`);
     }
 
     const nowStr = new Date().toISOString().replace("T", " ").slice(0, 19) + " WIB";
@@ -4395,7 +4407,7 @@ export class CentralDomainStore {
       action: "TAXONOMY_CATEGORY_CREATED",
       resource: "SERVICE_CATEGORY",
       resourceId: newCategory.id,
-      reason: "Penambahan kategori taksonomi baru oleh CEO",
+      reason: "Penambahan kategori jasa baru oleh CEO",
       details: { name: newCategory.name },
     });
 
@@ -4454,7 +4466,7 @@ export class CentralDomainStore {
       action: "TAXONOMY_CATEGORY_ACTIVATED",
       resource: "SERVICE_CATEGORY",
       resourceId: id,
-      reason: "Aktivasi kategori taksonomi oleh CEO",
+      reason: "Aktivasi kategori jasa oleh CEO",
     });
 
     this.notify();
@@ -4476,7 +4488,7 @@ export class CentralDomainStore {
       action: "TAXONOMY_CATEGORY_DEACTIVATED",
       resource: "SERVICE_CATEGORY",
       resourceId: id,
-      reason: "Deaktivasi kategori taksonomi oleh CEO (historical orders preserved)",
+      reason: "Deaktivasi kategori jasa oleh CEO (historical orders preserved)",
     });
 
     this.notify();
@@ -4516,7 +4528,7 @@ export class CentralDomainStore {
       action: "TAXONOMY_CATEGORY_DELETED",
       resource: "SERVICE_CATEGORY",
       resourceId: id,
-      reason: "Penghapusan kategori taksonomi dan kaskade relasi oleh CEO",
+      reason: "Penghapusan kategori jasa dan kaskade relasi oleh CEO",
       details: { name: cat.name, linkedSubIdsCount: linkedSubIds.length },
     });
 
@@ -4631,7 +4643,7 @@ export class CentralDomainStore {
       action: "TAXONOMY_SUBCATEGORY_PUBLISHED",
       resource: "SUBCATEGORY_REQUEST",
       resourceId: requestId,
-      reason: "Publikasi subkategori baru ke taksonomi aktif platform",
+      reason: "Publikasi subkategori baru ke kategori jasa aktif platform",
       details: {
         categoryId: req.categoryId,
         subcategoryName: req.requestedSubcategoryName,
@@ -4851,7 +4863,7 @@ export class CentralDomainStore {
       action: "TAXONOMY_ALL_SUBCATEGORIES_CLEARED",
       resource: "SERVICE_SUBCATEGORY",
       resourceId: "ALL",
-      reason: `Pembersihan massal seluruh (${totalSubs}) subkategori taksonomi`,
+      reason: `Pembersihan massal seluruh (${totalSubs}) subkategori kategori jasa`,
     });
 
     this.notify();
@@ -4875,7 +4887,7 @@ export class CentralDomainStore {
       action: "TAXONOMY_REQUESTS_CLEARED",
       resource: "SUBCATEGORY_REQUEST",
       resourceId: "BULK",
-      reason: `Pembersihan massal riwayat pengajuan taksonomi (status: ${statuses.join(", ") || "ALL"})`,
+      reason: `Pembersihan massal riwayat pengajuan kategori jasa (status: ${statuses.join(", ") || "ALL"})`,
     });
 
     this.notify();

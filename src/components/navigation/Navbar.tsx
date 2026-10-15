@@ -800,14 +800,16 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount }: Navb
                         <User size={16} className="text-neutral-slate" />
                         <span>Profil Akun</span>
                       </Link>
-                      <Link
-                        href="/warranties"
-                        onClick={() => setActiveDropdown(null)}
-                        className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-slate-100 transition-colors text-xs text-neutral-dark"
-                      >
-                        <ShieldCheck size={16} className="text-neutral-slate" />
-                        <span>Garansi &amp; Perlindungan</span>
-                      </Link>
+                      {activeRole === "CUSTOMER" && (
+                        <Link
+                          href="/warranties"
+                          onClick={() => setActiveDropdown(null)}
+                          className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-slate-100 transition-colors text-xs text-neutral-dark"
+                        >
+                          <ShieldCheck size={16} className="text-neutral-slate" />
+                          <span>Garansi &amp; Perlindungan</span>
+                        </Link>
+                      )}
                       <Link
                         href="/settings"
                         onClick={() => setActiveDropdown(null)}

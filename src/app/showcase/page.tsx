@@ -124,13 +124,13 @@ export default function ShowcasePage() {
               <PermissionGate
                 action="MANAGE"
                 resource="TAXONOMY"
-                disabledMessage="Hanya Admin dan CEO yang berhak mengelola taksonomi"
+                disabledMessage="Hanya Admin dan CEO yang berhak mengelola kategori jasa"
               >
                 <button
                   type="button"
                   className="px-3 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-medium hover:bg-slate-800 transition-colors"
                 >
-                  Kelola Taksonomi
+                  Kelola Kategori Jasa
                 </button>
               </PermissionGate>
             </div>
@@ -140,7 +140,7 @@ export default function ShowcasePage() {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-display font-bold text-neutral-dark">
-              Layanan Servio (Fixed Service Taxonomy)
+              Layanan Servio (Kategori Jasa Resmi)
               </h2>
               <span className="text-xs text-neutral-slate">PRD Feature #1 — Discovery</span>
             </div>

@@ -93,6 +93,7 @@ function ResetPasswordForm() {
           Token Reset Password
         </label>
         <input
+          id="input-reset-token"
           type="text"
           required
           value={token}
@@ -112,6 +113,7 @@ function ResetPasswordForm() {
             <LockKey size={18} />
           </div>
           <input
+            id="input-reset-password"
             type={showPassword ? "text" : "password"}
             required
             value={password}
@@ -139,6 +141,7 @@ function ResetPasswordForm() {
             <LockKey size={18} />
           </div>
           <input
+            id="input-reset-password-confirm"
             type={showPassword ? "text" : "password"}
             required
             value={passwordConfirmation}
@@ -157,6 +160,7 @@ function ResetPasswordForm() {
       )}
 
       <button
+        id="btn-submit-reset-password"
         type="submit"
         disabled={loading}
         className="w-full py-3 px-4 rounded-xl bg-primary text-white font-semibold text-xs shadow-servio-sm hover:bg-primary-hover active:scale-[0.99] disabled:opacity-60 transition flex items-center justify-center gap-2"

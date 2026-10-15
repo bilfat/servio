@@ -1,13 +1,13 @@
 "use client";
 
 import React from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { useActiveRole } from "@/context/RoleContext";
 import { Button } from "@/components/ui/Button";
 import { PermissionDenied } from "@/components/feedback/PermissionDenied";
 import { ServioLoadingScreen } from "@/components/feedback/ServioLoadingScreen";
-import { UserSwitch } from "@phosphor-icons/react";
+import { UserSwitch, ShieldWarning, ArrowRight } from "@phosphor-icons/react";
 
 export default function OpsLayout({
   children,
@@ -16,10 +16,31 @@ export default function OpsLayout({
 }) {
   const { activeRole, switchRole, isLoadingAuth, user } = useActiveRole();
   const pathname = usePathname();
+  const router = useRouter();
 
   const isSupportRoute = pathname?.includes("/support");
   const isFinanceRoute = pathname?.includes("/finance");
   const isAdminRoute = pathname?.includes("/admin");
+  const isOnboardingRoute = pathname?.includes("/staff/onboarding");
+
+  const isStaffRole = ["ADMIN_OPERATIONS", "FINANCE_PAYMENT_OPS", "CUSTOMER_SUPPORT"].includes(
+    activeRole || user.activeRole
+  );
+
+  // CR-03 Section C & G: Ready only when active, password created, onboarding complete & approved by CEO
+  const isStaffOperationalReady =
+    user.status === "ACTIVE" &&
+    (user.readiness === "READY" ||
+      user.isOperationalReady ||
+      user.staffOnboardingStatus === "COMPLETED" ||
+      user.staffOnboardingStatus === "OPERATIONAL_READY");
+
+  // Auto redirect internal staff to onboarding if not ready and trying to access operational routes
+  React.useEffect(() => {
+    if (!isLoadingAuth && isStaffRole && !isOnboardingRoute && !isStaffOperationalReady) {
+      router.push("/ops/staff/onboarding");
+    }
+  }, [isLoadingAuth, isStaffRole, isOnboardingRoute, isStaffOperationalReady, router]);
 
   const targetRole = isFinanceRoute
     ? "FINANCE_PAYMENT_OPS"
@@ -50,7 +71,8 @@ export default function OpsLayout({
 
   const isRoleMatching =
     hasTargetRole ||
-    (!isSupportRoute && !isFinanceRoute && !isAdminRoute);
+    (!isSupportRoute && !isFinanceRoute && !isAdminRoute) ||
+    isOnboardingRoute;
 
   if (isLoadingAuth) {
     return (
@@ -60,6 +82,42 @@ export default function OpsLayout({
           subMessage="Menyiapkan hak akses tim operasional SERVIO"
           fullScreen={false}
         />
+      </AppShell>
+    );
+  }
+
+  // CR-03: Block operational dashboard if onboarding incomplete or not operational ready
+  if (isStaffRole && !isOnboardingRoute && !isStaffOperationalReady) {
+    return (
+      <AppShell>
+        <div className="max-w-xl mx-auto py-12 px-4">
+          <div className="bg-white rounded-3xl border border-amber-200 p-8 shadow-servio-md text-center space-y-4">
+            <div className="w-16 h-16 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mx-auto">
+              <ShieldWarning size={36} weight="fill" />
+            </div>
+            <div>
+              <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                STATUS: NOT OPERATIONAL READY
+              </span>
+              <h2 className="text-xl font-bold font-display text-neutral-dark mt-2">
+                Akses Dashboard Operasional Dibatasi
+              </h2>
+              <p className="text-xs text-neutral-slate mt-1 max-w-md mx-auto leading-relaxed">
+                Berdasarkan tata kelola SERVIO (CR-03), akun staf operasional wajib menyelesaikan empat tahap onboarding (Profil, Pengecekan Berkas, NDA, dan Konfirmasi Hak Akses) serta memperoleh persetujuan CEO sebelum dashboard operasional dibuka.
+              </p>
+            </div>
+            <div className="pt-2">
+              <Button
+                variant="primary"
+                onClick={() => router.push("/ops/staff/onboarding")}
+                className="inline-flex items-center gap-2"
+              >
+                <span>Buka Formulir Onboarding Staf</span>
+                <ArrowRight size={16} />
+              </Button>
+            </div>
+          </div>
+        </div>
       </AppShell>
     );
   }

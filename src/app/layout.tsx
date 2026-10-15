@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { RoleProvider } from "@/context/RoleContext";
 import { PageLoadingProvider } from "@/components/feedback/PageLoadingProvider";
+import { RoleSwitcher } from "@/components/navigation/RoleSwitcher";
 import "./globals.css";
 
 const sora = localFont({
@@ -102,6 +103,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-white text-neutral-dark selection:bg-sky selection:text-primary">
         <RoleProvider>
           <PageLoadingProvider>{children}</PageLoadingProvider>
+          <RoleSwitcher />
         </RoleProvider>
       </body>
     </html>

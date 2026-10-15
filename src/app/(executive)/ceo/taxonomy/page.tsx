@@ -504,11 +504,11 @@ export default function CeoTaxonomyGovernancePage() {
 
       {/* Page Header */}
       <PageHeader
-        title="Tata Kelola Taksonomi Jasa"
+        title="Tata Kelola Kategori Jasa"
         description="Otoritas tata kelola Kategori Layanan Platform, persetujuan struktural Subkategori, dan monitoring analitik Master Service."
         breadcrumbs={[
           { label: "Executive", href: "/ceo/dashboard" },
-          { label: "Taksonomi", href: "/ceo/taxonomy" },
+          { label: "Kategori Jasa", href: "/ceo/taxonomy" },
         ]}
       />
 
@@ -581,7 +581,7 @@ export default function CeoTaxonomyGovernancePage() {
             <div>
               <h2 className="text-sm font-bold text-slate-900">Daftar Kategori Layanan Platform</h2>
               <p className="text-xs text-slate-500">
-                Pondasi taksonomi tingkat tertinggi. CEO memiliki wewenang membuat, mengubah, dan menghapus struktur kategori.
+                Pondasi kategori jasa tingkat tertinggi. CEO memiliki wewenang membuat, mengubah, dan menghapus struktur kategori.
               </p>
             </div>
             <div className="flex items-center gap-2 self-start sm:self-auto">
@@ -673,7 +673,7 @@ export default function CeoTaxonomyGovernancePage() {
                     <tr>
                       <td colSpan={8} className="py-8 text-center text-slate-400">
                         <ServioLoadingScreen
-                          message="Memuat Data Taksonomi..."
+                          message="Memuat Data Kategori Jasa..."
                           subMessage="Mengambil kategori dari database SERVIO"
                           fullScreen={false}
                           size="sm"
@@ -808,7 +808,7 @@ export default function CeoTaxonomyGovernancePage() {
                 </span>
               </div>
               <p className="text-xs text-slate-600">
-                Admin telah meninjau dan merekomendasikan pengajuan berikut. Keputusan CEO akan menentukan apakah subkategori dipublikasikan ke taksonomi platform.
+                Admin telah meninjau dan merekomendasikan pengajuan berikut. Keputusan CEO akan menentukan apakah subkategori dipublikasikan ke kategori jasa platform.
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
@@ -1125,7 +1125,7 @@ export default function CeoTaxonomyGovernancePage() {
           {/* Period Filter Bar */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
             <div>
-              <h2 className="text-sm font-bold text-slate-900">Dashboard Analitik Taksonomi Eksekutif</h2>
+              <h2 className="text-sm font-bold text-slate-900">Dashboard Analitik Kategori Jasa Eksekutif</h2>
               <p className="text-xs text-slate-500">Proyeksi analitik dari transaksi kanonikal pesanan jasa dan performa mitra.</p>
             </div>
             <div className="flex items-center gap-1.5 self-start sm:self-auto bg-slate-100 p-1 rounded-xl">
@@ -1409,7 +1409,7 @@ export default function CeoTaxonomyGovernancePage() {
           <form onSubmit={handleExecuteRequestDecision} className="space-y-4 text-xs font-body">
             <p className="text-slate-600">
               {reviewDecision === "APPROVE"
-                ? "Pengajuan ini akan disetujui dan dikembalikan ke Admin Operasi untuk dipublikasikan ke taksonomi platform."
+                ? "Pengajuan ini akan disetujui dan dikembalikan ke Admin Operasi untuk dipublikasikan ke kategori jasa platform."
                 : "Pengajuan akan ditolak beserta alasan penolakan yang akan diteruskan oleh Admin ke Mitra Pemohon."}
             </p>
             <div>
@@ -1490,7 +1490,7 @@ export default function CeoTaxonomyGovernancePage() {
             </div>
 
             <p className="text-[11px] text-slate-600 leading-relaxed">
-              Seluruh data subkategori, penawaran layanan mitra (master service), serta pengajuan taksonomi yang terhubung akan dihapus secara kaskade dari database.
+              Seluruh data subkategori, penawaran layanan mitra (master service), serta pengajuan kategori jasa yang terhubung akan dihapus secara kaskade dari database.
             </p>
 
             <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">

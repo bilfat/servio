@@ -129,6 +129,9 @@ export function RoleProvider({
           permissions: resolvedPermissions,
           employeeId: u.employeeId,
           department: u.department,
+          staffOnboardingStatus: ((u as unknown as Record<string, unknown>).staffOnboardingStatus as string | undefined) || ((u as unknown as Record<string, unknown>).staff_onboarding_status as string | undefined),
+          readiness: ((u as unknown as Record<string, unknown>).readiness as string | undefined) || "NOT_READY",
+          isOperationalReady: Boolean((u as unknown as Record<string, unknown>).isOperationalReady ?? (u as unknown as Record<string, unknown>).is_operational_ready),
           organizationId:
             (u.activeOrganization?.id as string | undefined) ||
             (u.providerId as string | undefined),

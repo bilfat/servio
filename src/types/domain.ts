@@ -251,6 +251,7 @@ export interface WorkerTechnician {
   providerId: string;
   providerName: string;
   name: string;
+  employeeId?: string;
   avatarUrl?: string;
   phone: string;
   email?: string;

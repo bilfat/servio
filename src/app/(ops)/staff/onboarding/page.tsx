@@ -1,11 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import { useActiveRole } from "@/context/RoleContext";
 import {
   internalAccountApi,
-  InternalOnboarding,
-  OnboardingTask,
 } from "@/lib/servioApi";
 import { Toast } from "@/components/feedback/Toast";
 import {
@@ -16,316 +15,442 @@ import {
   ArrowRight,
   User,
   Briefcase,
-  Check,
-  X,
   FileText,
-  LockKey,
   IdentificationCard,
   WarningCircle,
   ArrowsClockwise,
   UploadSimple,
   Eye,
-  Trash,
-  Calendar,
-  Phone,
-  Info,
-  Shield,
+  Check,
+  ShieldWarning,
+  XCircle,
+  LockKey,
 } from "@phosphor-icons/react";
+
+interface StepData {
+  id: string;
+  key: string;
+  code: string;
+  title: string;
+  status: string;
+  completed: boolean;
+  document_version?: string;
+  evidence_document_id?: string;
+  completed_at?: string;
+}
+
+interface OnboardingResponse {
+  id: string;
+  user_id: string;
+  status: "INVITED" | "IN_PROGRESS" | "PENDING_REVIEW" | "REVISION_REQUIRED" | "REJECTED" | "COMPLETED" | "OPERATIONAL_READY" | string;
+  onboarding_status: string;
+  revision_notes?: string | null;
+  rejection_reason?: string | null;
+  progress: number;
+  readiness: "READY" | "NOT_READY";
+  readiness_status: "READY" | "NOT_READY";
+  employee: {
+    employee_id: string;
+    email: string;
+    role: string;
+    role_name: string;
+    department: string;
+    position: string;
+  };
+  profile: {
+    display_name: string;
+    legal_name: string;
+    gender?: string;
+    birth_date?: string;
+    phone: string;
+    photo_path?: string;
+  };
+  berkas: {
+    nik_masked?: string;
+    verification_status: string;
+    document_count: number;
+    documents: Array<{ id: string; type: string; mime: string; size_bytes: number }>;
+  };
+  steps: StepData[];
+}
 
 export default function StaffOnboardingPage() {
   const { user, activeRole, refreshUser } = useActiveRole();
-  const [onboarding, setOnboarding] = useState<InternalOnboarding | null>(null);
+  const [data, setData] = useState<OnboardingResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [actionTaskId, setActionTaskId] = useState<string | null>(null);
-  const [completingAll, setCompletingAll] = useState(false);
+  const [activeStepTab, setActiveStepTab] = useState<number>(1);
+  const [submittingVerification, setSubmittingVerification] = useState(false);
+  const [savingStep, setSavingStep] = useState(false);
   const [toast, setToast] = useState<{ message: string; type?: "success" | "error" | "warning" | "info" } | null>(null);
 
-  // Active Task Modal for Inputting Data
-  const [activeTaskModal, setActiveTaskModal] = useState<OnboardingTask | null>(null);
-  const [viewDetailsTask, setViewDetailsTask] = useState<OnboardingTask | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
+  // Form Step 1: Profil Pribadi & Kontak
+  const [displayName, setDisplayName] = useState("");
+  const [legalName, setLegalName] = useState("");
+  const [gender, setGender] = useState<string>("Laki-laki");
+  const [birthDate, setBirthDate] = useState<string>("");
+  const [phone, setPhone] = useState("");
+  const [photoPath, setPhotoPath] = useState("");
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
-  // Task 2: Profile Fields
-  const [profileDisplayName, setProfileDisplayName] = useState("");
-  const [profileAvatar, setProfileAvatar] = useState("");
-  const [profileBio, setProfileBio] = useState("");
-  const [profileGender, setProfileGender] = useState("MALE");
-  const [profileDateOfBirth, setProfileDateOfBirth] = useState("1998-05-15");
+  // Form Step 2: Pengecekan Berkas (NIK & e-KTP)
+  const [nik, setNik] = useState("");
+  const [ktpFile, setKtpFile] = useState<File | null>(null);
+  const [ktpPreview, setKtpPreview] = useState<string>("");
+  const ktpInputRef = useRef<HTMLInputElement>(null);
 
-  // Task 4: Identity & KTP Fields
-  const [verificationNik, setVerificationNik] = useState("");
-  const [verificationKtpPreview, setVerificationKtpPreview] = useState("");
-  const [emergencyContactName, setEmergencyContactName] = useState("");
-  const [emergencyContactPhone, setEmergencyContactPhone] = useState("");
-  const ktpFileInputRef = useRef<HTMLInputElement>(null);
-  const avatarFileInputRef = useRef<HTMLInputElement>(null);
+  // Form Step 3: Perjanjian Kerahasiaan (NDA)
+  const [ndaVersion] = useState("v2026.1");
+  const [ndaAccepted, setNdaAccepted] = useState(false);
 
-  // Task 1, 3, 5, 6: Agreement Checkboxes
-  const [accountAgreed, setAccountAgreed] = useState(false);
-  const [employmentConfirmed, setEmploymentConfirmed] = useState(false);
-  const [policyAgreed, setPolicyAgreed] = useState(false);
-  const [accessAgreed, setAccessAgreed] = useState(false);
+  // Form Step 4: Konfirmasi Hak Akses Sistem
+  const [accessAccepted, setAccessAccepted] = useState(false);
 
   const fetchOnboarding = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await internalAccountApi.getOnboarding("me");
+      const res = await internalAccountApi.getMyOnboarding();
       if (res.data) {
-        setOnboarding(res.data);
+        const payload = res.data as unknown as OnboardingResponse;
+        setData(payload);
+
+        // Prepopulate form fields from live backend state
+        if (payload.profile) {
+          setDisplayName(payload.profile.display_name || user.name || "");
+          setLegalName(payload.profile.legal_name || payload.profile.display_name || user.name || "");
+          if (payload.profile.gender) {
+            setGender(payload.profile.gender);
+          }
+          if (payload.profile.birth_date) {
+            setBirthDate(payload.profile.birth_date.split("T")[0]);
+          }
+          setPhone(payload.profile.phone || user.phone || "");
+          setPhotoPath(payload.profile.photo_path || user.avatar || "");
+        }
+        if (payload.berkas?.nik_masked) {
+          setNik(payload.berkas.nik_masked);
+        }
+
+        const ndaStep = payload.steps?.find((s) => s.key === "NDA");
+        if (ndaStep?.completed) {
+          setNdaAccepted(true);
+        }
+
+        const accessStep = payload.steps?.find((s) => s.key === "ACCESS_CONFIRMATION");
+        if (accessStep?.completed) {
+          setAccessAccepted(true);
+        }
       }
     } catch {
-      setOnboarding(null);
+      setData(null);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user.name, user.phone, user.avatar]);
 
   useEffect(() => {
     fetchOnboarding();
   }, [fetchOnboarding]);
 
-  // Open appropriate modal when clicking "Selesaikan Tugas"
-  const handleOpenTaskModal = (task: OnboardingTask) => {
-    setFormError(null);
-    setActiveTaskModal(task);
-
-    if (task.code === "PROFILE_COMPLETION") {
-      setProfileDisplayName(onboarding?.profile?.displayName || (user.name ?? "") || "");
-      setProfileAvatar(onboarding?.profile?.avatar || (user as unknown as Record<string, string>).avatar || "");
-      setProfileBio(onboarding?.profile?.bio || (task.metadata?.bio as string) || "Staf Operasional SERVIO - Penanganan Layanan & Verifikasi.");
-      setProfileGender(onboarding?.profile?.gender || (task.metadata?.gender as string) || "MALE");
-      setProfileDateOfBirth(onboarding?.profile?.dateOfBirth || (task.metadata?.dateOfBirth as string) || "1998-05-15");
-    } else if (task.code === "REQUIRED_VERIFICATION") {
-      setVerificationNik(onboarding?.user?.nik || (task.metadata?.nik as string) || "");
-      setVerificationKtpPreview(onboarding?.user?.ktpFilePath || (task.metadata?.ktpFilePath as string) || "");
-      setEmergencyContactName(onboarding?.user?.emergencyContact?.name || (task.metadata?.emergencyContactName as string) || "");
-      setEmergencyContactPhone(onboarding?.user?.emergencyContact?.phone || (task.metadata?.emergencyContactPhone as string) || "");
-    } else if (task.code === "EMPLOYMENT_CONFIRMATION") {
-      setEmploymentConfirmed(false);
-    } else if (task.code === "POLICY_ACKNOWLEDGEMENT") {
-      setPolicyAgreed(false);
-    } else if (task.code === "ACCESS_CONFIRMATION") {
-      setAccessAgreed(false);
-    } else if (task.code === "ACCOUNT_ACCEPTANCE") {
-      setAccountAgreed(false);
+  // Handle Photo Upload
+  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setToast({ message: "Ukuran foto profil maksimal 5MB.", type: "error" });
+      return;
     }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPhotoPath(reader.result as string);
+    };
+    reader.readAsDataURL(file);
   };
 
-  // Handle KTP file upload
+  // Handle KTP File Upload
   const handleKtpFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (file.size > 5 * 1024 * 1024) {
-      setFormError("Ukuran file foto KTP maksimal 5MB.");
+      setToast({ message: "Ukuran berkas e-KTP maksimal 5MB.", type: "error" });
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setVerificationKtpPreview(reader.result as string);
-      setFormError(null);
-    };
-    reader.readAsDataURL(file);
+    const validTypes = ["image/jpeg", "image/jpg", "image/png", "application/pdf"];
+    if (!validTypes.includes(file.type)) {
+      setToast({ message: "Format berkas harus JPEG, PNG, atau PDF.", type: "error" });
+      return;
+    }
+
+    setKtpFile(file);
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setKtpPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setKtpPreview("PDF_DOCUMENT");
+    }
   };
 
-  // Generate test KTP SVG placeholder
   const handleUseSampleKtp = () => {
-    const sampleKtpSvg = `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="380" viewBox="0 0 600 380"><rect width="600" height="380" rx="16" fill="%230284c7"/><rect x="20" y="20" width="560" height="340" rx="12" fill="%23f0f9ff"/><text x="300" y="55" font-family="sans-serif" font-size="18" font-weight="bold" fill="%230369a1" text-anchor="middle">REPUBLIK INDONESIA</text><text x="300" y="78" font-family="sans-serif" font-size="13" font-weight="bold" fill="%230284c7" text-anchor="middle">KARTU TANDA PENDUDUK (E-KTP)</text><rect x="40" y="110" width="110" height="150" rx="8" fill="%23bae6fd" stroke="%230284c7" stroke-width="2"/><circle cx="95" cy="165" r="28" fill="%230284c7"/><path d="M55,240 Q95,195 135,240 Z" fill="%230284c7"/><text x="180" y="130" font-family="monospace" font-size="16" font-weight="bold" fill="%230f172a">NIK: 3171012304980005</text><text x="180" y="165" font-family="sans-serif" font-size="13" fill="%23334155">Nama: ${encodeURIComponent(user.name || "STAF INTERNAL")}</text><text x="180" y="195" font-family="sans-serif" font-size="13" fill="%23334155">Tempat/Tgl Lahir: JAKARTA, 15-05-1998</text><text x="180" y="225" font-family="sans-serif" font-size="13" fill="%23334155">Jenis Kelamin: LAKI-LAKI</text><text x="180" y="255" font-family="sans-serif" font-size="13" fill="%23334155">Status: VERIFIED INTERNAL STAFF</text><rect x="420" y="270" width="130" height="60" rx="4" fill="%23e2e8f0" stroke="%2394a3b8"/><text x="485" y="305" font-family="sans-serif" font-size="11" fill="%2364748b" text-anchor="middle">[ Tanda Tangan ]</text></svg>`;
-    setVerificationKtpPreview(sampleKtpSvg);
-    if (!verificationNik) {
-      setVerificationNik("3171012304980005");
-    }
-    setFormError(null);
+    const sampleKtpSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="380" viewBox="0 0 600 380"><rect width="600" height="380" rx="16" fill="#0284c7"/><rect x="20" y="20" width="560" height="340" rx="12" fill="#f0f9ff"/><text x="300" y="55" font-family="sans-serif" font-size="18" font-weight="bold" fill="#0369a1" text-anchor="middle">REPUBLIK INDONESIA</text><text x="300" y="78" font-family="sans-serif" font-size="13" font-weight="bold" fill="#0284c7" text-anchor="middle">KARTU TANDA PENDUDUK (E-KTP)</text><rect x="40" y="110" width="110" height="150" rx="8" fill="#bae6fd" stroke="#0284c7" stroke-width="2"/><circle cx="95" cy="165" r="28" fill="#0284c7"/><path d="M55,240 Q95,195 135,240 Z" fill="#0284c7"/><text x="180" y="130" font-family="monospace" font-size="16" font-weight="bold" fill="#0f172a">NIK: 3171012304980005</text><text x="180" y="165" font-family="sans-serif" font-size="13" fill="#334155">Nama: ${encodeURIComponent(displayName || user.name || "STAF INTERNAL")}</text><text x="180" y="195" font-family="sans-serif" font-size="13" fill="#334155">Status: STAF INTERNAL RESMI</text><text x="180" y="225" font-family="sans-serif" font-size="13" fill="#334155">Kewarganegaraan: WNI</text><rect x="420" y="270" width="130" height="60" rx="4" fill="#e2e8f0" stroke="#94a3b8"/><text x="485" y="305" font-family="sans-serif" font-size="11" fill="#64748b" text-anchor="middle">[ Tanda Tangan ]</text></svg>`;
+    const blob = new Blob([sampleKtpSvg], { type: "image/svg+xml" });
+    const file = new File([blob], "sample_ktp_staf.svg", { type: "image/svg+xml" });
+    setKtpFile(file);
+    setKtpPreview(`data:image/svg+xml;utf8,${encodeURIComponent(sampleKtpSvg)}`);
+    setNik("3171012304980005");
   };
 
-  // Handle avatar upload
-  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const extractErrorMessage = (err: unknown, defaultMessage: string): string => {
+    if (!err) return defaultMessage;
+    const anyErr = err as {
+      message?: string;
+      errors?: Record<string, string[] | string>;
+      error?: { field_errors?: Record<string, string[] | string> };
+    };
 
-    if (file.size > 2 * 1024 * 1024) {
-      setFormError("Ukuran file avatar maksimal 2MB.");
+    const fieldErrors = anyErr.errors || anyErr.error?.field_errors;
+    if (fieldErrors && typeof fieldErrors === "object") {
+      const list = Object.entries(fieldErrors).flatMap(([_, val]) => {
+        const msgs = Array.isArray(val) ? val : [val];
+        return msgs.map((m) => `${m}`);
+      });
+      if (list.length > 0) {
+        return list.join(" • ");
+      }
+    }
+
+    return anyErr.message || defaultMessage;
+  };
+
+  // Submit Step 1: Profil
+  const handleSubmitProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!displayName.trim() || displayName.trim().length < 2) {
+      setToast({ message: "Nama lengkap staf minimal 2 karakter.", type: "error" });
+      return;
+    }
+    setSavingStep(true);
+    try {
+      const res = await internalAccountApi.completeProfileStep({
+        display_name: displayName.trim(),
+        legal_name: (legalName.trim() || displayName.trim()),
+        gender: gender,
+        birth_date: birthDate || undefined,
+        phone: phone.trim(),
+        photo_path: photoPath || undefined,
+      });
+      if (res.data) {
+        setToast({ message: "Tahap 1: Profil pribadi berhasil disimpan dan dicentang! Melanjutkan ke Tahap 2...", type: "success" });
+        await fetchOnboarding();
+        await refreshUser();
+        setActiveStepTab(2);
+      }
+    } catch (err: unknown) {
+      setToast({ message: extractErrorMessage(err, "Gagal menyimpan tahap profil."), type: "error" });
+    } finally {
+      setSavingStep(false);
+    }
+  };
+
+  // Submit Step 2: Pengecekan Berkas (NIK & e-KTP)
+  const handleSubmitKyc = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanNik = nik.replace(/\s+/g, "");
+    if (!/^\d{16}$/.test(cleanNik) && !cleanNik.includes("*")) {
+      setToast({ message: "NIK wajib tepat 16 digit angka.", type: "error" });
+      return;
+    }
+    if (!ktpFile && !ktpPreview && !data?.berkas?.document_count) {
+      setToast({ message: "Wajib mengunggah foto kartu e-KTP fisik.", type: "error" });
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setProfileAvatar(reader.result as string);
-      setFormError(null);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  // Submit Active Task Modal
-  const handleSubmitTaskModal = async () => {
-    if (!activeTaskModal) return;
-    setFormError(null);
-
-    let payload: Record<string, unknown> = {};
-
-    if (activeTaskModal.code === "PROFILE_COMPLETION") {
-      if (!profileDisplayName.trim()) {
-        setFormError("Nama tampilan profil wajib diisi.");
-        return;
-      }
-      if (!profileBio.trim()) {
-        setFormError("Deskripsi bio singkat peran wajib diisi.");
-        return;
-      }
-      payload = {
-        displayName: profileDisplayName.trim(),
-        avatar: profileAvatar.trim(),
-        bio: profileBio.trim(),
-        gender: profileGender,
-        dateOfBirth: profileDateOfBirth,
-      };
-    } else if (activeTaskModal.code === "REQUIRED_VERIFICATION") {
-      const cleanNik = verificationNik.replace(/\s+/g, "");
-      if (!/^\d{16}$/.test(cleanNik)) {
-        setFormError("NIK harus tepat 16 digit angka sesuai KTP.");
-        return;
-      }
-      if (!verificationKtpPreview) {
-        setFormError("Wajib mengunggah foto kartu e-KTP.");
-        return;
-      }
-      if (!emergencyContactName.trim()) {
-        setFormError("Nama kontak darurat wajib diisi.");
-        return;
-      }
-      if (!emergencyContactPhone.trim()) {
-        setFormError("Nomor telepon kontak darurat wajib diisi.");
-        return;
-      }
-      payload = {
-        nik: cleanNik,
-        ktpFilePath: verificationKtpPreview,
-        emergencyContactName: emergencyContactName.trim(),
-        emergencyContactPhone: emergencyContactPhone.trim(),
-      };
-    } else if (activeTaskModal.code === "EMPLOYMENT_CONFIRMATION") {
-      if (!employmentConfirmed) {
-        setFormError("Centang persetujuan konfirmasi data hubungan kerja terlebih dahulu.");
-        return;
-      }
-      payload = {
-        confirmed: true,
-        confirmedAt: new Date().toISOString(),
-      };
-    } else if (activeTaskModal.code === "POLICY_ACKNOWLEDGEMENT") {
-      if (!policyAgreed) {
-        setFormError("Centang persetujuan Pakta Integritas & Kebijakan Operasional terlebih dahulu.");
-        return;
-      }
-      payload = {
-        acknowledged: true,
-        policyVersion: "2026.1",
-        acknowledgedAt: new Date().toISOString(),
-      };
-    } else if (activeTaskModal.code === "ACCESS_CONFIRMATION") {
-      if (!accessAgreed) {
-        setFormError("Centang konfirmasi pemahaman wewenang dan batasan akses sistem terlebih dahulu.");
-        return;
-      }
-      payload = {
-        accessConfirmed: true,
-        confirmedAt: new Date().toISOString(),
-      };
-    } else if (activeTaskModal.code === "ACCOUNT_ACCEPTANCE") {
-      if (!accountAgreed) {
-        setFormError("Centang persetujuan penerimaan akun operasional terlebih dahulu.");
-        return;
-      }
-      payload = {
-        accepted: true,
-        acceptedAt: new Date().toISOString(),
-      };
-    }
-
-    setActionTaskId(activeTaskModal.id);
+    setSavingStep(true);
     try {
-      const res = await internalAccountApi.completeTask("me", activeTaskModal.id, "COMPLETE", payload);
+      const formData = new FormData();
+      if (/^\d{16}$/.test(cleanNik)) {
+        formData.append("nik", cleanNik);
+      }
+      if (ktpFile) {
+        formData.append("file", ktpFile);
+      }
+
+      const res = await internalAccountApi.completeKycStep(formData);
       if (res.data) {
-        setOnboarding(res.data);
-        await refreshUser();
-        setToast({
-          message: `Tugas "${activeTaskModal.title}" berhasil diselesaikan.`,
-          type: "success",
-        });
-        setActiveTaskModal(null);
+        setToast({ message: "Tahap 2: Pengecekan Berkas (NIK & e-KTP) berhasil disimpan dan dicentang! Melanjutkan ke Tahap 3...", type: "success" });
+        await fetchOnboarding();
+        setActiveStepTab(3);
       }
     } catch (err: unknown) {
-      const error = err as Error & { message?: string };
-      setFormError(error.message || "Gagal menyelesaikan tugas onboarding.");
+      setToast({ message: extractErrorMessage(err, "Gagal menyimpan berkas e-KTP."), type: "error" });
     } finally {
-      setActionTaskId(null);
+      setSavingStep(false);
     }
   };
 
-  const handleCompleteAllOnboarding = async () => {
-    setCompletingAll(true);
+  // Submit Step 3: NDA
+  const handleSubmitNda = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ndaAccepted) {
+      setToast({ message: "Anda wajib mencentang persetujuan Perjanjian Kerahasiaan (NDA).", type: "error" });
+      return;
+    }
+    setSavingStep(true);
     try {
-      const res = await internalAccountApi.completeOnboarding("me");
+      const res = await internalAccountApi.completeNdaStep({
+        nda_version: ndaVersion,
+        accepted: true,
+      });
       if (res.data) {
-        setOnboarding(res.data);
-        await refreshUser();
-        setToast({
-          message: "Selamat! Seluruh proses onboarding internal Anda telah tuntas dan disetujui sistem.",
-          type: "success",
-        });
+        setToast({ message: "Tahap 3: Perjanjian Kerahasiaan (NDA) berhasil disetujui dan dicentang! Melanjutkan ke Tahap 4...", type: "success" });
+        await fetchOnboarding();
+        setActiveStepTab(4);
       }
     } catch (err: unknown) {
-      const error = err as Error & { message?: string };
+      setToast({ message: extractErrorMessage(err, "Gagal mencatat persetujuan NDA."), type: "error" });
+    } finally {
+      setSavingStep(false);
+    }
+  };
+
+  // Submit Step 4: Access Confirmation AND Send for CEO Verification
+  const handleSubmitAccess = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!accessAccepted) {
+      setToast({ message: "Anda wajib mencentang konfirmasi pemahaman hak akses penugasan CEO.", type: "error" });
+      return;
+    }
+    setSavingStep(true);
+    try {
+      const res = await internalAccountApi.confirmAccessStep({
+        accepted: true,
+      });
+      if (res.data) {
+        // Step 4 is confirmed. Now send entire onboarding for CEO verification!
+        setSubmittingVerification(true);
+        const submitRes = await internalAccountApi.submitOnboarding();
+        if (submitRes.data) {
+          setToast({
+            message: "Tahap 4 berhasil dikonfirmasi dan seluruh berkas onboarding telah dikirim ke Antrean Verifikasi CEO!",
+            type: "success",
+          });
+          await fetchOnboarding();
+          await refreshUser();
+        } else {
+          setToast({ message: "Tahap 4 berhasil dikonfirmasi. Anda dapat meninjau seluruh data.", type: "success" });
+          await fetchOnboarding();
+        }
+      }
+    } catch (err: unknown) {
+      setToast({ message: extractErrorMessage(err, "Gagal mengonfirmasi hak akses."), type: "error" });
+    } finally {
+      setSavingStep(false);
+      setSubmittingVerification(false);
+    }
+  };
+
+  // Submit All for CEO Verification (CR-03 Section E: Manual Trigger if not already submitted)
+  const handleFinalSubmit = async () => {
+    setSubmittingVerification(true);
+    try {
+      const res = await internalAccountApi.submitOnboarding();
+      if (res.data) {
+        setToast({
+          message: "Berkas onboarding berhasil dikirim ke Antrean Verifikasi CEO!",
+          type: "success",
+        });
+        await fetchOnboarding();
+        await refreshUser();
+      }
+    } catch (err: unknown) {
       setToast({
-        message: error.message || "Gagal menuntaskan onboarding. Pastikan semua tugas wajib telah diselesaikan.",
+        message: extractErrorMessage(err, "Gagal mengirim verifikasi. Pastikan seluruh 4 tahap lengkap."),
         type: "error",
       });
     } finally {
-      setCompletingAll(false);
+      setSubmittingVerification(false);
     }
   };
 
-  const getTaskIcon = (code: string) => {
-    switch (code) {
-      case "ACCOUNT_ACCEPTANCE":
-        return <LockKey size={18} className="text-primary" />;
-      case "PROFILE_COMPLETION":
-        return <User size={18} className="text-primary" />;
-      case "EMPLOYMENT_CONFIRMATION":
-        return <Briefcase size={18} className="text-primary" />;
-      case "REQUIRED_VERIFICATION":
-        return <IdentificationCard size={18} className="text-primary" />;
-      case "POLICY_ACKNOWLEDGEMENT":
-        return <FileText size={18} className="text-primary" />;
-      case "ACCESS_CONFIRMATION":
-        return <ShieldCheck size={18} className="text-primary" />;
+  const stepsList = data?.steps || [];
+  const stepProfile = stepsList.find((s) => s.key === "PROFILE");
+  const stepKyc = stepsList.find((s) => s.key === "EMPLOYEE_KYC");
+  const stepNda = stepsList.find((s) => s.key === "NDA");
+  const stepAccess = stepsList.find((s) => s.key === "ACCESS_CONFIRMATION");
+
+  const allFourStepsDone = Boolean(
+    stepProfile?.completed && stepKyc?.completed && stepNda?.completed && stepAccess?.completed
+  );
+
+  const status = data?.status || "IN_PROGRESS";
+  const isPendingReview = status === "PENDING_REVIEW";
+  const isRevisionRequired = status === "REVISION_REQUIRED";
+  const isRejected = status === "REJECTED";
+  const isOperationalReady = status === "COMPLETED" || status === "OPERATIONAL_READY" || data?.readiness === "READY";
+  const isReviewMode = isPendingReview || isOperationalReady;
+
+  // Sequential Stepper Locking Logic:
+  // - Tab 1: Always accessible
+  // - Tab 2: Accessible only after Tab 1 completed (or if in review/done mode)
+  // - Tab 3: Accessible only after Tab 1 & 2 completed (or if in review/done mode)
+  // - Tab 4: Accessible only after Tab 1, 2, & 3 completed (or if in review/done mode)
+  // - When submitted or approved, all tabs are unlocked so staff can inspect each point ("bisa lihat isi per pointnya")
+  const canAccessTab = (tabIndex: number): boolean => {
+    if (isPendingReview || isOperationalReady || isRevisionRequired || isRejected) {
+      return true;
+    }
+    if (tabIndex === 1) return true;
+    if (tabIndex === 2) return Boolean(stepProfile?.completed);
+    if (tabIndex === 3) return Boolean(stepProfile?.completed && stepKyc?.completed);
+    if (tabIndex === 4) return Boolean(stepProfile?.completed && stepKyc?.completed && stepNda?.completed);
+    return false;
+  };
+
+  const getDashboardUrl = () => {
+    switch (activeRole) {
+      case "ADMIN_OPERATIONS":
+        return "/ops/admin/dashboard";
+      case "FINANCE_PAYMENT_OPS":
+        return "/ops/finance/dashboard";
+      case "CUSTOMER_SUPPORT":
+        return "/ops/support/dashboard";
       default:
-        return <CheckCircle size={18} className="text-primary" />;
+        return "/ops/admin/dashboard";
     }
   };
-
-  const readiness = onboarding?.readiness;
-  const tasks = Array.isArray(onboarding?.tasks) ? onboarding.tasks : [];
-  const completedTasksCount = tasks.filter((t) => t.status === "COMPLETED").length;
-  const totalTasksCount = tasks.length;
-  const allRequiredDone = tasks.length > 0
-    ? tasks.filter((t) => t.required).every((t) => t.status === "COMPLETED" || t.status === "WAIVED")
-    : false;
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto py-2">
-      {/* Page Header */}
+    <div className="space-y-6 max-w-4xl mx-auto py-3 px-2 sm:px-0 pb-16">
+      {/* Toast Notification */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
+
+      {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <span className="text-xs font-bold uppercase tracking-wider text-primary px-3 py-1 rounded-full bg-primary/10 border border-primary/20">
-            Internal Staff Onboarding
-          </span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-primary px-3 py-1 rounded-full bg-primary/10 border border-primary/20">
+              Tata Kelola Staf Internal (CR-03)
+            </span>
+            {data?.employee?.employee_id && (
+              <span className="text-[11px] font-mono font-bold text-slate-700 px-2.5 py-1 rounded-full bg-slate-100 border border-slate-200">
+                NIP: {data.employee.employee_id}
+              </span>
+            )}
+          </div>
           <h1 className="text-2xl font-bold font-display text-neutral-dark mt-2">
-            Selamat Datang, {user.name || "Staf Internal"}
+            Onboarding Staf: {data?.profile?.display_name || user.name || "Staf Internal"}
           </h1>
           <p className="text-xs text-neutral-slate mt-0.5">
-            Lengkapi formulir profil, unggah KTP identitas, dan konfirmasi SOP operasional agar akun Anda berstatus <strong>READY</strong>.
+            Lengkapi empat tahap onboarding untuk diverifikasi oleh CEO agar akun Anda berstatus <strong>OPERATIONAL_READY</strong>.
           </p>
         </div>
 
@@ -340,850 +465,858 @@ export default function StaffOnboardingPage() {
         </button>
       </div>
 
-      {loading ? (
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-12 text-center shadow-servio-xs">
-          <SpinnerGap size={28} className="animate-spin text-primary mx-auto mb-3" />
-          <p className="text-xs font-medium text-neutral-slate">Memuat status onboarding staf...</p>
-        </div>
-      ) : !onboarding || tasks.length === 0 ? (
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-8 text-center shadow-servio-xs space-y-3">
-          <div className="p-3 bg-amber-50 text-amber-600 rounded-2xl w-fit mx-auto">
-            <WarningCircle size={32} weight="fill" />
+      {/* STATUS BANNER */}
+      {isOperationalReady ? (
+        <div className="p-5 rounded-3xl bg-emerald-50 border border-emerald-200 shadow-servio-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <ShieldCheck size={28} weight="fill" />
+            </div>
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-800 px-2 py-0.5 rounded-full bg-emerald-100/80 border border-emerald-300">
+                STATUS: OPERATIONAL_READY
+              </span>
+              <h2 className="text-base font-bold text-emerald-950 mt-1">
+                Selamat! Akun Staf Anda Telah Aktif &amp; Disetujui CEO
+              </h2>
+              <p className="text-xs text-emerald-800">
+                Seluruh tahapan onboarding dan verifikasi berkas telah disetujui. Dashboard operasional Anda kini dapat diakses penuh.
+              </p>
+            </div>
           </div>
-          <h2 className="text-base font-bold text-neutral-dark">Belum Ada Onboarding Aktif</h2>
-          <p className="text-xs text-neutral-slate max-w-md mx-auto">
-            Akun Anda saat ini belum memiliki lembar onboarding operasional atau telah terdaftar di bawah akun umum. Hubungi CEO atau tim administrasi untuk menghubungkan konteks pekerjaan internal.
-          </p>
+          <Link
+            href={getDashboardUrl()}
+            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-2 shadow-sm shrink-0"
+          >
+            <span>Buka Dashboard Operasional</span>
+            <ArrowRight size={14} weight="bold" />
+          </Link>
         </div>
-      ) : (
-        <div className="space-y-6">
-          {/* Operational Readiness Card (Level 04 Section 81) */}
-          <div className={`p-6 rounded-3xl border shadow-servio-xs transition-all ${
-            readiness?.ready
-              ? "bg-gradient-to-br from-emerald-50 to-emerald-100/50 border-emerald-300 text-emerald-950"
-              : "bg-gradient-to-br from-amber-50 to-amber-100/40 border-amber-200 text-amber-950"
-          }`}>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-start sm:items-center gap-3.5">
-                <div className={`p-3 rounded-2xl shrink-0 ${
-                  readiness?.ready ? "bg-emerald-600 text-white" : "bg-amber-500 text-white"
-                }`}>
-                  {readiness?.ready ? (
-                    <CheckCircle size={28} weight="fill" />
-                  ) : (
-                    <Clock size={28} weight="bold" />
-                  )}
-                </div>
-                <div>
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-neutral-slate">
-                    Status Kesiapan Operasional (Operational Readiness)
-                  </div>
-                  <div className="text-xl font-black font-display mt-0.5 flex items-center gap-2">
-                    <span>{readiness?.ready ? "OPERATIONAL READY" : "NOT READY"}</span>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      readiness?.ready ? "bg-emerald-200 text-emerald-900" : "bg-amber-200 text-amber-900"
-                    }`}>
-                      {readiness?.ready ? "Akses Operasional Penuh" : "Akses Dibatasi"}
-                    </span>
-                  </div>
-                  <p className="text-xs text-neutral-dark/80 mt-1">
-                    {readiness?.reason || (readiness?.ready
-                      ? "Seluruh persyaratan akun, keanggotaan, peran, pekerjaan, dan onboarding telah terpenuhi."
-                      : "Selesaikan seluruh formulir dan checklist onboarding untuk mengaktifkan akses operasional.")}
-                  </p>
-                </div>
+      ) : isPendingReview ? (
+        <div className="p-5 rounded-3xl bg-sky-50 border border-sky-200 shadow-servio-xs flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-sky-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+            <Clock size={28} weight="fill" />
+          </div>
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-sky-800 px-2 py-0.5 rounded-full bg-sky-100 border border-sky-300">
+              STATUS: PENDING_REVIEW
+            </span>
+            <h2 className="text-base font-bold text-sky-950 mt-1">
+              Berkas Sedang Ditinjau oleh CEO
+            </h2>
+            <p className="text-xs text-sky-800">
+              Seluruh empat tahapan telah dikirim. Permohonan Anda saat ini berada dalam <strong>Antrean Verifikasi CEO</strong>. Dashboard operasional akan otomatis dibuka setelah disetujui.
+            </p>
+          </div>
+        </div>
+      ) : isRevisionRequired ? (
+        <div className="p-5 rounded-3xl bg-amber-50 border border-amber-300 shadow-servio-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <WarningCircle size={28} weight="fill" />
+            </div>
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-900 px-2 py-0.5 rounded-full bg-amber-100 border border-amber-300">
+                STATUS: REVISION_REQUIRED
+              </span>
+              <h2 className="text-base font-bold text-amber-950 mt-1">
+                CEO Meminta Perbaikan Berkas
+              </h2>
+              <p className="text-xs text-amber-900 mt-0.5">
+                Catatan Revisi: <strong>&ldquo;{data?.revision_notes || "Silakan perbaiki data atau foto e-KTP."}&rdquo;</strong>
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-semibold text-amber-800 px-3 py-1 bg-amber-100 rounded-xl">
+            Perbarui berkas di bawah lalu kirim ulang
+          </span>
+        </div>
+      ) : isRejected ? (
+        <div className="p-5 rounded-3xl bg-rose-50 border border-rose-300 shadow-servio-xs flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-2xl bg-rose-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+            <XCircle size={28} weight="fill" />
+          </div>
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-rose-900 px-2 py-0.5 rounded-full bg-rose-100 border border-rose-300">
+              STATUS: REJECTED
+            </span>
+            <h2 className="text-base font-bold text-rose-950 mt-1">
+              Pengajuan Onboarding Ditolak
+            </h2>
+            <p className="text-xs text-rose-900 mt-0.5">
+              Alasan: <strong>&ldquo;{data?.rejection_reason || "Berkas tidak memenuhi persyaratan resmi kepegawaian."}&rdquo;</strong>
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Progress & Stepper Tabs */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-servio-xs space-y-4">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-semibold text-neutral-slate">Progres Onboarding:</span>
+          <span className="font-bold text-primary font-mono text-sm">{data?.progress ?? 25}%</span>
+        </div>
+        <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+          <div
+            className="bg-primary h-2 rounded-full transition-all duration-500"
+            style={{ width: `${data?.progress ?? 25}%` }}
+          />
+        </div>
+
+        {/* 4 Steps Nav */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2">
+          {/* Step 1 */}
+          <button
+            type="button"
+            id="tab-onboarding-step-1"
+            onClick={() => setActiveStepTab(1)}
+            className={`p-3 rounded-2xl border text-left transition cursor-pointer ${
+              activeStepTab === 1
+                ? "bg-primary/5 border-primary text-primary shadow-xs ring-1 ring-primary/20"
+                : stepProfile?.completed
+                ? "bg-emerald-50/40 border-emerald-200/80 text-slate-800 hover:bg-emerald-50/70"
+                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tahap 1</span>
+              {stepProfile?.completed ? (
+                <CheckCircle size={16} weight="fill" className="text-emerald-500" />
+              ) : (
+                <div className="w-2 h-2 rounded-full bg-amber-400" />
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 font-bold text-xs truncate">
+              <User size={14} />
+              <span>Profil Pribadi</span>
+            </div>
+            <div className="text-[10px] mt-0.5">
+              {stepProfile?.completed ? (
+                <span className="text-emerald-600 font-semibold">Selesai (Ceklis)</span>
+              ) : activeStepTab === 1 ? (
+                <span className="text-primary font-semibold">Sedang Diisi</span>
+              ) : (
+                <span className="text-slate-400">Belum Lengkap</span>
+              )}
+            </div>
+          </button>
+
+          {/* Step 2 */}
+          <button
+            type="button"
+            id="tab-onboarding-step-2"
+            disabled={!canAccessTab(2)}
+            onClick={() => canAccessTab(2) && setActiveStepTab(2)}
+            className={`p-3 rounded-2xl border text-left transition ${
+              !canAccessTab(2)
+                ? "bg-slate-50/70 border-slate-200/60 text-slate-400 opacity-60 cursor-not-allowed"
+                : activeStepTab === 2
+                ? "bg-primary/5 border-primary text-primary shadow-xs ring-1 ring-primary/20 cursor-pointer"
+                : stepKyc?.completed
+                ? "bg-emerald-50/40 border-emerald-200/80 text-slate-800 hover:bg-emerald-50/70 cursor-pointer"
+                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tahap 2</span>
+              {!canAccessTab(2) ? (
+                <LockKey size={14} className="text-slate-400" />
+              ) : stepKyc?.completed ? (
+                <CheckCircle size={16} weight="fill" className="text-emerald-500" />
+              ) : (
+                <div className="w-2 h-2 rounded-full bg-amber-400" />
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 font-bold text-xs truncate">
+              <IdentificationCard size={14} />
+              <span>Pengecekan Berkas</span>
+            </div>
+            <div className="text-[10px] mt-0.5">
+              {!canAccessTab(2) ? (
+                <span className="text-slate-400">Terkunci (Isi Tahap 1)</span>
+              ) : stepKyc?.completed ? (
+                <span className="text-emerald-600 font-semibold">Selesai (Ceklis)</span>
+              ) : activeStepTab === 2 ? (
+                <span className="text-primary font-semibold">Sedang Diisi</span>
+              ) : (
+                <span className="text-slate-400">Siap Diisi</span>
+              )}
+            </div>
+          </button>
+
+          {/* Step 3 */}
+          <button
+            type="button"
+            id="tab-onboarding-step-3"
+            disabled={!canAccessTab(3)}
+            onClick={() => canAccessTab(3) && setActiveStepTab(3)}
+            className={`p-3 rounded-2xl border text-left transition ${
+              !canAccessTab(3)
+                ? "bg-slate-50/70 border-slate-200/60 text-slate-400 opacity-60 cursor-not-allowed"
+                : activeStepTab === 3
+                ? "bg-primary/5 border-primary text-primary shadow-xs ring-1 ring-primary/20 cursor-pointer"
+                : stepNda?.completed
+                ? "bg-emerald-50/40 border-emerald-200/80 text-slate-800 hover:bg-emerald-50/70 cursor-pointer"
+                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tahap 3</span>
+              {!canAccessTab(3) ? (
+                <LockKey size={14} className="text-slate-400" />
+              ) : stepNda?.completed ? (
+                <CheckCircle size={16} weight="fill" className="text-emerald-500" />
+              ) : (
+                <div className="w-2 h-2 rounded-full bg-amber-400" />
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 font-bold text-xs truncate">
+              <FileText size={14} />
+              <span>NDA Perjanjian</span>
+            </div>
+            <div className="text-[10px] mt-0.5">
+              {!canAccessTab(3) ? (
+                <span className="text-slate-400">Terkunci (Isi Tahap 2)</span>
+              ) : stepNda?.completed ? (
+                <span className="text-emerald-600 font-semibold">Selesai (Ceklis)</span>
+              ) : activeStepTab === 3 ? (
+                <span className="text-primary font-semibold">Sedang Diisi</span>
+              ) : (
+                <span className="text-slate-400">Siap Diisi</span>
+              )}
+            </div>
+          </button>
+
+          {/* Step 4 */}
+          <button
+            type="button"
+            id="tab-onboarding-step-4"
+            disabled={!canAccessTab(4)}
+            onClick={() => canAccessTab(4) && setActiveStepTab(4)}
+            className={`p-3 rounded-2xl border text-left transition ${
+              !canAccessTab(4)
+                ? "bg-slate-50/70 border-slate-200/60 text-slate-400 opacity-60 cursor-not-allowed"
+                : activeStepTab === 4
+                ? "bg-primary/5 border-primary text-primary shadow-xs ring-1 ring-primary/20 cursor-pointer"
+                : stepAccess?.completed
+                ? "bg-emerald-50/40 border-emerald-200/80 text-slate-800 hover:bg-emerald-50/70 cursor-pointer"
+                : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Tahap 4</span>
+              {!canAccessTab(4) ? (
+                <LockKey size={14} className="text-slate-400" />
+              ) : stepAccess?.completed ? (
+                <CheckCircle size={16} weight="fill" className="text-emerald-500" />
+              ) : (
+                <div className="w-2 h-2 rounded-full bg-amber-400" />
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 font-bold text-xs truncate">
+              <ShieldCheck size={14} />
+              <span>Konfirmasi Akses</span>
+            </div>
+            <div className="text-[10px] mt-0.5">
+              {!canAccessTab(4) ? (
+                <span className="text-slate-400">Terkunci (Isi Tahap 3)</span>
+              ) : stepAccess?.completed ? (
+                <span className="text-emerald-600 font-semibold">Selesai (Ceklis)</span>
+              ) : activeStepTab === 4 ? (
+                <span className="text-primary font-semibold">Tahap Akhir (Kirim)</span>
+              ) : (
+                <span className="text-slate-400">Siap Diisi</span>
+              )}
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* STEP CONTENT FORMS */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 shadow-servio-xs space-y-6">
+        {/* Review Mode Banner (allows user to see what is filled per point after submit) */}
+        {isReviewMode && (
+          <div className="p-3.5 rounded-2xl bg-sky-50 border border-sky-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-sky-900">
+            <div className="flex items-center gap-2.5">
+              <Eye size={20} className="text-sky-600 shrink-0" />
+              <div>
+                <strong>Mode Pratinjau Pengajuan:</strong> Berkas onboarding Anda telah dikirimkan ke Antrean Verifikasi CEO. Anda dapat mengklik setiap tahap di atas untuk memeriksa isi data yang telah diajukan.
+              </div>
+            </div>
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-sky-100 border border-sky-300 text-sky-800 uppercase self-start sm:self-auto shrink-0">
+              {status}
+            </span>
+          </div>
+        )}
+
+        {/* TAHAP 1: PROFIL PRIBADI & KONTAK */}
+        {activeStepTab === 1 && (
+          <form onSubmit={handleSubmitProfile} className="space-y-6">
+            <div className="border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">
+                  TAHAP 1
+                </span>
+                <h2 className="text-lg font-bold font-display text-neutral-dark">
+                  Profil Pribadi &amp; Kontak Staf
+                </h2>
+              </div>
+              <p className="text-xs text-neutral-slate mt-1">
+                Masukkan nama lengkap, nama resmi sesuai identitas, nomor telepon/WhatsApp aktif, serta foto profil (opsional).
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Nama Lengkap Staf <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={displayName}
+                  disabled={isReviewMode}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="Contoh: Budi Santoso"
+                  required
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-xs focus:ring-2 focus:ring-primary focus:border-primary transition ${
+                    isReviewMode ? "bg-slate-50 border-slate-200 text-slate-700 cursor-default" : "border-slate-200"
+                  }`}
+                />
               </div>
 
-              <div className="text-right shrink-0 bg-white/70 backdrop-blur-sm p-3 rounded-2xl border border-white/80">
-                <span className="text-[10px] font-semibold text-neutral-slate uppercase">Progres Onboarding</span>
-                <div className="text-2xl font-black font-display text-primary">
-                  {onboarding.progress}%
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Nama Sesuai Identitas (Legal Name) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={legalName}
+                  disabled={isReviewMode}
+                  onChange={(e) => setLegalName(e.target.value)}
+                  placeholder="Nama sesuai KTP"
+                  required
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-xs focus:ring-2 focus:ring-primary focus:border-primary transition ${
+                    isReviewMode ? "bg-slate-50 border-slate-200 text-slate-700 cursor-default" : "border-slate-200"
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Jenis Kelamin <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={gender}
+                  disabled={isReviewMode}
+                  onChange={(e) => setGender(e.target.value)}
+                  required
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-xs focus:ring-2 focus:ring-primary focus:border-primary transition ${
+                    isReviewMode ? "bg-slate-50 border-slate-200 text-slate-700 cursor-default" : "border-slate-200 bg-white"
+                  }`}
+                >
+                  <option value="Laki-laki">Laki-laki</option>
+                  <option value="Perempuan">Perempuan</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Tanggal Lahir <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={birthDate}
+                  disabled={isReviewMode}
+                  onChange={(e) => setBirthDate(e.target.value)}
+                  required
+                  max={new Date().toISOString().split("T")[0]}
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-xs focus:ring-2 focus:ring-primary focus:border-primary transition ${
+                    isReviewMode ? "bg-slate-50 border-slate-200 text-slate-700 cursor-default" : "border-slate-200"
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Nomor HP / WhatsApp Aktif
+                </label>
+                <input
+                  type="tel"
+                  value={phone}
+                  disabled={isReviewMode}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="081234567890"
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-xs focus:ring-2 focus:ring-primary focus:border-primary transition ${
+                    isReviewMode ? "bg-slate-50 border-slate-200 text-slate-700 cursor-default" : "border-slate-200"
+                  }`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Foto Profil (Opsional)
+                </label>
+                <input
+                  type="file"
+                  ref={avatarInputRef}
+                  accept="image/png,image/jpeg,image/jpg"
+                  onChange={handleAvatarFileChange}
+                  className="hidden"
+                  disabled={isReviewMode}
+                />
+                {!isReviewMode ? (
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-dashed border-slate-300 text-xs text-slate-600 hover:bg-slate-50 transition flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <UploadSimple size={15} />
+                    <span>{photoPath ? "Ubah Foto Profil Terpilih" : "Unggah Foto Profil (Maks 5MB)"}</span>
+                  </button>
+                ) : (
+                  <div className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500">
+                    {photoPath ? "Foto profil telah diunggah" : "Tidak ada foto profil khusus terlampir"}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {photoPath && (
+              <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-200">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={photoPath} alt="Preview" className="w-12 h-12 rounded-xl object-cover border border-slate-200" />
+                <span className="text-xs text-slate-600 font-medium">Foto profil staf terpasang</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              <span className="text-[11px] text-slate-400">Tahap 1 dari 4 • Profil Pribadi</span>
+              {isReviewMode ? (
+                <button
+                  type="button"
+                  onClick={() => setActiveStepTab(2)}
+                  className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold transition flex items-center gap-2 shadow-servio-xs cursor-pointer"
+                >
+                  <span>Lihat Tahap 2: Pengecekan Berkas</span>
+                  <ArrowRight size={14} />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={savingStep}
+                  className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold transition flex items-center gap-2 shadow-servio-xs cursor-pointer"
+                >
+                  {savingStep && <SpinnerGap size={14} className="animate-spin" />}
+                  <span>Simpan &amp; Lanjutkan ke Berkas</span>
+                  <ArrowRight size={14} />
+                </button>
+              )}
+            </div>
+          </form>
+        )}
+
+        {/* TAHAP 2: PENGECEKAN BERKAS (Label WAJIB Pengecekan Berkas) */}
+        {activeStepTab === 2 && (
+          <form onSubmit={handleSubmitKyc} className="space-y-6">
+            <div className="border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">
+                  TAHAP 2
+                </span>
+                <h2 className="text-lg font-bold font-display text-neutral-dark">
+                  Pengecekan Berkas (NIK &amp; e-KTP)
+                </h2>
+              </div>
+              <p className="text-xs text-neutral-slate mt-1">
+                Sesuai ketentuan keamanan SERVIO, staf internal wajib memasukkan NIK 16 digit dan mengunggah kartu e-KTP fisik yang valid untuk diverifikasi oleh CEO.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Nomor Induk Kependudukan (NIK 16 Digit) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  maxLength={16}
+                  value={nik}
+                  disabled={isReviewMode}
+                  onChange={(e) => setNik(e.target.value.replace(/[^0-9*]/g, ""))}
+                  placeholder="3171012304980005"
+                  required
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-xs font-mono tracking-wider focus:ring-2 focus:ring-primary focus:border-primary transition ${
+                    isReviewMode ? "bg-slate-50 border-slate-200 text-slate-800 cursor-default" : "border-slate-200"
+                  }`}
+                />
+                <span className="text-[11px] text-slate-400 mt-1 block">
+                  NIK disimpan dengan enkripsi server-side AES-256 dan hanya ditampilkan bermasker.
+                </span>
+              </div>
+
+              {!isReviewMode && (
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      Unggah Kartu e-KTP Asli <span className="text-rose-500">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleUseSampleKtp}
+                      className="text-[11px] font-bold text-primary hover:underline cursor-pointer"
+                    >
+                      Gunakan Sampel Valid e-KTP
+                    </button>
+                  </div>
+
+                  <input
+                    type="file"
+                    ref={ktpInputRef}
+                    accept="image/png,image/jpeg,image/jpg,application/pdf"
+                    onChange={handleKtpFileChange}
+                    className="hidden"
+                  />
+
+                  <div
+                    onClick={() => ktpInputRef.current?.click()}
+                    className="w-full p-6 border-2 border-dashed border-slate-300 hover:border-primary rounded-2xl text-center cursor-pointer bg-slate-50/50 hover:bg-slate-50 transition"
+                  >
+                    <IdentificationCard size={32} className="text-slate-400 mx-auto mb-2" />
+                    <p className="text-xs font-semibold text-slate-700">
+                      Klik untuk memilih berkas foto e-KTP atau seret berkas ke sini
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Format: JPEG, PNG, atau PDF (Ukuran maksimal 5MB)
+                    </p>
+                  </div>
                 </div>
-                <span className="text-[10px] font-bold text-neutral-slate">
-                  {onboarding.status}
+              )}
+
+              {/* Preview of KTP */}
+              {ktpPreview ? (
+                <div className="p-4 rounded-2xl bg-sky-50 border border-sky-200 space-y-2">
+                  <span className="text-[11px] font-bold text-sky-800 block">
+                    Pratinjau Berkas e-KTP Terunggah:
+                  </span>
+                  {ktpPreview === "PDF_DOCUMENT" ? (
+                    <div className="p-4 bg-white rounded-xl border border-sky-200 flex items-center gap-2 text-xs font-semibold text-sky-900">
+                      <FileText size={20} className="text-rose-500" />
+                      <span>Dokumen e-KTP (PDF) Siap Diverifikasi</span>
+                    </div>
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={ktpPreview}
+                      alt="Pratinjau e-KTP"
+                      className="max-h-48 rounded-xl object-contain border border-slate-200 bg-white"
+                    />
+                  )}
+                </div>
+              ) : (data?.berkas?.document_count ?? 0) > 0 ? (
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center gap-3">
+                  <IdentificationCard size={24} className="text-emerald-600" />
+                  <div>
+                    <span className="text-xs font-bold text-emerald-900 block">
+                      Berkas e-KTP Telah Tersimpan di Basis Data
+                    </span>
+                    <span className="text-[11px] text-emerald-700">
+                      Jumlah Berkas: {data?.berkas?.document_count} dokumen tersimpan aman dalam private storage.
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setActiveStepTab(1)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+              >
+                ← Kembali ke Profil
+              </button>
+              {isReviewMode ? (
+                <button
+                  type="button"
+                  onClick={() => setActiveStepTab(3)}
+                  className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold transition flex items-center gap-2 shadow-servio-xs cursor-pointer"
+                >
+                  <span>Lihat Tahap 3: NDA Perjanjian</span>
+                  <ArrowRight size={14} />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={savingStep}
+                  className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold transition flex items-center gap-2 shadow-servio-xs cursor-pointer"
+                >
+                  {savingStep && <SpinnerGap size={14} className="animate-spin" />}
+                  <span>Simpan &amp; Lanjutkan ke NDA</span>
+                  <ArrowRight size={14} />
+                </button>
+              )}
+            </div>
+          </form>
+        )}
+
+        {/* TAHAP 3: PERJANJIAN KERAHASIAAN (NDA) */}
+        {activeStepTab === 3 && (
+          <form onSubmit={handleSubmitNda} className="space-y-6">
+            <div className="border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">
+                  TAHAP 3
+                </span>
+                <h2 className="text-lg font-bold font-display text-neutral-dark">
+                  Perjanjian Kerahasiaan Informasi (NDA)
+                </h2>
+              </div>
+              <p className="text-xs text-neutral-slate mt-1">
+                Dokumen resmi Non-Disclosure Agreement SERVIO Versi {ndaVersion}. Baca dan centang persetujuan kerahasiaan sebelum melangkah ke tahap berikutnya.
+              </p>
+            </div>
+
+            {/* Scrollable NDA Document */}
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 max-h-64 overflow-y-auto text-xs text-slate-700 space-y-3 leading-relaxed">
+              <div className="text-center pb-2 border-b border-slate-200">
+                <h3 className="font-bold text-slate-900 uppercase">
+                  PERJANJIAN KERAHASIAAN &amp; PERLINDUNGAN DATA PLATFORM SERVIO
+                </h3>
+                <span className="text-[11px] text-slate-500 font-mono">Nomor Dokumen: NDA-SERVIO-2026.1</span>
+              </div>
+              <p>
+                1. <strong>Definisi Informasi Rahasia:</strong> Segala informasi data pengguna (Customer), mitra penyedia (Service Provider), data pembayaran, transaksi, algoritma, basis data, dan rahasia dagang platform SERVIO yang diakses staf internal selama bertugas merupakan informasi rahasia.
+              </p>
+              <p>
+                2. <strong>Larangan Pengungkapan:</strong> Staf dilarang membocorkan, menyalin, mendistribusikan, atau memanfaatkan data sistem untuk kepentingan pribadi maupun pihak ketiga tanpa izin tertulis dari CEO &amp; Product Owner SERVIO.
+              </p>
+              <p>
+                3. <strong>Sanksi &amp; Konsekuensi Hukum:</strong> Pelanggaran terhadap perjanjian kerahasiaan ini dapat berakibat pada pemutusan hubungan kerja sepihak, pencabutan akun sistem, serta tuntutan ganti rugi perdata dan pidana berdasarkan UU ITE dan UU Perlindungan Data Pribadi (UU PDP).
+              </p>
+              <p>
+                4. <strong>Masa Berlaku:</strong> Kewajiban kerahasiaan ini berlaku selama staf aktif dan tetap mengikat hingga 5 (lima) tahun setelah masa penugasan berakhir.
+              </p>
+            </div>
+
+            <label className={`flex items-start gap-3 p-3.5 rounded-2xl border transition ${
+              isReviewMode ? "bg-emerald-50/50 border-emerald-200 cursor-default" : "bg-slate-50 border-slate-200 cursor-pointer hover:bg-slate-100/60"
+            }`}>
+              <input
+                type="checkbox"
+                checked={ndaAccepted}
+                disabled={isReviewMode}
+                onChange={(e) => setNdaAccepted(e.target.checked)}
+                className="mt-0.5 rounded border-slate-300 text-primary focus:ring-primary w-4 h-4 cursor-pointer"
+              />
+              <span className="text-xs text-slate-800 leading-normal">
+                Saya telah membaca, memahami, dan menyetujui seluruh ketentuan dalam <strong>Perjanjian Kerahasiaan (NDA) SERVIO Versi {ndaVersion}</strong>.
+                {isReviewMode && <span className="ml-2 font-bold text-emerald-700">(Telah Ditandatangani Secara Digital)</span>}
+              </span>
+            </label>
+
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setActiveStepTab(2)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+              >
+                ← Kembali ke Berkas
+              </button>
+              {isReviewMode ? (
+                <button
+                  type="button"
+                  onClick={() => setActiveStepTab(4)}
+                  className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold transition flex items-center gap-2 shadow-servio-xs cursor-pointer"
+                >
+                  <span>Lihat Tahap 4: Konfirmasi Akses</span>
+                  <ArrowRight size={14} />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={savingStep}
+                  className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold transition flex items-center gap-2 shadow-servio-xs cursor-pointer"
+                >
+                  {savingStep && <SpinnerGap size={14} className="animate-spin" />}
+                  <span>Simpan &amp; Lanjutkan ke Konfirmasi Akses</span>
+                  <ArrowRight size={14} />
+                </button>
+              )}
+            </div>
+          </form>
+        )}
+
+        {/* TAHAP 4: KONFIRMASI HAK AKSES SISTEM & FINAL SUBMIT */}
+        {activeStepTab === 4 && (
+          <form onSubmit={handleSubmitAccess} className="space-y-6">
+            <div className="border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary">
+                  TAHAP 4
+                </span>
+                <h2 className="text-lg font-bold font-display text-neutral-dark">
+                  Konfirmasi Hak Akses Sistem &amp; Penugasan
+                </h2>
+              </div>
+              <p className="text-xs text-neutral-slate mt-1">
+                Data penugasan ini ditetapkan langsung oleh CEO dan bersifat tetap (read-only). Pastikan Anda memahami peran dan wewenang yang diberikan sebelum mengirimkan seluruh berkas onboarding.
+              </p>
+            </div>
+
+            {/* Readonly Assignment Data from CEO */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+                <span className="text-slate-400 block text-[11px]">Nomor Induk Pegawai (Employee ID)</span>
+                <span className="font-mono font-bold text-slate-900 text-sm mt-0.5 block">
+                  {data?.employee?.employee_id || user.employeeId || "ADM-STAF-001"}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+                <span className="text-slate-400 block text-[11px]">Email Resmi Kantor</span>
+                <span className="font-semibold text-slate-900 text-sm mt-0.5 block">
+                  {data?.employee?.email || user.email}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+                <span className="text-slate-400 block text-[11px]">Role &amp; Otoritas</span>
+                <span className="font-bold text-primary text-sm mt-0.5 block">
+                  {data?.employee?.role_name || data?.employee?.role || activeRole}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+                <span className="text-slate-400 block text-[11px]">Departemen / Divisi</span>
+                <span className="font-semibold text-slate-900 text-sm mt-0.5 block">
+                  {data?.employee?.department || user.department || "Operasional"}
                 </span>
               </div>
             </div>
 
-            {/* 5 Readiness Checks Breakdown */}
-            {readiness?.checks && (
-              <div className="mt-4 pt-4 border-t border-slate-200/60 grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px]">
-                <div className="flex items-center gap-1.5">
-                  {readiness.checks.accountActive ? (
-                    <Check size={14} weight="bold" className="text-emerald-700" />
-                  ) : (
-                    <X size={14} weight="bold" className="text-rose-500" />
-                  )}
-                  <span>Akun Aktif</span>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  {readiness.checks.membershipActive ? (
-                    <Check size={14} weight="bold" className="text-emerald-700" />
-                  ) : (
-                    <X size={14} weight="bold" className="text-rose-500" />
-                  )}
-                  <span>Membership</span>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  {readiness.checks.roleAssignmentValid ? (
-                    <Check size={14} weight="bold" className="text-emerald-700" />
-                  ) : (
-                    <X size={14} weight="bold" className="text-rose-500" />
-                  )}
-                  <span>Role Valid</span>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  {readiness.checks.employmentActive ? (
-                    <Check size={14} weight="bold" className="text-emerald-700" />
-                  ) : (
-                    <X size={14} weight="bold" className="text-rose-500" />
-                  )}
-                  <span>Pekerjaan Aktif</span>
-                </div>
-
-                <div className="flex items-center gap-1.5 col-span-2 sm:col-span-1">
-                  {readiness.checks.onboardingCompleted ? (
-                    <Check size={14} weight="bold" className="text-emerald-700" />
-                  ) : (
-                    <X size={14} weight="bold" className="text-rose-500" />
-                  )}
-                  <span>Onboarding 100%</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Progress Bar Container */}
-          <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-servio-xs space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-bold text-neutral-dark">Kelengkapan Formulir & Tugas Onboarding</span>
-              <span className="font-mono font-bold text-primary">{onboarding.progress}% Selesai</span>
-            </div>
-            <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden p-0.5 border border-slate-200/80">
-              <div
-                className="bg-gradient-to-r from-primary to-emerald-500 h-full rounded-full transition-all duration-500"
-                style={{ width: `${onboarding.progress}%` }}
-              />
-            </div>
-          </div>
-
-          {/* Checklist of Tasks */}
-          <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-servio-xs space-y-4">
-            <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-bold text-neutral-dark">
-                  Daftar Tugas Kesiapan (Onboarding Checklist)
-                </h2>
-                <p className="text-[11px] text-neutral-slate">
-                  Klik setiap tugas untuk mengisi formulir, melengkapi identitas KTP, dan menandatangani SOP kerja.
-                </p>
-              </div>
-              <span className="text-xs text-neutral-slate font-medium">
-                {completedTasksCount} dari {totalTasksCount} Selesai
+            <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200 text-xs text-amber-900 space-y-1">
+              <span className="font-bold block flex items-center gap-1.5">
+                <LockKey size={14} className="text-amber-700" />
+                Ketentuan Wewenang Penugasan:
               </span>
+              <p className="leading-relaxed">
+                Employee ID, email kantor, role, jabatan, dan departemen berasal dari penetapan CEO dan tidak dapat dinaikkan atau diganti sendiri oleh staf. Segala tindakan operasional tercatat dalam jejak audit (Audit Trail) sistem.
+              </p>
             </div>
 
-            <div className="space-y-3">
-              {tasks.map((task, idx) => {
-                const isCompleted = task.status === "COMPLETED";
+            <label className={`flex items-start gap-3 p-3.5 rounded-2xl border transition ${
+              isReviewMode ? "bg-emerald-50/50 border-emerald-200 cursor-default" : "bg-slate-50 border-slate-200 cursor-pointer hover:bg-slate-100/60"
+            }`}>
+              <input
+                type="checkbox"
+                checked={accessAccepted}
+                disabled={isReviewMode}
+                onChange={(e) => setAccessAccepted(e.target.checked)}
+                className="mt-0.5 rounded border-slate-300 text-primary focus:ring-primary w-4 h-4 cursor-pointer"
+              />
+              <span className="text-xs text-slate-800 leading-normal">
+                Saya mengonfirmasi bahwa penugasan, wewenang, dan batasan hak akses sistem di atas telah sesuai dan saya berkomitmen mematuhi SOP operasional SERVIO.
+                {isReviewMode && <span className="ml-2 font-bold text-emerald-700">(Telah Dikonfirmasi)</span>}
+              </span>
+            </label>
 
-                return (
-                  <div
-                    key={task.id}
-                    className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                      isCompleted
-                        ? "bg-slate-50/70 border-slate-200/80"
-                        : "bg-white border-primary/20 hover:border-primary/50 shadow-servio-xs"
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className={`p-2.5 rounded-xl shrink-0 ${
-                        isCompleted
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-primary/10 text-primary"
-                      }`}>
-                        {isCompleted ? <CheckCircle size={20} weight="fill" /> : getTaskIcon(task.code)}
-                      </div>
-
-                      <div className="space-y-0.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-bold text-xs text-neutral-dark">
-                            {idx + 1}. {task.title}
-                          </span>
-                          {task.required && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-rose-50 text-rose-600 border border-rose-200 uppercase">
-                              Wajib
-                            </span>
-                          )}
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                            isCompleted
-                              ? "bg-emerald-100 text-emerald-800"
-                              : "bg-amber-100 text-amber-800"
-                          }`}>
-                            {task.status}
-                          </span>
-                        </div>
-                        <p className="text-xs text-neutral-slate">
-                          {task.description}
-                        </p>
-                        {task.completedAt && (
-                          <div className="text-[10px] text-neutral-muted">
-                            Diselesaikan pada: {new Date(task.completedAt).toLocaleString("id-ID")}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="sm:self-center shrink-0 flex items-center gap-2">
-                      {isCompleted ? (
-                        <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
-                            <CheckCircle size={14} weight="fill" />
-                            <span>Telah Selesai</span>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setViewDetailsTask(task)}
-                            className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-primary bg-white hover:bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 transition cursor-pointer"
-                          >
-                            <Eye size={13} />
-                            <span>Lihat Data</span>
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenTaskModal(task)}
-                          className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-hover transition shadow-servio-xs cursor-pointer"
-                        >
-                          <span>{task.code === "PROFILE_COMPLETION" || task.code === "REQUIRED_VERIFICATION" ? "Isi Formulir" : "Selesaikan Tugas"}</span>
-                          <ArrowRight size={13} weight="bold" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Complete Entire Onboarding CTA */}
-            {onboarding.status !== "COMPLETED" && (
-              <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <p className="text-xs text-neutral-slate">
-                  {allRequiredDone
-                    ? "Seluruh tugas wajib telah terpenuhi! Klik tombol di samping untuk memfinalisasi onboarding."
-                    : "Selesaikan seluruh formulir dan tugas wajib di atas untuk mengaktifkan tombol finalisasi onboarding."}
-                </p>
-
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setActiveStepTab(3)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+              >
+                ← Kembali ke NDA
+              </button>
+              {isReviewMode ? (
                 <button
                   type="button"
-                  disabled={!allRequiredDone || completingAll}
-                  onClick={handleCompleteAllOnboarding}
-                  className="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-servio-sm disabled:opacity-50 disabled:cursor-not-allowed shrink-0 cursor-pointer"
+                  onClick={() => setActiveStepTab(1)}
+                  className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold transition flex items-center gap-2 cursor-pointer"
                 >
-                  {completingAll ? (
+                  <Eye size={14} />
+                  <span>Tinjau Ulang dari Tahap 1</span>
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={savingStep || submittingVerification || !accessAccepted}
+                  className="px-6 py-2.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold transition flex items-center gap-2 shadow-servio-xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {savingStep || submittingVerification ? (
                     <>
-                      <SpinnerGap size={15} className="animate-spin" />
-                      <span>Menyelesaikan Onboarding...</span>
+                      <SpinnerGap size={14} className="animate-spin" />
+                      <span>Memproses &amp; Mengirim ke CEO...</span>
                     </>
                   ) : (
                     <>
-                      <CheckCircle size={16} weight="fill" />
-                      <span>Tuntaskan Onboarding</span>
+                      <span>Konfirmasi &amp; Kirim untuk Verifikasi CEO</span>
+                      <ArrowRight size={14} weight="bold" />
                     </>
                   )}
                 </button>
-              </div>
+              )}
+            </div>
+          </form>
+        )}
+      </div>
+
+      {/* FINAL SUBMIT SECTION (CR-03 Section E: Status Pengajuan ke CEO) - Hanya Tampil di Tahap 4 */}
+      {activeStepTab === 4 && (
+        <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-3xl p-6 sm:p-8 text-white shadow-servio-sm border border-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
+              PENGAJUAN VERIFIKASI EKSEKUTIF
+            </span>
+            <h2 className="text-lg font-bold font-display text-white mt-1.5">
+              {isOperationalReady
+                ? "Akun Telah Disetujui CEO (Operational Ready)"
+                : isPendingReview
+                ? "Berkas Onboarding Sedang Dalam Antrean CEO"
+                : "Kirimkan Berkas Lengkap ke CEO"}
+            </h2>
+            <p className="text-xs text-slate-300 mt-0.5 max-w-lg leading-relaxed">
+              {isOperationalReady
+                ? "Seluruh data dan berkas Anda telah diverifikasi oleh CEO. Dashboard operasional Anda aktif penuh."
+                : isPendingReview
+                ? "Permohonan Anda berada dalam Antrean Pengecekan Berkas CEO. Anda tetap dapat membuka setiap tahap di atas untuk meninjau data Anda."
+                : "Setelah keempat tahap selesai, kirimkan permohonan agar berkas Anda masuk ke Antrean Verifikasi CEO dan diproses untuk penetapan status OPERATIONAL_READY."}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleFinalSubmit}
+            disabled={!allFourStepsDone || submittingVerification || isPendingReview || isOperationalReady}
+            className={`px-6 py-3 rounded-xl font-bold text-xs transition flex items-center gap-2 shrink-0 shadow-sm ${
+              !allFourStepsDone || isPendingReview || isOperationalReady
+                ? "bg-slate-700 text-slate-400 cursor-not-allowed opacity-60"
+                : "bg-primary hover:bg-primary-dark text-white shadow-primary/20 cursor-pointer"
+            }`}
+          >
+            {submittingVerification ? (
+              <>
+                <SpinnerGap size={16} className="animate-spin" />
+                <span>Mengirimkan...</span>
+              </>
+            ) : isOperationalReady ? (
+              <>
+                <ShieldCheck size={16} weight="fill" className="text-emerald-400" />
+                <span>Sudah Disetujui CEO</span>
+              </>
+            ) : isPendingReview ? (
+              <>
+                <Clock size={16} weight="fill" className="text-sky-400" />
+                <span>Menunggu Verifikasi CEO</span>
+              </>
+            ) : (
+              <>
+                <span>Kirim untuk Verifikasi</span>
+                <ArrowRight size={16} weight="bold" />
+              </>
             )}
-          </div>
+          </button>
         </div>
-      )}
-
-      {/* =========================================================================
-          INTERACTIVE TASK COMPLETION MODAL
-      ========================================================================= */}
-      {activeTaskModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-xl w-full max-h-[90vh] flex flex-col border border-slate-200 overflow-hidden">
-            {/* Modal Header */}
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-2xl bg-primary/10 text-primary">
-                  {getTaskIcon(activeTaskModal.code)}
-                </div>
-                <div>
-                  <h3 className="font-bold text-base text-neutral-dark">{activeTaskModal.title}</h3>
-                  <p className="text-xs text-neutral-slate">{activeTaskModal.description}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveTaskModal(null)}
-                className="p-1.5 text-neutral-slate hover:text-neutral-dark rounded-xl hover:bg-slate-200/60 transition cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 overflow-y-auto space-y-5 flex-1">
-              {formError && (
-                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-                  <WarningCircle size={16} weight="bold" className="shrink-0" />
-                  <span>{formError}</span>
-                </div>
-              )}
-
-              {/* -------------------------------------------------------------
-                  TASK 2: PROFILE_COMPLETION FORM
-              ------------------------------------------------------------- */}
-              {activeTaskModal.code === "PROFILE_COMPLETION" && (
-                <div className="space-y-4">
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl text-[11px] text-blue-800 flex items-start gap-2">
-                    <Info size={16} className="shrink-0 mt-0.5" />
-                    <span>Lengkapi identitas profil internal Anda. Data ini akan ditampilkan pada sistem operasional dan badge profil staf Anda.</span>
-                  </div>
-
-                  {/* Avatar Upload / Selector */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-neutral-dark">Foto Profil / Avatar</label>
-                    <div className="flex items-center gap-4">
-                      <div className="w-16 h-16 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0">
-                        {profileAvatar ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={profileAvatar} alt="Avatar" className="w-full h-full object-cover" />
-                        ) : (
-                          <User size={28} className="text-slate-400" />
-                        )}
-                      </div>
-                      <div className="space-y-1.5 flex-1">
-                        <input
-                          ref={avatarFileInputRef}
-                          type="file"
-                          accept="image/*"
-                          onChange={handleAvatarFileChange}
-                          className="hidden"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => avatarFileInputRef.current?.click()}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-neutral-dark text-xs font-semibold shadow-servio-xs cursor-pointer"
-                        >
-                          <UploadSimple size={14} />
-                          <span>Pilih Foto Baru</span>
-                        </button>
-                        <p className="text-[10px] text-neutral-slate">Format JPG, PNG, atau WEBP. Maks 2MB.</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Display Name */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-neutral-dark">Nama Tampilan (Display Name) <span className="text-rose-500">*</span></label>
-                    <input
-                      type="text"
-                      value={profileDisplayName}
-                      onChange={(e) => setProfileDisplayName(e.target.value)}
-                      placeholder="Contoh: Budi Santoso (Ops)"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-
-                  {/* Gender and Date of Birth */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-neutral-dark">Jenis Kelamin</label>
-                      <select
-                        value={profileGender}
-                        onChange={(e) => setProfileGender(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs bg-white focus:outline-none focus:border-primary"
-                      >
-                        <option value="MALE">Laki-laki</option>
-                        <option value="FEMALE">Perempuan</option>
-                        <option value="OTHER">Lainnya</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-neutral-dark">Tanggal Lahir</label>
-                      <input
-                        type="date"
-                        value={profileDateOfBirth}
-                        onChange={(e) => setProfileDateOfBirth(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-primary"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Bio */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-neutral-dark">Bio Singkat / Ringkasan Peran <span className="text-rose-500">*</span></label>
-                    <textarea
-                      rows={3}
-                      value={profileBio}
-                      onChange={(e) => setProfileBio(e.target.value)}
-                      placeholder="Tuliskan spesialisasi atau deskripsi singkat tugas harian Anda di SERVIO..."
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* -------------------------------------------------------------
-                  TASK 4: REQUIRED_VERIFICATION FORM (NIK & KTP UPLOAD)
-              ------------------------------------------------------------- */}
-              {activeTaskModal.code === "REQUIRED_VERIFICATION" && (
-                <div className="space-y-4">
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-[11px] text-amber-800 flex items-start gap-2">
-                    <Shield size={16} className="shrink-0 mt-0.5" />
-                    <span>Sesuai standar kepatuhan regulasi (compliance), seluruh staf operasional wajib memverifikasi Nomor Induk Kependudukan (NIK) dan mengunggah kartu e-KTP asli.</span>
-                  </div>
-
-                  {/* NIK Input */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-neutral-dark">Nomor Induk Kependudukan (NIK) <span className="text-rose-500">*</span></label>
-                      <span className="text-[10px] font-mono text-neutral-slate">{verificationNik.length}/16 digit</span>
-                    </div>
-                    <input
-                      type="text"
-                      maxLength={16}
-                      value={verificationNik}
-                      onChange={(e) => setVerificationNik(e.target.value.replace(/\D/g, ""))}
-                      placeholder="16 digit angka KTP (contoh: 3171012304980005)"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary tracking-wider"
-                    />
-                  </div>
-
-                  {/* KTP File Upload & Preview */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-neutral-dark">Foto e-KTP Asli <span className="text-rose-500">*</span></label>
-                      <button
-                        type="button"
-                        onClick={handleUseSampleKtp}
-                        className="text-[10px] font-bold text-primary hover:underline cursor-pointer"
-                      >
-                        + Gunakan Contoh KTP Uji Coba
-                      </button>
-                    </div>
-
-                    <input
-                      ref={ktpFileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleKtpFileChange}
-                      className="hidden"
-                    />
-
-                    {verificationKtpPreview ? (
-                      <div className="relative rounded-2xl border border-slate-200 overflow-hidden bg-slate-50 p-2">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={verificationKtpPreview}
-                          alt="Preview KTP"
-                          className="w-full h-44 object-contain rounded-xl bg-slate-900/5"
-                        />
-                        <div className="mt-2 flex items-center justify-between px-2">
-                          <span className="text-[11px] font-medium text-emerald-700 flex items-center gap-1">
-                            <CheckCircle size={14} weight="fill" />
-                            Foto KTP Terunggah
-                          </span>
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => ktpFileInputRef.current?.click()}
-                              className="text-[11px] font-semibold text-primary hover:underline cursor-pointer"
-                            >
-                              Ganti Foto
-                            </button>
-                            <span className="text-slate-300">|</span>
-                            <button
-                              type="button"
-                              onClick={() => setVerificationKtpPreview("")}
-                              className="text-[11px] font-semibold text-rose-600 hover:underline flex items-center gap-1 cursor-pointer"
-                            >
-                              <Trash size={12} />
-                              Hapus
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div
-                        onClick={() => ktpFileInputRef.current?.click()}
-                        className="border-2 border-dashed border-slate-300 hover:border-primary rounded-2xl p-6 text-center cursor-pointer transition hover:bg-slate-50 group"
-                      >
-                        <UploadSimple size={28} className="mx-auto text-slate-400 group-hover:text-primary mb-2 transition" />
-                        <p className="text-xs font-bold text-neutral-dark group-hover:text-primary">
-                          Klik untuk Unggah Foto KTP
-                        </p>
-                        <p className="text-[10px] text-neutral-slate mt-1">
-                          Pastikan tulisan NIK dan foto wajah terlihat terang dan tidak buram (Format JPG/PNG, Maks 5MB)
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Emergency Contact */}
-                  <div className="border-t border-slate-100 pt-3 space-y-3">
-                    <span className="text-xs font-bold text-neutral-dark block">Kontak Darurat (Emergency Contact)</span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-medium text-neutral-slate">Nama Kontak Darurat <span className="text-rose-500">*</span></label>
-                        <input
-                          type="text"
-                          value={emergencyContactName}
-                          onChange={(e) => setEmergencyContactName(e.target.value)}
-                          placeholder="Nama kerabat / orang tua"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-primary"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[11px] font-medium text-neutral-slate">Nomor Telepon / WhatsApp <span className="text-rose-500">*</span></label>
-                        <input
-                          type="tel"
-                          value={emergencyContactPhone}
-                          onChange={(e) => setEmergencyContactPhone(e.target.value)}
-                          placeholder="0812xxxxxxxx"
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-primary"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* -------------------------------------------------------------
-                  TASK 3: EMPLOYMENT_CONFIRMATION
-              ------------------------------------------------------------- */}
-              {activeTaskModal.code === "EMPLOYMENT_CONFIRMATION" && (
-                <div className="space-y-4">
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl text-[11px] text-blue-800 flex items-start gap-2">
-                    <Info size={16} className="shrink-0 mt-0.5" />
-                    <span>Silakan tinjau data penempatan dan spesifikasi kontrak kerja Anda di SERVIO berikut ini:</span>
-                  </div>
-
-                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-2.5 text-xs">
-                    <div className="flex justify-between py-1 border-b border-slate-200/60">
-                      <span className="text-neutral-slate">ID Karyawan (NIP):</span>
-                      <span className="font-mono font-bold text-neutral-dark">{onboarding?.employment?.employeeId || "Belum Ditugaskan"}</span>
-                    </div>
-                    <div className="flex justify-between py-1 border-b border-slate-200/60">
-                      <span className="text-neutral-slate">Departemen:</span>
-                      <span className="font-bold text-neutral-dark">{onboarding?.employment?.department || "OPERATIONS"}</span>
-                    </div>
-                    <div className="flex justify-between py-1 border-b border-slate-200/60">
-                      <span className="text-neutral-slate">Posisi / Jabatan:</span>
-                      <span className="font-bold text-neutral-dark">{onboarding?.employment?.position || "Staff Internal"}</span>
-                    </div>
-                    <div className="flex justify-between py-1 border-b border-slate-200/60">
-                      <span className="text-neutral-slate">Tipe Kepegawaian:</span>
-                      <span className="font-bold text-primary">{onboarding?.employment?.employmentType || "FULL_TIME"}</span>
-                    </div>
-                    <div className="flex justify-between py-1">
-                      <span className="text-neutral-slate">Tanggal Mulai Berlaku:</span>
-                      <span className="font-bold text-neutral-dark">{onboarding?.employment?.startDate || "Segera"}</span>
-                    </div>
-                  </div>
-
-                  <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={employmentConfirmed}
-                      onChange={(e) => setEmploymentConfirmed(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 rounded text-primary focus:ring-primary border-slate-300"
-                    />
-                    <span className="text-xs text-neutral-dark leading-relaxed">
-                      Saya mengonfirmasi bahwa data penempatan, divisi, dan status hubungan kerja di atas adalah benar dan sesuai dengan penugasan saya.
-                    </span>
-                  </label>
-                </div>
-              )}
-
-              {/* -------------------------------------------------------------
-                  TASK 5: POLICY_ACKNOWLEDGEMENT
-              ------------------------------------------------------------- */}
-              {activeTaskModal.code === "POLICY_ACKNOWLEDGEMENT" && (
-                <div className="space-y-4">
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl text-[11px] text-amber-800 flex items-start gap-2">
-                    <ShieldCheck size={16} className="shrink-0 mt-0.5" />
-                    <span>Setiap personel staf SERVIO wajib memahami dan menandatangani Pakta Integritas dan Kebijakan Operasional Platform.</span>
-                  </div>
-
-                  <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50 text-xs space-y-3 max-h-56 overflow-y-auto">
-                    <div className="space-y-1">
-                      <h4 className="font-bold text-neutral-dark">1. Kerahasiaan Data & Rahasia Dagang (NDA)</h4>
-                      <p className="text-neutral-slate text-[11px] leading-relaxed">
-                        Staf dilarang keras menyebarluaskan, menyalin, atau mempergunakan data identitas merchant, dokumen KYC, maupun data transaksi pelanggan untuk kepentingan pribadi di luar penugasan resmi SERVIO.
-                      </p>
-                    </div>
-                    <div className="space-y-1">
-                      <h4 className="font-bold text-neutral-dark">2. Netralitas Audit & Larangan Gratifikasi</h4>
-                      <p className="text-neutral-slate text-[11px] leading-relaxed">
-                        Verifikasi dokumen pendaftaran merchant wajib dilakukan secara objektif. Staf dilarang menerima imbalan, hadiah, atau fasilitas apapun dari pihak merchant.
-                      </p>
-                    </div>
-                    <div className="space-y-1">
-                      <h4 className="font-bold text-neutral-dark">3. Penggunaan Kredensial & Akun Sistem</h4>
-                      <p className="text-neutral-slate text-[11px] leading-relaxed">
-                        Kredensial login bersifat rahasia dan individual. Seluruh aktivitas pada dashboard operasional tercatat dalam Audit Log permanen yang dipantau langsung oleh Direksi / CEO.
-                      </p>
-                    </div>
-                  </div>
-
-                  <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={policyAgreed}
-                      onChange={(e) => setPolicyAgreed(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 rounded text-primary focus:ring-primary border-slate-300"
-                    />
-                    <span className="text-xs text-neutral-dark leading-relaxed">
-                      Saya telah membaca, memahami, dan berkomitmen mematuhi seluruh ketentuan dalam Pakta Integritas dan Kebijakan Operasional SERVIO.
-                    </span>
-                  </label>
-                </div>
-              )}
-
-              {/* -------------------------------------------------------------
-                  TASK 6: ACCESS_CONFIRMATION
-              ------------------------------------------------------------- */}
-              {activeTaskModal.code === "ACCESS_CONFIRMATION" && (
-                <div className="space-y-4">
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl text-[11px] text-blue-800 flex items-start gap-2">
-                    <Info size={16} className="shrink-0 mt-0.5" />
-                    <span>Konfirmasikan pemahaman batasan wewenang sistem dan tanggung jawab akun Anda.</span>
-                  </div>
-
-                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-2 text-xs">
-                    <div className="flex justify-between py-1">
-                      <span className="text-neutral-slate">Peran Operasional:</span>
-                      <span className="font-bold text-primary">{activeRole || (user as unknown as Record<string, string>).role || "Staff Internal"}</span>
-                    </div>
-                    <div className="flex justify-between py-1">
-                      <span className="text-neutral-slate">Cakupan Akses:</span>
-                      <span className="font-bold text-neutral-dark">INTERNAL_PLATFORM</span>
-                    </div>
-                    <div className="flex justify-between py-1">
-                      <span className="text-neutral-slate">Sistem Pengawasan:</span>
-                      <span className="font-bold text-emerald-700">Audit Logging Aktif</span>
-                    </div>
-                  </div>
-
-                  <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={accessAgreed}
-                      onChange={(e) => setAccessAgreed(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 rounded text-primary focus:ring-primary border-slate-300"
-                    />
-                    <span className="text-xs text-neutral-dark leading-relaxed">
-                      Saya mengonfirmasi pemahaman wewenang dan batasan akses akun saya, serta bertanggung jawab penuh atas seluruh tindakan operasional yang saya lakukan.
-                    </span>
-                  </label>
-                </div>
-              )}
-
-              {/* -------------------------------------------------------------
-                  TASK 1: ACCOUNT_ACCEPTANCE
-              ------------------------------------------------------------- */}
-              {activeTaskModal.code === "ACCOUNT_ACCEPTANCE" && (
-                <div className="space-y-4">
-                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-2 text-xs">
-                    <div className="flex justify-between py-1">
-                      <span className="text-neutral-slate">Nama Staf:</span>
-                      <span className="font-bold text-neutral-dark">{user.name}</span>
-                    </div>
-                    <div className="flex justify-between py-1">
-                      <span className="text-neutral-slate">Email Akun:</span>
-                      <span className="font-bold text-neutral-dark">{user.email}</span>
-                    </div>
-                  </div>
-
-                  <label className="flex items-start gap-2.5 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={accountAgreed}
-                      onChange={(e) => setAccountAgreed(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 rounded text-primary focus:ring-primary border-slate-300"
-                    />
-                    <span className="text-xs text-neutral-dark leading-relaxed">
-                      Saya mengonfirmasi bahwa akun ini adalah akun resmi saya dan menerima penugasan operasional di sistem SERVIO.
-                    </span>
-                  </label>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-100 flex items-center justify-end gap-2 bg-slate-50/50">
-              <button
-                type="button"
-                onClick={() => setActiveTaskModal(null)}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-neutral-slate hover:bg-slate-100 text-xs font-semibold transition cursor-pointer"
-              >
-                Batal
-              </button>
-
-              <button
-                type="button"
-                disabled={actionTaskId !== null}
-                onClick={handleSubmitTaskModal}
-                className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-hover transition shadow-servio-xs disabled:opacity-60 cursor-pointer"
-              >
-                {actionTaskId ? (
-                  <>
-                    <SpinnerGap size={14} className="animate-spin" />
-                    <span>Menyimpan...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle size={15} weight="bold" />
-                    <span>Simpan & Tuntaskan Tugas</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* =========================================================================
-          VIEW DETAILS MODAL (FOR ALREADY COMPLETED TASKS)
-      ========================================================================= */}
-      {viewDetailsTask && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col border border-slate-200 overflow-hidden">
-            {/* Modal Header */}
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-2xl bg-emerald-100 text-emerald-700">
-                  <CheckCircle size={20} weight="fill" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-base text-neutral-dark">{viewDetailsTask.title}</h3>
-                  <p className="text-xs text-neutral-slate">Rincian data yang telah diserahkan</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setViewDetailsTask(null)}
-                className="p-1.5 text-neutral-slate hover:text-neutral-dark rounded-xl hover:bg-slate-200/60 transition cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Modal Content */}
-            <div className="p-6 overflow-y-auto space-y-4 flex-1 text-xs">
-              {viewDetailsTask.code === "PROFILE_COMPLETION" && (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                    <div className="w-14 h-14 rounded-2xl overflow-hidden bg-slate-200 shrink-0">
-                      {onboarding?.profile?.avatar ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={onboarding.profile.avatar} alt="Avatar" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center"><User size={24} className="text-slate-400" /></div>
-                      )}
-                    </div>
-                    <div>
-                      <div className="font-bold text-sm text-neutral-dark">{onboarding?.profile?.displayName || user.name}</div>
-                      <div className="text-[11px] text-neutral-slate">{onboarding?.profile?.gender || "Laki-laki"} • Lahir: {onboarding?.profile?.dateOfBirth || "-"}</div>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1">
-                    <span className="text-[10px] font-bold text-neutral-slate uppercase tracking-wider">Bio Peran</span>
-                    <p className="text-neutral-dark text-xs">{onboarding?.profile?.bio || "-"}</p>
-                  </div>
-                </div>
-              )}
-
-              {viewDetailsTask.code === "REQUIRED_VERIFICATION" && (
-                <div className="space-y-3">
-                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1">
-                    <span className="text-[10px] font-bold text-neutral-slate uppercase tracking-wider">Nomor Induk Kependudukan (NIK)</span>
-                    <p className="font-mono font-bold text-neutral-dark text-sm tracking-wider">
-                      {onboarding?.user?.nik ? `${onboarding.user.nik.slice(0, 6)}******${onboarding.user.nik.slice(12)}` : (viewDetailsTask.metadata?.nik as string) || "-"}
-                    </p>
-                  </div>
-
-                  {(onboarding?.user?.ktpFilePath || viewDetailsTask.metadata?.ktpFilePath) && (
-                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
-                      <span className="text-[10px] font-bold text-neutral-slate uppercase tracking-wider">Dokumen e-KTP</span>
-                      <div className="rounded-xl overflow-hidden border border-slate-200 bg-white">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={(onboarding?.user?.ktpFilePath || viewDetailsTask.metadata?.ktpFilePath) as string}
-                          alt="Foto KTP"
-                          className="w-full h-40 object-contain"
-                        />
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1">
-                    <span className="text-[10px] font-bold text-neutral-slate uppercase tracking-wider">Kontak Darurat</span>
-                    <p className="text-neutral-dark font-medium">
-                      {onboarding?.user?.emergencyContact?.name || (viewDetailsTask.metadata?.emergencyContactName as string) || "-"}
-                      {" - "}
-                      {onboarding?.user?.emergencyContact?.phone || (viewDetailsTask.metadata?.emergencyContactPhone as string) || "-"}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {viewDetailsTask.code === "EMPLOYMENT_CONFIRMATION" && (
-                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2">
-                  <div className="flex justify-between py-1 border-b border-slate-200/60">
-                    <span className="text-neutral-slate">ID Karyawan:</span>
-                    <span className="font-mono font-bold text-neutral-dark">{onboarding?.employment?.employeeId || "-"}</span>
-                  </div>
-                  <div className="flex justify-between py-1 border-b border-slate-200/60">
-                    <span className="text-neutral-slate">Departemen:</span>
-                    <span className="font-bold text-neutral-dark">{onboarding?.employment?.department || "-"}</span>
-                  </div>
-                  <div className="flex justify-between py-1">
-                    <span className="text-neutral-slate">Posisi:</span>
-                    <span className="font-bold text-neutral-dark">{onboarding?.employment?.position || "-"}</span>
-                  </div>
-                </div>
-              )}
-
-              {viewDetailsTask.code !== "PROFILE_COMPLETION" && viewDetailsTask.code !== "REQUIRED_VERIFICATION" && viewDetailsTask.code !== "EMPLOYMENT_CONFIRMATION" && (
-                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 text-emerald-800 space-y-1">
-                  <div className="font-bold">Telah Diverifikasi & Dikonfirmasi</div>
-                  <div className="text-[11px]">Tugas ini telah diselesaikan dan diverifikasi oleh sistem pada {viewDetailsTask.completedAt ? new Date(viewDetailsTask.completedAt).toLocaleString("id-ID") : "-"}.</div>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-100 flex items-center justify-end bg-slate-50/50">
-              <button
-                type="button"
-                onClick={() => setViewDetailsTask(null)}
-                className="px-4 py-2 rounded-xl bg-slate-800 text-white text-xs font-semibold hover:bg-slate-900 transition cursor-pointer"
-              >
-                Tutup
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Toast Notification */}
-      {toast && (
-        <Toast
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
       )}
     </div>
   );

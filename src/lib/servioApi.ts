@@ -19,6 +19,8 @@ export interface ApiResponse<T = unknown> {
   shopProfile?: import("@/types/domain").ApiShopProfile;
   recommendations?: import("@/types/domain").ApiProduct[];
   count?: number;
+  success?: boolean;
+  code?: string;
 }
 
 export function getCookie(name: string): string | undefined {
@@ -770,6 +772,75 @@ function mapProductToApi(p: any): any {
   };
 }
 
+const IDENTITY_SERVICE_ROOT =
+  typeof window !== "undefined"
+    ? ""
+    : (process.env.NEXT_PUBLIC_IDENTITY_SERVICE_URL || "http://127.0.0.1:8001");
+const IDENTITY_BASE_URL =
+  typeof window !== "undefined"
+    ? "/api/v1"
+    : (process.env.NEXT_PUBLIC_IDENTITY_API_URL ||
+       process.env.NEXT_PUBLIC_API_URL ||
+       "http://127.0.0.1:8001/api/v1");
+
+let csrfPromise: Promise<void> | null = null;
+
+async function ensureSanctumCsrf(force = false): Promise<void> {
+  if (typeof window === "undefined") return;
+  const existingXsrf = getCookie("XSRF-TOKEN");
+  if (!force && existingXsrf) return;
+
+  if (csrfPromise) {
+    return csrfPromise;
+  }
+
+  csrfPromise = (async () => {
+    try {
+      await fetch(`${IDENTITY_SERVICE_ROOT}/sanctum/csrf-cookie`, {
+        method: "GET",
+        credentials: "include",
+      });
+    } catch (e) {
+      console.warn("Peringatan: Gagal memuat Sanctum CSRF cookie:", e);
+    } finally {
+      csrfPromise = null;
+    }
+  })();
+
+  return csrfPromise;
+}
+
+function isIdentityRoute(path: string): boolean {
+  const p = path.replace(/^\/api\/v1/, "");
+  return (
+    p.startsWith("/auth") ||
+    p.startsWith("/otp") ||
+    p.startsWith("/identity") ||
+    p.startsWith("/customer/nik") ||
+    p.startsWith("/business-registrations") ||
+    p.startsWith("/registration-document-requirements") ||
+    p.startsWith("/registration-applications") ||
+    p.startsWith("/business/applications") ||
+    p.startsWith("/ceo/identity") ||
+    p.startsWith("/ceo/staff") ||
+    p.startsWith("/admin/business") ||
+    p.startsWith("/admin/profiles/change-requests") ||
+    p.startsWith("/admin/users") ||
+    p.startsWith("/internal/team") ||
+    p.startsWith("/internal/accounts") ||
+    p.startsWith("/staff/onboarding") ||
+    p.startsWith("/provider/workers") ||
+    p.startsWith("/provider/worker-invitations") ||
+    p.startsWith("/invitations") ||
+    p.startsWith("/profiles/me") ||
+    p.startsWith("/profiles/change-requests") ||
+    p.startsWith("/me/profile") ||
+    p.startsWith("/roles/me") ||
+    p.startsWith("/permissions/me") ||
+    p.startsWith("/audit/identity")
+  );
+}
+
 export async function apiFetch<T = unknown>(
   endpoint: string,
   options: RequestInit = {}
@@ -779,7 +850,165 @@ export async function apiFetch<T = unknown>(
   const [pathname, queryString] = rawPath.split("?");
   const query = new URLSearchParams(queryString || "");
 
-  // Small delay to simulate smooth asynchronous operations
+  // =========================================================================
+  // REAL BACKEND INTEGRATION: Modul 01 Identity & Access Service
+  // =========================================================================
+  if (isIdentityRoute(pathname)) {
+    try {
+      // Map compatibility aliases
+      let resolvedEndpoint = endpoint;
+      if (pathname.includes("/password/forgot")) {
+        resolvedEndpoint = "/auth/forgot-password";
+      } else if (pathname === "/customer/nik") {
+        resolvedEndpoint = "/identity/customer/nik";
+      } else if (pathname === "/me/profile") {
+        resolvedEndpoint = "/profiles/me";
+      } else if (pathname === "/business-registrations/requirements") {
+        resolvedEndpoint = `/registration-document-requirements${queryString ? `?${queryString}` : ""}`;
+      } else if (pathname.startsWith("/business-registrations/applications")) {
+        const sub = pathname.replace("/business-registrations/applications", "");
+        resolvedEndpoint = `/registration-applications${sub}${queryString ? `?${queryString}` : ""}`;
+      } else if (pathname === "/internal/team") {
+        resolvedEndpoint = "/internal/accounts";
+      } else if (pathname === "/internal/team/invite") {
+        resolvedEndpoint = "/internal/accounts";
+      } else if (pathname.startsWith("/internal/team/") && pathname.endsWith("/status")) {
+        const memberId = pathname.split("/")[3];
+        resolvedEndpoint = `/internal/accounts/${memberId}/status`;
+      } else if (pathname.startsWith("/internal/team/")) {
+        const memberId = pathname.split("/")[3];
+        resolvedEndpoint = `/internal/accounts/${memberId}`;
+      } else if (pathname === "/auth/roles/switch") {
+        resolvedEndpoint = "/auth/context";
+      }
+
+      // Ensure Sanctum CSRF cookie for mutating browser requests (force fresh on login)
+      if (typeof window !== "undefined" && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+        await ensureSanctumCsrf(pathname === "/auth/login");
+      }
+
+      // Prepare request headers
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+      };
+
+      const xsrfToken = getCookie("XSRF-TOKEN");
+      if (xsrfToken) {
+        headers["X-XSRF-TOKEN"] = xsrfToken;
+      }
+
+      const bearerToken = getCookie("servio_token");
+      if (bearerToken && bearerToken.startsWith("servio_")) {
+        headers["Authorization"] = `Bearer ${bearerToken}`;
+      }
+
+      if (options.headers) {
+        if (options.headers instanceof Headers) {
+          options.headers.forEach((val, key) => {
+            headers[key] = val;
+          });
+        } else if (Array.isArray(options.headers)) {
+          options.headers.forEach(([k, v]) => {
+            headers[k] = v;
+          });
+        } else {
+          Object.assign(headers, options.headers);
+        }
+      }
+
+      if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
+        headers["Content-Type"] = "application/json";
+      }
+
+      const cleanPath = resolvedEndpoint.startsWith("/api/v1") ? resolvedEndpoint.slice(7) : resolvedEndpoint;
+      const targetUrl = `${IDENTITY_BASE_URL.replace(/\/+$/, "")}/${cleanPath.replace(/^\/+/, "")}`;
+
+      const res = await fetch(targetUrl, {
+        ...options,
+        headers,
+        credentials: "include",
+      });
+
+      const contentType = res.headers.get("content-type") || "";
+      let json: any = null;
+      if (contentType.includes("application/json")) {
+        json = await res.json();
+      } else {
+        const text = await res.text();
+        try {
+          json = JSON.parse(text);
+        } catch {
+          json = { message: text };
+        }
+      }
+
+      // Special case: /auth/me unauthenticated (401) should safely return null data
+      if (res.status === 401 && (pathname === "/auth/me" || pathname === "/me")) {
+        return { data: null as any };
+      }
+
+      // If 419 CSRF mismatch, refresh CSRF and retry once
+      if (res.status === 419 && !(options as any)._isRetry) {
+        await ensureSanctumCsrf(true);
+        return apiFetch<T>(endpoint, { ...options, _isRetry: true } as any);
+      }
+
+      if (!res.ok) {
+        const err: any = new Error(
+          json?.message || `Request ke Identity Service gagal dengan kode status ${res.status}.`
+        );
+        err.status = res.status;
+        err.code = json?.code;
+        err.errors = json?.error?.field_errors || json?.errors;
+        throw err;
+      }
+
+      // Synchronize client authentication cookies on success
+      if (pathname === "/auth/login") {
+        const userData = json?.data?.user || json?.data;
+        const activeRole =
+          json?.data?.activeRole?.code ||
+          json?.data?.role ||
+          userData?.role ||
+          "CUSTOMER";
+        const sessionToken =
+          json?.data?.token || json?.data?.session?.id || `servio-session-${Date.now()}`;
+
+        setCookie("servio_token", sessionToken);
+        setCookie("servio_session", sessionToken);
+        setCookie("servio_guest", "0");
+        setCookie("servio_active_role", activeRole);
+      } else if (pathname === "/auth/logout") {
+        setCookie("servio_token", "", 0);
+        setCookie("servio_session", "", 0);
+        setCookie("servio_active_role", "", 0);
+        setCookie("servio_guest", "1");
+      } else if (pathname === "/auth/context" || pathname === "/auth/roles/switch") {
+        const activeRole = json?.data?.activeRole?.code || json?.data?.role;
+        if (activeRole) {
+          setCookie("servio_active_role", activeRole);
+          setCookie("servio_guest", "0");
+        }
+      }
+
+      return {
+        success: json?.success ?? true,
+        message: json?.message,
+        data: json?.data !== undefined ? json.data : json,
+        count: json?.count,
+        ...json,
+      };
+    } catch (err) {
+      // Re-throw genuine API business errors (validation 422, auth 401, etc.)
+      if ((err as any)?.status) {
+        throw err;
+      }
+      console.warn("Identity Service network failure, fallback to mock provider:", err);
+    }
+  }
+
+  // Small delay to simulate smooth asynchronous operations for mock fallback
   await new Promise((r) => setTimeout(r, 20));
 
   let bodyData: any = {};
@@ -795,7 +1024,7 @@ export async function apiFetch<T = unknown>(
     }
   }
 
-  // 1. AUTHENTICATION HANDLERS
+  // 1. AUTHENTICATION HANDLERS (Fallback)
   if (pathname === "/auth/login") {
     const user = resolveUserByEmail(bodyData.email || "");
     const token = `servio-token-${user.role}-${Date.now()}`;
@@ -1386,6 +1615,35 @@ export const authApi = {
     });
   },
 
+  // Register User / Business Applicant (Section 5)
+  async register(data: {
+    name: string;
+    email: string;
+    phone: string;
+    password: string;
+    registration_type?: string;
+  }) {
+    return apiFetch<{
+      user: {
+        id: string;
+        fullName: string;
+        email: string;
+        phone: string;
+        status: string;
+        role: string;
+      };
+      verification: {
+        id: string;
+        type: string;
+        destination: string;
+        debugOtp?: string;
+      };
+    }>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
   // Login (Section 17 & 18)
   async login(email: string, password: string) {
     return apiFetch<{
@@ -1505,7 +1763,10 @@ export const authApi = {
       permissions?: string[];
     }>("/auth/context", {
       method: "PATCH",
-      body: JSON.stringify({ roleAssignmentId }),
+      body: JSON.stringify({
+        role_assignment_id: roleAssignmentId,
+        roleAssignmentId,
+      }),
     });
   },
 
@@ -1520,31 +1781,88 @@ export const authApi = {
   },
 
   // Send OTP (Section 22)
-  async sendVerification(type: "EMAIL_VERIFICATION" | "PHONE_VERIFICATION" = "EMAIL_VERIFICATION") {
+  async sendVerification(type: "EMAIL_VERIFICATION" | "PHONE_VERIFICATION" | string = "EMAIL_VERIFICATION", identifier?: string) {
     return apiFetch<{
       id: string;
+      challenge_id?: string;
       type: string;
-      destination: string;
+      destination?: string;
+      masked_destination?: string;
       debugOtp?: string;
     }>("/auth/verification/send", {
       method: "POST",
-      body: JSON.stringify({ type }),
+      body: JSON.stringify({
+        purpose: type === "EMAIL_VERIFICATION" || type === "PHONE_VERIFICATION" ? "ACCOUNT_VERIFICATION" : type,
+        type,
+        identifier,
+      }),
     });
   },
 
   // Verify OTP (Section 22)
-  async verifyCode(code: string, type: "EMAIL_VERIFICATION" | "PHONE_VERIFICATION" = "EMAIL_VERIFICATION") {
+  async verifyCode(
+    code: string,
+    type: "EMAIL_VERIFICATION" | "PHONE_VERIFICATION" | string = "EMAIL_VERIFICATION",
+    identifier?: string,
+    challengeId?: string
+  ) {
+    if (challengeId) {
+      return apiFetch<{
+        verified: boolean;
+        next_step: string;
+      }>(`/otp/challenges/${challengeId}/verify`, {
+        method: "POST",
+        body: JSON.stringify({ code, otp: code, identifier }),
+      });
+    }
     return apiFetch("/auth/verification/verify", {
       method: "POST",
-      body: JSON.stringify({ code, type }),
+      body: JSON.stringify({
+        code,
+        otp: code,
+        purpose: type === "EMAIL_VERIFICATION" || type === "PHONE_VERIFICATION" ? "ACCOUNT_VERIFICATION" : type,
+        type,
+        identifier,
+      }),
+    });
+  },
+
+  // Resend OTP Code
+  async resendOtp(email: string, challengeId?: string) {
+    if (challengeId) {
+      return apiFetch<{
+        challenge_id?: string;
+        expires_at?: string;
+        delivery_state?: string;
+      }>(`/otp/challenges/${challengeId}/resend`, { method: "POST" });
+    }
+    return apiFetch<{
+      challenge_id?: string;
+      expires_at?: string;
+      delivery_state?: string;
+    }>("/otp/challenges", {
+      method: "POST",
+      body: JSON.stringify({
+        purpose: "ACCOUNT_VERIFICATION",
+        identifier: email,
+        channel: "EMAIL",
+      }),
     });
   },
 
   // Forgot Password (Section 23)
   async forgotPassword(email: string) {
-    return apiFetch<{ token?: string; email?: string }>("/auth/password/forgot", {
+    return apiFetch<{ token?: string; email?: string; challenge_id?: string }>("/auth/password/forgot", {
       method: "POST",
       body: JSON.stringify({ email }),
+    });
+  },
+
+  // Verify OTP for Password Reset
+  async verifyPasswordResetOtp(email: string, code: string, challengeId?: string) {
+    return apiFetch<{ reset_grant?: string; status?: string }>("/auth/password/verify-otp", {
+      method: "POST",
+      body: JSON.stringify({ email, code, challenge_id: challengeId }),
     });
   },
 
@@ -1556,11 +1874,148 @@ export const authApi = {
     });
   },
 
-  // Complete Staff Invitation (Section 26)
-  async completeInvitation(token: string, password: string, password_confirmation: string) {
-    return apiFetch("/auth/invitation/complete", {
+  // Preview Invitation Token (Section 08.2 W06 / S07)
+  async previewInvitation(token: string) {
+    const cleanToken = token.includes("token=") ? token.split("token=")[1].split("&")[0] : token;
+    return apiFetch<{
+      kind: string;
+      organization_name: string;
+      entity_name?: string;
+      entity_label?: string;
+      worker_name?: string;
+      recipient_name?: string;
+      masked_recipient: string;
+      target_role: string;
+      role_name?: string;
+      role_label?: string;
+      expires_at: string;
+    }>(`/invitations/${encodeURIComponent(cleanToken.trim())}/preview`);
+  },
+
+  // Complete Staff & Worker Invitation (Section 26 & Section 08.2 W07)
+  async completeInvitation(token: string, password: string, password_confirmation: string, additionalData?: Record<string, unknown>) {
+    const cleanToken = token.includes("token=") ? token.split("token=")[1].split("&")[0] : token;
+    return apiFetch<{
+      kind?: string;
+      user_id?: string;
+      membership_id?: string;
+      redirect_url?: string;
+    }>("/auth/invitation/complete", {
       method: "POST",
-      body: JSON.stringify({ token, password, password_confirmation }),
+      body: JSON.stringify({
+        token: cleanToken.trim(),
+        password,
+        password_confirmation,
+        ...(additionalData || {}),
+      }),
+    });
+  },
+
+  // Submit Customer NIK Format-Only (CR-01 & CR-02 V11)
+  async submitCustomerNik(nik: string) {
+    return apiFetch<{
+      nik_masked: string;
+      nik_format_status: string;
+      nik_locked: boolean;
+      next_step: string;
+    }>("/identity/customer/nik", {
+      method: "POST",
+      body: JSON.stringify({ nik }),
+    });
+  },
+
+  // Submit Employee KYC (V04)
+  async submitEmployeeKyc(data: FormData | { nik?: string; employee_identity?: string; legal_name?: string; document_ids?: string[] }) {
+    if (typeof FormData !== "undefined" && data instanceof FormData) {
+      if (!data.has("kind")) data.append("kind", "EMPLOYEE_KYC");
+      return apiFetch<{
+        request_id: string;
+        status: string;
+        submitted_at: string;
+      }>("/identity/verifications", {
+        method: "POST",
+        body: data,
+      });
+    }
+    return apiFetch<{
+      request_id: string;
+      status: string;
+      submitted_at: string;
+    }>("/identity/verifications", {
+      method: "POST",
+      body: JSON.stringify({
+        kind: "EMPLOYEE_KYC",
+        ...data,
+      }),
+    });
+  },
+
+  // Get My Identity Verifications (V05)
+  async getMyVerifications() {
+    return apiFetch<Array<{
+      id: string;
+      status: string;
+      lock_version: number;
+      created_at: string;
+      reviewed_at?: string;
+    }>>("/identity/verifications/me");
+  },
+
+  // Change Password (A16)
+  async changePassword(oldPassword: string, newPassword: string, newPasswordConfirmation: string) {
+    return apiFetch<{ user_id?: string; message: string }>("/auth/password/change", {
+      method: "POST",
+      body: JSON.stringify({
+        current_password: oldPassword,
+        new_password: newPassword,
+        confirm_password: newPasswordConfirmation,
+      }),
+    });
+  },
+
+  // Active Device Sessions (A12)
+  async getSessions() {
+    const res = await apiFetch<any>("/auth/sessions");
+    if (res.data && Array.isArray((res.data as any).items)) {
+      return {
+        ...res,
+        data: (res.data as any).items as Array<{
+          id: string;
+          device_name?: string;
+          created_ip?: string;
+          last_seen_at?: string;
+          created_at?: string;
+          current?: boolean;
+        }>,
+      };
+    }
+    return res as ApiResponse<Array<{
+      id: string;
+      device_name?: string;
+      created_ip?: string;
+      last_seen_at?: string;
+      created_at?: string;
+      current?: boolean;
+    }>>;
+  },
+
+  // Revoke Specific Session (A13)
+  async revokeSession(sessionId: string) {
+    return apiFetch(`/auth/sessions/${sessionId}`, {
+      method: "DELETE",
+    });
+  },
+
+  // Google OAuth Account Linking (A05-A07)
+  async googleLinkStart() {
+    return apiFetch<{ redirect_url?: string }>("/auth/google/link/start", {
+      method: "POST",
+    });
+  },
+
+  async googleUnlink() {
+    return apiFetch<{ message: string }>("/auth/google/link", {
+      method: "DELETE",
     });
   },
 };
@@ -1691,6 +2146,14 @@ export const registrationApi = {
     });
   },
 
+  // Resubmit Application Revision (Section 08.2 B07: POST /business/applications/{id}/resubmit)
+  async resubmitApplication(id: string, notes?: string) {
+    return apiFetch<RegistrationApplicationData>(`/business/applications/${id}/resubmit`, {
+      method: "POST",
+      body: JSON.stringify({ notes }),
+    });
+  },
+
   // Upload Document (Section 16 & 40)
   async uploadDocument(applicationId: string, documentType: string, file: File) {
     const form = new FormData();
@@ -1723,7 +2186,14 @@ export const opsApi = {
     if (filters.applicantType) params.set("applicantType", filters.applicantType);
     if (filters.search) params.set("search", filters.search);
     const qs = params.toString() ? `?${params.toString()}` : "";
-    return apiFetch<RegistrationApplicationData[]>(`/registration-applications${qs}`);
+    const res = await apiFetch<any>(`/registration-applications${qs}`);
+    if (res.data && !Array.isArray(res.data) && Array.isArray((res.data as any).items)) {
+      return {
+        ...res,
+        data: (res.data as any).items as RegistrationApplicationData[],
+      };
+    }
+    return res as ApiResponse<RegistrationApplicationData[]>;
   },
 
   // Get single application
@@ -1740,7 +2210,14 @@ export const opsApi = {
   ) {
     return apiFetch<RegistrationApplicationData>(`/registration-applications/${applicationId}/review`, {
       method: "POST",
-      body: JSON.stringify({ action, reviewNote, revisionDocTypes }),
+      body: JSON.stringify({
+        action,
+        decision: action,
+        reviewNote,
+        reason: reviewNote,
+        revisionDocTypes,
+        required_changes: revisionDocTypes,
+      }),
     });
   },
 
@@ -1842,6 +2319,106 @@ export const opsApi = {
       method: "DELETE",
     });
   },
+
+  // CR-02 CEO-Exclusive Employee KYC Queue (V08)
+  async getCeoVerifications() {
+    const res = await apiFetch<any>("/ceo/identity/verifications");
+    if (res.data && !Array.isArray(res.data) && Array.isArray((res.data as any).items)) {
+      return {
+        ...res,
+        data: (res.data as any).items,
+      };
+    }
+    return res;
+  },
+
+  // CR-02 CEO-Exclusive Employee KYC Decision (V09)
+  async ceoKycDecision(
+    id: string,
+    decision: "VERIFY" | "REJECT" | "APPROVE" | "REQUEST_REVISION",
+    reason?: string,
+    lockVersion?: number
+  ) {
+    return apiFetch<{
+      id: string;
+      status: string;
+      reviewed_by: string;
+      reviewed_at: string;
+    }>(`/ceo/identity/verifications/${id}/decision`, {
+      method: "POST",
+      body: JSON.stringify({
+        decision,
+        reason,
+        lock_version: lockVersion,
+      }),
+    });
+  },
+
+  // Admin User Governance (S15, S16, S13, S14)
+  async adminListUsers(params: { role?: string; status?: string; search?: string; page?: number } = {}) {
+    const q = new URLSearchParams();
+    if (params.role) q.set("role", params.role);
+    if (params.status) q.set("status", params.status);
+    if (params.search) q.set("search", params.search);
+    if (params.page) q.set("page", String(params.page));
+    const qs = q.toString() ? `?${q.toString()}` : "";
+    const res = await apiFetch<any>(`/admin/users${qs}`);
+    if (res.data && Array.isArray((res.data as any).items)) {
+      return {
+        ...res,
+        data: (res.data as any).items as Array<{
+          user_id: string;
+          name: string;
+          email_masked?: string;
+          status: string;
+          roles: string[];
+        }>,
+      };
+    }
+    return res as ApiResponse<Array<{
+      user_id: string;
+      name: string;
+      email_masked?: string;
+      status: string;
+      roles: string[];
+    }>>;
+  },
+
+  async adminGetUser(id: string) {
+    return apiFetch<any>(`/admin/users/${id}`);
+  },
+
+  async adminSuspendUser(id: string, reason: string) {
+    return apiFetch<{ message: string; data?: any }>(`/admin/users/${id}/suspend`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  async adminReactivateUser(id: string) {
+    return apiFetch<{ message: string; data?: any }>(`/admin/users/${id}/reactivate`, {
+      method: "POST",
+    });
+  },
+
+  // Admin Sensitive Profile Change Review (P12, P13)
+  async adminListChangeRequests() {
+    const res = await apiFetch<any>("/admin/profiles/change-requests");
+    if (res.data && Array.isArray((res.data as any).items)) {
+      return {
+        ...res,
+        data: (res.data as any).items,
+      };
+    }
+    return res;
+  },
+
+  async adminDecisionChangeRequest(id: string, decision: "APPROVE" | "REJECT", reason?: string) {
+    return apiFetch<any>(`/admin/profiles/change-requests/${id}/decision`, {
+      method: "POST",
+      body: JSON.stringify({ decision, reason }),
+    });
+  },
 };
 
 export interface ApiWorker {
@@ -1877,10 +2454,43 @@ export interface ApiWorker {
 export const providerApi = {
   // Get all technicians belonging to provider (Section 5)
   async getWorkers() {
-    return apiFetch<ApiWorker[]>("/provider/workers");
+    const res = await apiFetch<any>("/provider/workers");
+    const rawData = res.data;
+    const items = Array.isArray(rawData)
+      ? rawData
+      : Array.isArray(rawData?.items)
+      ? rawData.items
+      : Array.isArray(rawData?.workers)
+      ? rawData.workers
+      : [];
+    return {
+      ...res,
+      data: items as ApiWorker[],
+    };
   },
 
-  // Create new technician account and get invitation (Section 6 & 7)
+  // Invite Worker (Section 08.2 W03: POST /provider/worker-invitations)
+  async inviteWorker(data: {
+    fullName: string;
+    email: string;
+    phone: string;
+    organization_id?: string;
+    employeeId?: string;
+  }) {
+    return apiFetch<ApiWorker>("/provider/worker-invitations", {
+      method: "POST",
+      body: JSON.stringify({
+        recipient_email: data.email,
+        email: data.email,
+        fullName: data.fullName,
+        phone: data.phone,
+        organization_id: data.organization_id,
+        employeeId: data.employeeId,
+      }),
+    });
+  },
+
+  // Create new technician account and send invitation (Section 6 & 7 / Section 08.2 W03)
   async createWorker(data: {
     fullName: string;
     email: string;
@@ -1896,10 +2506,14 @@ export const providerApi = {
     vehicleNumber?: string;
     masterServiceIds?: string[];
     capabilities?: string[];
+    organization_id?: string;
   }) {
-    return apiFetch<ApiWorker>("/provider/workers", {
+    return apiFetch<ApiWorker>("/provider/worker-invitations", {
       method: "POST",
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        recipient_email: data.email,
+        ...data,
+      }),
     });
   },
 
@@ -1928,6 +2542,13 @@ export const providerApi = {
     return apiFetch<ApiWorker>(`/provider/workers/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),
+    });
+  },
+
+  // Deactivate technician (W08)
+  async deactivateWorker(id: string) {
+    return apiFetch<{ message: string; data?: any }>(`/provider/workers/${id}/deactivate`, {
+      method: "POST",
     });
   },
 };
@@ -1968,7 +2589,19 @@ export const providerServiceApi = {
   // GET /api/v1/provider/services
   async list(params?: Record<string, string>) {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-    return apiFetch<ApiProviderMasterService[]>(`/provider/services${qs}`);
+    const res = await apiFetch<any>(`/provider/services${qs}`);
+    const rawData = res.data;
+    const items = Array.isArray(rawData)
+      ? rawData
+      : Array.isArray(rawData?.items)
+      ? rawData.items
+      : Array.isArray(rawData?.services)
+      ? rawData.services
+      : [];
+    return {
+      ...res,
+      data: items as ApiProviderMasterService[],
+    };
   },
 
   // GET /api/v1/provider/services/{id}
@@ -2379,6 +3012,39 @@ export const profileApi = {
       method: "DELETE",
     });
   },
+
+  // Upload User Personal Avatar (P11)
+  async uploadAvatar(file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+    return apiFetch<{ photo_url?: string; avatar_url?: string; message: string }>("/profiles/me/avatar", {
+      method: "POST",
+      body: formData,
+    });
+  },
+
+  // Request Sensitive Business Legal Field Change (P03 - NIB / NPWP only)
+  async requestSensitiveChange(data: {
+    target_type?: "USER" | "ORGANIZATION";
+    target_id?: string;
+    fields: Record<string, string>;
+    reason: string;
+  }) {
+    return apiFetch<{ id: string; status: string }>("/profiles/change-requests", {
+      method: "POST",
+      body: JSON.stringify({
+        target_type: data.target_type || "ORGANIZATION",
+        target_id: data.target_id || "org-self",
+        fields: data.fields,
+        reason: data.reason,
+      }),
+    });
+  },
+
+  // Get Detail of Sensitive Change Request (P04)
+  async getChangeRequest(id: string) {
+    return apiFetch<any>(`/profiles/change-requests/${id}`);
+  },
 };
 
 export const organizationApi = {
@@ -2725,11 +3391,13 @@ export interface InternalAccountSummary {
   employmentType?: string;
   startDate?: string | null;
   accountStatus: string;
-  employmentStatus: "PENDING_START" | "ACTIVE" | "SUSPENDED" | "OFFBOARDED";
-  onboardingStatus: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED" | "BLOCKED" | "CANCELLED";
-  readiness: "READY" | "NOT_READY";
+  employmentStatus: "INVITED" | "PENDING" | "PENDING_START" | "ACTIVE" | "SUSPENDED" | "OFFBOARDED" | string;
+  onboardingStatus: "INVITED" | "NOT_STARTED" | "IN_PROGRESS" | "PENDING_REVIEW" | "REVISION_REQUIRED" | "REJECTED" | "COMPLETED" | "BLOCKED" | "CANCELLED" | string;
+  readiness: "READY" | "NOT_READY" | string;
   readinessReason?: string;
-  password?: string;
+  password?: string | null;
+  password_status?: "PENDING_INVITATION" | "CREATED" | string;
+  password_label?: string;
   createdAt?: string | null;
 }
 
@@ -2740,7 +3408,9 @@ export interface InternalAccountDetail {
     email: string;
     phone?: string;
     status: string;
-    password?: string;
+    password?: string | null;
+    password_status?: "PENDING_INVITATION" | "CREATED" | string;
+    password_label?: string;
     createdAt?: string | null;
     nik?: string;
     ktpFilePath?: string;
@@ -2801,7 +3471,7 @@ export const internalAccountApi = {
     fullName: string;
     email: string;
     phone?: string;
-    employeeId: string;
+    employeeId?: string;
     roleCode: string;
     department?: string;
     position?: string;
@@ -2809,19 +3479,131 @@ export const internalAccountApi = {
     startDate?: string;
     managerUserId?: string;
   }) {
+    const payload = {
+      ...data,
+      name: data.fullName,
+      role: data.roleCode,
+      employee_id: data.employeeId,
+      department: data.department || "Operations",
+    };
     return apiFetch<{
       account: InternalAccountSummary;
       invitationToken: string;
       invitationUrl: string;
+      employeeId?: string;
+      employee_id?: string;
     }>("/internal/accounts", {
       method: "POST",
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
   },
 
   // GET /api/v1/internal/accounts/{id}
   async getAccount(id: string) {
-    return apiFetch<InternalAccountDetail>(`/internal/accounts/${id}`);
+    const res = await apiFetch<any>(`/internal/accounts/${id}`);
+    const raw = res.data;
+    if (raw && !raw.identity) {
+      const roleObj = typeof raw.role === "object" && raw.role ? raw.role : { code: raw.role || raw.roleCode || "STAFF", name: raw.role || raw.roleCode || "STAFF" };
+      return {
+        ...res,
+        data: {
+          identity: {
+            id: raw.id,
+            fullName: raw.fullName || raw.name || "Staf Internal",
+            email: raw.email,
+            phone: raw.phone || "",
+            status: raw.status || "ACTIVE",
+            password: raw.password,
+            createdAt: raw.createdAt,
+            nik: raw.nik,
+            ktpFilePath: raw.ktpFilePath,
+            emergencyContact: null,
+          },
+          profile: {
+            displayName: raw.fullName || raw.name || "Staf Internal",
+            bio: null,
+            avatar: raw.avatar || raw.photo_path || null,
+            gender: raw.gender || null,
+            dateOfBirth: raw.dateOfBirth || raw.birth_date || null,
+          },
+          role: roleObj,
+          membership: null,
+          employment: {
+            id: "emp-" + raw.id,
+            employeeId: raw.employeeId,
+            department: raw.department || "Operations",
+            position: raw.position || roleObj.code,
+            employmentType: raw.employmentType || "FULL_TIME",
+            startDate: raw.startDate,
+            status: raw.status,
+          },
+          onboarding: {
+            id: "onb-" + raw.id,
+            status: raw.onboardingStatus || "COMPLETED",
+            progress: raw.onboardingStatus === "COMPLETED" ? 100 : 50,
+            tasks: [],
+          },
+          readiness: {
+            ready: raw.readiness === "READY",
+            status: raw.readiness || "READY",
+            reason: raw.readiness === "READY" ? "Siap operasional" : "Dalam proses",
+            checks: {
+              accountActive: raw.status === "ACTIVE",
+              membershipActive: true,
+              roleAssignmentValid: true,
+              employmentActive: true,
+              onboardingCompleted: raw.onboardingStatus === "COMPLETED",
+            },
+          },
+        } as unknown as InternalAccountDetail,
+      };
+    }
+    return res as { data: InternalAccountDetail; message?: string };
+  },
+
+  // GET /api/v1/internal/accounts/{id}/invitation-link
+  async getInvitationLink(id: string) {
+    return apiFetch<{
+      user_id: string;
+      staff_id: string;
+      name: string;
+      email: string;
+      role: string;
+      invitation_token: string;
+      invitation_url: string;
+      expires_at: string;
+      status: string;
+    }>(`/internal/accounts/${id}/invitation-link`);
+  },
+
+  // POST /api/v1/internal/accounts/{id}/resend-invitation
+  async resendInvitation(id: string) {
+    return apiFetch<{
+      user_id: string;
+      staff_id: string;
+      email: string;
+      invitation_token: string;
+      invitation_url: string;
+      expires_at: string;
+      delivery: {
+        success: boolean;
+        message_id?: string;
+        state?: string;
+      };
+    }>(`/internal/accounts/${id}/resend-invitation`, {
+      method: "POST",
+    });
+  },
+
+  // POST /api/v1/internal/accounts/{id}/cancel-invitation
+  async cancelInvitation(id: string) {
+    return apiFetch<{
+      user_id: string;
+      status: string;
+      message: string;
+    }>(`/internal/accounts/${id}/cancel-invitation`, {
+      method: "POST",
+    });
   },
 
   // PATCH /api/v1/internal/accounts/{id}/employment
@@ -2902,6 +3684,151 @@ export const internalAccountApi = {
   async deleteAccount(id: string) {
     return apiFetch<{ message: string }>(`/internal/accounts/${id}`, {
       method: "DELETE",
+    });
+  },
+
+  // CR-03 Staff Onboarding Specific Endpoints
+  // GET /api/v1/staff/onboarding/me
+  async getMyOnboarding() {
+    return apiFetch<{
+      id: string;
+      user_id: string;
+      status: string;
+      onboarding_status: string;
+      revision_notes?: string | null;
+      rejection_reason?: string | null;
+      progress: number;
+      readiness: "READY" | "NOT_READY";
+      readiness_status: "READY" | "NOT_READY";
+      employee: {
+        employee_id: string;
+        email: string;
+        role: string;
+        role_name: string;
+        department: string;
+        position: string;
+      };
+      profile: {
+        display_name: string;
+        legal_name: string;
+        gender?: string;
+        birth_date?: string;
+        phone: string;
+        photo_path?: string;
+      };
+      berkas: {
+        nik?: string;
+        nik_masked?: string;
+        verification_status: string;
+        document_count: number;
+        ktp_url?: string;
+        documents: Array<{ id: string; type: string; mime: string; size_bytes: number; download_url?: string; preview_url?: string }>;
+      };
+      steps: Array<{
+        id: string;
+        key: string;
+        code: string;
+        title: string;
+        status: string;
+        completed: boolean;
+        document_version?: string;
+        evidence_document_id?: string;
+        completed_at?: string;
+      }>;
+    }>("/staff/onboarding/me");
+  },
+
+  // PATCH /api/v1/staff/onboarding/profile
+  async completeProfileStep(data: {
+    display_name: string;
+    legal_name?: string;
+    gender?: string;
+    birth_date?: string;
+    phone?: string;
+    photo_path?: string;
+  }) {
+    return apiFetch<{
+      step: string;
+      status: string;
+      profile: {
+        display_name: string;
+        legal_name: string;
+        gender?: string;
+        birth_date?: string;
+        phone: string;
+        photo_path?: string;
+      };
+    }>("/staff/onboarding/profile", {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  },
+
+  // POST /api/v1/staff/onboarding/kyc (Pengecekan Berkas)
+  async completeKycStep(data: { nik?: string; file?: File; document_id?: string } | FormData) {
+    if (data instanceof FormData) {
+      return apiFetch<{
+        step: string;
+        label: string;
+        status: string;
+        nik_masked: string;
+        verification_request_id: string;
+      }>("/staff/onboarding/kyc", {
+        method: "POST",
+        body: data,
+      });
+    }
+
+    const formData = new FormData();
+    if (data.nik) formData.append("nik", data.nik);
+    if (data.file) formData.append("file", data.file);
+    if (data.document_id) formData.append("document_id", data.document_id);
+
+    return apiFetch<{
+      step: string;
+      label: string;
+      status: string;
+      nik_masked: string;
+      verification_request_id: string;
+    }>("/staff/onboarding/kyc", {
+      method: "POST",
+      body: formData,
+    });
+  },
+
+  // POST /api/v1/staff/onboarding/nda
+  async completeNdaStep(data: { nda_version: string; accepted: boolean }) {
+    return apiFetch<{
+      step: string;
+      status: string;
+      nda_version: string;
+      completed_at: string;
+    }>("/staff/onboarding/nda", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  // POST /api/v1/staff/onboarding/confirm-access
+  async confirmAccessStep(data: { accepted: boolean; acknowledged_permission_version?: number }) {
+    return apiFetch<{
+      step: string;
+      status: string;
+      message: string;
+    }>("/staff/onboarding/confirm-access", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  // POST /api/v1/staff/onboarding/submit
+  async submitOnboarding() {
+    return apiFetch<{
+      id: string;
+      status: string;
+      message: string;
+    }>("/staff/onboarding/submit", {
+      method: "POST",
     });
   },
 };

@@ -82,22 +82,6 @@ export default function ProviderOrderDetailPage() {
   const [showProofRevisionModal, setShowProofRevisionModal] = useState(false);
   const [proofRevisionNotes, setProofRevisionNotes] = useState("");
 
-  if (!foundOrder) {
-    return (
-      <div className="py-12">
-        <EmptyState
-          icon={ClipboardText}
-          title="Order Tidak Ditemukan"
-          description={`Order dengan ID "${orderId}" tidak terdaftar dalam workspace operasional.`}
-          action={{
-            label: "Kembali ke Order Operasional",
-            href: "/provider/orders",
-          }}
-        />
-      </div>
-    );
-  }
-
   // Check worker capability eligibility for this order
   const orderWorkerEligibilityList: OrderWorkerEligibility[] = useMemo(() => {
     if (!foundOrder) return [];
@@ -161,6 +145,22 @@ export default function ProviderOrderDetailPage() {
       };
     });
   }, [foundOrder, workers, repo]);
+
+  if (!foundOrder) {
+    return (
+      <div className="py-12">
+        <EmptyState
+          icon={ClipboardText}
+          title="Order Tidak Ditemukan"
+          description={`Order dengan ID "${orderId}" tidak terdaftar dalam workspace operasional.`}
+          action={{
+            label: "Kembali ke Order Operasional",
+            href: "/provider/orders",
+          }}
+        />
+      </div>
+    );
+  }
 
   // Handle worker re-assignment with notes & AI preparation context
   const handleAssignWorker = () => {

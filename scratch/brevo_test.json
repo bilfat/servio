@@ -1,0 +1,13 @@
+{
+  "sender": {
+    "name": "Servio Service",
+    "email": "nabilalfatih34@gmail.com"
+  },
+  "to": [
+    {
+      "email": "nabilalfatih34@gmail.com"
+    }
+  ],
+  "subject": "[SERVIO] Tes Koneksi Brevo OTP Berhasil",
+  "htmlContent": "<p>Halo,</p><p>Koneksi Brevo API SERVIO telah aktif dan berjalan lancar!</p>"
+}

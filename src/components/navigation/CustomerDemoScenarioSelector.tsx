@@ -29,7 +29,7 @@ export function CustomerDemoScenarioSelector({
   return null;
 }
 
-function _UnusedCustomerDemoScenarioSelector({
+function UnusedCustomerDemoScenarioSelector({
   currentOrderId,
   onSelectScenario,
 }: CustomerDemoScenarioSelectorProps) {

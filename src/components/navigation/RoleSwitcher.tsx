@@ -76,13 +76,13 @@ const ROLE_METADATA: Record<
     label: "Admin & Operations",
     icon: ShieldCheck,
     color: "text-rose-600",
-    desc: "Pengawasan operasional, taksonomi & audit global",
+    desc: "Pengawasan operasional, kategori jasa & audit global",
   },
   CEO_PRODUCT_OWNER: {
     label: "CEO / Product Owner",
     icon: Crown,
     color: "text-amber-700",
-    desc: "Executive dashboard, governance taksonomi & policy",
+    desc: "Executive dashboard, tata kelola kategori jasa & policy",
   },
 };
 
@@ -167,6 +167,7 @@ export function RoleSwitcher() {
                   <button
                     key={role}
                     type="button"
+                    id={`role-option-${role}`}
                     onClick={() => {
                       setIsPublicGuest(false);
                       switchRole(role);
@@ -222,6 +223,7 @@ export function RoleSwitcher() {
       {/* Floating Trigger Pill */}
       <button
         type="button"
+        id="role-switcher-toggle"
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2.5 px-4 py-2.5 rounded-full glass-card border border-primary/20 shadow-servio-md hover:shadow-servio-lg transition-all active:scale-95 group bg-white/95"
       >

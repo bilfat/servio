@@ -18,7 +18,7 @@ export default function HowItWorksPage() {
       stepNumber: "01",
       title: "Cari Layanan & Diagnosa Cepat",
       description:
-        "Pilih dari 6 domain utama taksonomi resmi Servio, cari spesialisasi spesifik, atau gunakan Smart Discovery AI untuk menganalisis gejala kerusakan serta rekomendasi estimasi biaya.",
+        "Pilih dari 6 domain utama kategori jasa resmi Servio, cari spesialisasi spesifik, atau gunakan Smart Discovery AI untuk menganalisis gejala kerusakan serta rekomendasi estimasi biaya.",
       icon: MagnifyingGlass,
       color: "bg-primary text-white",
       features: [

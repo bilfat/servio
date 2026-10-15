@@ -63,7 +63,7 @@ function CategoryDetailContent() {
       <div className="py-12">
         <EmptyState
           title="Kategori Tidak Ditemukan"
-          description={`Kategori domain "${categoryId}" tidak terdaftar dalam taksonomi resmi Servio.`}
+          description={`Kategori domain "${categoryId}" tidak terdaftar dalam kategori jasa resmi Servio.`}
           action={
             <button
               type="button"

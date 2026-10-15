@@ -69,8 +69,8 @@ function RegistrationStatusContent() {
     setUploadingReplacement(true);
     try {
       await registrationApi.uploadDocument(application.id, replacementDocType, replacementFile);
-      // Resubmit application
-      await registrationApi.submitApplication(application.id);
+      // Resubmit application revision (Section 08.2 B07: POST /business/applications/{id}/resubmit)
+      await registrationApi.resubmitApplication(application.id);
       setReplacementSuccess(true);
       setReplacementDocType(null);
       setReplacementFile(null);

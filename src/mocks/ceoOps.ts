@@ -260,7 +260,7 @@ export const INITIAL_AI_INCIDENTS: AISafetyIncident[] = [
     severity: "MEDIUM",
     type: "PRICE_INVENTION_ATTEMPT",
     description:
-      "Rekomendasi mencoba menyebut estimasi biaya di luar rentang harga base price katalog taksonomi yang terdaftar.",
+      "Rekomendasi mencoba menyebut estimasi biaya di luar rentang harga base price katalog kategori jasa yang terdaftar.",
     promptSummary: "Bisa dapat diskon servis AC inverter jadi 30 ribu?",
     blockedBy: "CATALOG_CONSTRAINT",
     status: "RESOLVED",

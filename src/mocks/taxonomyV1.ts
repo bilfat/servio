@@ -381,7 +381,7 @@ export const INITIAL_SUBCATEGORY_REQUESTS: SubcategoryRequest[] = [
     status: "FORWARDED_TO_CEO",
     createdAt: "2026-09-19 14:30 WIB",
     reviewedByAdminAt: "2026-09-21 10:00 WIB",
-    adminReviewNotes: "Kualifikasi valid dan potensi GMV tinggi. Diteruskan ke CEO untuk persetujuan struktur taksonomi.",
+    adminReviewNotes: "Kualifikasi valid dan potensi GMV tinggi. Diteruskan ke CEO untuk persetujuan struktur kategori jasa.",
   },
   {
     id: "sub-req-003",

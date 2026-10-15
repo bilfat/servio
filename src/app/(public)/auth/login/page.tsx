@@ -55,7 +55,7 @@ const DEV_ROLE_ACCOUNTS: DevRoleOption[] = [
     label: "CEO / Product Owner",
     name: "Michael Surya",
     email: "ceo@servio.id",
-    password: "ServioCeo2026!",
+    password: "12345678",
     badge: "Eksekutif",
     dest: "/ceo/dashboard",
     category: "INTERNAL",
@@ -69,7 +69,7 @@ const DEV_ROLE_ACCOUNTS: DevRoleOption[] = [
     label: "Admin Operations",
     name: "Siti Rahmawati",
     email: "admin@servio.id",
-    password: "ServioAdmin2026!",
+    password: "12345678",
     badge: "Operasional",
     dest: "/ops/admin/dashboard",
     category: "INTERNAL",
@@ -83,7 +83,7 @@ const DEV_ROLE_ACCOUNTS: DevRoleOption[] = [
     label: "Finance & Escrow",
     name: "Hendrik Wijaya",
     email: "finance@servio.id",
-    password: "ServioFinance2026!",
+    password: "12345678",
     badge: "Keuangan",
     dest: "/finance/dashboard",
     category: "INTERNAL",
@@ -99,7 +99,7 @@ const DEV_ROLE_ACCOUNTS: DevRoleOption[] = [
     label: "Service Provider",
     name: "Budi Santoso",
     email: "provider@servio.id",
-    password: "ServioProvider2026!",
+    password: "12345678",
     badge: "Mitra Bengkel",
     dest: "/provider/dashboard",
     category: "BUSINESS",
@@ -113,7 +113,7 @@ const DEV_ROLE_ACCOUNTS: DevRoleOption[] = [
     label: "Merchant Toko",
     name: "Ko Hendra",
     email: "merchant@servio.id",
-    password: "ServioMerchant2026!",
+    password: "12345678",
     badge: "Retail Part",
     dest: "/merchant/dashboard",
     category: "BUSINESS",
@@ -127,7 +127,7 @@ const DEV_ROLE_ACCOUNTS: DevRoleOption[] = [
     label: "Supplier B2B",
     name: "Suryanto Wijaya",
     email: "supplier@servio.id",
-    password: "ServioSupplier2026!",
+    password: "12345678",
     badge: "Principal",
     dest: "/supplier/dashboard",
     category: "BUSINESS",
@@ -141,7 +141,7 @@ const DEV_ROLE_ACCOUNTS: DevRoleOption[] = [
     label: "Worker / Teknisi",
     name: "Bambang Sudirman",
     email: "worker@servio.id",
-    password: "ServioWorker2026!",
+    password: "12345678",
     badge: "Teknisi",
     dest: "/worker/dashboard",
     category: "BUSINESS",
@@ -157,7 +157,7 @@ const DEV_ROLE_ACCOUNTS: DevRoleOption[] = [
     label: "Customer / Pelanggan",
     name: "Ahmad Fauzi",
     email: "customer@servio.id",
-    password: "ServioCustomer2026!",
+    password: "12345678",
     badge: "Konsumen",
     dest: "/",
     category: "CUSTOMER",
@@ -171,7 +171,7 @@ const DEV_ROLE_ACCOUNTS: DevRoleOption[] = [
     label: "Customer Support",
     name: "Rina Oktaviani",
     email: "support@servio.id",
-    password: "ServioSupport2026!",
+    password: "12345678",
     badge: "Helpdesk CS",
     dest: "/support/dashboard",
     category: "CUSTOMER",
@@ -252,6 +252,7 @@ export default function LoginPage() {
   const searchParams = useSearchParams();
   const returnUrl = searchParams.get("returnUrl");
   const { refreshUser, isAuthenticated, activeRole } = useActiveRole();
+  const isDev = process.env.NODE_ENV !== "production";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -327,13 +328,8 @@ export default function LoginPage() {
     status: "UNDER_REVIEW",
   });
 
-  // If already authenticated, redirect straight to appropriate role dashboard
-  useEffect(() => {
-    if (isAuthenticated) {
-      const dest = resolveRedirectPath(activeRole, returnUrl);
-      router.replace(dest);
-    }
-  }, [isAuthenticated, activeRole, returnUrl, router]);
+  // Jangan auto-redirect paksa agar pengguna dapat membuka form login secara langsung
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -459,14 +455,12 @@ export default function LoginPage() {
     }
   };
 
-  if (isAuthenticated) {
-    return (
-      <div className="min-h-[80vh] flex flex-col items-center justify-center gap-3">
-        <SpinnerGap size={36} className="text-primary animate-spin" />
-        <p className="text-xs text-neutral-slate font-medium">Mengarahkan ke Dashboard...</p>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (isAuthenticated && returnUrl) {
+      const target = resolveRedirectPath(activeRole, returnUrl);
+      router.replace(target);
+    }
+  }, [isAuthenticated, activeRole, returnUrl, router]);
 
   return (
     <div className="min-h-[85vh] flex items-center justify-center py-10 px-4 sm:px-6 lg:px-8">
@@ -487,6 +481,24 @@ export default function LoginPage() {
                 Satu pintu masuk untuk seluruh peran ekosistem Pelanggan, Bisnis Mitra, dan Operasional SERVIO.
               </p>
             </div>
+
+            {/* Sesi Aktif Notice (Jika sudah terautentikasi tetapi sengaja membuka form login) */}
+            {isAuthenticated && (
+              <div className="p-3.5 rounded-2xl bg-sky/40 border border-sky-300 text-primary-dark text-xs flex items-center justify-between gap-3 animate-fadeIn">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck size={18} className="text-primary shrink-0" weight="fill" />
+                  <span>
+                    Anda saat ini masuk sebagai <strong className="font-bold">{activeRole?.replace(/_/g, " ")}</strong>.
+                  </span>
+                </div>
+                <Link
+                  href={resolveRedirectPath(activeRole, returnUrl)}
+                  className="font-bold text-primary hover:underline shrink-0 text-[11px]"
+                >
+                  Lanjut ke Dashboard &rarr;
+                </Link>
+              </div>
+            )}
 
             {/* Error Message */}
             {errorMsg && (
@@ -579,6 +591,44 @@ export default function LoginPage() {
                   </>
                 )}
               </button>
+
+              {/* Divider */}
+              <div className="relative my-3 flex items-center justify-center">
+                <div className="border-t border-slate-200 w-full"></div>
+                <span className="bg-white px-2.5 text-[10px] text-neutral-slate font-medium uppercase tracking-wider">
+                  atau masuk dengan
+                </span>
+              </div>
+
+              {/* Google OAuth Button (A03, A04) */}
+              <button
+                type="button"
+                id="google-auth-btn"
+                onClick={() => {
+                  setErrorMsg("Integrasi Google OAuth live provider memerlukan konfigurasi client secret di environment.");
+                }}
+                className="w-full py-2.5 px-4 rounded-xl border border-slate-200 hover:bg-slate-50 text-neutral-dark font-medium text-xs transition flex items-center justify-center gap-2.5 shadow-sm"
+              >
+                <svg className="w-4 h-4" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                  />
+                </svg>
+                <span>Lanjutkan dengan Google</span>
+              </button>
             </form>
 
             {/* Footer Register Link */}
@@ -611,149 +661,213 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Right Column: Dev Stage Role Switcher Panel (lg:col-span-7) */}
-        <div className="lg:col-span-7 w-full bg-slate-900 text-white rounded-3xl p-6 sm:p-7 shadow-2xl border border-slate-800 space-y-6">
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-5">
-            <div>
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-400/10 text-amber-400 border border-amber-400/20 text-[11px] font-bold tracking-wide uppercase">
-                <Lightning size={13} weight="fill" />
-                <span>Dev Stage • Quick Access</span>
+        {/* Right Column: Dev Stage Quick Access (Dev Mode Only) OR Production Security Showcase */}
+        {isDev ? (
+          <div className="lg:col-span-7 w-full bg-slate-900 text-white rounded-3xl p-6 sm:p-7 shadow-2xl border border-slate-800 space-y-6">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-5">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-400/10 text-amber-400 border border-amber-400/20 text-[11px] font-bold tracking-wide uppercase">
+                  <Lightning size={13} weight="fill" />
+                  <span>Dev Stage • Quick Access</span>
+                </div>
+                <h2 className="text-lg font-bold font-display text-white mt-1.5 flex items-center gap-2">
+                  <span>Pintas Masuk Semua Role</span>
+                  <Sparkle size={16} weight="fill" className="text-amber-400" />
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Akses cepat untuk pengujian alur kerja & dashboard 9 role ekosistem tanpa perlu mengetik kredensial.
+                </p>
               </div>
-              <h2 className="text-lg font-bold font-display text-white mt-1.5 flex items-center gap-2">
-                <span>Pintas Masuk Semua Role</span>
-                <Sparkle size={16} weight="fill" className="text-amber-400" />
+            </div>
+
+            {/* Category Tabs */}
+            <div className="flex flex-wrap items-center gap-1.5 bg-slate-800/80 p-1 rounded-xl border border-slate-700/50">
+              <button
+                type="button"
+                onClick={() => setDevCategoryFilter("ALL")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  devCategoryFilter === "ALL"
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-slate-400 hover:text-white hover:bg-slate-700/50"
+                }`}
+              >
+                Semua Role (9)
+              </button>
+              <button
+                type="button"
+                onClick={() => setDevCategoryFilter("INTERNAL")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  devCategoryFilter === "INTERNAL"
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-slate-400 hover:text-white hover:bg-slate-700/50"
+                }`}
+              >
+                Internal & Ops (3)
+              </button>
+              <button
+                type="button"
+                onClick={() => setDevCategoryFilter("BUSINESS")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  devCategoryFilter === "BUSINESS"
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-slate-400 hover:text-white hover:bg-slate-700/50"
+                }`}
+              >
+                Mitra Bisnis (4)
+              </button>
+              <button
+                type="button"
+                onClick={() => setDevCategoryFilter("CUSTOMER")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                  devCategoryFilter === "CUSTOMER"
+                    ? "bg-primary text-white shadow-sm"
+                    : "text-slate-400 hover:text-white hover:bg-slate-700/50"
+                }`}
+              >
+                Pelanggan & CS (2)
+              </button>
+            </div>
+
+            {/* Grid of Role Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[460px] overflow-y-auto pr-1">
+              {filteredDevAccounts.map((account) => {
+                const IconComp = account.icon;
+                const isLoggingIn = devLoginLoadingRole === account.role;
+
+                return (
+                  <div
+                    key={account.role}
+                    className="bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 hover:border-slate-600 rounded-2xl p-3.5 transition flex flex-col justify-between gap-3 group relative overflow-hidden"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className={`w-9 h-9 rounded-xl ${account.iconBg} ${account.iconColor} flex items-center justify-center shrink-0 shadow-sm mt-0.5`}>
+                        <IconComp size={20} weight="duotone" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h4 className="text-xs font-bold text-white truncate group-hover:text-primary-light transition-colors">
+                            {account.label}
+                          </h4>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${account.badgeBg}`}>
+                            {account.badge}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-300 font-medium truncate mt-0.5">
+                          {account.name}
+                        </p>
+                        <div className="flex items-center gap-1 text-[10px] text-slate-400 font-mono truncate mt-0.5">
+                          <span>{account.email}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 pt-2 border-t border-slate-700/50">
+                      <button
+                        type="button"
+                        disabled={devLoginLoadingRole !== null || loading}
+                        onClick={() => handleQuickLogin(account)}
+                        className="flex-1 py-1.5 px-3 rounded-lg bg-primary hover:bg-primary-hover active:scale-[0.98] text-white text-[11px] font-bold shadow-sm transition flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        {isLoggingIn ? (
+                          <>
+                            <SpinnerGap size={13} className="animate-spin" />
+                            <span>Masuk...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Lightning size={13} weight="fill" />
+                            <span>Masuk Langsung</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        title="Isi email & sandi ke formulir"
+                        onClick={(e) => handleFillFormOnly(e, account)}
+                        className="py-1.5 px-2.5 rounded-lg bg-slate-700/70 hover:bg-slate-700 active:scale-[0.98] text-slate-200 text-[11px] font-medium transition cursor-pointer"
+                      >
+                        Isi Form
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Dev Help Note */}
+            <div className="p-3 rounded-xl bg-slate-800/40 border border-slate-700/40 flex items-center justify-between gap-3 text-slate-400 text-[11px]">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>Mode Pengembangan Aktif — Quick Login & Role Switcher Siap Pakai.</span>
+              </div>
+              <span className="text-[10px] font-mono text-slate-500">v1.0.0-dev</span>
+            </div>
+          </div>
+        ) : (
+          <div className="lg:col-span-7 w-full bg-gradient-to-br from-slate-900 via-slate-850 to-slate-900 text-white rounded-3xl p-7 sm:p-8 shadow-2xl border border-slate-800 space-y-6">
+            <div className="border-b border-slate-800 pb-5">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-400/10 text-emerald-400 border border-emerald-400/20 text-[11px] font-bold tracking-wide uppercase">
+                <ShieldCheck size={14} weight="fill" />
+                <span>Enterprise Identity & Access</span>
+              </div>
+              <h2 className="text-xl font-bold font-display text-white mt-2.5">
+                Ekosistem Layanan Terpadu SERVIO
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Akses cepat untuk pengujian alur kerja & dashboard 9 role ekosistem tanpa perlu mengetik kredensial.
+              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                Platform terintegrasi untuk seluruh pemangku kepentingan: Pelanggan, Mitra Jasa, Merchant Toko, Distributor Supplier, dan Tim Operasional.
               </p>
             </div>
-          </div>
 
-          {/* Category Tabs */}
-          <div className="flex flex-wrap items-center gap-1.5 bg-slate-800/80 p-1 rounded-xl border border-slate-700/50">
-            <button
-              type="button"
-              onClick={() => setDevCategoryFilter("ALL")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                devCategoryFilter === "ALL"
-                  ? "bg-primary text-white shadow-sm"
-                  : "text-slate-400 hover:text-white hover:bg-slate-700/50"
-              }`}
-            >
-              Semua Role (9)
-            </button>
-            <button
-              type="button"
-              onClick={() => setDevCategoryFilter("INTERNAL")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                devCategoryFilter === "INTERNAL"
-                  ? "bg-primary text-white shadow-sm"
-                  : "text-slate-400 hover:text-white hover:bg-slate-700/50"
-              }`}
-            >
-              Internal & Ops (3)
-            </button>
-            <button
-              type="button"
-              onClick={() => setDevCategoryFilter("BUSINESS")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                devCategoryFilter === "BUSINESS"
-                  ? "bg-primary text-white shadow-sm"
-                  : "text-slate-400 hover:text-white hover:bg-slate-700/50"
-              }`}
-            >
-              Mitra Bisnis (4)
-            </button>
-            <button
-              type="button"
-              onClick={() => setDevCategoryFilter("CUSTOMER")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
-                devCategoryFilter === "CUSTOMER"
-                  ? "bg-primary text-white shadow-sm"
-                  : "text-slate-400 hover:text-white hover:bg-slate-700/50"
-              }`}
-            >
-              Pelanggan & CS (2)
-            </button>
-          </div>
-
-          {/* Grid of Role Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[460px] overflow-y-auto pr-1">
-            {filteredDevAccounts.map((account) => {
-              const IconComp = account.icon;
-              const isLoggingIn = devLoginLoadingRole === account.role;
-
-              return (
-                <div
-                  key={account.role}
-                  className="bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 hover:border-slate-600 rounded-2xl p-3.5 transition flex flex-col justify-between gap-3 group relative overflow-hidden"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className={`w-9 h-9 rounded-xl ${account.iconBg} ${account.iconColor} flex items-center justify-center shrink-0 shadow-sm mt-0.5`}>
-                      <IconComp size={20} weight="duotone" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <h4 className="text-xs font-bold text-white truncate group-hover:text-primary-light transition-colors">
-                          {account.label}
-                        </h4>
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${account.badgeBg}`}>
-                          {account.badge}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-300 font-medium truncate mt-0.5">
-                        {account.name}
-                      </p>
-                      <div className="flex items-center gap-1 text-[10px] text-slate-400 font-mono truncate mt-0.5">
-                        <span>{account.email}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 pt-2 border-t border-slate-700/50">
-                    <button
-                      type="button"
-                      disabled={devLoginLoadingRole !== null || loading}
-                      onClick={() => handleQuickLogin(account)}
-                      className="flex-1 py-1.5 px-3 rounded-lg bg-primary hover:bg-primary-hover active:scale-[0.98] text-white text-[11px] font-bold shadow-sm transition flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                    >
-                      {isLoggingIn ? (
-                        <>
-                          <SpinnerGap size={13} className="animate-spin" />
-                          <span>Masuk...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Lightning size={13} weight="fill" />
-                          <span>Masuk Langsung</span>
-                        </>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      title="Isi email & sandi ke formulir"
-                      onClick={(e) => handleFillFormOnly(e, account)}
-                      className="py-1.5 px-2.5 rounded-lg bg-slate-700/70 hover:bg-slate-700 active:scale-[0.98] text-slate-200 text-[11px] font-medium transition cursor-pointer"
-                    >
-                      Isi Form
-                    </button>
-                  </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="p-4 rounded-2xl bg-slate-800/50 border border-slate-700/50 space-y-2">
+                <div className="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-400 flex items-center justify-center">
+                  <ShieldCheck size={20} weight="duotone" />
                 </div>
-              );
-            })}
-          </div>
+                <h4 className="text-xs font-bold text-white">Autentikasi Stateful SPA</h4>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Dilindungi oleh Laravel Sanctum Session dengan HttpOnly cookie, pencegahan serangan XSS, dan perlindungan token CSRF.
+                </p>
+              </div>
 
-          {/* Dev Help Note */}
-          <div className="p-3 rounded-xl bg-slate-800/40 border border-slate-700/40 flex items-center justify-between gap-3 text-slate-400 text-[11px]">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>Mock Engine Frontend Aktif (Standalone, tanpa backend eksternal).</span>
+              <div className="p-4 rounded-2xl bg-slate-800/50 border border-slate-700/50 space-y-2">
+                <div className="w-8 h-8 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center">
+                  <Briefcase size={20} weight="duotone" />
+                </div>
+                <h4 className="text-xs font-bold text-white">Multi-Role & Organisasi</h4>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Satu akun terpadu untuk beralih konteks peran dan organisasi dengan validasi otorisasi server-side.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-800/50 border border-slate-700/50 space-y-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center">
+                  <FileText size={20} weight="duotone" />
+                </div>
+                <h4 className="text-xs font-bold text-white">Verifikasi Legal & Dokumen</h4>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Proses pendaftaran bisnis mitra diverifikasi secara menyeluruh oleh tim verifikasi resmi operasional SERVIO.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-slate-800/50 border border-slate-700/50 space-y-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center">
+                  <Key size={20} weight="duotone" />
+                </div>
+                <h4 className="text-xs font-bold text-white">Perlindungan Data Terenkripsi</h4>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Data sensitif NIK dan dokumen hukum dilindungi enkripsi AES-256 tingkat tinggi dan audit logging ketat.
+                </p>
+              </div>
             </div>
-            <span className="text-[10px] font-mono text-slate-500">v1.0.0-dev</span>
+
+            <div className="p-3.5 rounded-xl bg-slate-800/30 border border-slate-700/40 flex items-center justify-between text-xs text-slate-400">
+              <span>Keamanan terakreditasi standar platform industri.</span>
+              <span className="font-mono text-[10px] text-slate-500">TLS 1.3 Active</span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Forgot Password Interactive Modal */}

@@ -31,10 +31,10 @@ export function GovernanceDecisionModal({
   const isApprove = decisionType === "APPROVE";
 
   const title = isApprove
-    ? "Persetujuan Tata Kelola Taksonomi"
+    ? "Persetujuan Tata Kelola Kategori Jasa"
     : isReject
-    ? "Penolakan Usulan Taksonomi"
-    : "Permintaan Revisi Usulan Taksonomi";
+    ? "Penolakan Usulan Kategori Jasa"
+    : "Permintaan Revisi Usulan Kategori Jasa";
 
   const handleSubmit = () => {
     if ((isReject || isRevise) && !inputVal.trim()) {

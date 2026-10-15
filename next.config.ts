@@ -82,6 +82,18 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
+        source: "/sanctum/:path*",
+        destination: "http://127.0.0.1:8001/sanctum/:path*",
+      },
+      {
+        source: "/storage/:path*",
+        destination: "http://127.0.0.1:8001/storage/:path*",
+      },
+      {
+        source: "/api/v1/:path*",
+        destination: "http://127.0.0.1:8001/api/v1/:path*",
+      },
+      {
         source: "/ops/:path*",
         destination: "/:path*",
       },
