@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import {
   Folder,
@@ -29,6 +30,7 @@ import {
   Lightning,
   Package,
   Tag,
+  ArrowsClockwise,
 } from "@phosphor-icons/react";
 import {
   taxonomyApi,
@@ -75,6 +77,7 @@ export default function CeoTaxonomyGovernancePage() {
   const [mainTab, setMainTab] = useState<CeoMainTab>("JASA");
   const [subTab, setSubTab] = useState<CeoSubTab>("CATEGORY");
   const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
 
   // Live Backend Data States
   const [categories, setCategories] = useState<ApiCategoryNode[]>([]);
@@ -90,8 +93,8 @@ export default function CeoTaxonomyGovernancePage() {
     try {
       setIsLoading(true);
       const [catsRes, subsRes, reqsRes, auditRes, brandsRes] = await Promise.allSettled([
-        taxonomyApi.getCategories({ limit: 100 }),
-        taxonomyApi.getSubcategories({ limit: 100 }),
+        taxonomyApi.getCategories({ limit: 100, include_inactive: true }),
+        taxonomyApi.getSubcategories({ limit: 100, include_inactive: true }),
         taxonomyApi.getRequests(),
         taxonomyApi.getAuditLogs({ limit: 50 }),
         taxonomyApi.getBrands(),
@@ -122,6 +125,19 @@ export default function CeoTaxonomyGovernancePage() {
       setIsLoading(false);
     }
   }, []);
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleManualRefresh = async () => {
+    try {
+      setIsRefreshing(true);
+      await loadData();
+    } catch (err) {
+      console.warn("Failed to refresh CEO taxonomy data:", err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -173,22 +189,65 @@ export default function CeoTaxonomyGovernancePage() {
     };
   }, [categories, subcategories, requests]);
 
+  // Status statistics for JASA & PRODUK
+  const taxonomyStats = useMemo(() => {
+    const jCatsTotal = jasaCategories.length;
+    const jCatsActive = jasaCategories.filter((c) => c.status === "ACTIVE").length;
+    const jCatsInactive = jasaCategories.filter((c) => c.status !== "ACTIVE").length;
+
+    const jSubsTotal = jasaSubcategories.length;
+    const jSubsActive = jasaSubcategories.filter((s) => s.status === "ACTIVE").length;
+    const jSubsInactive = jasaSubcategories.filter((s) => s.status !== "ACTIVE").length;
+
+    const pCatsTotal = produkCategories.length;
+    const pCatsActive = produkCategories.filter((c) => c.status === "ACTIVE").length;
+    const pCatsInactive = produkCategories.filter((c) => c.status !== "ACTIVE").length;
+
+    const pSubsTotal = produkSubcategories.length;
+    const pSubsActive = produkSubcategories.filter((s) => s.status === "ACTIVE").length;
+    const pSubsInactive = produkSubcategories.filter((s) => s.status !== "ACTIVE").length;
+
+    return {
+      jasa: {
+        category: { total: jCatsTotal, active: jCatsActive, inactive: jCatsInactive },
+        subcategory: { total: jSubsTotal, active: jSubsActive, inactive: jSubsInactive },
+        totalInactive: jCatsInactive + jSubsInactive,
+      },
+      produk: {
+        category: { total: pCatsTotal, active: pCatsActive, inactive: pCatsInactive },
+        subcategory: { total: pSubsTotal, active: pSubsActive, inactive: pSubsInactive },
+        totalInactive: pCatsInactive + pSubsInactive,
+      },
+    };
+  }, [jasaCategories, jasaSubcategories, produkCategories, produkSubcategories]);
+
+  const currentTabCounts = useMemo(() => {
+    const branch = mainTab === "JASA" ? taxonomyStats.jasa : taxonomyStats.produk;
+    return subTab === "CATEGORY" ? branch.category : branch.subcategory;
+  }, [mainTab, subTab, taxonomyStats]);
+
   // Filtered Categories Table
   const displayedCategories = useMemo(() => {
     const list = mainTab === "JASA" ? jasaCategories : produkCategories;
     return list.filter((c) => {
+      if (statusFilter === "ACTIVE" && c.status !== "ACTIVE") return false;
+      if (statusFilter === "INACTIVE" && c.status === "ACTIVE") return false;
+
       return (
         !searchQuery ||
         c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         c.code.toLowerCase().includes(searchQuery.toLowerCase())
       );
     });
-  }, [mainTab, jasaCategories, produkCategories, searchQuery]);
+  }, [mainTab, jasaCategories, produkCategories, searchQuery, statusFilter]);
 
   // Filtered Subcategories List
   const displayedSubcategories = useMemo(() => {
     const list = mainTab === "JASA" ? jasaSubcategories : produkSubcategories;
     return list.filter((s) => {
+      if (statusFilter === "ACTIVE" && s.status !== "ACTIVE") return false;
+      if (statusFilter === "INACTIVE" && s.status === "ACTIVE") return false;
+
       return (
         !searchQuery ||
         s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -196,7 +255,7 @@ export default function CeoTaxonomyGovernancePage() {
         (s.category_name || "").toLowerCase().includes(searchQuery.toLowerCase())
       );
     });
-  }, [mainTab, jasaSubcategories, produkSubcategories, searchQuery]);
+  }, [mainTab, jasaSubcategories, produkSubcategories, searchQuery, statusFilter]);
 
   // Pengelompokan Sub Kategori per Kategori Induk untuk Tampilan CEO yang Terstruktur
   const groupedSubcategories = useMemo(() => {
@@ -210,7 +269,11 @@ export default function CeoTaxonomyGovernancePage() {
     parentCats.forEach((cat) => {
       const matchingSubs = displayedSubcategories.filter((s) => s.category_id === cat.id);
       
-      if (searchQuery.trim()) {
+      if (statusFilter === "INACTIVE") {
+        if (matchingSubs.length > 0 || cat.status !== "ACTIVE") {
+          groups.push({ category: cat, subcategories: matchingSubs });
+        }
+      } else if (searchQuery.trim()) {
         const catMatches =
           cat.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           cat.code.toLowerCase().includes(searchQuery.toLowerCase());
@@ -246,7 +309,7 @@ export default function CeoTaxonomyGovernancePage() {
     }
 
     return groups;
-  }, [mainTab, jasaCategories, produkCategories, displayedSubcategories, searchQuery]);
+  }, [mainTab, jasaCategories, produkCategories, displayedSubcategories, searchQuery, statusFilter]);
 
   // Filtered Requests Table
   const filteredRequests = useMemo(() => {
@@ -270,6 +333,21 @@ export default function CeoTaxonomyGovernancePage() {
           { label: "Executive Office", href: "/ceo/dashboard" },
           { label: "Kategori dan Sub Kategori", href: "/ceo/taxonomy" },
         ]}
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleManualRefresh}
+            disabled={isLoading || isRefreshing}
+            className="flex items-center gap-2 border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-2xs font-bold cursor-pointer"
+          >
+            <ArrowsClockwise
+              size={16}
+              className={`${isRefreshing || isLoading ? "animate-spin text-[#0F4C81]" : "text-slate-600"}`}
+            />
+            <span>{isRefreshing || isLoading ? "Memperbarui..." : "Perbarui Data"}</span>
+          </Button>
+        }
       />
 
       {/* Governance Notice Banner (DEC-13) */}
@@ -362,6 +440,18 @@ export default function CeoTaxonomyGovernancePage() {
         >
           <Wrench size={16} weight={mainTab === "JASA" ? "fill" : "bold"} />
           <span>Layanan Jasa ({jasaCategories.length})</span>
+          {taxonomyStats.jasa.totalInactive > 0 && (
+            <span
+              className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                mainTab === "JASA"
+                  ? "bg-amber-400 text-slate-950"
+                  : "bg-amber-100 text-amber-900 border border-amber-300"
+              }`}
+              title={`${taxonomyStats.jasa.totalInactive} item jasa nonaktif`}
+            >
+              {taxonomyStats.jasa.totalInactive} nonaktif
+            </span>
+          )}
         </button>
 
         <button
@@ -378,6 +468,18 @@ export default function CeoTaxonomyGovernancePage() {
         >
           <Package size={16} weight={mainTab === "PRODUK" ? "fill" : "bold"} />
           <span>Produk &amp; Barang ({produkCategories.length})</span>
+          {taxonomyStats.produk.totalInactive > 0 && (
+            <span
+              className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                mainTab === "PRODUK"
+                  ? "bg-amber-400 text-slate-950"
+                  : "bg-amber-100 text-amber-900 border border-amber-300"
+              }`}
+              title={`${taxonomyStats.produk.totalInactive} item barang nonaktif`}
+            >
+              {taxonomyStats.produk.totalInactive} nonaktif
+            </span>
+          )}
         </button>
 
         <button
@@ -423,48 +525,122 @@ export default function CeoTaxonomyGovernancePage() {
       {/* KONTEN TAB JASA & PRODUK (DENGAN SUBTAB KATEGORI & SUBKATEGORI) */}
       {(mainTab === "JASA" || mainTab === "PRODUK") && (
         <div className="space-y-4">
-          {/* Subtab Switcher & Search Bar */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
-            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
-              <button
-                type="button"
-                onClick={() => setSubTab("CATEGORY")}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
-                  subTab === "CATEGORY"
-                    ? "bg-white text-slate-900 shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Kategori {mainTab === "JASA" ? "Jasa" : "Barang"} (
-                {mainTab === "JASA" ? jasaCategories.length : produkCategories.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setSubTab("SUBCATEGORY")}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
-                  subTab === "SUBCATEGORY"
-                    ? "bg-white text-slate-900 shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Sub Kategori {mainTab === "JASA" ? "Jasa" : "Barang"} (
-                {mainTab === "JASA" ? jasaSubcategories.length : produkSubcategories.length})
-              </button>
+          {/* Subtab Switcher, Status Segmented Controls & Search Bar */}
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setSubTab("CATEGORY")}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+                    subTab === "CATEGORY"
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Kategori {mainTab === "JASA" ? "Jasa" : "Barang"} (
+                  {mainTab === "JASA" ? jasaCategories.length : produkCategories.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSubTab("SUBCATEGORY")}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+                    subTab === "SUBCATEGORY"
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Sub Kategori {mainTab === "JASA" ? "Jasa" : "Barang"} (
+                  {mainTab === "JASA" ? jasaSubcategories.length : produkSubcategories.length})
+                </button>
+              </div>
+
+              {/* Status Segmented Tabs: Semua | Aktif | Nonaktif */}
+              <div className="flex items-center gap-1 bg-slate-100/90 p-1 rounded-xl border border-slate-200/60">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter("ALL")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    statusFilter === "ALL"
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span>Semua</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700">
+                    {currentTabCounts.total}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter("ACTIVE")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    statusFilter === "ACTIVE"
+                      ? "bg-white text-emerald-700 shadow-xs ring-1 ring-emerald-500/20"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  <span>Aktif</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
+                    {currentTabCounts.active}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter("INACTIVE")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    statusFilter === "INACTIVE"
+                      ? "bg-amber-500 text-slate-950 shadow-xs ring-1 ring-amber-500/30"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${statusFilter === "INACTIVE" ? "bg-slate-950" : "bg-amber-500"}`}></span>
+                  <span>Nonaktif</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                      statusFilter === "INACTIVE"
+                        ? "bg-slate-950/20 text-slate-950"
+                        : currentTabCounts.inactive > 0
+                        ? "bg-amber-200 text-amber-900 font-extrabold"
+                        : "bg-slate-200 text-slate-500"
+                    }`}
+                  >
+                    {currentTabCounts.inactive}
+                  </span>
+                </button>
+              </div>
             </div>
 
-            <div className="relative w-full sm:w-72">
-              <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder={
-                  subTab === "CATEGORY"
-                    ? `Cari kategori ${mainTab.toLowerCase()}...`
-                    : `Cari subkategori ${mainTab.toLowerCase()}...`
-                }
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
-              />
+            <div className="flex items-center gap-2 w-full lg:w-auto">
+              <div className="relative w-full lg:w-64">
+                <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder={
+                    subTab === "CATEGORY"
+                      ? `Cari kategori ${mainTab.toLowerCase()}...`
+                      : `Cari subkategori ${mainTab.toLowerCase()}...`
+                  }
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
+                />
+              </div>
+
+              {/* Tombol Refresh Cepat */}
+              <button
+                type="button"
+                onClick={handleManualRefresh}
+                disabled={isLoading || isRefreshing}
+                className="p-2 rounded-xl border border-slate-200 bg-white text-slate-600 hover:text-[#0F4C81] hover:bg-slate-50 transition cursor-pointer shrink-0 disabled:opacity-50"
+                title="Refresh / Perbarui Data Taksonomi"
+              >
+                <ArrowsClockwise
+                  size={16}
+                  className={isRefreshing || isLoading ? "animate-spin text-[#0F4C81]" : ""}
+                />
+              </button>
             </div>
           </div>
 
@@ -499,24 +675,60 @@ export default function CeoTaxonomyGovernancePage() {
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {displayedCategories.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="py-8 text-center text-slate-400 font-semibold">
-                          {isLoading ? "Memuat kategori..." : `Tidak ada kategori ${mainTab.toLowerCase()} yang ditemukan.`}
+                        <td colSpan={5} className="py-10 text-center text-slate-400 font-semibold space-y-2">
+                          <p>
+                            {statusFilter === "INACTIVE"
+                              ? `Tidak ada kategori ${mainTab.toLowerCase()} yang berstatus nonaktif saat ini.`
+                              : statusFilter === "ACTIVE"
+                              ? `Tidak ada kategori ${mainTab.toLowerCase()} yang aktif.`
+                              : isLoading
+                              ? "Memuat kategori..."
+                              : `Tidak ada kategori ${mainTab.toLowerCase()} yang ditemukan.`}
+                          </p>
+                          {statusFilter !== "ALL" && (
+                            <button
+                              type="button"
+                              onClick={() => setStatusFilter("ALL")}
+                              className="text-xs text-[#0F4C81] hover:underline font-bold cursor-pointer inline-block mt-1"
+                            >
+                              Tampilkan Semua Kategori
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ) : (
                       displayedCategories.map((cat) => {
                         const IconComponent = resolveCategoryIcon(cat);
                         const childCount = subcategories.filter((s) => s.category_id === cat.id).length;
+                        const isInactive = cat.status !== "ACTIVE";
 
                         return (
-                          <tr key={cat.id} className="hover:bg-slate-50/60 transition">
+                          <tr
+                            key={cat.id}
+                            className={`transition ${
+                              isInactive
+                                ? "bg-amber-50/20 hover:bg-amber-50/40 text-slate-600"
+                                : "hover:bg-slate-50/60"
+                            }`}
+                          >
                             <td className="py-3.5 px-4">
                               <div className="flex items-center gap-3">
-                                <span className="p-2 rounded-xl bg-sky-50 text-[#0F4C81] border border-sky-200 shrink-0">
+                                <span className={`p-2 rounded-xl border shrink-0 ${
+                                  isInactive
+                                    ? "bg-slate-100 text-slate-500 border-slate-200"
+                                    : "bg-sky-50 text-[#0F4C81] border-sky-200"
+                                }`}>
                                   <IconComponent size={18} weight="duotone" />
                                 </span>
                                 <div>
-                                  <p className="font-bold text-slate-900">{cat.name}</p>
+                                  <div className="flex items-center gap-2">
+                                    <p className={`font-bold ${isInactive ? "text-slate-700" : "text-slate-900"}`}>{cat.name}</p>
+                                    {isInactive && (
+                                      <span className="text-[10px] text-amber-700 font-semibold">
+                                        (Disembunyikan dari publik)
+                                      </span>
+                                    )}
+                                  </div>
                                   {cat.description && (
                                     <p className="text-[11px] text-slate-500 max-w-md line-clamp-1">
                                       {cat.description}
@@ -536,7 +748,7 @@ export default function CeoTaxonomyGovernancePage() {
                                 className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
                                   cat.status === "ACTIVE"
                                     ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                    : "bg-slate-100 text-slate-500 border-slate-200"
+                                    : "bg-amber-50 text-amber-800 border-amber-300 font-extrabold"
                                 }`}
                               >
                                 {cat.status === "ACTIVE" ? "Aktif" : "Nonaktif"}
@@ -559,35 +771,57 @@ export default function CeoTaxonomyGovernancePage() {
           {subTab === "SUBCATEGORY" && (
             <div className="space-y-4">
               {groupedSubcategories.length === 0 ? (
-                <div className="bg-white rounded-2xl border border-slate-200/80 p-8 text-center text-slate-400 font-semibold shadow-xs">
-                  {isLoading ? "Memuat subkategori..." : `Tidak ada subkategori ${mainTab.toLowerCase()} yang ditemukan.`}
+                <div className="bg-white rounded-2xl border border-slate-200/80 p-10 text-center text-slate-400 font-semibold shadow-xs space-y-2">
+                  <p>
+                    {statusFilter === "INACTIVE"
+                      ? `Tidak ada subkategori ${mainTab.toLowerCase()} yang berstatus nonaktif saat ini.`
+                      : statusFilter === "ACTIVE"
+                      ? `Tidak ada subkategori ${mainTab.toLowerCase()} yang aktif.`
+                      : isLoading
+                      ? "Memuat subkategori..."
+                      : `Tidak ada subkategori ${mainTab.toLowerCase()} yang ditemukan.`}
+                  </p>
+                  {statusFilter !== "ALL" && (
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter("ALL")}
+                      className="text-xs text-[#0F4C81] hover:underline font-bold cursor-pointer inline-block mt-1"
+                    >
+                      Tampilkan Semua Subkategori
+                    </button>
+                  )}
                 </div>
               ) : (
                 groupedSubcategories.map(({ category: cat, subcategories: subs }) => {
                   const IconComponent = resolveCategoryIcon(cat);
+                  const isCatInactive = cat.status !== "ACTIVE";
                   return (
                     <div
                       key={cat.id}
-                      className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden transition-all hover:border-slate-300"
+                      className={`bg-white rounded-2xl border shadow-xs overflow-hidden transition-all hover:border-slate-300 ${
+                        isCatInactive ? "border-amber-200/80 bg-amber-50/10" : "border-slate-200/80"
+                      }`}
                     >
                       {/* Header Kategori Induk */}
                       <div className="bg-slate-50/80 px-5 py-3.5 border-b border-slate-200/80 flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-3">
-                          <span className="p-2.5 rounded-xl bg-white text-[#0F4C81] border border-slate-200/90 shadow-2xs shrink-0">
+                          <span className={`p-2.5 rounded-xl border shadow-2xs shrink-0 ${
+                            isCatInactive ? "bg-slate-100 text-slate-500 border-slate-200" : "bg-white text-[#0F4C81] border-slate-200/90"
+                          }`}>
                             <IconComponent size={20} weight="duotone" />
                           </span>
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">
-                              <h3 className="font-bold text-slate-900 text-sm tracking-tight">{cat.name}</h3>
+                              <h3 className={`font-bold text-sm tracking-tight ${isCatInactive ? "text-slate-700" : "text-slate-900"}`}>{cat.name}</h3>
                               {cat.code && <span className="font-mono text-[11px] text-slate-400 font-semibold">({cat.code})</span>}
                               <span
                                 className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
                                   cat.status === "ACTIVE"
                                     ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                    : "bg-slate-100 text-slate-500 border-slate-200"
+                                    : "bg-amber-50 text-amber-800 border-amber-300 font-extrabold"
                                 }`}
                               >
-                                {cat.status === "ACTIVE" ? "Kategori Aktif" : "Nonaktif"}
+                                {cat.status === "ACTIVE" ? "Kategori Aktif" : "Kategori Nonaktif"}
                               </span>
                             </div>
                             <p className="text-[11px] text-slate-500 mt-0.5">
@@ -618,31 +852,48 @@ export default function CeoTaxonomyGovernancePage() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 font-medium">
-                              {subs.map((sub) => (
-                                <tr key={sub.id} className="hover:bg-slate-50/60 transition">
-                                  <td className="py-3 px-5">
-                                    <div className="flex items-center gap-2.5">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0"></span>
-                                      <span className="font-bold text-slate-900 text-sm">{sub.name}</span>
-                                    </div>
-                                  </td>
-                                  <td className="py-3 px-4 font-mono text-[11px] text-slate-600">{sub.code}</td>
-                                  <td className="py-3 px-4 text-center">
-                                    <span
-                                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                                        sub.status === "ACTIVE"
-                                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                          : "bg-slate-100 text-slate-500 border-slate-200"
-                                      }`}
-                                    >
-                                      {sub.status === "ACTIVE" ? "Aktif" : "Nonaktif"}
-                                    </span>
-                                  </td>
-                                  <td className="py-3 px-5 text-right text-slate-500">
-                                    {sub.created_at ? new Date(sub.created_at).toLocaleDateString("id-ID") : "-"}
-                                  </td>
-                                </tr>
-                              ))}
+                              {subs.map((sub) => {
+                                const isSubInactive = sub.status !== "ACTIVE";
+                                return (
+                                  <tr
+                                    key={sub.id}
+                                    className={`transition ${
+                                      isSubInactive
+                                        ? "bg-amber-50/20 hover:bg-amber-50/40 text-slate-600"
+                                        : "hover:bg-slate-50/60"
+                                    }`}
+                                  >
+                                    <td className="py-3 px-5">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isSubInactive ? "bg-amber-400" : "bg-slate-300"}`}></span>
+                                        <div>
+                                          <span className={`font-bold text-sm ${isSubInactive ? "text-slate-700" : "text-slate-900"}`}>{sub.name}</span>
+                                          {isSubInactive && (
+                                            <span className="ml-2 text-[10px] text-amber-700 font-semibold">
+                                              (Disembunyikan dari publik)
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-4 font-mono text-[11px] text-slate-600">{sub.code}</td>
+                                    <td className="py-3 px-4 text-center">
+                                      <span
+                                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                                          sub.status === "ACTIVE"
+                                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                            : "bg-amber-50 text-amber-800 border-amber-300 font-extrabold"
+                                        }`}
+                                      >
+                                        {sub.status === "ACTIVE" ? "Aktif" : "Nonaktif"}
+                                      </span>
+                                    </td>
+                                    <td className="py-3 px-5 text-right text-slate-500">
+                                      {sub.created_at ? new Date(sub.created_at).toLocaleDateString("id-ID") : "-"}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>

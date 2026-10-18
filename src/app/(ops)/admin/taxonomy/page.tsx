@@ -42,6 +42,7 @@ import {
   Trash,
   ClipboardText,
   Tag,
+  ArrowsClockwise,
   Image as ImageIcon,
 } from "@phosphor-icons/react";
 import {
@@ -126,6 +127,8 @@ export default function AdminTaxonomyPage() {
   const [mainTab, setMainTab] = useState<MainModuleTab>("JASA");
   // Sub-tab di dalam Jasa atau Produk: Kategori vs Sub Kategori
   const [subTab, setSubTab] = useState<SubModuleTab>("CATEGORY");
+  // Filter Status untuk Kategori & Sub Kategori Jasa & Barang
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
 
   const [searchQuery, setSearchQuery] = useState("");
   const [brandSearchQuery, setBrandSearchQuery] = useState("");
@@ -197,9 +200,44 @@ export default function AdminTaxonomyPage() {
     nextStatus: "ACTIVE" | "INACTIVE";
   } | null>(null);
 
-  // Hard Delete Modals
+  // Hard Delete Form States
   const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<ApiCategoryNode | null>(null);
+  const [deleteCategoryReason, setDeleteCategoryReason] = useState("");
+  const [deleteCategoryConfirmName, setDeleteCategoryConfirmName] = useState("");
+  const [deleteCategoryError, setDeleteCategoryError] = useState<string | null>(null);
+
   const [deleteSubcategoryTarget, setDeleteSubcategoryTarget] = useState<ApiSubcategoryNode | null>(null);
+  const [deleteSubcategoryReason, setDeleteSubcategoryReason] = useState("");
+  const [deleteSubcategoryConfirmName, setDeleteSubcategoryConfirmName] = useState("");
+  const [deleteSubcategoryError, setDeleteSubcategoryError] = useState<string | null>(null);
+
+  const openDeleteCategory = (cat: ApiCategoryNode) => {
+    setDeleteCategoryTarget(cat);
+    setDeleteCategoryReason("");
+    setDeleteCategoryConfirmName("");
+    setDeleteCategoryError(null);
+  };
+
+  const closeDeleteCategory = () => {
+    setDeleteCategoryTarget(null);
+    setDeleteCategoryReason("");
+    setDeleteCategoryConfirmName("");
+    setDeleteCategoryError(null);
+  };
+
+  const openDeleteSubcategory = (sub: ApiSubcategoryNode) => {
+    setDeleteSubcategoryTarget(sub);
+    setDeleteSubcategoryReason("");
+    setDeleteSubcategoryConfirmName("");
+    setDeleteSubcategoryError(null);
+  };
+
+  const closeDeleteSubcategory = () => {
+    setDeleteSubcategoryTarget(null);
+    setDeleteSubcategoryReason("");
+    setDeleteSubcategoryConfirmName("");
+    setDeleteSubcategoryError(null);
+  };
 
   // Request Review Modal
   const [selectedReq, setSelectedReq] = useState<ApiCategorySuggestion | null>(null);
@@ -238,8 +276,8 @@ export default function AdminTaxonomyPage() {
       setIsLoading(true);
       const [mastersRes, catsRes, subsRes, reqsRes, auditRes, brandsRes] = await Promise.allSettled([
         taxonomyApi.getMasters(),
-        taxonomyApi.getCategories({ limit: 100 }),
-        taxonomyApi.getSubcategories({ limit: 100 }),
+        taxonomyApi.getCategories({ limit: 100, include_inactive: true }),
+        taxonomyApi.getSubcategories({ limit: 100, include_inactive: true }),
         taxonomyApi.getRequests(),
         taxonomyApi.getAuditLogs({ limit: 50 }),
         taxonomyApi.getBrands(),
@@ -275,6 +313,20 @@ export default function AdminTaxonomyPage() {
       setIsLoading(false);
     }
   }, []);
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleManualRefresh = async () => {
+    try {
+      setIsRefreshing(true);
+      await loadData();
+      showToast("Data taksonomi berhasil diperbarui.");
+    } catch (err: any) {
+      showError(err?.message || "Gagal memperbarui data taksonomi.");
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -320,21 +372,64 @@ export default function AdminTaxonomyPage() {
     }
   }, [jasaCategories, produkCategories, newJasaSubCatId, newProdukSubCatId]);
 
-  // Filtered List berdasarkan search query
+  // Status statistics for JASA & PRODUK
+  const taxonomyStats = useMemo(() => {
+    const jCatsTotal = jasaCategories.length;
+    const jCatsActive = jasaCategories.filter((c) => c.status === "ACTIVE").length;
+    const jCatsInactive = jasaCategories.filter((c) => c.status !== "ACTIVE").length;
+
+    const jSubsTotal = jasaSubcategories.length;
+    const jSubsActive = jasaSubcategories.filter((s) => s.status === "ACTIVE").length;
+    const jSubsInactive = jasaSubcategories.filter((s) => s.status !== "ACTIVE").length;
+
+    const pCatsTotal = produkCategories.length;
+    const pCatsActive = produkCategories.filter((c) => c.status === "ACTIVE").length;
+    const pCatsInactive = produkCategories.filter((c) => c.status !== "ACTIVE").length;
+
+    const pSubsTotal = produkSubcategories.length;
+    const pSubsActive = produkSubcategories.filter((s) => s.status === "ACTIVE").length;
+    const pSubsInactive = produkSubcategories.filter((s) => s.status !== "ACTIVE").length;
+
+    return {
+      jasa: {
+        category: { total: jCatsTotal, active: jCatsActive, inactive: jCatsInactive },
+        subcategory: { total: jSubsTotal, active: jSubsActive, inactive: jSubsInactive },
+        totalInactive: jCatsInactive + jSubsInactive,
+      },
+      produk: {
+        category: { total: pCatsTotal, active: pCatsActive, inactive: pCatsInactive },
+        subcategory: { total: pSubsTotal, active: pSubsActive, inactive: pSubsInactive },
+        totalInactive: pCatsInactive + pSubsInactive,
+      },
+    };
+  }, [jasaCategories, jasaSubcategories, produkCategories, produkSubcategories]);
+
+  const currentTabCounts = useMemo(() => {
+    const branch = mainTab === "JASA" ? taxonomyStats.jasa : taxonomyStats.produk;
+    return subTab === "CATEGORY" ? branch.category : branch.subcategory;
+  }, [mainTab, subTab, taxonomyStats]);
+
+  // Filtered List berdasarkan search query & statusFilter
   const displayedCategories = useMemo(() => {
     const list = mainTab === "JASA" ? jasaCategories : produkCategories;
     return list.filter((c) => {
+      if (statusFilter === "ACTIVE" && c.status !== "ACTIVE") return false;
+      if (statusFilter === "INACTIVE" && c.status === "ACTIVE") return false;
+
       return (
         !searchQuery ||
         c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         c.code.toLowerCase().includes(searchQuery.toLowerCase())
       );
     });
-  }, [mainTab, jasaCategories, produkCategories, searchQuery]);
+  }, [mainTab, jasaCategories, produkCategories, searchQuery, statusFilter]);
 
   const displayedSubcategories = useMemo(() => {
     const list = mainTab === "JASA" ? jasaSubcategories : produkSubcategories;
     return list.filter((s) => {
+      if (statusFilter === "ACTIVE" && s.status !== "ACTIVE") return false;
+      if (statusFilter === "INACTIVE" && s.status === "ACTIVE") return false;
+
       return (
         !searchQuery ||
         s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -342,7 +437,7 @@ export default function AdminTaxonomyPage() {
         (s.category_name || "").toLowerCase().includes(searchQuery.toLowerCase())
       );
     });
-  }, [mainTab, jasaSubcategories, produkSubcategories, searchQuery]);
+  }, [mainTab, jasaSubcategories, produkSubcategories, searchQuery, statusFilter]);
 
   // Pengelompokan Sub Kategori per Kategori Induk (UI Hierarkis User-Friendly)
   const groupedSubcategories = useMemo(() => {
@@ -356,7 +451,11 @@ export default function AdminTaxonomyPage() {
     parentCats.forEach((cat) => {
       const matchingSubs = displayedSubcategories.filter((s) => s.category_id === cat.id);
       
-      if (searchQuery.trim()) {
+      if (statusFilter === "INACTIVE") {
+        if (matchingSubs.length > 0 || cat.status !== "ACTIVE") {
+          groups.push({ category: cat, subcategories: matchingSubs });
+        }
+      } else if (searchQuery.trim()) {
         const catMatches =
           cat.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           cat.code.toLowerCase().includes(searchQuery.toLowerCase());
@@ -392,7 +491,7 @@ export default function AdminTaxonomyPage() {
     }
 
     return groups;
-  }, [mainTab, jasaCategories, produkCategories, displayedSubcategories, searchQuery]);
+  }, [mainTab, jasaCategories, produkCategories, displayedSubcategories, searchQuery, statusFilter]);
 
   // Request status counts
   const pendingRequestsCount = useMemo(
@@ -643,33 +742,75 @@ export default function AdminTaxonomyPage() {
     }
   };
 
-  const handleDeleteCategory = async () => {
+  const handleDeleteCategory = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!deleteCategoryTarget) return;
+
+    if (!deleteCategoryReason.trim()) {
+      setDeleteCategoryError("Alasan penghapusan permanen wajib diisi.");
+      return;
+    }
+    if (deleteCategoryReason.trim().length < 5) {
+      setDeleteCategoryError("Alasan penghapusan minimal 5 karakter.");
+      return;
+    }
+    if (deleteCategoryConfirmName.trim().toLowerCase() !== deleteCategoryTarget.name.trim().toLowerCase()) {
+      setDeleteCategoryError(`Ketik ulang nama kategori "${deleteCategoryTarget.name}" dengan benar untuk konfirmasi.`);
+      return;
+    }
 
     try {
       setIsSubmitting(true);
-      await taxonomyApi.deleteCategory(deleteCategoryTarget.id, deleteCategoryTarget.lock_version);
+      setDeleteCategoryError(null);
+      await taxonomyApi.deleteCategory(
+        deleteCategoryTarget.id,
+        deleteCategoryTarget.lock_version,
+        deleteCategoryReason.trim()
+      );
       showToast(`Kategori "${deleteCategoryTarget.name}" berhasil dihapus.`);
-      setDeleteCategoryTarget(null);
+      closeDeleteCategory();
       loadData();
     } catch (err: any) {
-      showError(err.message || "Gagal menghapus kategori. Pastikan tidak ada subkategori atau pesanan terkait.");
+      const msg = err.message || "Gagal menghapus kategori. Pastikan tidak ada subkategori atau pesanan terkait.";
+      setDeleteCategoryError(msg);
+      showError(msg);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDeleteSubcategory = async () => {
+  const handleDeleteSubcategory = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!deleteSubcategoryTarget) return;
+
+    if (!deleteSubcategoryReason.trim()) {
+      setDeleteSubcategoryError("Alasan penghapusan permanen wajib diisi.");
+      return;
+    }
+    if (deleteSubcategoryReason.trim().length < 5) {
+      setDeleteSubcategoryError("Alasan penghapusan minimal 5 karakter.");
+      return;
+    }
+    if (deleteSubcategoryConfirmName.trim().toLowerCase() !== deleteSubcategoryTarget.name.trim().toLowerCase()) {
+      setDeleteSubcategoryError(`Ketik ulang nama subkategori "${deleteSubcategoryTarget.name}" dengan benar untuk konfirmasi.`);
+      return;
+    }
 
     try {
       setIsSubmitting(true);
-      await taxonomyApi.deleteSubcategory(deleteSubcategoryTarget.id, deleteSubcategoryTarget.lock_version);
+      setDeleteSubcategoryError(null);
+      await taxonomyApi.deleteSubcategory(
+        deleteSubcategoryTarget.id,
+        deleteSubcategoryTarget.lock_version,
+        deleteSubcategoryReason.trim()
+      );
       showToast(`Subkategori "${deleteSubcategoryTarget.name}" berhasil dihapus.`);
-      setDeleteSubcategoryTarget(null);
+      closeDeleteSubcategory();
       loadData();
     } catch (err: any) {
-      showError(err.message || "Gagal menghapus subkategori. Pastikan tidak ada penawaran katalog terkait.");
+      const msg = err.message || "Gagal menghapus subkategori. Pastikan tidak ada penawaran katalog terkait.";
+      setDeleteSubcategoryError(msg);
+      showError(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -878,6 +1019,21 @@ export default function AdminTaxonomyPage() {
           { label: "Operations", href: "/admin/dashboard" },
           { label: "Kategori dan Sub Kategori", href: "/admin/taxonomy" },
         ]}
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleManualRefresh}
+            disabled={isLoading || isRefreshing}
+            className="flex items-center gap-2 border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-2xs font-bold cursor-pointer"
+          >
+            <ArrowsClockwise
+              size={16}
+              className={`${isRefreshing || isLoading ? "animate-spin text-[#0F4C81]" : "text-slate-600"}`}
+            />
+            <span>{isRefreshing || isLoading ? "Memperbarui..." : "Perbarui Data"}</span>
+          </Button>
+        }
       />
 
       {/* 4 TAB UTAMA: JASA, PRODUK, PENGAJUAN, AUDIT */}
@@ -896,6 +1052,18 @@ export default function AdminTaxonomyPage() {
         >
           <Wrench size={16} weight={mainTab === "JASA" ? "fill" : "bold"} />
           <span>Layanan Jasa ({jasaCategories.length})</span>
+          {taxonomyStats.jasa.totalInactive > 0 && (
+            <span
+              className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                mainTab === "JASA"
+                  ? "bg-amber-400 text-slate-950"
+                  : "bg-amber-100 text-amber-900 border border-amber-300"
+              }`}
+              title={`${taxonomyStats.jasa.totalInactive} item jasa nonaktif`}
+            >
+              {taxonomyStats.jasa.totalInactive} nonaktif
+            </span>
+          )}
         </button>
 
         <button
@@ -912,6 +1080,18 @@ export default function AdminTaxonomyPage() {
         >
           <Package size={16} weight={mainTab === "PRODUK" ? "fill" : "bold"} />
           <span>Produk &amp; Barang ({produkCategories.length})</span>
+          {taxonomyStats.produk.totalInactive > 0 && (
+            <span
+              className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                mainTab === "PRODUK"
+                  ? "bg-amber-400 text-slate-950"
+                  : "bg-amber-100 text-amber-900 border border-amber-300"
+              }`}
+              title={`${taxonomyStats.produk.totalInactive} item barang nonaktif`}
+            >
+              {taxonomyStats.produk.totalInactive} nonaktif
+            </span>
+          )}
         </button>
 
         <button
@@ -964,34 +1144,93 @@ export default function AdminTaxonomyPage() {
       {/* ========================================================================= */}
       {(mainTab === "JASA" || mainTab === "PRODUK") && (
         <div className="space-y-4">
-          {/* Sub-Tab Selector & Tombol Tambah */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
-            {/* Sub-Tab Switcher */}
-            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
-              <button
-                type="button"
-                onClick={() => setSubTab("CATEGORY")}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
-                  subTab === "CATEGORY"
-                    ? "bg-white text-slate-900 shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Kategori {mainTab === "JASA" ? "Jasa" : "Barang"} (
-                {mainTab === "JASA" ? jasaCategories.length : produkCategories.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setSubTab("SUBCATEGORY")}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
-                  subTab === "SUBCATEGORY"
-                    ? "bg-white text-slate-900 shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Sub Kategori {mainTab === "JASA" ? "Jasa" : "Barang"} (
-                {mainTab === "JASA" ? jasaSubcategories.length : produkSubcategories.length})
-              </button>
+          {/* Sub-Tab Selector, Status Filter & Tombol Tambah */}
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
+            {/* Bagian Kiri: Sub-Tab Switcher & Status Filter Segmented Controls */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* Sub-Tab Switcher */}
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => setSubTab("CATEGORY")}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    subTab === "CATEGORY"
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Kategori {mainTab === "JASA" ? "Jasa" : "Barang"} (
+                  {mainTab === "JASA" ? jasaCategories.length : produkCategories.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSubTab("SUBCATEGORY")}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    subTab === "SUBCATEGORY"
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Sub Kategori {mainTab === "JASA" ? "Jasa" : "Barang"} (
+                  {mainTab === "JASA" ? jasaSubcategories.length : produkSubcategories.length})
+                </button>
+              </div>
+
+              {/* Status Segmented Tabs: Semua | Aktif | Nonaktif */}
+              <div className="flex items-center gap-1 bg-slate-100/90 p-1 rounded-xl border border-slate-200/60">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter("ALL")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    statusFilter === "ALL"
+                      ? "bg-white text-slate-900 shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span>Semua</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700">
+                    {currentTabCounts.total}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter("ACTIVE")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    statusFilter === "ACTIVE"
+                      ? "bg-white text-emerald-700 shadow-xs ring-1 ring-emerald-500/20"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  <span>Aktif</span>
+                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
+                    {currentTabCounts.active}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter("INACTIVE")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                    statusFilter === "INACTIVE"
+                      ? "bg-amber-500 text-slate-950 shadow-xs ring-1 ring-amber-500/30"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${statusFilter === "INACTIVE" ? "bg-slate-950" : "bg-amber-500"}`}></span>
+                  <span>Nonaktif</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                      statusFilter === "INACTIVE"
+                        ? "bg-slate-950/20 text-slate-950"
+                        : currentTabCounts.inactive > 0
+                        ? "bg-amber-200 text-amber-900 font-extrabold"
+                        : "bg-slate-200 text-slate-500"
+                    }`}
+                  >
+                    {currentTabCounts.inactive}
+                  </span>
+                </button>
+              </div>
             </div>
 
             {/* Search Input & Action Buttons */}
@@ -1006,6 +1245,20 @@ export default function AdminTaxonomyPage() {
                   className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs font-medium"
                 />
               </div>
+
+              {/* Tombol Refresh Cepat */}
+              <button
+                type="button"
+                onClick={handleManualRefresh}
+                disabled={isLoading || isRefreshing}
+                className="p-2 rounded-xl border border-slate-200 bg-white text-slate-600 hover:text-[#0F4C81] hover:bg-slate-50 transition cursor-pointer shrink-0 disabled:opacity-50"
+                title="Refresh / Perbarui Data Taksonomi"
+              >
+                <ArrowsClockwise
+                  size={16}
+                  className={isRefreshing || isLoading ? "animate-spin text-[#0F4C81]" : ""}
+                />
+              </button>
 
               {/* Tombol Tambah Kategori / Sub Kategori */}
               {mainTab === "JASA" && subTab === "CATEGORY" && (
@@ -1076,23 +1329,61 @@ export default function AdminTaxonomyPage() {
                   <tbody className="divide-y divide-slate-100 font-medium">
                     {displayedCategories.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-8 text-center text-slate-400 font-semibold">
-                          {isLoading ? "Memuat kategori..." : `Belum ada kategori ${mainTab.toLowerCase()}.`}
+                        <td colSpan={6} className="py-12 text-center text-slate-400 font-semibold space-y-2">
+                          <p>
+                            {statusFilter === "INACTIVE"
+                              ? `Tidak ada kategori ${mainTab.toLowerCase()} yang berstatus nonaktif saat ini.`
+                              : statusFilter === "ACTIVE"
+                              ? `Tidak ada kategori ${mainTab.toLowerCase()} yang aktif.`
+                              : isLoading
+                              ? "Memuat kategori..."
+                              : `Belum ada kategori ${mainTab.toLowerCase()}.`}
+                          </p>
+                          {statusFilter !== "ALL" && (
+                            <button
+                              type="button"
+                              onClick={() => setStatusFilter("ALL")}
+                              className="text-xs text-[#0F4C81] hover:underline font-bold cursor-pointer inline-block mt-1"
+                            >
+                              Tampilkan Semua Kategori
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ) : (
                       displayedCategories.map((cat) => {
                         const IconComponent = CATEGORY_ICON_MAP[cat.icon_name || ""] || Folder;
                         const childCount = subcategories.filter((s) => s.category_id === cat.id).length;
+                        const isInactive = cat.status !== "ACTIVE";
 
                         return (
-                          <tr key={cat.id} className="hover:bg-slate-50/60 transition">
+                          <tr
+                            key={cat.id}
+                            className={`transition ${
+                              isInactive
+                                ? "bg-amber-50/20 hover:bg-amber-50/40 text-slate-600"
+                                : "hover:bg-slate-50/60"
+                            }`}
+                          >
                             <td className="py-3.5 px-4">
                               <div className="flex items-center gap-2.5">
-                                <span className="p-2 rounded-xl bg-sky-50 text-[#0F4C81] border border-sky-200 shrink-0">
+                                <span className={`p-2 rounded-xl border shrink-0 ${
+                                  isInactive
+                                    ? "bg-slate-100 text-slate-500 border-slate-200"
+                                    : "bg-sky-50 text-[#0F4C81] border-sky-200"
+                                }`}>
                                   <IconComponent size={18} weight="duotone" />
                                 </span>
-                                <span className="font-bold text-slate-900 text-sm">{cat.name}</span>
+                                <div>
+                                  <span className={`font-bold text-sm ${isInactive ? "text-slate-700" : "text-slate-900"}`}>
+                                    {cat.name}
+                                  </span>
+                                  {isInactive && (
+                                    <span className="ml-2 text-[10px] text-amber-700 font-semibold">
+                                      (Disembunyikan dari publik)
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                             </td>
                             {mainTab === "JASA" && (
@@ -1110,7 +1401,7 @@ export default function AdminTaxonomyPage() {
                                 className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
                                   cat.status === "ACTIVE"
                                     ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                    : "bg-slate-100 text-slate-500 border-slate-200"
+                                    : "bg-amber-50 text-amber-800 border-amber-300 font-extrabold"
                                 }`}
                               >
                                 {cat.status === "ACTIVE" ? "Aktif" : "Nonaktif"}
@@ -1125,7 +1416,7 @@ export default function AdminTaxonomyPage() {
                                     setEditCatName(cat.name);
                                     setEditCatIcon(cat.icon_name || "Wrench");
                                   }}
-                                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 cursor-pointer"
                                   title="Edit Kategori"
                                 >
                                   <PencilSimple size={14} />
@@ -1138,23 +1429,23 @@ export default function AdminTaxonomyPage() {
                                       nextStatus: cat.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
                                     })
                                   }
-                                  className={`p-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 ${
+                                  className={`p-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
                                     cat.status === "ACTIVE"
                                       ? "border-amber-200 text-amber-700 hover:bg-amber-50"
-                                      : "border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                                      : "border-emerald-300 text-emerald-700 hover:bg-emerald-50 bg-emerald-50/40"
                                   }`}
-                                  title={cat.status === "ACTIVE" ? "Nonaktifkan" : "Aktifkan"}
+                                  title={cat.status === "ACTIVE" ? "Nonaktifkan Kategori" : "Aktifkan Kembali Kategori"}
                                 >
                                   {cat.status === "ACTIVE" ? (
                                     <ToggleRight size={16} weight="fill" />
                                   ) : (
-                                    <ToggleLeft size={16} />
+                                    <ToggleLeft size={16} className="text-emerald-600" />
                                   )}
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => setDeleteCategoryTarget(cat)}
-                                  className="p-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-800"
+                                  onClick={() => openDeleteCategory(cat)}
+                                  className="p-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-800 cursor-pointer"
                                   title="Hapus Kategori"
                                 >
                                   <Trash size={14} />
@@ -1175,35 +1466,57 @@ export default function AdminTaxonomyPage() {
           {subTab === "SUBCATEGORY" && (
             <div className="space-y-4">
               {groupedSubcategories.length === 0 ? (
-                <div className="bg-white rounded-2xl border border-slate-200/80 p-8 text-center text-slate-400 font-semibold shadow-xs">
-                  {isLoading ? "Memuat subkategori..." : `Tidak ada subkategori ${mainTab.toLowerCase()} yang ditemukan.`}
+                <div className="bg-white rounded-2xl border border-slate-200/80 p-12 text-center text-slate-400 font-semibold shadow-xs space-y-2">
+                  <p>
+                    {statusFilter === "INACTIVE"
+                      ? `Tidak ada subkategori ${mainTab.toLowerCase()} yang berstatus nonaktif saat ini.`
+                      : statusFilter === "ACTIVE"
+                      ? `Tidak ada subkategori ${mainTab.toLowerCase()} yang aktif.`
+                      : isLoading
+                      ? "Memuat subkategori..."
+                      : `Tidak ada subkategori ${mainTab.toLowerCase()} yang ditemukan.`}
+                  </p>
+                  {statusFilter !== "ALL" && (
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter("ALL")}
+                      className="text-xs text-[#0F4C81] hover:underline font-bold cursor-pointer inline-block mt-1"
+                    >
+                      Tampilkan Semua Subkategori
+                    </button>
+                  )}
                 </div>
               ) : (
                 groupedSubcategories.map(({ category: cat, subcategories: subs }) => {
                   const IconComponent = CATEGORY_ICON_MAP[cat.icon_name || ""] || Folder;
+                  const isCatInactive = cat.status !== "ACTIVE";
                   return (
                     <div
                       key={cat.id}
-                      className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden transition-all hover:border-slate-300"
+                      className={`bg-white rounded-2xl border shadow-xs overflow-hidden transition-all hover:border-slate-300 ${
+                        isCatInactive ? "border-amber-200/80 bg-amber-50/10" : "border-slate-200/80"
+                      }`}
                     >
                       {/* Header Kategori Induk */}
                       <div className="bg-slate-50/80 px-5 py-3.5 border-b border-slate-200/80 flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-3">
-                          <span className="p-2.5 rounded-xl bg-white text-[#0F4C81] border border-slate-200/90 shadow-2xs shrink-0">
+                          <span className={`p-2.5 rounded-xl border shadow-2xs shrink-0 ${
+                            isCatInactive ? "bg-slate-100 text-slate-500 border-slate-200" : "bg-white text-[#0F4C81] border-slate-200/90"
+                          }`}>
                             <IconComponent size={20} weight="duotone" />
                           </span>
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">
-                              <h3 className="font-bold text-slate-900 text-sm tracking-tight">{cat.name}</h3>
+                              <h3 className={`font-bold text-sm tracking-tight ${isCatInactive ? "text-slate-700" : "text-slate-900"}`}>{cat.name}</h3>
                               {cat.code && <span className="font-mono text-[11px] text-slate-400 font-semibold">({cat.code})</span>}
                               <span
                                 className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
                                   cat.status === "ACTIVE"
                                     ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                    : "bg-slate-100 text-slate-500 border-slate-200"
+                                    : "bg-amber-50 text-amber-800 border-amber-300 font-extrabold"
                                 }`}
                               >
-                                {cat.status === "ACTIVE" ? "Kategori Aktif" : "Nonaktif"}
+                                {cat.status === "ACTIVE" ? "Kategori Aktif" : "Kategori Nonaktif"}
                               </span>
                             </div>
                             <p className="text-[11px] text-slate-500 mt-0.5">
@@ -1227,7 +1540,7 @@ export default function AdminTaxonomyPage() {
                                 setIsAddProdukSubOpen(true);
                               }
                             }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-[#0F4C81] hover:bg-sky-50/70 hover:border-sky-300 font-bold text-xs shadow-2xs transition"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-[#0F4C81] hover:bg-sky-50/70 hover:border-sky-300 font-bold text-xs shadow-2xs transition cursor-pointer"
                           >
                             <Plus size={14} weight="bold" />
                             <span>Tambah Sub ke {cat.name}</span>
@@ -1252,72 +1565,89 @@ export default function AdminTaxonomyPage() {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 font-medium">
-                              {subs.map((sub) => (
-                                <tr key={sub.id} className="hover:bg-slate-50/60 transition">
-                                  <td className="py-3 px-5">
-                                    <div className="flex items-center gap-2.5">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0"></span>
-                                      <span className="font-bold text-slate-900 text-sm">{sub.name}</span>
-                                    </div>
-                                  </td>
-                                  <td className="py-3 px-4 font-mono text-[11px] text-slate-600">{sub.code}</td>
-                                  <td className="py-3 px-4 text-center">
-                                    <span
-                                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                                        sub.status === "ACTIVE"
-                                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                          : "bg-slate-100 text-slate-500 border-slate-200"
-                                      }`}
-                                    >
-                                      {sub.status === "ACTIVE" ? "Aktif" : "Nonaktif"}
-                                    </span>
-                                  </td>
-                                  <td className="py-3 px-5 text-right">
-                                    <div className="flex items-center justify-end gap-1.5">
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setEditingSub(sub);
-                                          setEditSubName(sub.name);
-                                        }}
-                                        className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition"
-                                        title="Edit Sub Kategori"
-                                      >
-                                        <PencilSimple size={14} />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          setStatusSubcategoryModal({
-                                            sub,
-                                            nextStatus: sub.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
-                                          })
-                                        }
-                                        className={`p-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 transition ${
+                              {subs.map((sub) => {
+                                const isSubInactive = sub.status !== "ACTIVE";
+                                return (
+                                  <tr
+                                    key={sub.id}
+                                    className={`transition ${
+                                      isSubInactive
+                                        ? "bg-amber-50/20 hover:bg-amber-50/40 text-slate-600"
+                                        : "hover:bg-slate-50/60"
+                                    }`}
+                                  >
+                                    <td className="py-3 px-5">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isSubInactive ? "bg-amber-400" : "bg-slate-300"}`}></span>
+                                        <div>
+                                          <span className={`font-bold text-sm ${isSubInactive ? "text-slate-700" : "text-slate-900"}`}>{sub.name}</span>
+                                          {isSubInactive && (
+                                            <span className="ml-2 text-[10px] text-amber-700 font-semibold">
+                                              (Disembunyikan dari publik)
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-4 font-mono text-[11px] text-slate-600">{sub.code}</td>
+                                    <td className="py-3 px-4 text-center">
+                                      <span
+                                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
                                           sub.status === "ACTIVE"
-                                            ? "border-amber-200 text-amber-700 hover:bg-amber-50"
-                                            : "border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                            : "bg-amber-50 text-amber-800 border-amber-300 font-extrabold"
                                         }`}
-                                        title={sub.status === "ACTIVE" ? "Nonaktifkan" : "Aktifkan"}
                                       >
-                                        {sub.status === "ACTIVE" ? (
-                                          <ToggleRight size={16} weight="fill" />
-                                        ) : (
-                                          <ToggleLeft size={16} />
-                                        )}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setDeleteSubcategoryTarget(sub)}
-                                        className="p-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-800 transition"
-                                        title="Hapus Sub Kategori"
-                                      >
-                                        <Trash size={14} />
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))}
+                                        {sub.status === "ACTIVE" ? "Aktif" : "Nonaktif"}
+                                      </span>
+                                    </td>
+                                    <td className="py-3 px-5 text-right">
+                                      <div className="flex items-center justify-end gap-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setEditingSub(sub);
+                                            setEditSubName(sub.name);
+                                          }}
+                                          className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition cursor-pointer"
+                                          title="Edit Sub Kategori"
+                                        >
+                                          <PencilSimple size={14} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setStatusSubcategoryModal({
+                                              sub,
+                                              nextStatus: sub.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
+                                            })
+                                          }
+                                          className={`p-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 transition cursor-pointer ${
+                                            sub.status === "ACTIVE"
+                                              ? "border-amber-200 text-amber-700 hover:bg-amber-50"
+                                              : "border-emerald-300 text-emerald-700 hover:bg-emerald-50 bg-emerald-50/40"
+                                          }`}
+                                          title={sub.status === "ACTIVE" ? "Nonaktifkan Sub Kategori" : "Aktifkan Kembali Sub Kategori"}
+                                        >
+                                          {sub.status === "ACTIVE" ? (
+                                            <ToggleRight size={16} weight="fill" />
+                                          ) : (
+                                            <ToggleLeft size={16} className="text-emerald-600" />
+                                          )}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => openDeleteSubcategory(sub)}
+                                          className="p-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-800 transition cursor-pointer"
+                                          title="Hapus Sub Kategori"
+                                        >
+                                          <Trash size={14} />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
@@ -2129,26 +2459,85 @@ export default function AdminTaxonomyPage() {
       {deleteCategoryTarget && (
         <Modal
           isOpen={!!deleteCategoryTarget}
-          onClose={() => setDeleteCategoryTarget(null)}
-          title="Konfirmasi Hapus Kategori"
+          onClose={closeDeleteCategory}
+          title="Form Konfirmasi Hapus Kategori"
+          maxWidth="lg"
         >
-          <div className="space-y-4 text-xs font-body">
-            <p className="text-slate-600">
-              Apakah Anda yakin ingin menghapus permanen kategori{" "}
-              <span className="font-bold text-slate-900">{deleteCategoryTarget.name}</span>?
-            </p>
-            <p className="text-[11px] text-rose-600 bg-rose-50 p-2.5 rounded-xl border border-rose-100">
-              Kategori hanya dapat dihapus jika belum memiliki subkategori aktif atau transaksi riwayat terkait.
-            </p>
+          <form onSubmit={handleDeleteCategory} className="space-y-4 text-xs font-body">
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl space-y-1">
+              <div className="flex items-center gap-2 text-rose-800 font-bold">
+                <Trash size={16} weight="fill" className="text-rose-600 shrink-0" />
+                <span>Tindakan Permanen (Hard Delete)</span>
+              </div>
+              <p className="text-[11px] text-rose-700 leading-relaxed">
+                Menghapus kategori <strong className="underline">{deleteCategoryTarget.name}</strong> secara permanen dari basis data sistem. Data yang dihapus tidak dapat dipulihkan kembali.
+              </p>
+              <p className="text-[10px] text-rose-600">
+                Kategori hanya dapat dihapus jika belum memiliki subkategori aktif atau transaksi/referensi riwayat terkait.
+              </p>
+            </div>
+
+            {deleteCategoryError && (
+              <div className="p-3 bg-red-50 border border-red-300 rounded-xl text-red-700 text-xs flex items-start gap-2">
+                <XCircle size={16} weight="fill" className="text-red-500 shrink-0 mt-0.5" />
+                <span>{deleteCategoryError}</span>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="block text-slate-700 font-bold">
+                Alasan Penghapusan <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                rows={3}
+                required
+                value={deleteCategoryReason}
+                onChange={(e) => {
+                  setDeleteCategoryReason(e.target.value);
+                  if (deleteCategoryError) setDeleteCategoryError(null);
+                }}
+                placeholder="Contoh: Kategori sudah tidak relevan / dialihkan ke kategori lain..."
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500/20 text-xs"
+              />
+              <p className="text-[10px] text-slate-400">
+                Wajib diisi minimal 5 karakter untuk audit log tata kelola platform.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-slate-700 font-bold">
+                Konfirmasi Pengetikan Nama Kategori <span className="text-rose-500">*</span>
+              </label>
+              <p className="text-[11px] text-slate-500">
+                Ketik <strong className="text-slate-900">{deleteCategoryTarget.name}</strong> untuk mengonfirmasi penghapusan:
+              </p>
+              <input
+                type="text"
+                required
+                value={deleteCategoryConfirmName}
+                onChange={(e) => {
+                  setDeleteCategoryConfirmName(e.target.value);
+                  if (deleteCategoryError) setDeleteCategoryError(null);
+                }}
+                placeholder={deleteCategoryTarget.name}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500/20 text-xs font-semibold"
+              />
+            </div>
+
             <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
-              <Button variant="secondary" size="sm" type="button" onClick={() => setDeleteCategoryTarget(null)}>
+              <Button variant="secondary" size="sm" type="button" onClick={closeDeleteCategory}>
                 Batal
               </Button>
-              <Button variant="danger" size="sm" onClick={handleDeleteCategory} disabled={isSubmitting}>
+              <Button
+                variant="danger"
+                size="sm"
+                type="submit"
+                disabled={isSubmitting || !deleteCategoryReason.trim() || deleteCategoryConfirmName.trim().toLowerCase() !== deleteCategoryTarget.name.trim().toLowerCase()}
+              >
                 {isSubmitting ? "Menghapus..." : "Hapus Permanen"}
               </Button>
             </div>
-          </div>
+          </form>
         </Modal>
       )}
 
@@ -2158,23 +2547,82 @@ export default function AdminTaxonomyPage() {
       {deleteSubcategoryTarget && (
         <Modal
           isOpen={!!deleteSubcategoryTarget}
-          onClose={() => setDeleteSubcategoryTarget(null)}
-          title="Konfirmasi Hapus Sub Kategori"
+          onClose={closeDeleteSubcategory}
+          title="Form Konfirmasi Hapus Sub Kategori"
+          maxWidth="lg"
         >
-          <div className="space-y-4 text-xs font-body">
-            <p className="text-slate-600">
-              Apakah Anda yakin ingin menghapus permanen subkategori{" "}
-              <span className="font-bold text-slate-900">{deleteSubcategoryTarget.name}</span>?
-            </p>
+          <form onSubmit={handleDeleteSubcategory} className="space-y-4 text-xs font-body">
+            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl space-y-1">
+              <div className="flex items-center gap-2 text-rose-800 font-bold">
+                <Trash size={16} weight="fill" className="text-rose-600 shrink-0" />
+                <span>Tindakan Permanen (Hard Delete)</span>
+              </div>
+              <p className="text-[11px] text-rose-700 leading-relaxed">
+                Menghapus subkategori <strong className="underline">{deleteSubcategoryTarget.name}</strong> secara permanen. Pastikan tidak ada penawaran katalog atau pesanan terkait.
+              </p>
+            </div>
+
+            {deleteSubcategoryError && (
+              <div className="p-3 bg-red-50 border border-red-300 rounded-xl text-red-700 text-xs flex items-start gap-2">
+                <XCircle size={16} weight="fill" className="text-red-500 shrink-0 mt-0.5" />
+                <span>{deleteSubcategoryError}</span>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="block text-slate-700 font-bold">
+                Alasan Penghapusan <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                rows={3}
+                required
+                value={deleteSubcategoryReason}
+                onChange={(e) => {
+                  setDeleteSubcategoryReason(e.target.value);
+                  if (deleteSubcategoryError) setDeleteSubcategoryError(null);
+                }}
+                placeholder="Contoh: Subkategori duplikat / dialihkan ke layanan lain..."
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500/20 text-xs"
+              />
+              <p className="text-[10px] text-slate-400">
+                Wajib diisi minimal 5 karakter untuk audit log tata kelola platform.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-slate-700 font-bold">
+                Konfirmasi Pengetikan Nama Sub Kategori <span className="text-rose-500">*</span>
+              </label>
+              <p className="text-[11px] text-slate-500">
+                Ketik <strong className="text-slate-900">{deleteSubcategoryTarget.name}</strong> untuk mengonfirmasi penghapusan:
+              </p>
+              <input
+                type="text"
+                required
+                value={deleteSubcategoryConfirmName}
+                onChange={(e) => {
+                  setDeleteSubcategoryConfirmName(e.target.value);
+                  if (deleteSubcategoryError) setDeleteSubcategoryError(null);
+                }}
+                placeholder={deleteSubcategoryTarget.name}
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-rose-500/20 text-xs font-semibold"
+              />
+            </div>
+
             <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
-              <Button variant="secondary" size="sm" type="button" onClick={() => setDeleteSubcategoryTarget(null)}>
+              <Button variant="secondary" size="sm" type="button" onClick={closeDeleteSubcategory}>
                 Batal
               </Button>
-              <Button variant="danger" size="sm" onClick={handleDeleteSubcategory} disabled={isSubmitting}>
+              <Button
+                variant="danger"
+                size="sm"
+                type="submit"
+                disabled={isSubmitting || !deleteSubcategoryReason.trim() || deleteSubcategoryConfirmName.trim().toLowerCase() !== deleteSubcategoryTarget.name.trim().toLowerCase()}
+              >
                 {isSubmitting ? "Menghapus..." : "Hapus Permanen"}
               </Button>
             </div>
-          </div>
+          </form>
         </Modal>
       )}
 

@@ -161,24 +161,42 @@ export default function ProviderTaxonomyRequestPage() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <PageHeader
-          title="Pengajuan Taksonomi Jasa Baru (Mitra Penyedia)"
-          description="Ajukan penambahan subkategori atau kategori jasa baru jika ruang lingkup keahlian mitra Anda belum terdaftar pada taksonomi aktif platform SERVIO."
-          breadcrumbs={[
-            { label: "Mitra Jasa", href: "/provider/dashboard" },
-            { label: "Katalog Layanan", href: "/provider/services" },
-            { label: "Ajukan Taksonomi", href: "/provider/taxonomy-request" },
-          ]}
-        />
-        <Link
-          href="/provider/services"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 font-bold hover:bg-slate-50 text-xs transition"
-        >
-          <ArrowLeft size={14} />
-          <span>Kembali ke Katalog</span>
-        </Link>
-      </div>
+      <PageHeader
+        title="Pengajuan Taksonomi Jasa Baru (Mitra Penyedia)"
+        description="Ajukan penambahan subkategori atau kategori jasa baru jika ruang lingkup keahlian mitra Anda belum terdaftar pada taksonomi aktif platform SERVIO."
+        breadcrumbs={[
+          { label: "Mitra Jasa", href: "/provider/dashboard" },
+          { label: "Katalog Layanan", href: "/provider/services" },
+          { label: "Ajukan Taksonomi", href: "/provider/taxonomy-request" },
+        ]}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                await loadData();
+                showToast("Data taksonomi berhasil diperbarui.");
+              }}
+              disabled={loading}
+              className="flex items-center gap-2 border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-2xs font-bold cursor-pointer"
+            >
+              <ArrowsClockwise
+                size={16}
+                className={loading ? "animate-spin text-[#0F4C81]" : "text-slate-600"}
+              />
+              <span>{loading ? "Memperbarui..." : "Perbarui Data"}</span>
+            </Button>
+            <Link
+              href="/provider/services"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 font-bold hover:bg-slate-50 text-xs transition"
+            >
+              <ArrowLeft size={14} />
+              <span>Kembali ke Katalog</span>
+            </Link>
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Form Pengajuan (Left Column) */}

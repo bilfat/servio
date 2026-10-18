@@ -1,17 +1,17 @@
 # SERVIO — PHASE 02
 # CATEGORY MANAGEMENT
-## SOURCE OF TRUTH — LOCKED SCOPE
+## SOURCE OF TRUTH — LOCKED SCOPE & RECONCILED ENHANCEMENTS
 
-**Status:** DRAFT FOR REVIEW  
-**Phase:** 02 — Category  
-**Domain:** Category Management  
-**Architecture:** Next.js → Laravel REST API → MongoDB Local
+**Status:** RECONCILED & LOCKED (Post-Implementation Enhancements)  
+**Phase:** 02 — Category Management  
+**Domain:** Category & Subcategory Taxonomy Governance & Discovery  
+**Architecture:** Next.js 16 (App Router / RoleContext) → Laravel REST API (category-service) → MySQL Localhost (`servio_category_db`)
 
 ---
 
 ## 1. TUJUAN
 
-Phase 02 hanya bertanggung jawab atas struktur kategori resmi SERVIO:
+Phase 02 bertanggung jawab atas struktur taksonomi resmi SERVIO serta penyediaan kontrak data klasifikasi untuk seluruh platform:
 
 ```text
 MASTER KATEGORI
@@ -25,24 +25,27 @@ MASTER KATEGORI
 ```
 
 Scope:
-- Master Category
-- Category
-- Subcategory
-- Hierarchy
-- Create / Edit / Activate / Deactivate
-- Role & permission
-- UI Category Management
-- Category request/suggestion
-- Validation
-- Business rules
-- Edge cases
-- Audit
+- Master Category (Root PRODUK & JASA — Immutable)
+- Category & Subcategory CRUD, Concurrency Locking (`lock_version`), dan Sanitasi
+- Hierarchy & Effective Active Status Integrity (`effective_active`)
+- Status Lifecycle: ACTIVE, INACTIVE (Preserved), dan Guarded Hard Delete
+- Segmented Status Filter (Semua, Aktif, Nonaktif) pada Admin & CEO Governance
+- Reaktivasi Instan item nonaktif via Toggle Switch
+- Form Validasi Guarded Hard Delete (Reason min. 5 karakter & konfirmasi ketik nama)
+- In-App Asynchronous Data Refresh (tanpa reload browser)
+- Category Request/Suggestion Lifecycle (Mitra Provider, Merchant, Supplier)
+- Integrasi Filter Penemuan Publik (Public Discovery Filter) untuk Tamu (Guest) & Pelanggan (Customer):
+  - Multi-select Kategori & Subkategori
+  - Filter Independen Berdasarkan Merek / Brand (Cross-Category)
+  - Sinkronisasi URL Query String
+- Role & Permission Enforcement (Admin, CEO, Provider, Merchant, Supplier, Customer, Guest)
+- Audit Logging & Outbox Event Emission
 
 ---
 
 ## 2. BOUNDARY WAJIB
 
-Phase 02 **TIDAK** membahas atau memiliki:
+Phase 02 **TIDAK** membahas atau memiliki kepemilikan langsung atas entitas transaksional:
 
 - Product Catalog
 - Merchant Product
@@ -151,15 +154,16 @@ Role lain hanya membaca, memilih, atau mengirim suggestion sesuai kewenangannya.
 
 | Role | Akses | Tanggung Jawab |
 |---|---|---|
-| ADMIN_OPERATIONS | Full operational | CRUD Category/Subcategory, status, hierarchy, review request |
-| CEO_PRODUCT_OWNER | Oversight | Melihat dan mengawasi struktur |
-| MERCHANT | Read/Select + Suggestion | Melihat kategori dan memberi suggestion |
-| SERVICE_PROVIDER | Read/Select + Suggestion | Melihat JASA dan memberi suggestion |
-| SUPPLIER | Read/Select + Suggestion | Melihat PRODUK dan memberi suggestion |
-| CUSTOMER | Read/Filter/Discover | Melihat kategori aktif |
-| WORKER_TECHNICIAN | Read-only | Membaca bila dibutuhkan |
-| CUSTOMER_SUPPORT | Read-only | Membaca untuk kebutuhan support |
-| FINANCE_PAYMENT_OPS | Read-only | Membaca bila dibutuhkan |
+| ADMIN_OPERATIONS | Full operational | CRUD Category/Subcategory, status toggle (Active/Inactive), tab filter status (Semua/Aktif/Nonaktif), guarded hard delete form, review suggestion, in-app data refresh |
+| CEO_PRODUCT_OWNER | Oversight & Governance | Melihat dan mengawasi struktur (aktif & nonaktif via tab status), monitoring metrik utilisasi taksonomi, audit review, in-app data refresh (tanpa CRUD operasional) |
+| MERCHANT | Read/Select + Suggestion | Melihat kategori PRODUK/JASA aktif, memilih kategori penawaran, mengajukan usulan taksonomi PRODUK |
+| SERVICE_PROVIDER | Read/Select + Suggestion | Melihat kategori JASA aktif, memilih subkategori keahlian, mengajukan usulan taksonomi JASA (`/provider/taxonomy-request`) |
+| SUPPLIER | Read/Select + Suggestion | Melihat kategori PRODUK aktif, memilih kategori supply, mengajukan usulan taksonomi PRODUK |
+| CUSTOMER | Read / Multi-Filter / Discovery | Mengakses katalog publik (`/products`, `/services`), multi-select kategori & subkategori aktif, filter independen berdasarkan merek (brand), sinkronisasi URL |
+| GUEST (Tamu Publik) | Read / Multi-Filter / Discovery | Eksplorasi katalog publik tanpa login, multi-select filter kategori, subkategori, dan merek aktif; proteksi ketat isolasi node nonaktif |
+| WORKER_TECHNICIAN | Read-only | Membaca referensi taksonomi keahlian bila dibutuhkan |
+| CUSTOMER_SUPPORT | Read-only | Membaca taksonomi untuk penanganan tiket dan verifikasi layanan |
+| FINANCE_PAYMENT_OPS | Read-only | Membaca referensi pengelompokan komisi/pembayaran bila dibutuhkan |
 
 Role dan permission tetap berasal dari Phase 01 Identity & Access.
 
@@ -170,66 +174,76 @@ Role dan permission tetap berasal dari Phase 01 Identity & Access.
 ## ADMIN_OPERATIONS
 
 Boleh:
-- View tree
-- Create Category
-- Create Subcategory
-- Edit
-- Activate
-- Deactivate
-- Review suggestion
-- Membuat struktur resmi secara manual
-- Melihat audit
+- View tree & flat list taksonomi (PRODUK & JASA).
+- Filter Segmented Controls: **Semua**, **Aktif**, dan **Nonaktif** (sehingga data nonaktif tidak hilang dari pengawasan).
+- Create Category & Subcategory resmi.
+- Edit Nama dan Ikon taksonomi dengan concurrency optimistic locking (`lock_version`).
+- Toggle Status: Menonaktifkan (Deactivate) dan Mengaktifkan Kembali (Reactivate) kapan saja via toggle switch.
+- Guarded Hard Delete: Menghapus permanen dengan validasi form wajib (alasan min. 5 karakter dan pengetikan konfirmasi nama node).
+- In-App Data Refresh: Memperbarui data instan via tombol PageHeader & toolbar tanpa reload browser Chrome.
+- Review suggestion mitra: Transisi status `NEW` -> `PROCESSING` -> `APPROVED` / `REJECTED` / `FULFILLED`.
+- Membuat struktur resmi secara manual untuk pemenuhan request (`FULFILLED`).
+- Melihat audit trail lengkap aktivitas taksonomi.
 
 Tidak boleh:
-- Membuat Master Category baru melalui CRUD biasa
-- Membuat Category otomatis dari request
-- Membuat duplicate
+- Membuat Master Category baru melalui CRUD biasa.
+- Membuat Category otomatis dari request mitra.
+- Membuat duplicate kategori pada parent yang sama.
+- Melakukan bypass hard delete tanpa verifikasi dependensi referensi downstream.
 
 ## CEO_PRODUCT_OWNER
 
 Boleh:
-- View
-- Governance
-- Monitoring
-- Audit review
+- Oversight Mode: Melihat seluruh struktur taksonomi aktif maupun nonaktif melalui segmented controls.
+- Memantau Executive KPI Metrics: Total Kategori, Kategori Aktif, Total Subkategori, Subkategori Aktif, dan Tingkat Utilisasi Aktif (%).
+- Memantau antrean pengajuan usulan taksonomi mitra platform.
+- In-App Data Refresh: Memperbarui data pengawasan kapan saja tanpa reload browser.
+- Audit review tata kelola platform.
 
-Tidak menjadi operator CRUD harian.
+Tidak boleh:
+- Menjadi operator CRUD harian (tidak ada tombol Create, Edit, Toggle, atau Delete pada halaman CEO).
 
 ## MERCHANT
 
 Boleh:
-- View Category aktif
-- Select Category
-- Submit suggestion
+- View Category aktif (PRODUK dan JASA).
+- Select Category untuk katalog barang dagangan.
+- Submit suggestion usulan taksonomi cabang PRODUK.
 
-Tidak boleh CRUD.
+Tidak boleh CRUD mandiri.
 
 ## SERVICE_PROVIDER
 
 Boleh:
-- View Category JASA aktif
-- Select
-- Submit suggestion
+- View Category JASA aktif.
+- Select subkategori spesialisasi layanan.
+- Submit suggestion usulan taksonomi cabang JASA melalui portal pengajuan mandiri (`/provider/taxonomy-request`).
+- In-App Data Refresh pada form usulan mitra.
 
-Tidak boleh membuat kategori.
+Tidak boleh membuat kategori resmi langsung.
 
 ## SUPPLIER
 
 Boleh:
-- View Category PRODUK aktif
-- Select
-- Submit suggestion
+- View Category PRODUK aktif.
+- Select kategori suplai barang/material.
+- Submit suggestion usulan taksonomi cabang PRODUK.
 
-Tidak boleh membuat kategori.
+Tidak boleh membuat kategori resmi langsung.
 
-## CUSTOMER
+## CUSTOMER & GUEST (Tamu & Pelanggan Publik)
 
 Boleh:
-- View
-- Filter
-- Discovery
+- Akses halaman katalog produk & layanan publik (`/products`, `/services`).
+- **Multi-select Filter Kategori**: Memilih satu atau beberapa kategori sekaligus (OR/IN filtering) untuk membandingkan ragam opsi.
+- **Multi-select Filter Subkategori**: Memilih beberapa subkategori sekaligus di bawah kategori yang dipilih.
+- **Filter Berdasarkan Merek (Brand) Independen**: Memilih merek (misal: Daikin, Panasonic, Inaba Denko, Motul, Brembo) secara independen tanpa terkunci oleh hierarki kategori tertentu.
+- Sinkronisasi URL query parameter untuk kemudahan bookmark dan membagikan tautan pencarian.
+- Menggunakan modal pop-up filter responsif (mobile/tablet) dan sidebar filter (desktop).
 
-Tidak boleh mengubah struktur.
+Tidak boleh:
+- Mengakses atau melihat data kategori/subkategori yang berstatus `INACTIVE` (`effective_active = false`).
+- Melakukan mutasi atau mengubah struktur taksonomi platform.
 
 ## WORKER_TECHNICIAN
 
@@ -341,20 +355,24 @@ Audit Log
 
 Edit tidak boleh menghasilkan hierarchy invalid.
 
-# 11. FLOW ACTIVATE
+# 11. FLOW ACTIVATE & REAKTIVASI
 
 ```text
 ADMIN
  ↓
-Open inactive node
+Pilih Tab "Nonaktif" pada Layanan Jasa atau Produk & Barang
  ↓
-Activate
+Klik Switch Toggle (Hijau: "Aktifkan Kembali")
  ↓
-Validation
+Modal Konfirmasi Reaktivasi
  ↓
-ACTIVE
+Validasi Server: Parent Harus ACTIVE
  ↓
-Audit Log
+Update status -> ACTIVE (effective_active = true)
+ ↓
+Audit Log & Outbox Event
+ ↓
+Counter "Nonaktif" Berkurang, Item Kembali ke Tab "Aktif"
 ```
 
 # 12. FLOW DEACTIVATE
@@ -362,20 +380,52 @@ Audit Log
 ```text
 ADMIN
  ↓
-Open active node
+Pilih item pada Tab "Aktif"
  ↓
-Deactivate
+Klik Switch Toggle (Amber: "Nonaktifkan")
  ↓
-Confirmation
+Modal Konfirmasi Penonaktifan
  ↓
-Validation
+Server Validation & Concurrency Check (If-Match)
  ↓
-INACTIVE
+Update status -> INACTIVE (effective_active = false)
  ↓
-Audit Log
+Audit Log & Outbox Event
+ ↓
+Item Masuk ke Tab "Nonaktif" (Tidak Hilang dari Admin / CEO)
+Item Otomatis Hilang dari Filter Publik Guest & Customer
 ```
 
 Deactivation bukan physical deletion.
+
+# 12.1 FLOW GUARDED HARD DELETE (HAPUS PERMANEN)
+
+Sesuai DEC-05, penghapusan permanen hanya boleh dilakukan jika item belum pernah berelasi dengan katalog penawaran atau transaksi:
+
+```text
+ADMIN
+ ↓
+Klik Tombol Hapus (Tempat Sampah)
+ ↓
+Modal Form Konfirmasi Hard Delete Terbuka
+ ↓
+Admin Wajib Mengisi Form Validasi:
+ - Alasan Penghapusan (textarea, minimal 5 karakter untuk audit)
+ - Konfirmasi Pengetikan Nama Node (wajib persis sama)
+ ↓
+Submit Form
+ ↓
+Server Guard Validation:
+ 1. Cek Hierarchy: Node tidak boleh memiliki child subkategori
+ 2. Cek Referensi: Verifikasi barrier (CATEGORY_REFERENCE_FENCE_ENABLED)
+    Memastikan tidak ada product/service offering aktif atau historis
+ 3. Concurrency Lock: If-Match header wajib cocok
+ ↓
+Jika Lolos -> Physical Delete Node
+Jika Ada Referensi / Fence Blokir -> 409 Conflict / 503 Service Unavailable (Fail-Closed)
+ ↓
+Audit Log Tersimpan Permanen untuk Bukti Tata Kelola
+```
 
 ---
 
@@ -428,87 +478,124 @@ Request → Auto Create Category
 
 ---
 
-# 14. UI ADMIN
+# 14. UI ADMIN & DISCOVERY
 
-## 14.1 Category Management
-
-```text
-CATEGORY MANAGEMENT
-
-[ PRODUK ] [ JASA ]
-
-Search Category
-Filter Status
-
------------------------------------
-Category              Status
------------------------------------
-Elektronik            ACTIVE
-Otomotif              ACTIVE
-Rumah Tangga          INACTIVE
------------------------------------
-
-[ + Create Category ]
-```
-
-## 14.2 Tree View
+## 14.1 Admin Taxonomy Governance (`/admin/taxonomy`)
 
 ```text
-PRODUK
-├── Elektronik
-│   ├── Peralatan Pendingin
-│   └── Aksesoris
-└── Otomotif
-    └── Mesin
+MANAJEMEN KATEGORI DAN SUB KATEGORI              [ ↻ Perbarui Data ]
+Kelola kategori & subkategori layanan jasa serta produk & barang resmi platform.
 
-JASA
-├── Rumah Tangga
-│   ├── Kebersihan
-│   └── Perawatan AC
-└── Otomotif
-    └── Servis Kendaraan
+[ 🔧 Layanan Jasa (6) ] [ 📦 Produk & Barang (6) • 1 nonaktif ] [ ✈️ Pengajuan Mitra (2) ] [ 🏷️ Merek (8) ] [ 📋 Audit ]
+--------------------------------------------------------------------------------------------------------------------------
+[ Kategori Barang (6) | Sub Kategori Barang (12) ]  [ Semua (6) | ● Aktif (5) | ● Nonaktif (1) ]   [ 🔍 Cari nama... ] [ ↻ ] [ + Tambah ]
+
+DAFTAR KATEGORI PRODUK & BARANG:
+┌──────────────────────────────┬──────────────────┬──────────────┬──────────┬────────────────────────┐
+│ Nama Kategori                │ Kode Taksonomi   │ Sub Terdaftar│ Status   │ Aksi                   │
+├──────────────────────────────┼──────────────────┼──────────────┼──────────┼────────────────────────┤
+│ 📦 Sparepart Otomotif        │ PROD-OTO-01      │ 4 Subkategori│ Aktif    │ [✏️ Edit] [🟡 Matikan] [🗑️ Hapus] │
+│ 📦 Elektronik & Komponen     │ PROD-ELK-01      │ 6 Subkategori│ Aktif    │ [✏️ Edit] [🟡 Matikan] [🗑️ Hapus] │
+│ 📦 Material Habis Pakai      │ PROD-MAT-01      │ 2 Subkategori│ Nonaktif │ [✏️ Edit] [🟢 Aktifkan][🗑️ Hapus] │
+│    (Disembunyikan dr publik) │                  │              │ (Amber)  │                        │
+└──────────────────────────────┴──────────────────┴──────────────┴──────────┴────────────────────────┘
 ```
 
-## 14.3 Create Category
+Fitur Utama:
+1. **Segmented Controls Status**: Tombol tab *Semua*, *Aktif*, dan *Nonaktif* dengan counter badge real-time. Data yang dinonaktifkan tidak hilang dari tampilan, melainkan tersaring rapi di tab Nonaktif.
+2. **Reaktivasi Instan**: Tombol switch pada baris nonaktif berubah menjadi ikon hijau (*Aktifkan Kembali*) yang mengembalikan status ke ACTIVE hanya dengan 1 kali klik konfirmasi.
+3. **In-App Data Refresh**: Tombol *Perbarui Data* di PageHeader dan ikon ↻ di toolbar tabel memanggil API secara asynchronous dengan spinning animation dan toast pemberitahuan tanpa reload halaman Chrome.
+
+## 14.2 Guarded Hard Delete Modal Form
 
 ```text
-Master Category *
-[ PRODUK ▼ ]
-
-Category Name *
-[________________]
-
-Description
-[________________]
-
-[Cancel] [Create Category]
+┌─────────────────────────────────────────────────────────────┐
+│ Form Konfirmasi Hapus Kategori                              │
+├─────────────────────────────────────────────────────────────┤
+│ ⚠️ Tindakan Permanen (Hard Delete)                          │
+│ Menghapus permanen kategori: Material Habis Pakai           │
+│ Pastikan tidak ada child subkategori atau transaksi terkait │
+│                                                             │
+│ Alasan Penghapusan *                                        │
+│ [ Kategori dialihkan ke subkategori lain...               ] │
+│ (Wajib diisi minimal 5 karakter untuk audit governance)     │
+│                                                             │
+│ Konfirmasi Pengetikan Nama Kategori *                       │
+│ Ketik "Material Habis Pakai" untuk konfirmasi:              │
+│ [ Material Habis Pakai___________________________________ ] │
+│                                                             │
+│                                    [ Batal ] [ Hapus Permanen ] │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-## 14.4 Create Subcategory
+## 14.3 Tree View & Subkategori Berbasis Kategori Induk
 
 ```text
-Master Category
-PRODUK
+PRODUK & BARANG
+├── Sparepart Otomotif (Kategori Aktif)
+│   ├── Filter Oli Mesin (Subkategori Aktif)
+│   └── Kampas Rem (Subkategori Aktif)
+└── Material Habis Pakai (Kategori Nonaktif - Disembunyikan)
+    └── Isolasi Pipa (Subkategori Nonaktif)
 
-Category *
-[ Elektronik ▼ ]
-
-Subcategory Name *
-[________________]
-
-Description
-[________________]
-
-[Cancel] [Create Subcategory]
+LAYANAN JASA
+├── Perawatan AC & Pendingin (Kategori Aktif)
+│   ├── Cuci AC Split (Subkategori Aktif)
+│   └── Isi Freon R32/R410 (Subkategori Aktif)
+└── Otomotif & Kendaraan (Kategori Aktif)
+    └── Tune Up Mesin (Subkategori Aktif)
 ```
 
-## 14.5 Read-only UI
+## 14.4 CEO Governance UI (`/ceo/taxonomy`)
 
-Role non-admin hanya melihat tree dan status. Tidak ada tombol:
-- Create
-- Edit
-- Activate
-- Deactivate
+Prinsip DEC-13 (Oversight Mode):
+- Menampilkan Executive KPI Cards: Total Kategori, Kategori Aktif, Total Subkategori, Subkategori Aktif, Tingkat Utilisasi Aktif (%), dan Antrean Usulan Mitra.
+- Memiliki Segmented Controls Tab Status (Semua, Aktif, Nonaktif) yang sinkron dengan Admin.
+- Read-Only Enforcement: Tidak ada tombol tambah, edit, switch toggle, atau hapus permanen.
+- Dilengkapi tombol *Perbarui Data* in-app.
+
+## 14.5 Portal Usulan Kategori Mitra (`/provider/taxonomy-request`)
+
+- Form mandiri untuk Mitra Jasa mengusulkan kategori/subkategori JASA baru jika ruang lingkup keahliannya belum terdaftar resmi.
+- Disertai tabel riwayat usulan pribadi beserta status review (`NEW`, `PROCESSING`, `APPROVED`, `REJECTED`, `FULFILLED`).
+- Dilengkapi tombol *Perbarui Data* mandiri.
+
+## 14.6 UI Filter Katalog Tamu (Guest) & Pelanggan (Customer) (`/products`, `/services`)
+
+```text
+MODAL / SIDEBAR FILTER PRODUK & LAYANAN:
+
+[ Reset Filter ]                                 [ Terapkan (3) ]
+-----------------------------------------------------------------
+KATEGORI (Multi-select):
+ [✓] Elektronik & Komponen (14)
+ [✓] Sparepart Otomotif (22)
+ [ ] Bangunan & Konstruksi (8)
+
+SUB KATEGORI TERKAIT (Multi-select):
+ Di bawah Elektronik & Komponen:
+   [✓] Kapasitor AC (6)
+   [ ] Pipa Tembaga (8)
+ Di bawah Sparepart Otomotif:
+   [✓] Kampas Rem (12)
+   [ ] Filter Oli (10)
+
+FILTER BERDASARKAN MEREK (Independen - Multi-select):
+ [ Daikin ✓ ]  [ Panasonic ✓ ]  [ Inaba Denko ]  [ Motul ✓ ]  [ Brembo ]
+
+RENTANG HARGA:
+ [ Rp 10.000       ]  s/d  [ Rp 1.500.000     ]
+
+RATING ULASAN:
+ [ ★ 4.5 ke atas ]
+-----------------------------------------------------------------
+URL Parameter: /products?categories=elk,oto&subcategories=kap,kmp&brands=daikin,panasonic,motul
+```
+
+Karakteristik Filter Publik:
+1. **Multi-select Kategori & Subkategori**: Pengguna dapat mencentang lebih dari satu kategori dan beberapa subkategori sekaligus.
+2. **Filter Merek Independen**: Merek dapat dipilih bebas lintas kategori tanpa terkunci oleh hierarki kategori tertentu.
+3. **Isolasi Node Nonaktif**: Tamu dan pelanggan dijamin 100% tidak pernah melihat atau dapat memfilter node taksonomi berstatus `INACTIVE`.
 
 ---
 
@@ -646,6 +733,30 @@ PRODUK
 **BR-STATUS-005** Menonaktifkan Category tidak otomatis menghapus child.
 
 **BR-STATUS-006** Domain downstream bertanggung jawab atas perilaku entity miliknya ketika referensi Category menjadi inactive.
+
+**BR-STATUS-007** Panel Admin & CEO wajib menyediakan Segmented Controls Tab Status (`Semua`, `Aktif`, `Nonaktif`) agar data nonaktif tetap dapat dipantau dan tidak hilang dari antarmuka tata kelola platform.
+
+**BR-STATUS-008** Item nonaktif wajib dapat diaktifkan kembali (`Reactivated`) ke status `ACTIVE` oleh Admin secara langsung melalui toggle switch selama parent node-nya berstatus `ACTIVE`.
+
+**BR-STATUS-009** Form Hard Delete wajib memvalidasi input alasan penghapusan (minimal 5 karakter) dan input konfirmasi pengetikan nama node yang persis sama sebelum request penghapusan permanen dikirim ke backend.
+
+---
+
+# 20.1 BUSINESS RULES — DISCOVERY FILTER (GUEST & CUSTOMER)
+
+**BR-DISC-001** Katalog penemuan publik (`/products`, `/services`) untuk Tamu (Guest) dan Pelanggan (Customer) wajib mendukung Multi-select Kategori dan Multi-select Subkategori secara fleksibel (logika pencarian OR/IN).
+
+**BR-DISC-002** Filter Berdasarkan Merek (Brand) bersifat independen (cross-category) dan multi-select, tidak boleh terkunci atau disembunyikan oleh hierarki kategori tertentu.
+
+**BR-DISC-003** Node taksonomi berstatus `INACTIVE` dilarang keras bocor, ditampilkan, atau dapat dipilih oleh Guest maupun Customer di katalog penemuan publik (`effective_active = false`).
+
+**BR-DISC-004** Filter discovery wajib mendukung sinkronisasi URL query string (deep-linking, bookmarking, dan sharing parameter pencarian).
+
+---
+
+# 20.2 BUSINESS RULES — ASYNCHRONOUS UI REFRESH
+
+**BR-UI-001** Seluruh portal taksonomi (Admin `/admin/taxonomy`, CEO `/ceo/taxonomy`, dan Provider `/provider/taxonomy-request`) wajib menyediakan tombol Refresh Data asynchronous untuk memanggil ulang API live tanpa me-reload seluruh halaman browser.
 
 ---
 
@@ -797,6 +908,22 @@ Rename menjadi nama yang sudah ada pada parent sama → REJECT.
 ## EC-013 — Direct API abuse
 
 User tanpa permission memanggil API langsung → `403 FORBIDDEN`.
+
+## EC-014 — Deactivated Node "Hilang" dari Tampilan
+
+Kategori/subkategori yang dinonaktifkan tidak boleh menghilang dari pengawasan admin. Backend menyediakan `include_inactive=1` dan UI menyediakan Tab **Nonaktif** dengan counter badge.
+
+## EC-015 — Hard Delete Tanpa Alasan / Salah Ketik Nama
+
+Form validasi modal menolak submit jika alasan < 5 karakter atau konfirmasi nama tidak cocok persis dengan nama node target.
+
+## EC-016 — Inactive Node Bocor ke Tamu / Pelanggan Publik
+
+Tamu atau Pelanggan yang mengakses `/products` atau `/services` dilarang melihat node berstatus INACTIVE. Backend query otomatis menyaring `effective_active = true`.
+
+## EC-017 — Stale Data Akibat Concurrency
+
+Jika data taksonomi diperbarui oleh pihak lain, pengguna dapat mengklik tombol "Perbarui Data" in-app tanpa me-reload browser Chrome, dan mutasi yang bentrok dilindungi oleh `If-Match: lock_version` (409 conflict).
 
 ---
 

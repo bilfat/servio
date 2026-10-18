@@ -4877,7 +4877,14 @@ export const taxonomyApi = {
   },
 
   // C03: GET /api/v1/categories
-  async getCategories(params?: { master_code?: string; master?: string; status?: string; search?: string; limit?: number }) {
+  async getCategories(params?: {
+    master_code?: string;
+    master?: string;
+    status?: string;
+    search?: string;
+    limit?: number;
+    include_inactive?: boolean;
+  }) {
     const query = new URLSearchParams();
     const masterVal = params?.master || params?.master_code;
     if (masterVal) {
@@ -4886,6 +4893,7 @@ export const taxonomyApi = {
     }
     if (params?.status) query.set("status", params.status);
     if (params?.search) query.set("search", params.search);
+    if (params?.include_inactive) query.set("include_inactive", "1");
     const limit = params?.limit ?? 100;
     query.set("limit", String(limit));
     const qs = query.toString() ? `?${query.toString()}` : "";
@@ -4948,7 +4956,7 @@ export const taxonomyApi = {
   },
 
   // C08: DELETE /api/v1/categories/{id} (Guarded Hard Delete)
-  async deleteCategory(id: string, lockVersion?: number) {
+  async deleteCategory(id: string, lockVersion?: number, reason?: string) {
     const headers: Record<string, string> = {};
     if (lockVersion !== undefined) {
       headers["If-Match"] = String(lockVersion);
@@ -4956,7 +4964,7 @@ export const taxonomyApi = {
     return apiFetch<{ message: string; data: { category_id: string } }>(`/categories/${id}`, {
       method: "DELETE",
       headers,
-      body: JSON.stringify({ confirm: true }),
+      body: JSON.stringify({ reason: reason || "Penghapusan kategori oleh Administrator Operasional." }),
     });
   },
 
@@ -4968,6 +4976,7 @@ export const taxonomyApi = {
     status?: string;
     search?: string;
     limit?: number;
+    include_inactive?: boolean;
   }) {
     const query = new URLSearchParams();
     if (params?.category_id) query.set("category_id", params.category_id);
@@ -4978,6 +4987,7 @@ export const taxonomyApi = {
     }
     if (params?.status) query.set("status", params.status);
     if (params?.search) query.set("search", params.search);
+    if (params?.include_inactive) query.set("include_inactive", "1");
     const limit = params?.limit ?? 100;
     query.set("limit", String(limit));
     const qs = query.toString() ? `?${query.toString()}` : "";
@@ -5040,7 +5050,7 @@ export const taxonomyApi = {
   },
 
   // S06: DELETE /api/v1/subcategories/{id} (Guarded Hard Delete)
-  async deleteSubcategory(id: string, lockVersion?: number) {
+  async deleteSubcategory(id: string, lockVersion?: number, reason?: string) {
     const headers: Record<string, string> = {};
     if (lockVersion !== undefined) {
       headers["If-Match"] = String(lockVersion);
@@ -5048,7 +5058,7 @@ export const taxonomyApi = {
     return apiFetch<{ message: string; data: { subcategory_id: string } }>(`/subcategories/${id}`, {
       method: "DELETE",
       headers,
-      body: JSON.stringify({ confirm: true }),
+      body: JSON.stringify({ reason: reason || "Penghapusan subkategori oleh Administrator Operasional." }),
     });
   },
 

@@ -39,6 +39,10 @@
 | DEC-12 | `FULFILLED` hanya setelah Admin secara manual membuat/memilih node resmi dan mengaitkannya ke request | Tidak ada auto-create dari request; simpan target node referensi |
 | DEC-13 | CEO oversight/audit, Admin operator/reviewer | CEO tidak memperoleh CRUD operasional |
 | DEC-14 | Otorisasi mengikuti kontrak Identity Modul 01 yang FINAL | Integrasi role assignment, permission, membership, account state melalui internal API |
+| DEC-15 | Node INACTIVE dapat dilihat oleh Admin/CEO via parameter `include_inactive=1` dan tab segmented (Semua, Aktif, Nonaktif) | Data nonaktif tidak hilang dari interface pengawasan dan dapat diaktifkan kembali (Reactivated) via switch |
+| DEC-16 | Hard Delete wajib menyertakan alasan minimal 5 karakter dan form konfirmasi ketik nama | Body `{ reason: string }` wajib, audit log terjaga, anti salah klik |
+| DEC-17 | Penemuan publik untuk Guest & Customer mendukung Multi-Select Kategori, Subkategori, dan Filter Merek Independen | Query string fleksibel, brand cross-category tanpa terkunci hierarki, node inactive disaring ketat |
+| DEC-18 | Seluruh antarmuka taksonomi wajib menyediakan tombol Perbarui Data in-app asynchronous | Refresh data live tanpa me-reload browser Chrome |
 
 ---
 
@@ -435,23 +439,29 @@ Legenda: `PUBLIC_READ` = hanya data active, guest support `[T/ND]` mengikuti rou
 |---|---|---|---|---|---|
 | C01 | GET | `/category-masters` | PUBLIC_READ/GOV | Root 2 fixed | `200 List<Master>`; root metadata, no mutation |
 | C02 | GET | `/categories/tree` | PUBLIC_READ/GOV | `master`, `include_inactive` privileged | `200 Tree<Master,Category,Subcategory>` |
-| C03 | GET | `/categories` | PUBLIC_READ/GOV | branch/status/search/cursor/limit/sort | `200 ListPage<Category>` |
+| C03 | GET | `/categories` | PUBLIC_READ/GOV | branch/status/search/cursor/limit/sort + `include_inactive=1` (Admin/CEO) | `200 ListPage<Category>` |
 | C04 | GET | `/categories/{id}` | PUBLIC_READ/GOV | detail ID | `200 Category` / `404` |
 | C05 | POST | `/categories` | ADMIN | `master_id,name,description?` | `201 Category`, audit |
 | C06 | PATCH | `/categories/{id}` | ADMIN | `name?,description?` + `If-Match` | `200 Category` / conflict |
 | C07 | PATCH | `/categories/{id}/status` | ADMIN | `status: ACTIVE|INACTIVE`, version, reason? | `200 Category` |
-| C08 | DELETE | `/categories/{id}` | ADMIN | Hard Delete, `If-Match`, idempotency, reason | `200 DeletionReceipt` or fail-closed |
-| S01 | GET | `/subcategories` | PUBLIC_READ/GOV | `category_id`, `master`, search/status/cursor | `200 ListPage<Subcategory>` |
+| C08 | DELETE | `/categories/{id}` | ADMIN | Hard Delete guarded, `If-Match`, idempotency, `reason` (min. 5 chars) | `200 DeletionReceipt` or fail-closed |
+| S01 | GET | `/subcategories` | PUBLIC_READ/GOV | `category_id`, `master`, search/status/cursor + `include_inactive=1` (Admin/CEO) | `200 ListPage<Subcategory>` |
 | S02 | GET | `/subcategories/{id}` | PUBLIC_READ/GOV | detail | `200 Subcategory` / `404` |
 | S03 | POST | `/subcategories` | ADMIN | `category_id,name,description?` | `201 Subcategory` |
 | S04 | PATCH | `/subcategories/{id}` | ADMIN | `name?,description?` + `If-Match` | `200 Subcategory` |
 | S05 | PATCH | `/subcategories/{id}/status` | ADMIN | `status`, `If-Match`, reason? | `200 Subcategory` |
-| S06 | DELETE | `/subcategories/{id}` | ADMIN | Hard Delete guarded | `200 DeletionReceipt` or fail-closed |
+| S06 | DELETE | `/subcategories/{id}` | ADMIN | Hard Delete guarded, `If-Match`, idempotency, `reason` (min. 5 chars) | `200 DeletionReceipt` or fail-closed |
 | R01 | GET | `/category-requests` | GOV/OWN | Admin status/type/branch filters; requester self scope | `200 ListPage<Request>` |
 | R02 | GET | `/category-requests/{id}` | GOV/OWN | request detail | `200 Request` / masked `404` |
 | R03 | POST | `/category-requests` | SUG | type, branch, parent, name, reason, info | `201 Request(status=NEW)` |
 | R04 | PATCH | `/category-requests/{id}/review` | ADMIN | status transition/reason/duplicate/link, version | `200 Request` |
 | A01 | GET | `/category-audit` | GOV | action/entity/actor/date/cursor filters | `200 ListPage<AuditView>` |
+
+> **Catatan Integrasi Public Discovery (Guest & Customer):** Endpoint pembacaan katalog hilir (`/api/v1/products` dan `/api/v1/services`) mengonsumsi data taksonomi dari Category Service dengan parameter multi-select:
+> - `categories`: multi-select array / query string (contoh: `?categories=elk,oto`)
+> - `subcategories`: multi-select array / query string (contoh: `?subcategories=kap,kmp`)
+> - `brands`: multi-select array independen cross-category (contoh: `?brands=daikin,panasonic,motul`)
+> - Seluruh query publik otomatis difilter dengan kondisi `status = ACTIVE` (`effective_active = true`), sehingga node `INACTIVE` tidak pernah bocor ke publik.
 
 **19 operasi public/gateway** dengan dua resource CRUD, satu tree master, satu suggestion resource, satu audit read; tidak perlu endpoint tersendiri untuk setiap halaman/tab/role. `GET /categories?master=...` dipakai semua domain sesuai izin, tidak digandakan `/merchant/categories` atau `/provider/categories`. Hard Delete memakai `DELETE` berbeda dari deactivate sesuai DEC-05. Endpoint admin-only *tidak* mengubah root.
 
@@ -615,23 +625,29 @@ Content-Type: application/json
 
 # 05. Role-Based Access & Authorization Matrix
 
-## 5.1 Matrix seluruh 9 role (berlaku untuk Category resources)
+## 5.1 Matrix seluruh 9 role + Persona Guest (berlaku untuk Category resources)
 
 Kode `R` = melihat active eligible; `RA` = active+inactive termasuk audit; `C/E/S/D` = Category/Subcategory create/edit/status/hard delete; `Q` = submit suggestion; `V` = review suggestion; `-` = tidak ada akses. Semua hak berlaku hanya bila Identity context memenuhi readiness/status; tabel ini tidak memberi akses bypass.
 
-| Role | Cabang read | Create/Edit/Status | Hard Delete | Suggestion submit | Review suggestions | Audit |
-|---|---|---|---|---|---|---|
-| `ADMIN_OPERATIONS` | PRODUK+JASA, termasuk inactive | Ya | Ya, guarded | Tidak perlu sebagai business requester | Ya | Ya |
-| `CEO_PRODUCT_OWNER` | PRODUK+JASA, termasuk inactive | Tidak | Tidak | Tidak | Oversight read, bukan review operasional | Ya |
-| `MERCHANT` | PRODUK+JASA (active) | Tidak | Tidak | PRODUK | Tidak | Tidak |
-| `SERVICE_PROVIDER` | JASA (active) | Tidak | Tidak | JASA | Tidak | Tidak |
-| `SUPPLIER` | PRODUK (active) | Tidak | Tidak | PRODUK | Tidak | Tidak |
-| `CUSTOMER` | Active discovery | Tidak | Tidak | Tidak | Tidak | Tidak |
-| `WORKER_TECHNICIAN` | Active sesuai kebutuhan UI | Tidak | Tidak | Tidak | Tidak | Tidak |
-| `CUSTOMER_SUPPORT` | Active sesuai kebutuhan | Tidak | Tidak | Tidak | Tidak | Tidak |
-| `FINANCE_PAYMENT_OPS` | Active sesuai kebutuhan | Tidak | Tidak | Tidak | Tidak | Tidak |
+| Role / Persona | Cabang read | Create/Edit/Status | Hard Delete | Suggestion submit | Review suggestions | Audit & Oversight | Fitur Khusus UI / Discovery |
+|---|---|---|---|---|---|---|---|
+| `ADMIN_OPERATIONS` | PRODUK+JASA, termasuk inactive (`include_inactive=1`) | Ya | Ya, guarded (Modal Form alasan min 5 char + nama konfirmasi) | Tidak perlu sebagai business requester | Ya | Ya | Segmented status tabs (Semua, Aktif, Nonaktif), counter badges, reaktivasi instan via switch hijau, in-app refresh button. |
+| `CEO_PRODUCT_OWNER` | PRODUK+JASA, termasuk inactive (`include_inactive=1`) | Tidak | Tidak | Tidak | Oversight read, bukan review operasional | Ya | Read-only oversight, segmented status tabs, KPI metrics taksonomi, in-app refresh button. |
+| `MERCHANT` | PRODUK+JASA (active) | Tidak | Tidak | PRODUK | Tidak | Tidak | Pengajuan taksonomi mandiri via `/provider/taxonomy-request`, riwayat usulan, in-app refresh. |
+| `SERVICE_PROVIDER` | JASA (active) | Tidak | Tidak | JASA | Tidak | Tidak | Pengajuan taksonomi mandiri via `/provider/taxonomy-request`, riwayat usulan, in-app refresh. |
+| `SUPPLIER` | PRODUK (active) | Tidak | Tidak | PRODUK | Tidak | Tidak | Pengajuan taksonomi mandiri via `/provider/taxonomy-request`, riwayat usulan, in-app refresh. |
+| `CUSTOMER` | PRODUK & JASA (active discovery) | Tidak | Tidak | Tidak | Tidak | Tidak | Filter penemuan katalog (`/products`, `/services`): Multi-select kategori, multi-select subkategori, filter independen brand (cross-category), sync URL query string. |
+| `GUEST` *(Unauthenticated)* | PRODUK & JASA (active discovery) | Tidak | Tidak | Tidak | Tidak | Tidak | Public discovery (`/products`, `/services`): Identik dengan CUSTOMER (Multi-select kategori & subkategori, independent brand filter, node inactive 100% terisolasi/hidden). |
+| `WORKER_TECHNICIAN` | Active sesuai kebutuhan UI | Tidak | Tidak | Tidak | Tidak | Tidak | - |
+| `CUSTOMER_SUPPORT` | Active sesuai kebutuhan | Tidak | Tidak | Tidak | Tidak | Tidak | - |
+| `FINANCE_PAYMENT_OPS` | Active sesuai kebutuhan | Tidak | Tidak | Tidak | Tidak | Tidak | - |
 
-**Keputusan yang dikoreksi dari file DRAFT:** Merchant boleh **melihat** JASA (DEC-11), bukan berarti boleh menyarankan JASA. CEO **tidak** punya operational CRUD walaupun matriks global lama mencantumkan TAXONOMY `C,R,U,M` — aturan planning Modul 02 yang sudah ACC lebih spesifik dan harus diutamakan. Root tetap non-CRUD untuk semua role.
+**Keputusan yang dikoreksi dari file DRAFT & Penambahan Terkini:**
+1. Merchant boleh **melihat** JASA (DEC-11), bukan berarti boleh menyarankan JASA.
+2. CEO **tidak** punya operational CRUD walaupun matriks global lama mencantumkan TAXONOMY `C,R,U,M` — aturan planning Modul 02 yang sudah ACC lebih spesifik dan harus diutamakan.
+3. Root tetap non-CRUD untuk semua role.
+4. **CUSTOMER & GUEST** mendapatkan fasilitas Discovery Filter canggih pada katalog publik (`/products` & `/services`), mencakup multi-selection kategori & subkategori serta brand filtering independen (cross-category) tanpa terpengaruh oleh node yang berstatus `INACTIVE` (DEC-17).
+5. **ADMIN_OPERATIONS** memiliki kemampuan mengelola node nonaktif secara visual melalui Segmented Status Tabs (Semua / Aktif / Nonaktif) dengan reaktivasi instan (DEC-15), guarded hard delete dengan validasi form ketat (DEC-16), dan pembaruan data asinkron in-app tanpa reload browser (DEC-18).
 
 ## 5.2 Permission code registry & integrasi Identity
 
@@ -639,12 +655,12 @@ Code domain berikut **[T] proposed contract** untuk di-register/di-grant melalui
 
 | Permission code yang dibutuhkan | Semantik | Role eligible |
 |---|---|---|
-| `category.taxonomy.read_active` | Read tree/list/detail active sesuai cabang | Semua role yang boleh read; guest `[ND]` |
-| `category.taxonomy.read_inactive` | Read inactive nodes | Admin, CEO |
+| `category.taxonomy.read_active` | Read tree/list/detail active sesuai cabang | Semua role yang boleh read; guest unauthenticated public read |
+| `category.taxonomy.read_inactive` | Read inactive nodes (`include_inactive=1`) | Admin, CEO |
 | `category.taxonomy.create` | Create Category/Subcategory | Admin |
 | `category.taxonomy.update` | Edit name/description (bukan parent) | Admin |
-| `category.taxonomy.change_status` | Activate/deactivate | Admin |
-| `category.taxonomy.hard_delete` | Hard Delete with guards | Admin |
+| `category.taxonomy.change_status` | Activate/deactivate (termasuk reaktivasi instan via switch) | Admin |
+| `category.taxonomy.hard_delete` | Hard Delete with guards & validated form reason | Admin |
 | `category.request.submit` | Suggestion submit | Merchant/Provider/Supplier dengan branch filter |
 | `category.request.read_own` | List/detail permintaan milik sendiri | Pengaju terotorisasi |
 | `category.request.review` | Review/status/manual fulfillment | Admin |
@@ -960,28 +976,27 @@ Planning Modul 02 menampilkan **UI konseptual**, bukan source code Next.js yang 
 
 Klasifikasi: `SUPPORTED` = ada ownership/kontrak Modul 02; `PENDING_INTEGRATION` = butuh auth/UI/downstream owner lain, atau kontrak belum siap; `FUTURE_MODULE` = modul AI Recommendation terpisah; `OUT_OF_SCOPE` = benar-benar di luar scope 11 modul/decisions; jangan hapus UI hanya karena backend lain belum selesai.
 
-| UI lokasi/komponen berdasarkan planning | Interaksi user | API Modul 02 | Role, state, status |
+| UI lokasi/komponen berdasarkan implementasi aktual | Interaksi user | API Modul 02 | Role, state, status |
 |---|---|---|---|
-| Admin Category Management (route perlu cek) | Tab PRODUK/JASA, tree expand | C01, C02 | Admin; active+inactive, loading/empty/error; `SUPPORTED` |
-| Admin table | Search, status filter, pagination | C03, S01 | Admin, full status; cursor; `SUPPORTED` |
-| Admin create Category dialog | Branch, name, description; Create/Cancel | C01 + C05 | Admin, `201`, `409`, `422`; `SUPPORTED` |
-| Admin create Subcategory dialog | Select ACTIVE parent; name/desc | C03/S01 + S03 | Admin, parent inactive blocked; `SUPPORTED` |
-| Admin edit dialog | Rename/description Save/Cancel | C04/C06 or S02/S04 | Admin, version-aware 409 reload; `SUPPORTED` |
-| Admin active toggle/confirm modal | Activate/deactivate | C07/S05 | Admin, show child `effective_active`; `SUPPORTED` |
-| Admin guarded delete modal | Hard Delete + precondition reason | C08/S06 | Admin only, 409/503 explain dependencies; `SUPPORTED` contract, **runtime `PENDING_INTEGRATION`** until verification barrier |
-| Admin suggestions inbox (may need UI build/mapping) | Status/type/branch filter; open details | R01/R02 | Admin `SUPPORTED`; route pending verification |
-| Admin suggestion detail/review modal | PROCESSING, REJECTED reason, FULFILLED link | R04 + C03/S01 selection | Admin, no auto-create; `SUPPORTED`; exact component pending |
-| Merchant category selection | Active PRODUK/JASA tree | C02/C03/S01 | Merchant read both; `SUPPORTED` Category read; selection saved in Product/Service downstream `[P]` |
-| Merchant request suggestion | Submit **PRODUK** | R03 + R01/R02 own | Merchant active org; `SUPPORTED` |
-| Provider request suggestion | Submit **JASA** | R03 + R01/R02 own | Provider active org; `SUPPORTED` |
-| Supplier request suggestion | Submit **PRODUK** | R03 + R01/R02 own | Supplier active org; `SUPPORTED` |
-| Public/Customer `/categories` | Filter/discover active taxonomy | C01–C04 / S01–S02 | Customer/guest policy `[ND]`; `SUPPORTED` backend read, route verify |
-| Worker/Support/Finance view | Read active taxonomy as needed | C02/C03 | Read-only, no CRUD buttons; `SUPPORTED` |
-| CEO `/ceo/taxonomy` | Monitoring incl inactive, audit, request overview | C01–C04/R01/A01 | CEO oversight ONLY; `SUPPORTED` contracts, actual page pending verify |
-| Product create/edit/assign UI | Save category ID to product | Category I01, consumer owner Product 03 | `PENDING_INTEGRATION`, **bukan** Category create product endpoint |
-| Service offering create/edit UI | Save category ID to service | Category I01, consumer owner Service 04 | `PENDING_INTEGRATION` |
-| Smart recommendation category recommendations | AI generated categories | Recommendation future | `FUTURE_MODULE`; no fake API |
-| Asset taxonomy UI | Semua Asset | Tidak ada | `OUT_OF_SCOPE`; frontend removal hanya setelah audit aktual dan approval |
+| Admin Taxonomy (`/admin/taxonomy`) | Main Tab Layanan Jasa (6) vs Produk & Barang (6), Subtab Kategori vs Subkategori | C01, C02, C03, S01 (`include_inactive=1`) | Admin; active+inactive, loading/empty/error; `IMPLEMENTED & VERIFIED` |
+| Admin Status Segmented Controls | Tab filter `Semua`, `Aktif`, `Nonaktif` dengan counter badge | C03, S01 (`include_inactive=1`) | Admin; data nonaktif tersimpan rapi dan tidak hilang; `IMPLEMENTED & VERIFIED` |
+| Admin In-App Data Refresh | Tombol "Perbarui Data" di PageHeader dan ikon ↻ di toolbar | C01, C03, S01, R01, A01 | Admin; refresh asynchronous tanpa reload browser; `IMPLEMENTED & VERIFIED` |
+| Admin Create Category Dialog | Master PRODUK/JASA, nama, deskripsi; Create/Cancel | C01 + C05 | Admin, `201`, `409`, `422`; `IMPLEMENTED & VERIFIED` |
+| Admin Create Subcategory Dialog | Select ACTIVE parent; nama, deskripsi | C03/S01 + S03 | Admin, parent inactive blocked; `IMPLEMENTED & VERIFIED` |
+| Admin Edit Dialog | Rename nama dan ubah ikon; Save/Cancel | C04/C06 or S02/S04 | Admin, version-aware 409 reload (`If-Match`); `IMPLEMENTED & VERIFIED` |
+| Admin Active Toggle & Reaktivasi | Toggle Switch ACTIVE <-> INACTIVE langsung di baris tabel | C07/S05 | Admin, baris nonaktif diberi highlight amber & switch reaktivasi hijau; `IMPLEMENTED & VERIFIED` |
+| Admin Guarded Hard Delete Modal Form | Modal `<form>` wajib alasan min 5 karakter dan konfirmasi ketik nama node persis | C08/S06 (`body: { reason }`, `If-Match`) | Admin only, fence barrier check (`CATEGORY_REFERENCE_FENCE_ENABLED`); `IMPLEMENTED & VERIFIED` |
+| Admin Suggestions Inbox & Review | Status/type/branch filter, approval/rejection/fulfillment modal | R01/R02/R04 | Admin; manual official node linking; `IMPLEMENTED & VERIFIED` |
+| CEO Governance (`/ceo/taxonomy`) | Monitoring komprehensif, Segmented Tabs (Semua/Aktif/Nonaktif), KPI Cards, Audit, Refresh | C01–C04/R01/A01 (`include_inactive=1`) | CEO oversight ONLY (DEC-13); read-only, no CRUD buttons; `IMPLEMENTED & VERIFIED` |
+| Provider Usulan Jasa (`/provider/taxonomy-request`) | Form pengajuan spesialisasi JASA baru & riwayat usulan, Refresh Data button | R03 + R01/R02 own | Provider active org; `IMPLEMENTED & VERIFIED` |
+| Merchant Request Suggestion | Pengajuan usulan taksonomi cabang PRODUK | R03 + R01/R02 own | Merchant active org; `SUPPORTED` |
+| Supplier Request Suggestion | Pengajuan usulan taksonomi cabang PRODUK | R03 + R01/R02 own | Supplier active org; `SUPPORTED` |
+| Public Discovery Guest & Customer (`/products`, `/services`) | Multi-select Kategori, Multi-select Subkategori, Filter Merek Independen (cross-category), URL query sync | C01–C04 / S01–S02 (`effective_active=true`) | Guest & Customer; modal filter pop-up + sidebar; strict nonaktif isolation; `IMPLEMENTED & VERIFIED` |
+| Worker/Support/Finance View | Read active taxonomy as needed | C02/C03 | Read-only, no CRUD buttons; `SUPPORTED` |
+| Product Catalog Assignment UI | Save category & subcategory ID to product | Category I01, consumer Product 03 | `PENDING_INTEGRATION` downstream assignment |
+| Service Offering Assignment UI | Save subcategory ID to service offering | Category I01, consumer Service 04 | `PENDING_INTEGRATION` downstream assignment |
+| Smart Recommendation Category | AI generated categories | Recommendation future | `FUTURE_MODULE`; no fake API |
+| Asset Taxonomy UI | Semua Asset | Tidak ada | `OUT_OF_SCOPE` |
 
 ## 8.2 UI state behavior mandatory
 
@@ -1069,6 +1084,9 @@ Reference IDs below are from the uploaded `PHASE-02-CATEGORY - PLAN.md`. Additio
 | BR-STATUS-004 | Deactivate does not remove row | status update only | `test_deactivate_retains_record` |
 | BR-STATUS-005 | Deactivate parent does not delete children | no cascade | `test_deactivate_parent_preserves_children` |
 | BR-STATUS-006 | Downstream behavior owns references | Category only status, no product writes | `test_deactivate_does_not_call_product_mutation` |
+| BR-STATUS-007 | Segmented tab query includes inactive for Admin/CEO | Backend provides `include_inactive=1` support | `test_admin_can_query_inactive_nodes` |
+| BR-STATUS-008 | Instant reactivation retains original hierarchy & children | Single toggle activation without data re-creation | `test_reactivate_retains_children_and_parent` |
+| BR-STATUS-009 | Hard delete requires mandatory reason and confirmation name | Modal form validation with min 5 chars reason | `test_hard_delete_requires_reason_and_name_match` |
 | BR-PERM-001 | Only Admin operations CRUD | Identity+Category policies | `test_admin_only_mutations` |
 | BR-PERM-002 | CEO oversight only | deny CEO CRUD, permit audit | `test_ceo_read_not_create` |
 | BR-PERM-003 | Other roles no CRUD | policies + direct requests | `test_nonadmin_cannot_mutate` |
@@ -1082,8 +1100,13 @@ Reference IDs below are from the uploaded `PHASE-02-CATEGORY - PLAN.md`. Additio
 | BR-REQ-006 | Admin determines official structure | manual official target matching | `test_admin_selects_official_target` |
 | BR-REQ-007 | Official Category created only Admin | C05/S03 policy | `test_business_user_cannot_create_official_node` |
 | BR-REQ-008 | Request may be rejected without node | REJECTED terminal + reason | `test_reject_request_no_node_created` |
+| BR-DISC-001 | Public catalog allows multi-category selection | OR-based category filter union on product/service | `test_public_discovery_multi_category` |
+| BR-DISC-002 | Public catalog allows multi-subcategory selection | Scoped subcategory filtering matching selected categories | `test_public_discovery_multi_subcategory` |
+| BR-DISC-003 | Independent brand filter across categories | Brand selection independent of active category filter | `test_public_discovery_independent_brand_filter` |
+| BR-DISC-004 | Complete inactive node isolation for public discovery | Guest/Customer queries strictly filter `status=ACTIVE` | `test_public_discovery_excludes_inactive_nodes` |
+| BR-UI-001 | In-app asynchronous data refresh without browser reload | SWR/React Query cache invalidation triggers background fetch | `test_in_app_refresh_triggers_cache_revalidation` |
 
-## 9.3 All 13 documented Edge Cases → expected result
+## 9.3 All 17 documented Edge Cases → expected result
 
 | EC | Scenario | HTTP / system result | Test ID |
 |---|---|---|---|
@@ -1100,10 +1123,14 @@ Reference IDs below are from the uploaded `PHASE-02-CATEGORY - PLAN.md`. Additio
 | EC-011 | Rename sibling to duplicate normalized name | `409`, previous name unchanged | `ec011_rename_duplicate` |
 | EC-012 | Case/trim/space variation (`elektronik`) | `409`, one canonical sibling | `ec012_case_space` |
 | EC-013 | Direct API without permission | `403`, audited denial as applicable | `ec013_direct_api_abuse` |
+| EC-014 | Deactivated category disappears from standard views | Retained in DB, visible in tab "Nonaktif" (`include_inactive=1`) | `ec014_deactivated_node_in_inactive_tab` |
+| EC-015 | Direct reactivation via switch on inactive node | Re-evaluates parent status; if parent ACTIVE, turns ACTIVE immediately | `ec015_instant_reactivation_success` |
+| EC-016 | Hard delete modal submitted with reason < 5 chars or name mismatch | Client `<form>` blocks submit; server returns `422` if bypassed | `ec016_hard_delete_form_validation_reject` |
+| EC-017 | Guest/Customer crafts direct query param with inactive category/subcategory ID | Catalog service ignores inactive ID or returns 0 matches (no inactive leak) | `ec017_public_discovery_inactive_id_tamper` |
 
 `EC-009`: planning menyatakan duplicate request **tidak membuat duplicate Category**, bukan berarti setiap suggestion identik harus ditolak. DEC-08 memperbolehkan linkage/flagging; idempotency untuk retry persis sama mengembalikan request semula. Kebijakan auto-link terhadap suggestion baru vs admin menandai duplicate adalah `[ND]` jika detailnya tidak tersedia; jangan otomatis menolak genuine request pengguna lain tanpa keputusan.
 
-## 9.4 Additional tests binding DEC-01..DEC-14
+## 9.4 All additional tests binding DEC-01..DEC-18
 
 | Decision | Additional proof | Expected result |
 |---|---|---|
@@ -1121,6 +1148,10 @@ Reference IDs below are from the uploaded `PHASE-02-CATEGORY - PLAN.md`. Additio
 | DEC-12 | FULFILLED without official node or wrong branch/type | `422`; manual target linked if valid |
 | DEC-13 | CEO attempts C05/S03/R04/DELETE | `403`, read/audit permitted |
 | DEC-14 | Identity permission absent or introspection down | protected writes fail closed; no local role bypass |
+| DEC-15 | Admin/CEO query with `include_inactive=1` on C03/S01 | Returns active & inactive nodes; Segmented Tabs render correctly |
+| DEC-16 | Hard Delete contract with `{ reason: string (>=5) }` & name confirm | Reject short reason (`422`); Delete only when completely unreferenced |
+| DEC-17 | Customer & Guest multi-select discovery & independent brand filter | Query sync `?category=...&subcat=...&brand=...`, inactive nodes 100% hidden |
+| DEC-18 | In-app refresh button clicked on Admin/CEO/Provider UI | Triggers background data re-fetch without full Chrome browser reload |
 
 ## 9.5 Concurrency, security, resilience test matrix
 
@@ -1177,6 +1208,10 @@ Classification during audit: `PASS` (evidence-tested), `PARTIAL` (partial), `FAI
 | Admin manual fulfillment | preexisting official node ID + request FK | C05/S03 then R04 | Admin; no auto-create | BR-REQ-003/004, DEC12 |
 | Audit/governance | `category_audit_logs` | A01 | Admin/CEO | BR-PERM-002, audit tests |
 | Hard Delete | Guard+verification+node delete+audit/outbox | C08/S06 | Admin, zero active/historical refs, fail-closed | DEC05 + race/outage |
+| Segmented Inactive & Instant Reactivation | Node stored status + audit/outbox | C07/S05 (with `include_inactive=1`) | Admin (CRUD/Switch), CEO (read-only) | BR-STATUS-007..008, EC014..015, DEC15 |
+| Guarded Hard Delete Form Contract | Modal Form (reason min 5 chars + name match) | C08/S06 | Admin only | BR-STATUS-009, EC016, DEC16 |
+| Public Discovery Multi-Select & Brand Filter | Read-only active discovery | C01–C03 on `/products`, `/services` | Customer, Guest | BR-DISC-001..004, EC017, DEC17 |
+| In-App Data Refresh | Cache invalidation without browser reload | UI Client Action (↻) | Admin, CEO, Provider | BR-UI-001, DEC18 |
 | Internal reference eligibility | Category status/hierarchy/guard | I01 | SYS allowlist, master/code | DEC01/03, contract |
 | Auth/org permission | Identity service owner | Identity internal API | Canonical active role/org/permission | DEC09/14, security tests |
 
@@ -1187,14 +1222,14 @@ Classification during audit: `PASS` (evidence-tested), `PARTIAL` (partial), `FAI
 - [ ] **02 ERD:** Master → Category → Subcategory, request/review/audit/outbox, cardinality/FK internal benar, external Identity IDs scalar.
 - [ ] **03 Schema:** unique per-parent, normalized name, immutable parent, `ACTIVE/INACTIVE`, request lifecycle, version lock, audit durable.
 - [ ] **03 Migrations:** create all required tables/indices/constraints; seeder exactly root PRODUK/JASA; MySQL tests passed.
-- [ ] **04 API:** all 19 public operations plus internal contracts; JSON envelopes and error code stable; pagination/filter/sort safe.
-- [ ] **05 RBAC:** Nine roles reflected, Merchant read JASA but cannot suggest JASA, CEO oversight-only, non-admin CRUD denied.
+- [ ] **04 API:** all 19 public operations plus internal contracts; JSON envelopes and error code stable; pagination/filter/sort safe; support `include_inactive=1` on admin/CEO endpoints.
+- [ ] **05 RBAC:** Nine roles reflected plus Guest persona, Merchant read JASA but cannot suggest JASA, CEO oversight-only, non-admin CRUD denied, Guest/Customer public multi-select discovery.
 - [ ] **05 Identity:** Auth uses FINAL Sanctum/session and machine auth, no insecure fallback, permissions registered via approved process.
 - [ ] **06 Integration internal:** create/edit/status, suggestion review, manual fulfilled node, audit/outbox in transaction.
 - [ ] **07 Interservice:** Identity evaluate and org status contract tested; downstream category reference contracts labeled provisional until built.
-- [ ] **07 Hard Delete:** guarantee reference check and write fence; unavailable = fail closed, not simulated success; root/children/history protected.
-- [ ] **08 Frontend mapping:** Next.js routes audited; supported/pending/out-of-scope correctly tagged; no dummy success/data.
-- [ ] **09 Edge tests:** 34 BR + 13 EC + 14 DEC mappings, concurrency/security/contract/e2e tested with evidence.
+- [ ] **07 Hard Delete:** guarantee reference check and write fence; mandatory `{ reason: string (>=5) }` and strict name confirmation; unavailable = fail closed, not simulated success; root/children/history protected.
+- [ ] **08 Frontend mapping:** Next.js routes audited (`/admin/taxonomy`, `/ceo/taxonomy`, `/provider/taxonomy-request`, `/products`, `/services`); segmented tabs (Semua/Aktif/Nonaktif), guarded delete modal, and in-app refresh button implemented.
+- [ ] **09 Edge tests:** 42 BR + 17 EC + 18 DEC mappings, public discovery filters, inactive isolation, concurrency/security/contract/e2e tested with evidence.
 - [ ] **10 Final review:** API/schema/policies/events/UI named consistently; open dependencies listed, no hidden business decision.
 
 ## 10.3 AI Coding Agent — ordered implementation handoff
