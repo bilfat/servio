@@ -15,6 +15,7 @@ class Organization extends Model
         'id',
         'type',
         'status',
+        'operational_status',
         'approved_application_id',
         'activated_at',
         'deactivated_at',

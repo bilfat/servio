@@ -29,10 +29,9 @@ function RegistrationStatusContent() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Replacement modal / upload state
-  const [replacementDocType, setReplacementDocType] = useState<string | null>(null);
-  const [replacementFile, setReplacementFile] = useState<File | null>(null);
-  const [uploadingReplacement, setUploadingReplacement] = useState(false);
+  // Unified multi-file revision state
+  const [revisionFiles, setRevisionFiles] = useState<Record<string, File>>({});
+  const [uploadingAll, setUploadingAll] = useState(false);
   const [replacementSuccess, setReplacementSuccess] = useState(false);
 
   const fetchApplication = async (appId: string) => {
@@ -63,23 +62,64 @@ function RegistrationStatusContent() {
     fetchApplication(searchId);
   };
 
-  const handleUploadReplacement = async () => {
-    if (!application || !replacementDocType || !replacementFile) return;
+  const requestedRevisionTypes = React.useMemo(() => {
+    if (!application || application.status !== "REVISION_REQUIRED") return [];
+    const types = application.revisionDocTypes || (application as any).requiredChanges || (application as any).required_changes;
+    if (Array.isArray(types) && types.length > 0) {
+      return types;
+    }
+    return (application.documents || [])
+      .filter((d) => d.status === "REVISION_REQUIRED" || d.status === "REPLACEMENT_REQUIRED" || Boolean((d as any).is_deleted_for_revision))
+      .map((d) => d.documentType);
+  }, [application]);
 
-    setUploadingReplacement(true);
+  const handleUploadAllRevisions = async () => {
+    if (!application || requestedRevisionTypes.length === 0) return;
+
+    setUploadingAll(true);
+    setErrorMsg(null);
     try {
-      await registrationApi.uploadDocument(application.id, replacementDocType, replacementFile);
-      // Resubmit application revision (Section 08.2 B07: POST /business/applications/{id}/resubmit)
-      await registrationApi.resubmitApplication(application.id);
+      for (const docType of requestedRevisionTypes) {
+        const file = revisionFiles[docType];
+        if (file) {
+          await registrationApi.uploadDocument(application.id, docType, file);
+        }
+      }
+
+      // Resubmit application revision to transition from REVISION_REQUIRED to PENDING_REVIEW
+      const res = await registrationApi.resubmitApplication(application.id);
+      
+      const appCode = application.registrationNumber || (application as any).application_code || application.id;
+
+      // 1. Immediately update state so the UI flips to PENDING_REVIEW reactively without manual search
+      if (res?.data) {
+        setApplication({ ...res.data });
+      } else {
+        setApplication((prev) => (prev ? { ...prev, status: "PENDING_REVIEW" } : null));
+      }
+      
       setReplacementSuccess(true);
-      setReplacementDocType(null);
-      setReplacementFile(null);
-      await fetchApplication(application.id);
+      setRevisionFiles({});
+
+      // 2. Smoothly scroll up so user immediately sees the success banner & updated status
+      if (typeof window !== "undefined") {
+        window.scrollTo({ top: 120, behavior: "smooth" });
+      }
+
+      // 3. Background re-fetch to ensure fresh server documents & decisions are completely synced
+      try {
+        const fresh = await registrationApi.getApplication(appCode);
+        if (fresh?.data) {
+          setApplication({ ...fresh.data });
+        }
+      } catch (freshErr) {
+        console.warn("Background refresh detail notice:", freshErr);
+      }
     } catch (err: unknown) {
       const error = err as Error & { message?: string };
-      alert(error.message || "Gagal mengunggah dokumen pengganti.");
+      setErrorMsg(error.message || "Gagal mengunggah dokumen pengganti.");
     } finally {
-      setUploadingReplacement(false);
+      setUploadingAll(false);
     }
   };
 
@@ -119,7 +159,7 @@ function RegistrationStatusContent() {
                 Pantau Status Pendaftaran Bisnis
               </h1>
               <p className="text-xs text-neutral-slate mt-0.5">
-                Masukkan nomor pendaftaran (REG-XXXX) atau alamat email pendaftar untuk mengecek tahapan verifikasi dokumen Anda.
+                Masukkan nomor pendaftaran (APP-XXXX), nomor handphone (0858xxxx), atau alamat email pendaftar untuk mengecek tahapan verifikasi dokumen Anda.
               </p>
             </div>
           </div>
@@ -129,15 +169,15 @@ function RegistrationStatusContent() {
               type="text"
               value={searchId}
               onChange={(e) => setSearchId(e.target.value)}
-              placeholder="Contoh: REG-2026-0169 atau mitra@email.com"
+              placeholder="Contoh: APP-2026-302465, 085830208131, atau email@gmail.com"
               className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-neutral-dark focus:outline-none focus:border-primary focus:bg-white"
             />
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || !searchId.trim()}
               className="px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-semibold hover:bg-primary-hover disabled:opacity-60 transition flex items-center gap-1.5"
             >
-              {loading ? <SpinnerGap size={16} className="animate-spin" /> : <span>Cari</span>}
+              {loading ? <SpinnerGap size={16} className="animate-spin" /> : <span>Cari Status</span>}
             </button>
           </form>
         </div>
@@ -175,10 +215,10 @@ function RegistrationStatusContent() {
 
               {/* Status Badge */}
               <div>
-                {application.status === "UNDER_REVIEW" || application.status === "RESUBMITTED" || application.status === "SUBMITTED" ? (
+                {application.status === "UNDER_REVIEW" || application.status === "RESUBMITTED" || application.status === "SUBMITTED" || application.status === "PENDING_REVIEW" ? (
                   <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold">
                     <Clock size={16} weight="fill" className="text-amber-500 animate-pulse" />
-                    <span>Menunggu Review Admin</span>
+                    <span>{application.status === "PENDING_REVIEW" || application.status === "RESUBMITTED" ? "Sedang Ditinjau Kembali" : "Menunggu Review Admin"}</span>
                   </span>
                 ) : application.status === "APPROVED" ? (
                   <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold">
@@ -198,6 +238,19 @@ function RegistrationStatusContent() {
                 )}
               </div>
             </div>
+
+            {/* Revision Resubmitted Banner */}
+            {(application.status === "PENDING_REVIEW" || application.status === "RESUBMITTED") && (
+              <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-xs text-amber-900 space-y-1.5">
+                <div className="flex items-center gap-2 font-bold text-sm">
+                  <Clock size={18} className="text-amber-600 animate-pulse" weight="fill" />
+                  <span>Dokumen Pengganti Sedang Ditinjau Kembali</span>
+                </div>
+                <p className="text-neutral-slate leading-relaxed">
+                  Berkas perbaikan dokumen telah berhasil diterima dan sedang dalam antrean verifikasi ulang oleh Tim Verifikator Operasional SERVIO. Harap pantau halaman ini secara berkala.
+                </p>
+              </div>
+            )}
 
             {/* Revision Required Banner (Section 46) */}
             {application.status === "REVISION_REQUIRED" && (
@@ -234,114 +287,275 @@ function RegistrationStatusContent() {
 
             {/* Documents Checklist (Section 46) */}
             <div className="space-y-3">
-              <h3 className="text-xs font-bold text-neutral-dark uppercase tracking-wider">
-                Status Dokumen yang Dilampirkan
-              </h3>
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <h3 className="text-xs font-bold text-neutral-dark uppercase tracking-wider">
+                  Status Dokumen yang Dilampirkan
+                </h3>
+                {application.status === "REVISION_REQUIRED" && (
+                  <span className="text-[11px] font-bold text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                    {requestedRevisionTypes.length} Dokumen Memerlukan Perbaikan
+                  </span>
+                )}
+                {(application.status === "PENDING_REVIEW" || application.status === "RESUBMITTED") && (
+                  <span className="text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                    Semua Berkas Revisi Telah Dikirim
+                  </span>
+                )}
+              </div>
 
-              <div className="space-y-2">
-                {application.documents.map((doc) => (
-                  <div
-                    key={doc.id}
-                    className="p-3.5 rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs bg-slate-50/50"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-xl bg-white border border-slate-200 text-neutral-dark">
-                        <FileText size={18} weight="duotone" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-neutral-dark">{doc.documentType}</span>
-                          <span className="text-[10px] font-mono text-neutral-slate">v{doc.version}</span>
+              <div className="space-y-2.5">
+                {application.documents.map((doc) => {
+                  const typeLabels: Record<string, string> = {
+                    KTP_PIC: "Identitas Penanggung Jawab (KTP)",
+                    NPWP_BISNIS: "NPWP Badan / Usaha",
+                    NIB: "Nomor Induk Berusaha (NIB)",
+                    FOTO_TOKO: "Foto Fisik Plang & Ruko Toko",
+                    FOTO_BENGKEL: "Foto Fisik Bengkel / Workshop",
+                    AKTA_PERUSAHAAN: "Akta Pendirian PT / SK Kemenkumham",
+                  };
+                  const label = typeLabels[doc.documentType] || doc.documentType;
+                  const isThisDocForRevision = requestedRevisionTypes.includes(doc.documentType);
+
+                  return (
+                    <div
+                      key={doc.id || doc.documentType}
+                      className={`p-3.5 sm:p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs transition overflow-hidden ${
+                        isThisDocForRevision
+                          ? "bg-rose-50/40 border-rose-300"
+                          : "bg-slate-50/60 border-slate-200"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className={`p-2.5 rounded-xl border shrink-0 ${
+                          isThisDocForRevision
+                            ? "bg-rose-100 text-rose-700 border-rose-200"
+                            : "bg-white text-neutral-dark border-slate-200"
+                        }`}>
+                          <FileText size={20} weight="duotone" />
                         </div>
-                        <span className="text-[11px] text-neutral-slate truncate max-w-xs block">
-                          {doc.fileName}
-                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-neutral-dark text-xs truncate max-w-[220px] sm:max-w-[260px]">{label}</span>
+                            <span className="text-[10px] font-mono text-neutral-slate bg-white px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
+                              {doc.documentType}
+                            </span>
+                          </div>
+                          <span
+                            className={`text-[11px] mt-0.5 block truncate max-w-full ${isThisDocForRevision ? "text-rose-700 font-medium" : "text-neutral-slate"}`}
+                            title={doc.fileName || undefined}
+                          >
+                            {isThisDocForRevision
+                              ? "Berkas diminta verifikator untuk diperbaiki & diunggah ulang."
+                              : doc.fileName || "Dokumen telah diunggah dan diverifikasi sah"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+                        {isThisDocForRevision ? (
+                          <span className="text-[11px] font-bold text-rose-700 bg-rose-50 px-3 py-1 rounded-full border border-rose-200 flex items-center gap-1.5 shadow-2xs whitespace-nowrap">
+                            <WarningCircle size={14} weight="fill" className="text-rose-600 shrink-0" />
+                            <span>Perlu Revisi Dokumen</span>
+                          </span>
+                        ) : (application.status === "PENDING_REVIEW" || application.status === "RESUBMITTED") && (doc.status === "PENDING" || (application.revisionDocTypes || []).includes(doc.documentType)) ? (
+                          <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-200 flex items-center gap-1.5 whitespace-nowrap">
+                            <Clock size={14} weight="fill" className="text-amber-500 shrink-0" />
+                            <span>Revisi Terkirim (Menunggu Review)</span>
+                          </span>
+                        ) : application.status === "REVISION_REQUIRED" ? (
+                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1.5 whitespace-nowrap">
+                            <CheckCircle size={14} weight="fill" className="text-emerald-600 shrink-0" />
+                            <span>Dokumen Sah / Sesuai</span>
+                          </span>
+                        ) : doc.status === "APPROVED" ? (
+                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 flex items-center gap-1.5 whitespace-nowrap">
+                            <CheckCircle size={14} weight="fill" className="text-emerald-600 shrink-0" />
+                            <span>Disetujui</span>
+                          </span>
+                        ) : (
+                          <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-200 flex items-center gap-1.5 whitespace-nowrap">
+                            <Clock size={14} weight="fill" className="text-amber-500 shrink-0" />
+                            <span>Pending Review</span>
+                          </span>
+                        )}
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-3">
-                      {doc.status === "APPROVED" ? (
-                        <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
-                          <CheckCircle size={14} weight="fill" /> Disetujui
-                        </span>
-                      ) : doc.status === "REPLACEMENT_REQUIRED" || doc.status === "REJECTED" ? (
-                        <span className="text-[11px] font-bold text-rose-600 flex items-center gap-1">
-                          <WarningCircle size={14} weight="fill" /> Perlu Penggantian
-                        </span>
-                      ) : (
-                        <span className="text-[11px] font-semibold text-amber-600 flex items-center gap-1">
-                          <Clock size={14} weight="fill" /> Pending Review
-                        </span>
-                      )}
-
-                      {/* Upload Replacement button if revision is required */}
-                      {application.status === "REVISION_REQUIRED" && (
-                        <button
-                          type="button"
-                          onClick={() => setReplacementDocType(doc.documentType)}
-                          className="px-2.5 py-1 rounded-lg bg-primary text-white text-[11px] font-semibold hover:bg-primary-hover transition"
-                        >
-                          Upload Pengganti
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
-            {/* Modal / Panel for uploading replacement */}
-            {replacementDocType && (
-              <div className="p-5 rounded-2xl border-2 border-primary bg-sky/10 space-y-3 animate-fadeIn">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-primary">
-                    Upload Berkas Pengganti: {replacementDocType}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setReplacementDocType(null);
-                      setReplacementFile(null);
-                    }}
-                    className="text-xs font-semibold text-neutral-slate hover:text-neutral-dark"
-                  >
-                    Batal
-                  </button>
+            {/* Unified Form Unggah Berkas Pengganti (Khusus Dokumen yang Direvisi) */}
+            {application.status === "REVISION_REQUIRED" && requestedRevisionTypes.length > 0 && (
+              <div className="p-6 rounded-3xl border-2 border-amber-300 bg-amber-50/40 space-y-5 animate-fadeIn shadow-servio-xs">
+                <div className="border-b border-amber-200/80 pb-3">
+                  <div className="flex items-center gap-2">
+                    <WarningCircle size={22} className="text-amber-600" weight="fill" />
+                    <h3 className="font-bold text-sm text-neutral-dark">
+                      Form Unggah Dokumen Perbaikan ({requestedRevisionTypes.length} Dokumen Diperlukan)
+                    </h3>
+                  </div>
+                  <p className="text-xs text-neutral-slate mt-1 leading-relaxed">
+                    Hanya dokumen yang tercantum di bawah ini yang perlu dan dapat diperbaiki. Dokumen lain telah sah dan tidak dapat diubah.
+                  </p>
                 </div>
 
-                <label className="border-2 border-dashed border-primary/40 bg-white rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer text-xs">
-                  <UploadSimple size={20} className="text-primary mb-1" />
-                  <span className="font-semibold text-neutral-dark">
-                    {replacementFile ? replacementFile.name : "Pilih File Dokumen Pengganti (v Baru)"}
-                  </span>
-                  <span className="text-[11px] text-neutral-slate mt-0.5">Format PDF, JPG, PNG</span>
-                  <input
-                    type="file"
-                    onChange={(e) => {
-                      if (e.target.files?.[0]) setReplacementFile(e.target.files[0]);
-                    }}
-                    className="hidden"
-                  />
-                </label>
+                <div className="space-y-4">
+                  {requestedRevisionTypes.map((docType, idx) => {
+                    const typeLabels: Record<string, string> = {
+                      KTP_PIC: "Identitas Penanggung Jawab (KTP)",
+                      NPWP_BISNIS: "NPWP Badan / Toko / Usaha",
+                      NIB: "Nomor Induk Berusaha (NIB)",
+                      FOTO_TOKO: "Foto Fisik Plang & Ruko Toko",
+                      FOTO_BENGKEL: "Foto Fisik Bengkel / Workshop",
+                      AKTA_PERUSAHAAN: "Akta Pendirian PT / SK Kemenkumham",
+                    };
+                    const label = typeLabels[docType] || docType;
+                    const selectedFile = revisionFiles[docType];
 
-                <button
-                  type="button"
-                  disabled={!replacementFile || uploadingReplacement}
-                  onClick={handleUploadReplacement}
-                  className="w-full py-2.5 px-4 rounded-xl bg-primary text-white font-semibold text-xs shadow-servio-sm hover:bg-primary-hover disabled:opacity-60 transition flex items-center justify-center gap-2"
-                >
-                  {uploadingReplacement ? (
-                    <>
-                      <SpinnerGap size={16} className="animate-spin" />
-                      <span>Mengunggah Versi Baru...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Kirim Dokumen Pengganti (Resubmit)</span>
-                      <ArrowRight size={14} />
-                    </>
+                    return (
+                      <div
+                        key={docType}
+                        className="p-4 rounded-2xl bg-white border border-amber-200 shadow-servio-xs space-y-2.5"
+                      >
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-neutral-dark flex items-center gap-2">
+                            <span className="w-5 h-5 rounded-full bg-amber-100 text-amber-800 text-[11px] font-bold flex items-center justify-center shrink-0">
+                              {idx + 1}
+                            </span>
+                            <span>{label}</span>
+                            <span className="font-mono text-[10px] text-neutral-slate bg-slate-100 px-2 py-0.5 rounded-md font-semibold">
+                              {docType}
+                            </span>
+                          </label>
+                          {selectedFile ? (
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                              <CheckCircle size={12} weight="fill" /> Berkas Terpilih
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                              Wajib Diunggah
+                            </span>
+                          )}
+                        </div>
+
+                        <label className={`border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition text-xs ${
+                          selectedFile
+                            ? "border-emerald-400 bg-emerald-50/20"
+                            : "border-slate-300 hover:border-primary/50 bg-slate-50/50 hover:bg-slate-50"
+                        }`}>
+                          <UploadSimple size={24} className={selectedFile ? "text-emerald-600 mb-1" : "text-primary mb-1"} />
+                          <span className="font-bold text-neutral-dark">
+                            {selectedFile ? selectedFile.name : `Pilih Berkas Pengganti: ${label}`}
+                          </span>
+                          <span className="text-[11px] text-neutral-slate mt-0.5 font-mono">
+                            {selectedFile ? `${Math.round(selectedFile.size / 1024)} KB` : "Format: PDF, JPG, PNG (Maks 5MB)"}
+                          </span>
+                          <input
+                            type="file"
+                            onChange={(e) => {
+                              if (e.target.files?.[0]) {
+                                const f = e.target.files[0];
+                                setRevisionFiles(prev => ({ ...prev, [docType]: f }));
+                              }
+                            }}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Submit All Revisions button */}
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    disabled={
+                      uploadingAll ||
+                      requestedRevisionTypes.some((t) => !revisionFiles[t])
+                    }
+                    onClick={handleUploadAllRevisions}
+                    className="w-full py-3.5 px-5 rounded-2xl bg-primary text-white font-bold text-xs shadow-servio-md hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    {uploadingAll ? (
+                      <>
+                        <SpinnerGap size={18} className="animate-spin" />
+                        <span>Mengunggah Seluruh Berkas &amp; Mengajukan Ulang...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Kirim Dokumen Pengganti (Resubmit)</span>
+                        <ArrowRight size={16} weight="bold" />
+                      </>
+                    )}
+                  </button>
+                  {requestedRevisionTypes.some((t) => !revisionFiles[t]) && (
+                    <p className="text-[11px] text-center text-amber-800 mt-2 font-medium">
+                      * Harap pilih berkas untuk semua ({requestedRevisionTypes.length}) dokumen yang diminta revisi sebelum mengirim.
+                    </p>
                   )}
-                </button>
+                </div>
+              </div>
+            )}
+
+            {/* Informational Card when documents have been submitted and are under review */}
+            {(application.status === "PENDING_REVIEW" || application.status === "RESUBMITTED" || application.status === "UNDER_REVIEW") && (
+              <div className="p-6 rounded-3xl border border-amber-200 bg-amber-50/50 space-y-4 shadow-servio-xs animate-fadeIn">
+                <div className="flex items-center gap-3 border-b border-amber-200/80 pb-3">
+                  <div className="p-2.5 rounded-2xl bg-amber-100 text-amber-800 shrink-0">
+                    <Clock size={22} weight="fill" className="animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-neutral-dark">
+                      Berkas Pengganti Berhasil Terkirim — Menunggu Verifikasi Admin
+                    </h3>
+                    <p className="text-xs text-neutral-slate mt-0.5">
+                      Dokumen perbaikan Anda telah masuk ke sistem operasional SERVIO dan sedang ditinjau ulang oleh tim verifikator.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <span className="text-[11px] font-bold text-neutral-dark uppercase tracking-wider block">
+                    Dokumen Perbaikan yang Telah Masuk:
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {application.documents
+                      .filter((d) => (application.revisionDocTypes || []).includes(d.documentType) || d.status === "PENDING")
+                      .map((d) => {
+                        const typeLabels: Record<string, string> = {
+                          KTP_PIC: "Identitas Penanggung Jawab (KTP)",
+                          NPWP_BISNIS: "NPWP Badan / Usaha",
+                          NIB: "Nomor Induk Berusaha (NIB)",
+                          FOTO_TOKO: "Foto Fisik Plang & Ruko Toko",
+                          FOTO_BENGKEL: "Foto Fisik Bengkel / Workshop",
+                          AKTA_PERUSAHAAN: "Akta Pendirian PT / SK Kemenkumham",
+                        };
+                        return (
+                          <div key={d.id} className="p-3 bg-white rounded-xl border border-amber-200/80 flex items-center justify-between text-xs shadow-2xs">
+                            <div className="flex items-center gap-2.5 truncate">
+                              <CheckCircle size={18} weight="fill" className="text-emerald-600 shrink-0" />
+                              <div className="truncate">
+                                <span className="font-bold text-neutral-dark block truncate">{typeLabels[d.documentType] || d.documentType}</span>
+                                <span className="text-[10px] text-neutral-slate font-mono truncate block">{d.fileName || d.documentType}</span>
+                              </div>
+                            </div>
+                            <span className="text-[10px] font-bold text-amber-800 bg-amber-100/90 px-2.5 py-1 rounded-full shrink-0 border border-amber-200">
+                              Telah Diunggah
+                            </span>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+
+                <div className="p-3.5 rounded-2xl bg-white/90 border border-amber-200/60 text-xs text-neutral-slate flex items-start gap-2.5">
+                  <ShieldCheck size={20} className="text-primary shrink-0 mt-0.5" weight="fill" />
+                  <span className="leading-relaxed">
+                    Anda tidak perlu mengunggah ulang dokumen lagi. Verifikasi dokumen dilakukan secara bertahap dalam antrean resmi verifikator kami (1x24 jam kerja). Status akan otomatis diperbarui setelah admin selesai memeriksa.
+                  </span>
+                </div>
               </div>
             )}
 

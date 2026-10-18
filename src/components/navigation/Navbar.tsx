@@ -8,7 +8,7 @@ import { useActiveRole } from "@/context/RoleContext";
 import { useCart } from "@/features/cart/useCart";
 import { useDomainRepository } from "@/lib/repository/domainRepository";
 import { taxonomyApi } from "@/lib/servioApi";
-import { SIX_SERVICE_DOMAINS } from "@/config/navigation";
+import { CATEGORY_ICON_MAP } from "@/config/navigation";
 import { UserRole } from "@/types/auth";
 import {
   MagnifyingGlass,
@@ -28,15 +28,18 @@ import {
   Gear,
   SignOut,
   ShieldCheck,
+  Wrench,
+  CircleNotch,
 } from "@phosphor-icons/react";
 
 interface NavbarProps {
   onToggleSidebar?: () => void;
   isMobileSidebarOpen?: boolean;
   cartCount?: number;
+  hideSidebarToggle?: boolean;
 }
 
-export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount }: NavbarProps) {
+export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSidebarToggle }: NavbarProps) {
   const { activeRole: rawActiveRole, user, isPublicGuest: rawIsPublicGuest, setIsPublicGuest, logout } = useActiveRole();
   const { totalItemCount } = useCart();
   const effectiveCartCount = cartCount !== undefined ? cartCount : totalItemCount;
@@ -115,18 +118,22 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount }: Navb
     }
   };
 
+  const [liveServiceCategories, setLiveServiceCategories] = useState<any[]>([]);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(true);
+
   useEffect(() => {
     let mounted = true;
-    taxonomyApi.getCategories().then((res) => {
-      if (mounted && res && res.data) {
-        setCanonicalCategories(res.data.map((c: any) => ({
-          id: c.id || c._id,
-          name: c.name,
-          code: c.code,
-          status: c.status,
-        })));
-      }
-    }).catch(() => {});
+    taxonomyApi
+      .getCategories({ master_code: "JASA", status: "ACTIVE" })
+      .then((res) => {
+        if (mounted && res && Array.isArray(res.data) && res.data.length > 0) {
+          setLiveServiceCategories(res.data);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (mounted) setIsLoadingCategories(false);
+      });
 
     if (!isPublicGuest) {
       fetchLiveNotifications();
@@ -138,26 +145,19 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount }: Navb
   }, [isPublicGuest, user]);
 
   const activeServiceDomains = React.useMemo(() => {
-    if (canonicalCategories.length > 0) {
-      return SIX_SERVICE_DOMAINS.filter((domain) => {
-        const matched = canonicalCategories.find(
-          (c) =>
-            (c.code && c.code.toLowerCase().includes(domain.id.toLowerCase())) ||
-            c.id.toLowerCase().includes(domain.id.toLowerCase()) ||
-            c.name.toLowerCase() === domain.label.toLowerCase()
-        );
-        return matched ? matched.status === "ACTIVE" : true;
+    if (liveServiceCategories.length > 0) {
+      return liveServiceCategories.map((c) => {
+        const IconComponent = CATEGORY_ICON_MAP[c.icon_name || ""] || Wrench;
+        return {
+          id: c.id,
+          label: c.name,
+          href: `/categories/${c.id}`,
+          icon: IconComponent,
+        };
       });
     }
-    return SIX_SERVICE_DOMAINS.filter((domain) => {
-      const matched = repo.categories.find(
-        (c) =>
-          c.id.toLowerCase().includes(domain.id.toLowerCase()) ||
-          c.name.toLowerCase() === domain.label.toLowerCase()
-      );
-      return !matched || matched.status === "ACTIVE";
-    });
-  }, [canonicalCategories, repo.categories]);
+    return [];
+  }, [liveServiceCategories]);
 
   // Penentu status aktif navigasi publik
   const isHomeActive = pathname === "/";
@@ -218,7 +218,7 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount }: Navb
           {/* LEFT: Logo & Role Toggle */}
           <div className="flex items-center gap-3">
             {/* Dashboard Sidebar Toggle */}
-            {isDashboardRole && onToggleSidebar && (
+            {isDashboardRole && !hideSidebarToggle && onToggleSidebar && (
               <button
                 type="button"
                 onClick={onToggleSidebar}
@@ -236,26 +236,47 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount }: Navb
               </button>
             )}
 
-            {/* Brand Logo */}
-            <Link
-              href="/"
-              className="flex items-center gap-2.5 shrink-0 group focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-lg py-0.5 px-1"
-              title="SERVIO — Beranda"
-            >
-              <div className="relative h-9 flex items-center shrink-0">
-                <Image
-                  src="/brand/logo.png"
-                  alt="SERVIO Logo"
-                  width={48}
-                  height={36}
-                  className="h-9 w-auto object-contain shrink-0"
-                  priority
-                />
+            {/* Brand Logo: Hanya role pelanggan (Customer) & public guest yang dapat mengklik ke beranda. Role lainnya tidak terjadi apa-apa */}
+            {isCustomer || isPublicGuest ? (
+              <Link
+                href="/"
+                className="flex items-center gap-2.5 shrink-0 group focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-lg py-0.5 px-1"
+                title="SERVIO — Beranda"
+              >
+                <div className="relative h-9 flex items-center shrink-0">
+                  <Image
+                    src="/brand/logo.png"
+                    alt="SERVIO Logo"
+                    width={48}
+                    height={36}
+                    className="h-9 w-auto object-contain shrink-0"
+                    priority
+                  />
+                </div>
+                <span className="font-brand-latin text-[27px] leading-none font-bold text-slate-900 group-hover:text-primary transition-colors select-none tracking-tight pt-1">
+                  Servio
+                </span>
+              </Link>
+            ) : (
+              <div
+                className="flex items-center gap-2.5 shrink-0 select-none py-0.5 px-1 cursor-default"
+                title="SERVIO Workspace"
+              >
+                <div className="relative h-9 flex items-center shrink-0">
+                  <Image
+                    src="/brand/logo.png"
+                    alt="SERVIO Logo"
+                    width={48}
+                    height={36}
+                    className="h-9 w-auto object-contain shrink-0"
+                    priority
+                  />
+                </div>
+                <span className="font-brand-latin text-[27px] leading-none font-bold text-slate-900 select-none tracking-tight pt-1">
+                  Servio
+                </span>
               </div>
-              <span className="font-brand-latin text-[27px] leading-none font-bold text-slate-900 group-hover:text-primary transition-colors select-none tracking-tight pt-1">
-                Servio
-              </span>
-            </Link>
+            )}
 
             {/* Smart Discovery AI Chip (Customer view) */}
             {isCustomer && (
@@ -333,53 +354,66 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount }: Navb
                         </span>
                       )}
                     </div>
-                    {activeServiceDomains.map((domain) => {
-                      const Icon = domain.icon;
-                      const isActive = isServiceDomainActive(domain.href);
-                      return (
-                        <Link
-                          key={domain.id}
-                          href={domain.href}
-                          onClick={() => setActiveDropdown(null)}
-                          className={`flex items-center gap-3 p-2.5 rounded-xl transition-colors group ${
-                            isActive
-                              ? "bg-sky/70 text-primary font-bold border border-primary/20 shadow-xs"
-                              : "hover:bg-sky/40 text-neutral-dark"
-                          }`}
-                        >
-                          <div
-                            className={`p-2 rounded-lg transition-colors ${
+
+                    {isLoadingCategories ? (
+                      <div className="py-6 px-4 text-center space-y-2">
+                        <CircleNotch size={20} className="animate-spin text-primary mx-auto" />
+                        <p className="text-xs text-neutral-slate">Memuat kategori database...</p>
+                      </div>
+                    ) : activeServiceDomains.length === 0 ? (
+                      <div className="py-6 px-4 text-center space-y-1">
+                        <p className="text-xs font-bold text-neutral-dark">Belum ada kategori layanan</p>
+                        <p className="text-[11px] text-neutral-slate">Kategori jasa aktif belum tersedia di database.</p>
+                      </div>
+                    ) : (
+                      activeServiceDomains.map((domain) => {
+                        const Icon = domain.icon;
+                        const isActive = isServiceDomainActive(domain.href);
+                        return (
+                          <Link
+                            key={domain.id}
+                            href={domain.href}
+                            onClick={() => setActiveDropdown(null)}
+                            className={`flex items-center gap-3 p-2.5 rounded-xl transition-colors group ${
                               isActive
-                                ? "bg-primary text-white"
-                                : "bg-sky/60 text-primary group-hover:bg-primary group-hover:text-white"
+                                ? "bg-sky/70 text-primary font-bold border border-primary/20 shadow-xs"
+                                : "hover:bg-sky/40 text-neutral-dark"
                             }`}
                           >
-                            <Icon size={18} weight="duotone" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p
-                              className={`text-xs ${
+                            <div
+                              className={`p-2 rounded-lg transition-colors ${
                                 isActive
-                                  ? "font-bold text-primary"
-                                  : "font-semibold text-neutral-dark group-hover:text-primary"
+                                  ? "bg-primary text-white"
+                                  : "bg-sky/60 text-primary group-hover:bg-primary group-hover:text-white"
                               }`}
                             >
-                              {domain.label}
-                            </p>
-                          </div>
-                          {isActive ? (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary text-white shrink-0">
-                              Aktif
-                            </span>
-                          ) : (
-                            <ArrowRight
-                              size={14}
-                              className="text-neutral-muted group-hover:text-primary group-hover:translate-x-0.5 transition-all"
-                            />
-                          )}
-                        </Link>
-                      );
-                    })}
+                              <Icon size={18} weight="duotone" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p
+                                className={`text-xs ${
+                                  isActive
+                                    ? "font-bold text-primary"
+                                    : "font-semibold text-neutral-dark group-hover:text-primary"
+                                }`}
+                              >
+                                {domain.label}
+                              </p>
+                            </div>
+                            {isActive ? (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary text-white shrink-0">
+                                Aktif
+                              </span>
+                            ) : (
+                              <ArrowRight
+                                size={14}
+                                className="text-neutral-muted group-hover:text-primary group-hover:translate-x-0.5 transition-all"
+                              />
+                            )}
+                          </Link>
+                        );
+                      })
+                    )}
                   </div>
                 )}
               </div>
@@ -878,10 +912,10 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount }: Navb
                 )}
               </Link>
 
-              {/* 6 Domain Jasa */}
+              {/* Layanan Servio */}
               <div className="flex items-center justify-between px-2 pt-1">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-muted">
-                  6 Domain Jasa
+                  Layanan Servio
                 </p>
                 {isServicesActive && (
                   <span className="text-[10px] font-bold text-primary bg-sky px-2 py-0.5 rounded-full">
@@ -889,28 +923,39 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount }: Navb
                   </span>
                 )}
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                {activeServiceDomains.map((domain) => {
-                  const Icon = domain.icon;
-                  const isActive = isServiceDomainActive(domain.href);
-                  return (
-                    <Link
-                      key={domain.id}
-                      href={domain.href}
-                      onClick={() => setMobileDrawerOpen(false)}
-                      className={`flex items-center gap-2 p-2.5 rounded-xl text-xs transition-colors ${
-                        isActive
-                          ? "bg-sky text-primary font-bold border border-primary/30 shadow-xs"
-                          : "bg-slate-50 hover:bg-sky/50 text-neutral-dark font-medium"
-                      }`}
-                    >
-                      <Icon size={16} className={isActive ? "text-primary" : "text-primary shrink-0"} weight="duotone" />
-                      <span className="truncate flex-1">{domain.label}</span>
-                      {isActive && <span className="w-1.5 h-1.5 rounded-full bg-secondary shrink-0" />}
-                    </Link>
-                  );
-                })}
-              </div>
+              {isLoadingCategories ? (
+                <div className="py-4 text-center text-xs text-neutral-slate flex items-center justify-center gap-2">
+                  <CircleNotch size={14} className="animate-spin text-primary" />
+                  <span>Memuat kategori...</span>
+                </div>
+              ) : activeServiceDomains.length === 0 ? (
+                <div className="p-3 text-center text-xs text-neutral-slate bg-slate-50 rounded-xl">
+                  Belum ada kategori layanan aktif.
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2">
+                  {activeServiceDomains.map((domain) => {
+                    const Icon = domain.icon;
+                    const isActive = isServiceDomainActive(domain.href);
+                    return (
+                      <Link
+                        key={domain.id}
+                        href={domain.href}
+                        onClick={() => setMobileDrawerOpen(false)}
+                        className={`flex items-center gap-2 p-2.5 rounded-xl text-xs transition-colors ${
+                          isActive
+                            ? "bg-sky text-primary font-bold border border-primary/30 shadow-xs"
+                            : "bg-slate-50 hover:bg-sky/50 text-neutral-dark font-medium"
+                        }`}
+                      >
+                        <Icon size={16} className={isActive ? "text-primary" : "text-primary shrink-0"} weight="duotone" />
+                        <span className="truncate flex-1">{domain.label}</span>
+                        {isActive && <span className="w-1.5 h-1.5 rounded-full bg-secondary shrink-0" />}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
 
               <div className="border-t border-slate-100 pt-2 space-y-1">
                 <Link

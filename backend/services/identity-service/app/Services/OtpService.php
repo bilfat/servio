@@ -38,6 +38,9 @@ class OtpService
 
         $deliveryResult = BrevoService::sendOtpEmail($identifier, $rawOtp, $purpose);
 
+        $ttlSeconds = (int) env('IDENTITY_OTP_TTL_SECONDS', 300); // 5 menit (300 detik) - minimal 2 menit
+        $cooldownSeconds = (int) env('IDENTITY_OTP_RESEND_COOLDOWN_SECONDS', 30); // 30 detik jeda kirim ulang
+
         return OtpChallenge::create([
             'user_id' => $userId,
             'identifier_hash' => $identifierHash,
@@ -45,8 +48,8 @@ class OtpService
             'otp_hmac' => $otpHmac,
             'status' => 'ISSUED',
             'attempts' => 0,
-            'expires_at' => now()->addSeconds(30),
-            'resend_available_at' => now()->addSeconds(30),
+            'expires_at' => now()->addSeconds($ttlSeconds),
+            'resend_available_at' => now()->addSeconds($cooldownSeconds),
             'delivery_message_id' => $deliveryResult['message_id'] ?? null,
             'delivery_state' => $deliveryResult['state'] ?? 'SENT',
         ]);

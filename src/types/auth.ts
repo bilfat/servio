@@ -188,6 +188,13 @@ export interface UserContext {
     name: string;
     type: string;
     status: string;
+    operational_status?: string;
+    operationalStatus?: string;
+    operational_hours?: any;
+    operationalHours?: any;
+    service_area?: any;
+    serviceArea?: any;
+    competencies?: any;
     profile?: {
       legalName?: string;
       brandName?: string;
@@ -197,6 +204,8 @@ export interface UserContext {
       taxInformation?: Record<string, unknown>;
       website?: string;
       logo?: string;
+      operationalHours?: any;
+      serviceArea?: any;
     } | null;
   } | null;
   activeMembership?: {

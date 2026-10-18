@@ -4,7 +4,6 @@ import React, { useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useServices } from "@/features/discovery/useServices";
-import { MOCK_TAXONOMY_DOMAINS } from "@/mocks/taxonomy";
 import { ServiceCard, ServiceCardData } from "@/components/features/services/ServiceCard";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { FixedDomainId, ServiceOffering } from "@/types/domain";
@@ -50,50 +49,41 @@ export default function ServicesCatalogPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDomain, setSelectedDomain] = useState<FixedDomainId | "all">("all");
   const [canonicalCategories, setCanonicalCategories] = useState<{ id: string; domainId: FixedDomainId; name: string; code?: string; status: string; subcategoriesCount: number }[]>([]);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(true);
 
   React.useEffect(() => {
     let mounted = true;
     Promise.allSettled([
-      taxonomyApi.getCategories(),
-      taxonomyApi.getSubcategories(),
+      taxonomyApi.getCategories({ master: "JASA", status: "ACTIVE" }),
+      taxonomyApi.getSubcategories({ master: "JASA", status: "ACTIVE" }),
     ]).then(([catsRes, subsRes]) => {
       if (!mounted) return;
       if (catsRes.status === "fulfilled" && catsRes.value?.data) {
         const subcats = subsRes.status === "fulfilled" && subsRes.value?.data ? subsRes.value.data : [];
         const cats = catsRes.value.data
-          .filter((c: any) => c.status === "ACTIVE")
+          .filter((c: any) => c.status === "ACTIVE" && (c.master_code === "JASA" || !c.master_code))
           .map((c: any) => {
             const catId = c.id || c._id;
             return {
               id: catId,
-              domainId: categoryCodeToDomainId(c.code),
+              domainId: categoryCodeToDomainId(c.code || c.name),
               name: c.name,
               code: c.code,
               status: c.status,
-              subcategoriesCount: subcats.filter((s: any) => s.categoryId === catId && s.status === "ACTIVE").length,
+              subcategoriesCount: subcats.filter((s: any) => (s.category_id === catId || s.categoryId === catId) && s.status === "ACTIVE").length,
             };
           });
         setCanonicalCategories(cats);
       }
+    }).finally(() => {
+      if (mounted) setIsLoadingCategories(false);
     });
     return () => {
       mounted = false;
     };
   }, []);
 
-  const displayDomains = useMemo(() => {
-    if (canonicalCategories.length > 0) {
-      return canonicalCategories;
-    }
-    return MOCK_TAXONOMY_DOMAINS.map((d) => ({
-      id: d.id,
-      domainId: d.id as FixedDomainId,
-      name: d.name,
-      code: d.id.toUpperCase(),
-      status: "ACTIVE",
-      subcategoriesCount: d.subcategories.length,
-    }));
-  }, [canonicalCategories]);
+  const displayDomains = canonicalCategories;
 
   const { services } = useServices(
     selectedDomain !== "all" ? { domainId: selectedDomain } : undefined
@@ -172,25 +162,33 @@ export default function ServicesCatalogPage() {
           >
             Semua Domain ({displayDomains.length})
           </button>
-          {displayDomains.map((domain) => {
-            const isSelected = selectedDomain === domain.domainId;
-            return (
-              <button
-                key={domain.id}
-                type="button"
-                onClick={() => setSelectedDomain(domain.domainId)}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${isSelected
-                  ? "bg-primary text-white shadow-servio-xs"
-                  : "bg-slate-100 text-neutral-slate hover:bg-slate-200"
-                  }`}
-              >
-                <span>{domain.name}</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-black/10">
-                  {domain.subcategoriesCount}
-                </span>
-              </button>
-            );
-          })}
+          {isLoadingCategories ? (
+            <div className="flex items-center gap-2">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-8 w-24 rounded-xl bg-slate-200 animate-pulse shrink-0" />
+              ))}
+            </div>
+          ) : (
+            displayDomains.map((domain) => {
+              const isSelected = selectedDomain === domain.domainId;
+              return (
+                <button
+                  key={domain.id}
+                  type="button"
+                  onClick={() => setSelectedDomain(domain.domainId)}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${isSelected
+                    ? "bg-primary text-white shadow-servio-xs"
+                    : "bg-slate-100 text-neutral-slate hover:bg-slate-200"
+                    }`}
+                >
+                  <span>{domain.name}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-black/10">
+                    {domain.subcategoriesCount}
+                  </span>
+                </button>
+              );
+            })
+          )}
         </div>
       </div>
 
@@ -209,25 +207,37 @@ export default function ServicesCatalogPage() {
           </Link>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          {displayDomains.map((d) => (
-            <Link
-              key={d.id}
-              href={`/categories/${d.id}`}
-              className="p-4 rounded-2xl bg-white border border-slate-200/80 hover:border-primary/50 hover:shadow-servio-xs transition-all flex flex-col items-center text-center group"
-            >
-              <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center mb-2.5 group-hover:scale-105 transition-transform">
-                {DOMAIN_ICONS[d.domainId] || <Wrench size={22} />}
-              </div>
-              <p className="text-xs font-bold text-neutral-dark group-hover:text-primary transition-colors">
-                {d.name}
-              </p>
-              <p className="text-[11px] text-neutral-muted mt-0.5">
-                {d.subcategoriesCount} Subkategori
-              </p>
-            </Link>
-          ))}
-        </div>
+        {isLoadingCategories ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="p-4 rounded-2xl bg-slate-100 animate-pulse h-28" />
+            ))}
+          </div>
+        ) : displayDomains.length === 0 ? (
+          <div className="p-6 text-center rounded-2xl bg-slate-50 border border-slate-200 text-xs text-neutral-slate">
+            Belum ada kategori layanan aktif di database.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            {displayDomains.map((d) => (
+              <Link
+                key={d.id}
+                href={`/categories/${d.id}`}
+                className="p-4 rounded-2xl bg-white border border-slate-200/80 hover:border-primary/50 hover:shadow-servio-xs transition-all flex flex-col items-center text-center group"
+              >
+                <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center mb-2.5 group-hover:scale-105 transition-transform">
+                  {DOMAIN_ICONS[d.domainId] || <Wrench size={22} />}
+                </div>
+                <p className="text-xs font-bold text-neutral-dark group-hover:text-primary transition-colors">
+                  {d.name}
+                </p>
+                <p className="text-[11px] text-neutral-muted mt-0.5">
+                  {d.subcategoriesCount} Subkategori
+                </p>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Smart Discovery Callout */}

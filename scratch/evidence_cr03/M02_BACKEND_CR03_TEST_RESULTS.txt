@@ -1,0 +1,100 @@
+﻿
+   PASS  Tests\Unit\CategoryNormalizerTest
+  ✓ normalizer trims and collapses whitespace                                                                    0.01s  
+  ✓ normalizer converts to lowercase utf8
+  ✓ normalizer handles null
+
+   PASS  Tests\Feature\AdvancedDuplicateLinkValidationTest
+  ✓ business roles without organization cannot submit suggestion                                                 0.38s  
+  ✓ suggestion cannot be duplicate of itself                                                                     0.11s  
+  ✓ circular duplicate linkage is rejected                                                                       0.03s  
+  ✓ cross branch duplicate linkage is rejected                                                                   0.04s  
+  ✓ cross type duplicate linkage is rejected                                                                     0.04s  
+
+   PASS  Tests\Feature\CategoryAuthorizationAndSecurityFeatureTest
+  ✓ unauthenticated request to protected endpoint returns 401                                                    0.03s  
+  ✓ actor headers without valid gateway key rejected as spoofing                                                 0.03s  
+  ✓ customer cannot create or edit category                                                                      0.03s  
+  ✓ ceo has oversight read but cannot perform crud                                                               0.07s  
+  ✓ merchant cannot access other users private requests idor                                                     0.04s  
+  ✓ public can read active categories anonymously                                                                0.06s  
+  ✓ identity service denial returns 403 fail closed                                                              0.06s  
+  ✓ identity service unavailable returns 503 fail closed                                                         0.04s  
+  ✓ r01 distinguishes read all for admin and read own for merchant                                               0.04s  
+
+   PASS  Tests\Feature\CategoryCrudFeatureTest
+  ✓ admin can create category                                                                                    0.10s  
+  ✓ cannot create category without master                                                                        0.04s  
+  ✓ cannot create duplicate category under same master                                                           0.05s  
+  ✓ same category name allowed under different master                                                            0.04s  
+  ✓ admin can update category name and description                                                               0.05s  
+  ✓ reparent attempt is rejected on update                                                                       0.06s  
+  ✓ missing if match header returns 428                                                                          0.06s  
+  ✓ stale lock version returns 409 version conflict                                                              0.07s  
+
+   PASS  Tests\Feature\CategoryHardDeleteGuardsFeatureTest
+  ✓ cannot hard delete category with children                                                                    0.08s  
+  ✓ cannot hard delete when verification protocol is unavailable fail closed                                     0.06s  
+  ✓ non admin cannot hard delete                                                                                 0.04s  
+
+   PASS  Tests\Feature\CategoryMasterFeatureTest
+  ✓ exactly two master roots exist                                                                               0.05s  
+  ✓ get category masters endpoint returns success                                                                0.04s  
+  ✓ admin cannot create master category via crud                                                                 0.03s  
+
+   PASS  Tests\Feature\CategoryStatusAndEligibilityFeatureTest
+  ✓ deactivate parent preserves stored child status but effective active becomes false                           0.06s  
+  ✓ cannot activate subcategory if parent is inactive                                                            0.07s  
+  ✓ non governance cannot view inactive nodes                                                                    0.06s  
+
+   PASS  Tests\Feature\CategorySuggestionFeatureTest
+  ✓ merchant can submit produk suggestion but not jasa                                                           0.08s  
+  ✓ provider can submit jasa suggestion but not produk                                                           0.07s  
+  ✓ suggestion submission does not create official category                                                      0.08s  
+  ✓ admin can review and move request to processing then reject                                                  0.08s  
+  ✓ admin can fulfill request linking manual official node                                                       0.06s  
+
+   PASS  Tests\Feature\IdempotencyAndReplayTest
+  ✓ mutation with idempotency key replays identical response                                                     0.07s  
+  ✓ reusing idempotency key with different payload returns conflict                                              0.08s  
+  ✓ cross user idempotency isolation                                                                             0.11s  
+  ✓ concurrent request with same key returns conflict and does not mutate twice                                  0.06s  
+  ✓ expired in progress claim still rejects duplicate mutation                                                   0.05s  
+  ✓ unauthenticated request with idempotency key returns 401                                                     0.05s  
+
+   PASS  Tests\Feature\InternalTaxonomyM2MFeatureTest
+  ✓ internal endpoint without key returns 403                                                                    0.06s  
+  ✓ internal endpoint with invalid key returns 403                                                               0.04s  
+  ✓ internal eligibility check returns valid contract                                                            0.06s  
+  ✓ i02 get masters returns canonical masters                                                                    0.07s  
+  ✓ i03 get tree returns hierarchy                                                                               0.06s  
+  ✓ internal reference claim registration and retrieval                                                          0.09s  
+  ✓ i04 missing consumer service header returns 403                                                              0.08s  
+  ✓ i04 consumer impersonation returns 403                                                                       0.07s  
+  ✓ i04 unauthorized consumer service header returns 403                                                         0.04s  
+  ✓ i06 prepare reference check creates and increments generation                                                0.11s  
+  ✓ i06 prepare reference check fails on non existent node                                                       0.06s  
+  ✓ i06 fence generation monotonically increments without lost updates                                           0.09s  
+
+   PASS  Tests\Feature\LiveIdentityIntegrationTest
+  ✓ live identity service introspect session                                                                     0.81s  
+  ✓ live identity permission check fail closed for category permissions                                          0.76s  
+  ✓ live identity m2m rejects unauthorized service key                                                           0.70s  
+
+   PASS  Tests\Feature\MySQLIntegrityAndTriggerTest
+  ✓ mysql trigger prevents updating category masters                                                             0.07s  
+  ✓ mysql trigger prevents deleting category masters                                                             0.04s  
+  ✓ mysql trigger prevents updating parent category                                                              0.04s  
+  ✓ mysql trigger prevents updating parent subcategory                                                           0.03s  
+  ✓ database enforces unique normalized name per parent                                                          0.06s  
+
+   PASS  Tests\Feature\SubcategoryCrudFeatureTest
+  ✓ admin can create subcategory under active category                                                           0.06s  
+  ✓ cannot create subcategory without category                                                                   0.06s  
+  ✓ cannot create subcategory under inactive category                                                            0.06s  
+  ✓ cannot create duplicate subcategory under same category                                                      0.07s  
+  ✓ reparent attempt is rejected on subcategory update                                                           0.04s  
+
+  Tests:    70 passed (190 assertions)
+  Duration: 6.76s
+

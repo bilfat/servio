@@ -33,7 +33,45 @@ import {
   User,
   Handshake,
   PlusCircle,
+  Lightning,
+  Drop,
+  Flame,
+  Fan,
+  PaintRoller,
+  Scissors,
+  Camera,
+  Plug,
+  DeviceMobile,
+  FirstAid,
+  Lock,
+  Folder,
 } from "@phosphor-icons/react";
+
+export const CATEGORY_ICON_MAP: Record<string, React.ComponentType<any>> = {
+  Wrench,
+  HouseLine,
+  Broom,
+  GearSix,
+  TreeEvergreen,
+  Car,
+  Lightning,
+  ShieldCheck,
+  Drop,
+  Flame,
+  Fan,
+  PaintRoller,
+  Scissors,
+  Truck,
+  Camera,
+  Plug,
+  DeviceMobile,
+  FirstAid,
+  Package,
+  Storefront,
+  Lock,
+  Sparkle,
+  Folder,
+};
 
 export type IconComponent = React.ComponentType<{
   size?: number | string;
@@ -69,12 +107,12 @@ export interface NavigationSection {
  * 6 Fixed Service Domains for Public and Customer Dropdowns (Points to valid App Router routes)
  */
 export const SIX_SERVICE_DOMAINS = [
-  { id: "repair", label: "Repair & Technical", href: "/categories/repair", icon: Wrench },
-  { id: "home", label: "Home & Building", href: "/categories/home", icon: HouseLine },
-  { id: "cleaning", label: "Cleaning", href: "/categories/cleaning", icon: Broom },
-  { id: "maintenance", label: "Maintenance", href: "/categories/maintenance", icon: GearSix },
-  { id: "environment", label: "Environment", href: "/categories/environment", icon: TreeEvergreen },
-  { id: "automotive", label: "Automotive", href: "/categories/automotive", icon: Car },
+  { id: "2e379ce0-0a88-4c9e-8085-1a37fb487b62", label: "Repair & Technical", href: "/categories/2e379ce0-0a88-4c9e-8085-1a37fb487b62", icon: Wrench },
+  { id: "92438132-1530-4711-8bf2-4d1c631fabf0", label: "Home & Building", href: "/categories/92438132-1530-4711-8bf2-4d1c631fabf0", icon: HouseLine },
+  { id: "4e7f1415-07ae-4c93-966c-b44172ba4d67", label: "Cleaning", href: "/categories/4e7f1415-07ae-4c93-966c-b44172ba4d67", icon: Broom },
+  { id: "8c927438-8b79-41ff-a8f4-9e2288e8b5b8", label: "Maintenance", href: "/categories/8c927438-8b79-41ff-a8f4-9e2288e8b5b8", icon: GearSix },
+  { id: "48cadd7a-6707-4139-b650-4cadc74ca76b", label: "Environment", href: "/categories/48cadd7a-6707-4139-b650-4cadc74ca76b", icon: TreeEvergreen },
+  { id: "06e8f70c-6a07-417c-ba04-38cf26976aef", label: "Automotive", href: "/categories/06e8f70c-6a07-417c-ba04-38cf26976aef", icon: Car },
 ];
 
 /**
@@ -358,7 +396,7 @@ export const CANONICAL_NAVIGATION_SECTIONS: Partial<Record<UserRole, NavigationS
         { id: "adm-dashboard", label: "Dashboard Operasi", href: "/admin/dashboard", icon: ChartLineUp, roles: ["ADMIN_OPERATIONS"] },
         { id: "adm-onboarding", label: "My Onboarding", href: "/staff/onboarding", icon: CheckCircle, roles: ["ADMIN_OPERATIONS"] },
         { id: "adm-reg-apps", label: "Pendaftaran Mitra", href: "/admin/registration-applications", icon: FileText, roles: ["ADMIN_OPERATIONS"] },
-        { id: "adm-taxonomy", label: "Kategori Jasa", href: "/admin/taxonomy", icon: SlidersHorizontal, roles: ["ADMIN_OPERATIONS"] },
+        { id: "adm-taxonomy", label: "Kategori dan Sub Kategori", href: "/admin/taxonomy", icon: SlidersHorizontal, roles: ["ADMIN_OPERATIONS"] },
       ],
     },
     {
@@ -434,7 +472,7 @@ export const CANONICAL_NAVIGATION_SECTIONS: Partial<Record<UserRole, NavigationS
         { id: "ceo-gov-center", label: "Kebijakan Platform", href: "/ceo/governance/policies", icon: ShieldCheck, roles: ["CEO_PRODUCT_OWNER"] },
         { id: "ceo-onboarding", label: "Monitoring Mitra", href: "/ceo/business-onboarding", icon: FileText, roles: ["CEO_PRODUCT_OWNER"] },
         { id: "ceo-team", label: "Tim & Akses Internal", href: "/ceo/internal-team", icon: Users, roles: ["CEO_PRODUCT_OWNER"] },
-        { id: "ceo-tax", label: "Kategori Jasa", href: "/ceo/taxonomy", icon: SlidersHorizontal, roles: ["CEO_PRODUCT_OWNER"] },
+        { id: "ceo-tax", label: "Kategori dan Sub Kategori", href: "/ceo/taxonomy", icon: SlidersHorizontal, roles: ["CEO_PRODUCT_OWNER"] },
         { id: "ceo-affiliate", label: "Affiliate", href: "/ceo/affiliate", icon: Sparkle, roles: ["CEO_PRODUCT_OWNER"] },
       ],
     },
@@ -603,7 +641,7 @@ export const CANONICAL_NAVIGATION: Record<UserRole, NavigationItem[]> = {
     { id: "adm-dashboard", label: "Dashboard Operasi", href: "/admin/dashboard", icon: ChartLineUp, roles: ["ADMIN_OPERATIONS"] },
     { id: "adm-onboarding", label: "My Onboarding", href: "/staff/onboarding", icon: CheckCircle, roles: ["ADMIN_OPERATIONS"] },
     { id: "adm-reg-apps", label: "Pendaftaran Mitra", href: "/admin/registration-applications", icon: FileText, roles: ["ADMIN_OPERATIONS"] },
-    { id: "adm-taxonomy", label: "Kategori Jasa", href: "/admin/taxonomy", icon: SlidersHorizontal, roles: ["ADMIN_OPERATIONS"] },
+    { id: "adm-taxonomy", label: "Kategori dan Sub Kategori", href: "/admin/taxonomy", icon: SlidersHorizontal, roles: ["ADMIN_OPERATIONS"] },
     { id: "adm-services", label: "Operasional Servis", href: "/admin/services", icon: Wrench, roles: ["ADMIN_OPERATIONS"] },
     { id: "adm-products", label: "Moderasi Produk", href: "/admin/products", icon: Package, badge: "2", roles: ["ADMIN_OPERATIONS"] },
     { id: "adm-orders", label: "Order Global", href: "/admin/orders", icon: ClipboardText, roles: ["ADMIN_OPERATIONS"] },
@@ -621,7 +659,7 @@ export const CANONICAL_NAVIGATION: Record<UserRole, NavigationItem[]> = {
     { id: "ceo-gov-center", label: "Tata Kelola Kebijakan", href: "/ceo/governance/policies", icon: ShieldCheck, roles: ["CEO_PRODUCT_OWNER"] },
     { id: "ceo-onboarding", label: "Monitoring Mitra", href: "/ceo/business-onboarding", icon: FileText, roles: ["CEO_PRODUCT_OWNER"] },
     { id: "ceo-team", label: "Tim & Akses Internal", href: "/ceo/internal-team", icon: Users, roles: ["CEO_PRODUCT_OWNER"] },
-    { id: "ceo-taxonomy", label: "Kategori Jasa", href: "/ceo/taxonomy", icon: SlidersHorizontal, roles: ["CEO_PRODUCT_OWNER"] },
+    { id: "ceo-taxonomy", label: "Kategori dan Sub Kategori", href: "/ceo/taxonomy", icon: SlidersHorizontal, roles: ["CEO_PRODUCT_OWNER"] },
     { id: "ceo-affiliate", label: "Affiliate", href: "/ceo/affiliate", icon: Sparkle, roles: ["CEO_PRODUCT_OWNER"] },
     { id: "ceo-policy", label: "Kebijakan Logistik", href: "/ceo/policy", icon: ShieldCheck, roles: ["CEO_PRODUCT_OWNER"] },
     { id: "ceo-ai", label: "Monitoring Safe AI", href: "/ceo/ai", icon: Sparkle, roles: ["CEO_PRODUCT_OWNER"] },

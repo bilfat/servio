@@ -9,7 +9,7 @@ import { useServices } from "@/features/discovery/useServices";
 import { useMaintenancePlans } from "@/features/maintenance/useMaintenancePlans";
 import { useServiceOrder } from "@/features/orders/useServiceOrder";
 import { useDomainRepository } from "@/lib/repository/domainRepository";
-import { SIX_SERVICE_DOMAINS } from "@/config/navigation";
+import { CATEGORY_ICON_MAP } from "@/config/navigation";
 import { ServiceCard, ServiceCardData } from "@/components/features/services/ServiceCard";
 import { StatusBadge } from "@/components/data-display/StatusBadge";
 import { ServiceOffering } from "@/types/domain";
@@ -97,47 +97,41 @@ export default function HomePage() {
     }
   };
 
-  const repo = useDomainRepository();
-  const [canonicalCategories, setCanonicalCategories] = useState<{ id: string; name: string; code?: string; status: string }[]>([]);
+  const [liveServiceCategories, setLiveServiceCategories] = useState<any[]>([]);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(true);
 
   React.useEffect(() => {
     let mounted = true;
-    taxonomyApi.getCategories().then((res) => {
-      if (mounted && res && res.data) {
-        setCanonicalCategories(res.data.map((c: any) => ({
-          id: c.id || c._id,
-          name: c.name,
-          code: c.code,
-          status: c.status,
-        })));
-      }
-    }).catch(() => { });
+    taxonomyApi
+      .getCategories({ master_code: "JASA", status: "ACTIVE" })
+      .then((res) => {
+        if (mounted && res && Array.isArray(res.data) && res.data.length > 0) {
+          setLiveServiceCategories(res.data);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (mounted) setIsLoadingCategories(false);
+      });
     return () => {
       mounted = false;
     };
   }, []);
 
   const activeDomains = React.useMemo(() => {
-    if (canonicalCategories.length > 0) {
-      return SIX_SERVICE_DOMAINS.filter((domain) => {
-        const matched = canonicalCategories.find(
-          (c) =>
-            (c.code && c.code.toLowerCase().includes(domain.id.toLowerCase())) ||
-            c.id.toLowerCase().includes(domain.id.toLowerCase()) ||
-            c.name.toLowerCase() === domain.label.toLowerCase()
-        );
-        return matched ? matched.status === "ACTIVE" : true;
+    if (liveServiceCategories.length > 0) {
+      return liveServiceCategories.map((c) => {
+        const IconComponent = CATEGORY_ICON_MAP[c.icon_name || ""] || Wrench;
+        return {
+          id: c.id,
+          label: c.name,
+          href: `/categories/${c.id}`,
+          icon: IconComponent,
+        };
       });
     }
-    return SIX_SERVICE_DOMAINS.filter((domain) => {
-      const matched = repo.categories.find(
-        (c) =>
-          c.id.toLowerCase().includes(domain.id.toLowerCase()) ||
-          c.name.toLowerCase() === domain.label.toLowerCase()
-      );
-      return !matched || matched.status === "ACTIVE";
-    });
-  }, [canonicalCategories, repo.categories]);
+    return [];
+  }, [liveServiceCategories]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -154,7 +148,7 @@ export default function HomePage() {
   const toCardData = (s: ServiceOffering): ServiceCardData => ({
     id: s.id,
     title: s.title,
-    category: s.subcategoryName || s.categoryName || repo.subcategories.find((sub) => sub.id === s.subcategoryId)?.name || "Layanan",
+    category: s.subcategoryName || s.categoryName || "Layanan",
     price: s.basePrice,
     priceMin: s.priceMin ?? s.basePrice,
     priceMax: s.priceMax ?? s.basePrice,
@@ -402,29 +396,49 @@ export default function HomePage() {
           </Link>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
-          {activeDomains.map((domain, index) => {
-            const Icon = domain.icon;
-            return (
-              <motion.div
-                key={domain.id}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.04, duration: 0.25 }}
-                onClick={() => router.push(domain.href)}
-                className="glass-card glass-card-hover p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer group border border-slate-200/80 hover:border-primary/40 transition-all"
+        {isLoadingCategories ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div
+                key={i}
+                className="glass-card p-4 rounded-2xl flex flex-col items-center text-center animate-pulse border border-slate-200/80 space-y-3"
               >
-                <div className="w-12 h-12 rounded-2xl bg-sky/60 text-primary group-hover:bg-primary group-hover:text-white transition-all flex items-center justify-center mb-3 group-hover:scale-105">
-                  <Icon size={26} weight="duotone" />
-                </div>
-                <h3 className="font-display font-bold text-xs sm:text-sm text-neutral-dark group-hover:text-primary transition-colors">
-                  {domain.label}
-                </h3>
-                <span className="text-[11px] text-neutral-muted mt-1">Lihat Subkategori</span>
-              </motion.div>
-            );
-          })}
-        </div>
+                <div className="w-12 h-12 rounded-2xl bg-slate-200" />
+                <div className="h-3.5 bg-slate-200 rounded w-2/3" />
+                <div className="h-2.5 bg-slate-100 rounded w-1/2" />
+              </div>
+            ))}
+          </div>
+        ) : activeDomains.length === 0 ? (
+          <div className="p-8 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-1">
+            <p className="text-xs font-bold text-neutral-dark">Belum ada kategori layanan aktif</p>
+            <p className="text-[11px] text-neutral-slate">Kategori layanan dari database belum tersedia.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+            {activeDomains.map((domain, index) => {
+              const Icon = domain.icon;
+              return (
+                <motion.div
+                  key={domain.id}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.04, duration: 0.25 }}
+                  onClick={() => router.push(domain.href)}
+                  className="glass-card glass-card-hover p-4 rounded-2xl flex flex-col items-center text-center cursor-pointer group border border-slate-200/80 hover:border-primary/40 transition-all"
+                >
+                  <div className="w-12 h-12 rounded-2xl bg-sky/60 text-primary group-hover:bg-primary group-hover:text-white transition-all flex items-center justify-center mb-3 group-hover:scale-105">
+                    <Icon size={26} weight="duotone" />
+                  </div>
+                  <h3 className="font-display font-bold text-xs sm:text-sm text-neutral-dark group-hover:text-primary transition-colors">
+                    {domain.label}
+                  </h3>
+                  <span className="text-[11px] text-neutral-muted mt-1">Lihat Subkategori</span>
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* 4. SMART DISCOVERY AI BANNER */}

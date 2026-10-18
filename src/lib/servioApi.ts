@@ -29,6 +29,87 @@ export function getCookie(name: string): string | undefined {
   return match ? decodeURIComponent(match[1]) : undefined;
 }
 
+export const MOCK_BRANDS: import("@/types/domain").ApiBrand[] = [
+  {
+    id: "brand-daikin",
+    name: "Daikin Genuine",
+    slug: "daikin-genuine",
+    logo_url: "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=120&auto=format&fit=crop&q=80",
+    logoUrl: "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=120&auto=format&fit=crop&q=80",
+    description: "Suku cadang pendingin udara dan kompresor resmi pabrikan Daikin Industries.",
+    status: "ACTIVE",
+    product_count: 2,
+    productCount: 2,
+    created_at: "2026-01-10T08:00:00Z",
+    createdAt: "2026-01-10T08:00:00Z",
+  },
+  {
+    id: "brand-panasonic",
+    name: "Panasonic",
+    slug: "panasonic",
+    logo_url: "https://images.unsplash.com/photo-1550009158-9ebf69173e03?w=120&auto=format&fit=crop&q=80",
+    logoUrl: "https://images.unsplash.com/photo-1550009158-9ebf69173e03?w=120&auto=format&fit=crop&q=80",
+    description: "Komponen elektronik, filter udara, dan sparepart AC inverter.",
+    status: "ACTIVE",
+    product_count: 1,
+    productCount: 1,
+    created_at: "2026-01-15T09:30:00Z",
+    createdAt: "2026-01-15T09:30:00Z",
+  },
+  {
+    id: "brand-inaba",
+    name: "Inaba Denko",
+    slug: "inaba-denko",
+    logo_url: "https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=120&auto=format&fit=crop&q=80",
+    logoUrl: "https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=120&auto=format&fit=crop&q=80",
+    description: "Pipa tembaga dan insulasi pendingin berkualitas tinggi standar Jepang.",
+    status: "ACTIVE",
+    product_count: 1,
+    productCount: 1,
+    created_at: "2026-01-20T10:00:00Z",
+    createdAt: "2026-01-20T10:00:00Z",
+  },
+  {
+    id: "brand-motul",
+    name: "Motul",
+    slug: "motul",
+    logo_url: "https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=120&auto=format&fit=crop&q=80",
+    logoUrl: "https://images.unsplash.com/photo-1486006920555-c77dce18193b?w=120&auto=format&fit=crop&q=80",
+    description: "Pelumas mesin sintetis dan cairan fluida performa tinggi otomotif.",
+    status: "ACTIVE",
+    product_count: 1,
+    productCount: 1,
+    created_at: "2026-02-01T11:00:00Z",
+    createdAt: "2026-02-01T11:00:00Z",
+  },
+  {
+    id: "brand-brembo",
+    name: "Brembo",
+    slug: "brembo",
+    logo_url: "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?w=120&auto=format&fit=crop&q=80",
+    logoUrl: "https://images.unsplash.com/photo-1492144534655-ae79c964c9d7?w=120&auto=format&fit=crop&q=80",
+    description: "Sistem pengereman performa tinggi, cakram, dan brake pad keramik.",
+    status: "ACTIVE",
+    product_count: 1,
+    productCount: 1,
+    created_at: "2026-02-10T14:15:00Z",
+    createdAt: "2026-02-10T14:15:00Z",
+  },
+  {
+    id: "brand-bosch",
+    name: "Bosch",
+    slug: "bosch",
+    logo_url: "https://images.unsplash.com/photo-1581092335397-9583fe92d232?w=120&auto=format&fit=crop&q=80",
+    logoUrl: "https://images.unsplash.com/photo-1581092335397-9583fe92d232?w=120&auto=format&fit=crop&q=80",
+    description: "Perkakas listrik profesional, sensor, dan suku cadang otomotif terkemuka.",
+    status: "ACTIVE",
+    product_count: 0,
+    productCount: 0,
+    created_at: "2026-02-15T15:00:00Z",
+    createdAt: "2026-02-15T15:00:00Z",
+  },
+];
+
 function setCookie(name: string, value: string, maxAge = 604800) {
   if (typeof document === "undefined") return;
   try {
@@ -43,7 +124,7 @@ function setCookie(name: string, value: string, maxAge = 604800) {
 // ============================================================================
 const MOCK_USERS_BY_ROLE: Record<string, any> = {
   CEO_PRODUCT_OWNER: {
-    id: "usr-ceo-01",
+    id: "8a7fdac8-cfcb-430e-b142-e630b171879b",
     fullName: "Michael Surya",
     email: "ceo@servio.id",
     phone: "+62 811-9988-771",
@@ -52,15 +133,18 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
     employeeId: "CEO-001",
     department: "Executive Office",
     permissions: ["*"],
+    readiness: "READY",
+    isOperationalReady: true,
+    staffOnboardingStatus: "COMPLETED",
     activeRole: {
-      assignmentId: "asgn-ceo-01",
+      assignmentId: "22545111-1c5d-479e-b896-86c54039ff80",
       code: "CEO_PRODUCT_OWNER",
       scopeType: "PLATFORM",
     },
     roles: [
-      { assignmentId: "asgn-ceo-01", code: "CEO_PRODUCT_OWNER", name: "Chief Executive Officer", scopeType: "PLATFORM", status: "ACTIVE" },
-      { assignmentId: "asgn-adm-01", code: "ADMIN_OPERATIONS", name: "Admin Operations", scopeType: "PLATFORM", status: "ACTIVE" },
-      { assignmentId: "asgn-cst-01", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
+      { assignmentId: "22545111-1c5d-479e-b896-86c54039ff80", code: "CEO_PRODUCT_OWNER", name: "Chief Executive Officer", scopeType: "PLATFORM", status: "ACTIVE" },
+      { assignmentId: "4bc23467-ad37-483f-84fc-e382001b2009", code: "ADMIN_OPERATIONS", name: "Admin Operations", scopeType: "PLATFORM", status: "ACTIVE" },
+      { assignmentId: "031772ea-9657-49bd-82f2-f57c65b0d986", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
     ],
     avatar: "/brand/logo.png",
     profile: { avatar: "/brand/logo.png" },
@@ -70,7 +154,7 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
     createdAt: "2026-01-01T00:00:00Z",
   },
   ADMIN_OPERATIONS: {
-    id: "usr-adm-01",
+    id: "8480d446-5855-4cb1-9488-01879e2da2cf",
     fullName: "Siti Rahmawati",
     email: "admin@servio.id",
     phone: "+62 812-1122-334",
@@ -79,14 +163,17 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
     employeeId: "ADM-001",
     department: "Operations & Verification",
     permissions: ["*"],
+    readiness: "READY",
+    isOperationalReady: true,
+    staffOnboardingStatus: "COMPLETED",
     activeRole: {
-      assignmentId: "asgn-adm-01",
+      assignmentId: "4bc23467-ad37-483f-84fc-e382001b2009",
       code: "ADMIN_OPERATIONS",
       scopeType: "PLATFORM",
     },
     roles: [
-      { assignmentId: "asgn-adm-01", code: "ADMIN_OPERATIONS", name: "Admin Operations", scopeType: "PLATFORM", status: "ACTIVE" },
-      { assignmentId: "asgn-cst-01", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
+      { assignmentId: "4bc23467-ad37-483f-84fc-e382001b2009", code: "ADMIN_OPERATIONS", name: "Admin Operations", scopeType: "PLATFORM", status: "ACTIVE" },
+      { assignmentId: "031772ea-9657-49bd-82f2-f57c65b0d986", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
     ],
     avatar: "/brand/logo.png",
     profile: { avatar: "/brand/logo.png" },
@@ -96,7 +183,7 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
     createdAt: "2026-01-01T00:00:00Z",
   },
   CUSTOMER: {
-    id: "usr-cst-01",
+    id: "3bc92b94-627d-48c4-9e01-187ce79981ee",
     fullName: "Ahmad Fauzi",
     email: "customer@servio.id",
     phone: "+62 812-3456-7890",
@@ -107,12 +194,12 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
       "payment.create", "warranty.claim", "review.create", "chat.send"
     ],
     activeRole: {
-      assignmentId: "asgn-cst-01",
+      assignmentId: "031772ea-9657-49bd-82f2-f57c65b0d986",
       code: "CUSTOMER",
       scopeType: "OWN",
     },
     roles: [
-      { assignmentId: "asgn-cst-01", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
+      { assignmentId: "031772ea-9657-49bd-82f2-f57c65b0d986", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
     ],
     avatar: "/brand/logo.png",
     profile: { avatar: "/brand/logo.png" },
@@ -123,13 +210,13 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
     createdAt: "2026-01-01T00:00:00Z",
   },
   SERVICE_PROVIDER: {
-    id: "usr-prov-01",
+    id: "8ecc27f5-d30e-401e-89d5-aceec765a19a",
     fullName: "Budi Santoso",
     email: "provider@servio.id",
     phone: "+62 813-2233-445",
     role: "SERVICE_PROVIDER",
     status: "ACTIVE",
-    organizationId: "org-prov-01",
+    organizationId: "0740d857-b665-4191-aaf5-d7dd3611dc1d",
     organizationName: "PT Servio Mandiri Teknik",
     providerId: "prov-bintang-teknik",
     businessProfile: {
@@ -143,14 +230,14 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
     },
     permissions: ["*"],
     activeRole: {
-      assignmentId: "asgn-prov-01",
+      assignmentId: "212af925-d100-45ba-a5e4-7df0c120b820",
       code: "SERVICE_PROVIDER",
       scopeType: "ORGANIZATION",
-      scopeId: "org-prov-01",
+      scopeId: "0740d857-b665-4191-aaf5-d7dd3611dc1d",
     },
     roles: [
-      { assignmentId: "asgn-prov-01", code: "SERVICE_PROVIDER", name: "Workshop Owner", scopeType: "ORGANIZATION", scopeId: "org-prov-01", status: "ACTIVE" },
-      { assignmentId: "asgn-cst-01", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
+      { assignmentId: "212af925-d100-45ba-a5e4-7df0c120b820", code: "SERVICE_PROVIDER", name: "Workshop Owner", scopeType: "ORGANIZATION", scopeId: "0740d857-b665-4191-aaf5-d7dd3611dc1d", status: "ACTIVE" },
+      { assignmentId: "031772ea-9657-49bd-82f2-f57c65b0d986", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
     ],
     avatar: "/brand/logo.png",
     profile: { avatar: "/brand/logo.png" },
@@ -160,13 +247,13 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
     createdAt: "2026-01-01T00:00:00Z",
   },
   MERCHANT: {
-    id: "usr-merch-01",
+    id: "9b91e456-594e-4d0b-b793-f69dd855ccc3",
     fullName: "Ko Hendra",
     email: "merchant@servio.id",
     phone: "+62 817-4455-667",
     role: "MERCHANT",
     status: "ACTIVE",
-    organizationId: "merch-sentra-teknik",
+    organizationId: "2290a88d-7a24-4677-b940-5823cdd68c1d",
     organizationName: "Sinar AC & Sparepart Glodok",
     merchantId: "merch-sentra-teknik",
     businessProfile: {
@@ -180,14 +267,14 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
     },
     permissions: ["*"],
     activeRole: {
-      assignmentId: "asgn-merch-01",
+      assignmentId: "1029143e-1d76-4fab-b86e-bb1709a47b2b",
       code: "MERCHANT",
       scopeType: "ORGANIZATION",
-      scopeId: "merch-sentra-teknik",
+      scopeId: "2290a88d-7a24-4677-b940-5823cdd68c1d",
     },
     roles: [
-      { assignmentId: "asgn-merch-01", code: "MERCHANT", name: "Merchant Retailer", scopeType: "ORGANIZATION", scopeId: "merch-sentra-teknik", status: "ACTIVE" },
-      { assignmentId: "asgn-cst-01", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
+      { assignmentId: "1029143e-1d76-4fab-b86e-bb1709a47b2b", code: "MERCHANT", name: "Merchant Retailer", scopeType: "ORGANIZATION", scopeId: "2290a88d-7a24-4677-b940-5823cdd68c1d", status: "ACTIVE" },
+      { assignmentId: "031772ea-9657-49bd-82f2-f57c65b0d986", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
     ],
     avatar: "/brand/logo.png",
     profile: { avatar: "/brand/logo.png" },
@@ -197,13 +284,13 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
     createdAt: "2026-01-01T00:00:00Z",
   },
   SUPPLIER: {
-    id: "usr-sup-01",
+    id: "bfd84265-cd10-4b32-9ec2-a858039f3e83",
     fullName: "Suryanto Wijaya",
     email: "supplier@servio.id",
     phone: "+62 818-5566-778",
     role: "SUPPLIER",
     status: "ACTIVE",
-    organizationId: "org-sup-01",
+    organizationId: "4a5e9ad0-b06e-4434-ad8c-e87e755472bd",
     organizationName: "PT Nusantara Parts Prima",
     supplierId: "sup-001",
     businessProfile: {
@@ -217,14 +304,14 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
     },
     permissions: ["*"],
     activeRole: {
-      assignmentId: "asgn-sup-01",
+      assignmentId: "6dd06d71-ec3c-4f03-bf3b-6d718aaa1d7a",
       code: "SUPPLIER",
       scopeType: "ORGANIZATION",
-      scopeId: "org-sup-01",
+      scopeId: "4a5e9ad0-b06e-4434-ad8c-e87e755472bd",
     },
     roles: [
-      { assignmentId: "asgn-sup-01", code: "SUPPLIER", name: "Principal Supplier", scopeType: "ORGANIZATION", scopeId: "org-sup-01", status: "ACTIVE" },
-      { assignmentId: "asgn-cst-01", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
+      { assignmentId: "6dd06d71-ec3c-4f03-bf3b-6d718aaa1d7a", code: "SUPPLIER", name: "Principal Supplier", scopeType: "ORGANIZATION", scopeId: "4a5e9ad0-b06e-4434-ad8c-e87e755472bd", status: "ACTIVE" },
+      { assignmentId: "031772ea-9657-49bd-82f2-f57c65b0d986", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
     ],
     avatar: "/brand/logo.png",
     profile: { avatar: "/brand/logo.png" },
@@ -234,14 +321,14 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
     createdAt: "2026-01-01T00:00:00Z",
   },
   WORKER_TECHNICIAN: {
-    id: "usr-wrk-01",
+    id: "00d4c5e5-f912-451f-afe5-54f34d481e0f",
     fullName: "Bambang Sudirman",
     email: "worker@servio.id",
     phone: "+62 819-6677-889",
     role: "WORKER_TECHNICIAN",
     status: "ACTIVE",
     employeeId: "WRK-001",
-    organizationId: "org-prov-01",
+    organizationId: "0740d857-b665-4191-aaf5-d7dd3611dc1d",
     organizationName: "PT Servio Mandiri Teknik",
     providerId: "prov-bintang-teknik",
     workerProfile: {
@@ -252,13 +339,13 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
     },
     permissions: ["*"],
     activeRole: {
-      assignmentId: "asgn-wrk-01",
+      assignmentId: "0bf0d288-6a87-4b1d-b19c-b5b3391f9600",
       code: "WORKER_TECHNICIAN",
       scopeType: "ASSIGNED",
     },
     roles: [
-      { assignmentId: "asgn-wrk-01", code: "WORKER_TECHNICIAN", name: "Senior Technician", scopeType: "ASSIGNED", status: "ACTIVE" },
-      { assignmentId: "asgn-cst-01", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
+      { assignmentId: "0bf0d288-6a87-4b1d-b19c-b5b3391f9600", code: "WORKER_TECHNICIAN", name: "Senior Technician", scopeType: "ASSIGNED", status: "ACTIVE" },
+      { assignmentId: "031772ea-9657-49bd-82f2-f57c65b0d986", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
     ],
     avatar: "/brand/logo.png",
     profile: { avatar: "/brand/logo.png" },
@@ -268,7 +355,7 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
     createdAt: "2026-01-01T00:00:00Z",
   },
   CUSTOMER_SUPPORT: {
-    id: "usr-cs-01",
+    id: "8a7fdac8-cfcb-430e-b142-e630b171879b",
     fullName: "Rina Oktaviani",
     email: "support@servio.id",
     phone: "+62 812-7788-990",
@@ -277,14 +364,17 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
     employeeId: "CS-001",
     department: "Customer Care & Mediation",
     permissions: ["*"],
+    readiness: "READY",
+    isOperationalReady: true,
+    staffOnboardingStatus: "COMPLETED",
     activeRole: {
-      assignmentId: "asgn-cs-01",
+      assignmentId: "40e1699c-63d9-4673-99cf-9c46db8e9ecf",
       code: "CUSTOMER_SUPPORT",
       scopeType: "PLATFORM",
     },
     roles: [
-      { assignmentId: "asgn-cs-01", code: "CUSTOMER_SUPPORT", name: "Mediation Officer", scopeType: "PLATFORM", status: "ACTIVE" },
-      { assignmentId: "asgn-cst-01", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
+      { assignmentId: "40e1699c-63d9-4673-99cf-9c46db8e9ecf", code: "CUSTOMER_SUPPORT", name: "Mediation Officer", scopeType: "PLATFORM", status: "ACTIVE" },
+      { assignmentId: "031772ea-9657-49bd-82f2-f57c65b0d986", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
     ],
     avatar: "/brand/logo.png",
     profile: { avatar: "/brand/logo.png" },
@@ -294,7 +384,7 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
     createdAt: "2026-01-01T00:00:00Z",
   },
   FINANCE_PAYMENT_OPS: {
-    id: "usr-fin-01",
+    id: "6c56abab-fb6c-4735-9d58-cd1b0ed10617",
     fullName: "Hendrik Wijaya",
     email: "finance@servio.id",
     phone: "+62 813-8899-001",
@@ -303,14 +393,17 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
     employeeId: "FIN-001",
     department: "Finance & Escrow",
     permissions: ["*"],
+    readiness: "READY",
+    isOperationalReady: true,
+    staffOnboardingStatus: "COMPLETED",
     activeRole: {
-      assignmentId: "asgn-fin-01",
+      assignmentId: "75e55bf3-02f4-45a3-be63-f1e56e31ae73",
       code: "FINANCE_PAYMENT_OPS",
       scopeType: "PLATFORM",
     },
     roles: [
-      { assignmentId: "asgn-fin-01", code: "FINANCE_PAYMENT_OPS", name: "Finance Specialist", scopeType: "PLATFORM", status: "ACTIVE" },
-      { assignmentId: "asgn-cst-01", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
+      { assignmentId: "75e55bf3-02f4-45a3-be63-f1e56e31ae73", code: "FINANCE_PAYMENT_OPS", name: "Finance Specialist", scopeType: "PLATFORM", status: "ACTIVE" },
+      { assignmentId: "031772ea-9657-49bd-82f2-f57c65b0d986", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
     ],
     avatar: "/brand/logo.png",
     profile: { avatar: "/brand/logo.png" },
@@ -731,10 +824,12 @@ function mapProductToApi(p: any): any {
     _id: p.id,
     merchantOrganizationId: p.merchantId || "merch-sentra-teknik",
     merchantName: p.merchantName || "Sentra Teknik Sparepart",
-    categoryId: "cat-ac-parts",
-    categoryName: p.category || "Sparepart AC",
+    categoryId: p.categoryId || "080142ee-0a66-434a-988e-8bc29a8f05fd",
+    categoryName: p.categoryName || p.category || "Sparepart AC & Pendingin",
+    subcategoryId: p.subcategoryId || "850cb3fa-56ba-42e5-9812-f9d5ae42dfb3",
+    subcategoryName: p.subcategoryName || "Gas Refrigerant & Freon",
     name: p.title,
-    brandName: p.compatibilityTags?.[0] || "Original",
+    brandName: p.brandName || p.compatibilityTags?.[0] || "Original",
     description: p.description || "",
     media: [{ url: `/products/${p.id}.jpg` }],
     status: "PUBLISHED",
@@ -780,8 +875,17 @@ const IDENTITY_BASE_URL =
   typeof window !== "undefined"
     ? "/api/v1"
     : (process.env.NEXT_PUBLIC_IDENTITY_API_URL ||
-       process.env.NEXT_PUBLIC_API_URL ||
-       "http://127.0.0.1:8001/api/v1");
+      process.env.NEXT_PUBLIC_API_URL ||
+      "http://127.0.0.1:8001/api/v1");
+
+const CATEGORY_SERVICE_ROOT =
+  typeof window !== "undefined"
+    ? ""
+    : (process.env.NEXT_PUBLIC_CATEGORY_SERVICE_URL || "http://127.0.0.1:8002");
+const CATEGORY_BASE_URL =
+  typeof window !== "undefined"
+    ? "/api/v1"
+    : (process.env.NEXT_PUBLIC_CATEGORY_API_URL || "http://127.0.0.1:8002/api/v1");
 
 let csrfPromise: Promise<void> | null = null;
 
@@ -810,6 +914,17 @@ async function ensureSanctumCsrf(force = false): Promise<void> {
   return csrfPromise;
 }
 
+function isCategoryRoute(path: string): boolean {
+  const p = path.replace(/^\/api\/v1/, "");
+  return (
+    p.startsWith("/category-masters") ||
+    p.startsWith("/categories") ||
+    p.startsWith("/subcategories") ||
+    p.startsWith("/category-requests") ||
+    p.startsWith("/category-audit")
+  );
+}
+
 function isIdentityRoute(path: string): boolean {
   const p = path.replace(/^\/api\/v1/, "");
   return (
@@ -832,8 +947,8 @@ function isIdentityRoute(path: string): boolean {
     p.startsWith("/provider/workers") ||
     p.startsWith("/provider/worker-invitations") ||
     p.startsWith("/invitations") ||
-    p.startsWith("/profiles/me") ||
-    p.startsWith("/profiles/change-requests") ||
+    p.startsWith("/organizations") ||
+    p.startsWith("/profiles") ||
     p.startsWith("/me/profile") ||
     p.startsWith("/roles/me") ||
     p.startsWith("/permissions/me") ||
@@ -1008,6 +1123,107 @@ export async function apiFetch<T = unknown>(
     }
   }
 
+  // =========================================================================
+  // REAL BACKEND INTEGRATION: Modul 02 Category Management Service
+  // =========================================================================
+  if (isCategoryRoute(pathname)) {
+    try {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+      };
+
+      const gatewayKey = process.env.NEXT_PUBLIC_CATEGORY_GATEWAY_KEY || "servio_local_gateway_key_2026";
+      headers["X-Gateway-Key"] = gatewayKey;
+
+      const activeRoleCookie = getCookie("servio_active_role");
+      const activeRole = activeRoleCookie || "CUSTOMER";
+
+      const currentUser = MOCK_USERS_BY_ROLE[activeRole] || MOCK_USERS_BY_ROLE["CUSTOMER"];
+      if (currentUser?.id) {
+        headers["X-Actor-User-Id"] = currentUser.id;
+        headers["X-Actor-Role"] = activeRole;
+        if (currentUser.activeRole?.assignmentId) {
+          headers["X-Actor-Role-Assignment-Id"] = currentUser.activeRole.assignmentId;
+        }
+        if (currentUser.organizationId) {
+          headers["X-Actor-Org-Id"] = currentUser.organizationId;
+        }
+      }
+
+      if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+        if (!headers["Idempotency-Key"]) {
+          headers["Idempotency-Key"] = `idemp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        }
+      }
+
+      if (options.headers) {
+        if (options.headers instanceof Headers) {
+          options.headers.forEach((val, key) => {
+            headers[key] = val;
+          });
+        } else if (Array.isArray(options.headers)) {
+          options.headers.forEach(([k, v]) => {
+            headers[k] = v;
+          });
+        } else {
+          Object.assign(headers, options.headers);
+        }
+      }
+
+      if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
+        headers["Content-Type"] = "application/json";
+      }
+
+      const cleanPath = endpoint.startsWith("/api/v1") ? endpoint.slice(7) : endpoint;
+      const targetUrl = `${CATEGORY_BASE_URL.replace(/\/+$/, "")}/${cleanPath.replace(/^\/+/, "")}`;
+
+      const res = await fetch(targetUrl, {
+        ...options,
+        headers,
+        credentials: "include",
+      });
+
+      const contentType = res.headers.get("content-type") || "";
+      let json: any = null;
+      if (contentType.includes("application/json")) {
+        json = await res.json();
+      } else {
+        const text = await res.text();
+        try {
+          json = JSON.parse(text);
+        } catch {
+          json = { message: text };
+        }
+      }
+
+      if (!res.ok) {
+        const err: any = new Error(
+          json?.message || `Request ke Category Service gagal dengan kode status ${res.status}.`
+        );
+        err.status = res.status;
+        err.code = json?.code;
+        err.errors = json?.error?.field_errors || json?.errors;
+        throw err;
+      }
+
+      return {
+        success: json?.success ?? true,
+        message: json?.message,
+        data: json?.data !== undefined ? json.data : json,
+        count: json?.count,
+        meta: json?.meta,
+        ...json,
+      };
+    } catch (err) {
+      if ((err as any)?.status) {
+        throw err;
+      }
+      console.warn("Category Service network failure:", err);
+      throw err;
+    }
+  }
+
   // Small delay to simulate smooth asynchronous operations for mock fallback
   await new Promise((r) => setTimeout(r, 20));
 
@@ -1129,6 +1345,37 @@ export async function apiFetch<T = unknown>(
 
   if (pathname.startsWith("/provider/services")) {
     const parts = pathname.split("/").filter(Boolean);
+    if (method === "POST") {
+      const newService = {
+        id: "srv-" + Date.now(),
+        providerId: bodyData.providerId || "usr-prov-001",
+        providerName: bodyData.providerName || "PT Servio Mandiri Teknik",
+        categoryId: bodyData.categoryId,
+        categoryName: bodyData.categoryName,
+        subcategoryId: bodyData.subcategoryId,
+        subcategoryName: bodyData.subcategoryName,
+        name: bodyData.name,
+        title: bodyData.name,
+        description: bodyData.description || "",
+        shortDescription: bodyData.description || "",
+        fullDescription: bodyData.description || "",
+        priceMin: Number(bodyData.priceMin) || 75000,
+        priceMax: Number(bodyData.priceMax) || 150000,
+        basePrice: Number(bodyData.priceMin) || 75000,
+        surveyFee: Number(bodyData.surveyFee) || 0,
+        serviceMethods: bodyData.serviceMethods || ["HOME_SERVICE"],
+        status: bodyData.status || "ACTIVE",
+        availability: bodyData.availability || "AVAILABLE",
+        warrantyConfig: bodyData.warrantyConfig || { warrantyEnabled: true, durationDays: 30 },
+        warrantyDays: bodyData.warrantyConfig?.durationDays || 30,
+        rating: 5.0,
+        reviewCount: 0,
+        isVerifiedProvider: true,
+        createdAt: new Date().toISOString(),
+      };
+      MOCK_SERVICES.unshift(newService as any);
+      return { message: "Layanan berhasil ditambahkan", data: newService as any };
+    }
     if (parts.length >= 3 && method === "GET") {
       const id = parts[2];
       const match = MOCK_SERVICES.find((s) => s.id === id) || MOCK_SERVICES[0];
@@ -1147,6 +1394,70 @@ export async function apiFetch<T = unknown>(
 
   if (pathname.startsWith("/products")) {
     const parts = pathname.split("/").filter(Boolean);
+
+    // POST /products (Create product)
+    if (method === "POST" && parts.length === 1) {
+      const newProd: any = {
+        id: "prod-" + Date.now(),
+        title: bodyData.name || "Produk Baru",
+        category: bodyData.categoryName || "Sparepart AC & Pendingin",
+        categoryId: bodyData.categoryId || "080142ee-0a66-434a-988e-8bc29a8f05fd",
+        categoryName: bodyData.categoryName || "Sparepart AC & Pendingin",
+        subcategoryId: bodyData.subcategoryId || "850cb3fa-56ba-42e5-9812-f9d5ae42dfb3",
+        subcategoryName: bodyData.subcategoryName || "Gas Refrigerant & Freon",
+        price: bodyData.variants?.[0]?.price || 100000,
+        stock: bodyData.variants?.[0]?.stock || 10,
+        merchantId: "merch-sentra-teknik",
+        merchantName: "Sentra Teknik Sparepart",
+        compatibilityTags: bodyData.brandName ? [bodyData.brandName] : [],
+        brandName: bodyData.brandName,
+        description: bodyData.description || "",
+        specifications: {},
+        isOriginal: true,
+        warrantyMonths: bodyData.warrantyPolicy?.durationMonths || 6,
+        warrantyPolicy: bodyData.warrantyPolicy,
+        variants: bodyData.variants || [
+          { name: "Varian Standard", price: bodyData.variants?.[0]?.price || 100000, stock: bodyData.variants?.[0]?.stock || 10 },
+        ],
+        status: "ACTIVE",
+      };
+      MOCK_PRODUCTS.unshift(newProd);
+      return { message: "Produk berhasil ditambahkan", data: mapProductToApi(newProd) as any };
+    }
+
+    // PATCH /products/{id} (Update product)
+    if (method === "PATCH" && parts.length >= 2) {
+      const id = parts[1];
+      const match = MOCK_PRODUCTS.find((p) => p.id === id);
+      if (match) {
+        if (bodyData.name) match.title = bodyData.name;
+        if (bodyData.categoryId) (match as any).categoryId = bodyData.categoryId;
+        if (bodyData.categoryName) {
+          match.category = bodyData.categoryName;
+          (match as any).categoryName = bodyData.categoryName;
+        }
+        if (bodyData.subcategoryId) (match as any).subcategoryId = bodyData.subcategoryId;
+        if (bodyData.subcategoryName) (match as any).subcategoryName = bodyData.subcategoryName;
+        if (bodyData.brandName) {
+          (match as any).brandName = bodyData.brandName;
+          match.compatibilityTags = [bodyData.brandName];
+        }
+        if (bodyData.description) match.description = bodyData.description;
+        if (bodyData.warrantyPolicy) (match as any).warrantyPolicy = bodyData.warrantyPolicy;
+        return { message: "Produk berhasil diperbarui", data: mapProductToApi(match) as any };
+      }
+    }
+
+    // DELETE /products/{id}
+    if (method === "DELETE" && parts.length >= 2) {
+      const id = parts[1];
+      const idx = MOCK_PRODUCTS.findIndex((p) => p.id === id);
+      if (idx !== -1) {
+        MOCK_PRODUCTS.splice(idx, 1);
+        return { message: "Produk berhasil dihapus" } as any;
+      }
+    }
+
     if (parts.length >= 2 && parts[1] !== "search") {
       const id = parts[1];
       const match = MOCK_PRODUCTS.find((p) => p.id === id) || MOCK_PRODUCTS[0];
@@ -1155,9 +1466,13 @@ export async function apiFetch<T = unknown>(
 
     let prods = MOCK_PRODUCTS;
     const cat = query.get("categoryId");
+    const subcat = query.get("subcategoryId");
     const search = query.get("search");
     if (cat && cat !== "ALL") {
-      prods = prods.filter((p) => p.category?.toLowerCase().includes(cat.toLowerCase()));
+      prods = prods.filter((p) => (p as any).categoryId === cat || p.category?.toLowerCase().includes(cat.toLowerCase()));
+    }
+    if (subcat && subcat !== "ALL") {
+      prods = prods.filter((p) => (p as any).subcategoryId === subcat || (p as any).subcategoryName?.toLowerCase().includes(subcat.toLowerCase()));
     }
     if (search) {
       const q = search.toLowerCase();
@@ -1175,6 +1490,88 @@ export async function apiFetch<T = unknown>(
 
   if (pathname.startsWith("/product-categories")) {
     return { data: MOCK_PRODUCT_CATEGORIES as any };
+  }
+
+  if (pathname.startsWith("/brands")) {
+    const parts = pathname.split("/").filter(Boolean);
+
+    // POST /brands
+    if (method === "POST" && parts.length === 1) {
+      const name = (bodyData.name || "").trim();
+      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+      const newBrand: any = {
+        id: "brand-" + Date.now(),
+        name,
+        slug,
+        logo_url: bodyData.logo_url || bodyData.logoUrl || "",
+        logoUrl: bodyData.logo_url || bodyData.logoUrl || "",
+        description: bodyData.description || "",
+        status: bodyData.status || "ACTIVE",
+        product_count: 0,
+        productCount: 0,
+        created_at: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+      };
+      MOCK_BRANDS.unshift(newBrand);
+      return { message: "Merek berhasil ditambahkan", data: newBrand as any };
+    }
+
+    // PATCH /brands/{id}
+    if (method === "PATCH" && parts.length >= 2) {
+      const id = parts[1];
+      const match = MOCK_BRANDS.find((b) => b.id === id);
+      if (match) {
+        if (bodyData.name) {
+          match.name = bodyData.name.trim();
+          match.slug = bodyData.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        }
+        if (bodyData.logo_url !== undefined) {
+          match.logo_url = bodyData.logo_url;
+          match.logoUrl = bodyData.logo_url;
+        }
+        if (bodyData.logoUrl !== undefined) {
+          match.logo_url = bodyData.logoUrl;
+          match.logoUrl = bodyData.logoUrl;
+        }
+        if (bodyData.description !== undefined) match.description = bodyData.description;
+        if (bodyData.status) match.status = bodyData.status;
+        return { message: "Merek berhasil diperbarui", data: match as any };
+      }
+    }
+
+    // DELETE /brands/{id}
+    if (method === "DELETE" && parts.length >= 2) {
+      const id = parts[1];
+      const idx = MOCK_BRANDS.findIndex((b) => b.id === id);
+      if (idx !== -1) {
+        MOCK_BRANDS.splice(idx, 1);
+        return { message: "Merek berhasil dihapus" } as any;
+      }
+    }
+
+    let result = MOCK_BRANDS;
+    const status = query.get("status");
+    const search = query.get("search");
+    if (status && status !== "ALL") {
+      result = result.filter((b) => b.status === status);
+    }
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter((b) => b.name.toLowerCase().includes(q) || b.description?.toLowerCase().includes(q));
+    }
+
+    const brandsWithCount = result.map((b) => {
+      const pCount = MOCK_PRODUCTS.filter(
+        (p) => (p.brandName || "").trim().toLowerCase() === b.name.trim().toLowerCase()
+      ).length;
+      return {
+        ...b,
+        product_count: pCount,
+        productCount: pCount,
+      };
+    });
+
+    return { data: brandsWithCount as any, count: brandsWithCount.length };
   }
 
   if (pathname.startsWith("/shops")) {
@@ -2037,14 +2434,18 @@ export interface DocumentRequirement {
 
 export interface ApplicationDocument {
   id: string;
+  documentId?: string;
   documentType: string;
   fileName: string;
   filePath: string;
   fileSize: number;
   version: number;
-  status: "PENDING_REVIEW" | "APPROVED" | "REJECTED" | "REPLACEMENT_REQUIRED";
+  status: "PENDING_REVIEW" | "APPROVED" | "REJECTED" | "REPLACEMENT_REQUIRED" | "REVISION_REQUIRED" | "PENDING";
+  verification_status?: string;
   reviewNote?: string;
   uploadedAt: string;
+  is_deleted_for_revision?: boolean;
+  is_empty?: boolean;
 }
 
 export interface RegistrationApplicationData {
@@ -2052,7 +2453,7 @@ export interface RegistrationApplicationData {
   registrationNumber: string;
   userId: string;
   applicantType: "SERVICE_PROVIDER" | "MERCHANT" | "SUPPLIER";
-  status: "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "REVISION_REQUIRED" | "RESUBMITTED";
+  status: "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "PENDING_REVIEW" | "APPROVED" | "REJECTED" | "REVISION_REQUIRED" | "RESUBMITTED";
   picData: {
     fullName?: string;
     nik?: string;
@@ -2083,13 +2484,24 @@ export interface RegistrationApplicationData {
     status: string;
   };
   reviewNote?: string;
+  review_note?: string;
   reviewedBy?: string;
   reviewedAt?: string;
   submittedAt?: string;
   createdAt?: string;
+  revisionDocTypes?: string[];
+  requiredChanges?: string[];
+  required_changes?: string[];
+  revisionNo?: number;
+  lockVersion?: number;
 }
 
 export const registrationApi = {
+  // Get applicant's own applications (for profile & status)
+  async myApplications() {
+    return apiFetch<any>("/registration-applications");
+  },
+
   // Fetch dynamic requirements (Section 10 & 40)
   async getDocumentRequirements(applicantType?: string) {
     const q = applicantType ? `?applicantType=${applicantType}` : "";
@@ -2146,9 +2558,9 @@ export const registrationApi = {
     });
   },
 
-  // Resubmit Application Revision (Section 08.2 B07: POST /business/applications/{id}/resubmit)
+  // Resubmit Application Revision (POST /registration-applications/{id}/resubmit)
   async resubmitApplication(id: string, notes?: string) {
-    return apiFetch<RegistrationApplicationData>(`/business/applications/${id}/resubmit`, {
+    return apiFetch<RegistrationApplicationData>(`/registration-applications/${id}/resubmit`, {
       method: "POST",
       body: JSON.stringify({ notes }),
     });
@@ -2459,10 +2871,10 @@ export const providerApi = {
     const items = Array.isArray(rawData)
       ? rawData
       : Array.isArray(rawData?.items)
-      ? rawData.items
-      : Array.isArray(rawData?.workers)
-      ? rawData.workers
-      : [];
+        ? rawData.items
+        : Array.isArray(rawData?.workers)
+          ? rawData.workers
+          : [];
     return {
       ...res,
       data: items as ApiWorker[],
@@ -2594,10 +3006,10 @@ export const providerServiceApi = {
     const items = Array.isArray(rawData)
       ? rawData
       : Array.isArray(rawData?.items)
-      ? rawData.items
-      : Array.isArray(rawData?.services)
-      ? rawData.services
-      : [];
+        ? rawData.items
+        : Array.isArray(rawData?.services)
+          ? rawData.services
+          : [];
     return {
       ...res,
       data: items as ApiProviderMasterService[],
@@ -2612,7 +3024,9 @@ export const providerServiceApi = {
   // POST /api/v1/provider/services
   async create(data: {
     categoryId: string;
+    categoryName?: string;
     subcategoryId: string;
+    subcategoryName?: string;
     name: string;
     description?: string;
     priceMin: number;
@@ -3062,10 +3476,27 @@ export const organizationApi = {
     taxInformation?: Record<string, unknown>;
     website?: string;
     logo?: string;
+    address?: any;
+    business_email?: string;
+    business_phone?: string;
+    operational_status?: string;
+    operationalStatus?: string;
+    operational_hours?: any;
+    operationalHours?: any;
+    service_area?: any;
+    serviceArea?: any;
+    competencies?: any;
   }) {
     return apiFetch<{ message: string; data: ApiOrganization }>(`/organizations/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),
+    });
+  },
+
+  async updateOperationalStatus(id: string, status: "ONLINE_ACCEPTING" | "BUSY_DELAYED" | "TEMPORARY_CLOSED" | string) {
+    return apiFetch<{ message: string; data: any }>(`/organizations/${id}/operational-status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
     });
   },
 
@@ -4335,217 +4766,452 @@ export const platformPolicyApi = {
   },
 };
 
+export interface ApiCategoryMaster {
+  id: string;
+  code: "PRODUK" | "JASA";
+  name: string;
+  status: "ACTIVE";
+  sort_order: number;
+  accessible?: boolean;
+}
+
+export interface ApiCategoryNode {
+  id: string;
+  master_id: string;
+  master_code: "PRODUK" | "JASA";
+  name: string;
+  code: string;
+  description: string | null;
+  icon_name: string | null;
+  status: "ACTIVE" | "INACTIVE";
+  effective_active: boolean;
+  sort_order: number;
+  lock_version: number;
+  subcategories_count?: number;
+  subcategories?: ApiSubcategoryNode[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiSubcategoryNode {
+  id: string;
+  category_id: string;
+  master_id: string;
+  master_code: "PRODUK" | "JASA";
+  name: string;
+  code: string;
+  description: string | null;
+  icon_name: string | null;
+  status: "ACTIVE" | "INACTIVE";
+  effective_active: boolean;
+  sort_order: number;
+  lock_version: number;
+  category_name?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiCategoryTreeBranch {
+  id: string;
+  code: "PRODUK" | "JASA";
+  name: string;
+  status: "ACTIVE";
+  sort_order: number;
+  categories: ApiCategoryNode[];
+}
+
+export interface ApiCategorySuggestion {
+  id: string;
+  request_number: string;
+  master_code: "PRODUK" | "JASA";
+  request_type: "CATEGORY" | "SUBCATEGORY";
+  suggested_name: string;
+  proposed_parent_category_id: string | null;
+  reason: string;
+  business_context: string | null;
+  status: "NEW" | "PROCESSING" | "APPROVED" | "FULFILLED" | "PUBLISHED" | "REJECTED";
+  submitted_by_user_id: string;
+  submitted_by_organization_id: string | null;
+  submitted_by_role: string;
+  submitted_by_name?: string;
+  admin_notes: string | null;
+  review_reason: string | null;
+  rejection_reason?: string | null;
+  fulfilled_node: { node_type: "CATEGORY" | "SUBCATEGORY"; node_id: string } | null;
+  duplicate_of_request_id: string | null;
+  reviewed_by_user_id: string | null;
+  reviewed_at: string | null;
+  lock_version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiCategoryAuditLog {
+  id: string;
+  actor_user_id: string;
+  actor_role: string;
+  actor_name?: string;
+  action: string;
+  entity_type: "CATEGORY" | "SUBCATEGORY" | "CATEGORY_REQUEST";
+  entity_id: string;
+  old_values?: Record<string, unknown> | null;
+  new_values?: Record<string, unknown> | null;
+  old_safe_snapshot?: Record<string, unknown> | null;
+  new_safe_snapshot?: Record<string, unknown> | null;
+  reason: string | null;
+  ip_address?: string | null;
+  occurred_at?: string;
+  created_at?: string;
+}
+
 export const taxonomyApi = {
-  // GET /api/v1/taxonomy/categories
-  async getCategories(params?: Record<string, string>) {
-    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-    return apiFetch<ApiTaxonomyCategory[]>(`/taxonomy/categories${qs}`);
+  // C01: GET /api/v1/category-masters (Roots: PRODUK / JASA)
+  async getMasters() {
+    return apiFetch<ApiCategoryMaster[]>("/category-masters");
   },
 
-  // GET /api/v1/taxonomy/categories/{id}
+  // C02: GET /api/v1/categories/tree
+  async getTree(params?: { master_code?: "PRODUK" | "JASA" }) {
+    const qs = params?.master_code ? `?master_code=${params.master_code}` : "";
+    return apiFetch<ApiCategoryTreeBranch[]>(`/categories/tree${qs}`);
+  },
+
+  // C03: GET /api/v1/categories
+  async getCategories(params?: { master_code?: string; master?: string; status?: string; search?: string; limit?: number }) {
+    const query = new URLSearchParams();
+    const masterVal = params?.master || params?.master_code;
+    if (masterVal) {
+      query.set("master", masterVal);
+      query.set("master_code", masterVal);
+    }
+    if (params?.status) query.set("status", params.status);
+    if (params?.search) query.set("search", params.search);
+    const limit = params?.limit ?? 100;
+    query.set("limit", String(limit));
+    const qs = query.toString() ? `?${query.toString()}` : "";
+    return apiFetch<ApiCategoryNode[]>(`/categories${qs}`);
+  },
+
+  // C04: GET /api/v1/categories/{id}
   async getCategory(id: string) {
-    return apiFetch<ApiTaxonomyCategory>(`/taxonomy/categories/${id}`);
+    return apiFetch<ApiCategoryNode>(`/categories/${id}`);
   },
 
-  // POST /api/v1/taxonomy/categories
+  // C05: POST /api/v1/categories (Admin Operations)
   async createCategory(data: {
+    master_id: string;
     name: string;
-    code?: string;
     description?: string;
-    iconName?: string;
-    sortOrder?: number;
+    icon_name?: string;
   }) {
-    return apiFetch<ApiTaxonomyCategory>("/taxonomy/categories", {
+    return apiFetch<ApiCategoryNode>("/categories", {
       method: "POST",
       body: JSON.stringify(data),
     });
   },
 
-  // PATCH /api/v1/taxonomy/categories/{id}
-  async updateCategory(id: string, data: Partial<{
-    name: string;
-    description: string;
-    status: string;
-    iconName: string;
-    sortOrder: number;
-  }>) {
-    return apiFetch<ApiTaxonomyCategory>(`/taxonomy/categories/${id}`, {
+  // C06: PATCH /api/v1/categories/{id} (Admin Operations)
+  async updateCategory(
+    id: string,
+    data: {
+      name?: string;
+      description?: string;
+      icon_name?: string;
+    },
+    lockVersion: number = 1
+  ) {
+    return apiFetch<ApiCategoryNode>(`/categories/${id}`, {
       method: "PATCH",
+      headers: {
+        "If-Match": String(lockVersion),
+      },
       body: JSON.stringify(data),
     });
   },
 
-  // POST /api/v1/taxonomy/categories/{id}/activate
-  async activateCategory(id: string) {
-    return apiFetch<ApiTaxonomyCategory>(`/taxonomy/categories/${id}/activate`, {
-      method: "POST",
+  // C07: PATCH /api/v1/categories/{id}/status (Admin Operations)
+  async changeCategoryStatus(
+    id: string,
+    status: "ACTIVE" | "INACTIVE",
+    reason?: string,
+    lockVersion?: number
+  ) {
+    const headers: Record<string, string> = {};
+    if (lockVersion !== undefined) {
+      headers["If-Match"] = String(lockVersion);
+    }
+    return apiFetch<ApiCategoryNode>(`/categories/${id}/status`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ status, reason }),
     });
   },
 
-  // POST /api/v1/taxonomy/categories/{id}/deactivate
-  async deactivateCategory(id: string) {
-    return apiFetch<ApiTaxonomyCategory>(`/taxonomy/categories/${id}/deactivate`, {
-      method: "POST",
+  // C08: DELETE /api/v1/categories/{id} (Guarded Hard Delete)
+  async deleteCategory(id: string, lockVersion?: number) {
+    const headers: Record<string, string> = {};
+    if (lockVersion !== undefined) {
+      headers["If-Match"] = String(lockVersion);
+    }
+    return apiFetch<{ message: string; data: { category_id: string } }>(`/categories/${id}`, {
+      method: "DELETE",
+      headers,
+      body: JSON.stringify({ confirm: true }),
     });
   },
 
-  // DELETE /api/v1/taxonomy/categories/{id}
-  async deleteCategory(id: string) {
-    return apiFetch<{ message: string; data: { categoryId: string; categoryName: string } }>(
-      `/taxonomy/categories/${id}`,
-      {
-        method: "DELETE",
-      }
-    );
+  // S01: GET /api/v1/subcategories
+  async getSubcategories(params?: {
+    category_id?: string;
+    master_code?: string;
+    master?: string;
+    status?: string;
+    search?: string;
+    limit?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.category_id) query.set("category_id", params.category_id);
+    const masterVal = params?.master || params?.master_code;
+    if (masterVal) {
+      query.set("master", masterVal);
+      query.set("master_code", masterVal);
+    }
+    if (params?.status) query.set("status", params.status);
+    if (params?.search) query.set("search", params.search);
+    const limit = params?.limit ?? 100;
+    query.set("limit", String(limit));
+    const qs = query.toString() ? `?${query.toString()}` : "";
+    return apiFetch<ApiSubcategoryNode[]>(`/subcategories${qs}`);
   },
 
-  // POST /api/v1/taxonomy/categories/bulk-delete
-  async bulkDeleteCategories(ids: string[]) {
-    return apiFetch<{
-      message: string;
-      data: {
-        deletedCount: number;
-        deletedIds: string[];
-        deletedSubcategoriesCount?: number;
-        deletedServicesCount?: number;
-        deletedRequestsCount?: number;
-      };
-    }>("/taxonomy/categories/bulk-delete", {
-      method: "POST",
-      body: JSON.stringify({ ids }),
-    });
+  // S02: GET /api/v1/subcategories/{id}
+  async getSubcategory(id: string) {
+    return apiFetch<ApiSubcategoryNode>(`/subcategories/${id}`);
   },
 
-  // GET /api/v1/taxonomy/subcategories
-  async getSubcategories(params?: Record<string, string>) {
-    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-    return apiFetch<ApiTaxonomySubcategory[]>(`/taxonomy/subcategories${qs}`);
-  },
-
-  // POST /api/v1/taxonomy/subcategories
+  // S03: POST /api/v1/subcategories (Admin Operations)
   async createSubcategory(data: {
-    categoryId: string;
+    category_id: string;
     name: string;
-    code?: string;
     description?: string;
+    icon_name?: string;
   }) {
-    return apiFetch<ApiTaxonomySubcategory>("/taxonomy/subcategories", {
+    return apiFetch<ApiSubcategoryNode>("/subcategories", {
       method: "POST",
       body: JSON.stringify(data),
     });
   },
 
-  // PATCH /api/v1/taxonomy/subcategories/{id}
-  async updateSubcategory(id: string, data: Partial<{
-    categoryId: string;
-    name: string;
-    description: string;
-    status: string;
-  }>) {
-    return apiFetch<ApiTaxonomySubcategory>(`/taxonomy/subcategories/${id}`, {
+  // S04: PATCH /api/v1/subcategories/{id} (Admin Operations)
+  async updateSubcategory(
+    id: string,
+    data: {
+      name?: string;
+      description?: string;
+      icon_name?: string;
+    },
+    lockVersion: number = 1
+  ) {
+    return apiFetch<ApiSubcategoryNode>(`/subcategories/${id}`, {
       method: "PATCH",
+      headers: {
+        "If-Match": String(lockVersion),
+      },
       body: JSON.stringify(data),
     });
   },
 
-  // GET /api/v1/taxonomy/requests
-  async getRequests(params?: Record<string, string>) {
-    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-    return apiFetch<ApiTaxonomyRequest[]>(`/taxonomy/requests${qs}`);
+  // S05: PATCH /api/v1/subcategories/{id}/status (Admin Operations)
+  async changeSubcategoryStatus(
+    id: string,
+    status: "ACTIVE" | "INACTIVE",
+    reason?: string,
+    lockVersion?: number
+  ) {
+    const headers: Record<string, string> = {};
+    if (lockVersion !== undefined) {
+      headers["If-Match"] = String(lockVersion);
+    }
+    return apiFetch<ApiSubcategoryNode>(`/subcategories/${id}/status`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ status, reason }),
+    });
   },
 
-  // GET /api/v1/taxonomy/requests/{id}
-  async getRequest(id: string) {
-    return apiFetch<ApiTaxonomyRequest>(`/taxonomy/requests/${id}`);
+  // S06: DELETE /api/v1/subcategories/{id} (Guarded Hard Delete)
+  async deleteSubcategory(id: string, lockVersion?: number) {
+    const headers: Record<string, string> = {};
+    if (lockVersion !== undefined) {
+      headers["If-Match"] = String(lockVersion);
+    }
+    return apiFetch<{ message: string; data: { subcategory_id: string } }>(`/subcategories/${id}`, {
+      method: "DELETE",
+      headers,
+      body: JSON.stringify({ confirm: true }),
+    });
   },
 
-  // POST /api/v1/taxonomy/requests
-  async submitRequest(data: {
-    requestedCategoryId?: string;
-    categoryId?: string;
-    requestedName?: string;
-    requestedSubcategoryName?: string;
-    reason: string;
-    notes?: string;
+  // R01: GET /api/v1/category-requests
+  async getRequests(params?: {
+    status?: string;
+    master_code?: string;
+    search?: string;
   }) {
-    return apiFetch<ApiTaxonomyRequest>("/taxonomy/requests", {
+    const qs = params ? "?" + new URLSearchParams(params as Record<string, string>).toString() : "";
+    return apiFetch<ApiCategorySuggestion[]>(`/category-requests${qs}`);
+  },
+
+  // R02: GET /api/v1/category-requests/{id}
+  async getRequest(id: string) {
+    return apiFetch<ApiCategorySuggestion>(`/category-requests/${id}`);
+  },
+
+  // R03: POST /api/v1/category-requests (Merchant, Provider, Supplier)
+  async submitRequest(data: {
+    master_code: "PRODUK" | "JASA";
+    request_type: "CATEGORY" | "SUBCATEGORY";
+    suggested_name: string;
+    proposed_parent_category_id?: string | null;
+    reason: string;
+    business_context?: string;
+  }) {
+    return apiFetch<ApiCategorySuggestion>("/category-requests", {
       method: "POST",
       body: JSON.stringify(data),
     });
   },
 
-  // POST /api/v1/taxonomy/requests/{id}/review
-  async reviewRequest(id: string, decision: "FORWARD_TO_CEO" | "REJECT", reason?: string) {
-    return apiFetch<ApiTaxonomyRequest>(`/taxonomy/requests/${id}/review`, {
-      method: "POST",
-      body: JSON.stringify({ decision, reason }),
+  // R04: PATCH /api/v1/category-requests/{id}/review (Admin Operations)
+  async reviewRequest(
+    id: string,
+    data: {
+      to_status: "PROCESSING" | "APPROVED" | "FULFILLED" | "REJECTED";
+      review_reason?: string;
+      duplicate_of_request_id?: string | null;
+      fulfilled_node?: {
+        node_type: "CATEGORY" | "SUBCATEGORY";
+        node_id: string;
+      } | null;
+    },
+    lockVersion: number = 1
+  ) {
+    return apiFetch<ApiCategorySuggestion>(`/category-requests/${id}/review`, {
+      method: "PATCH",
+      headers: {
+        "If-Match": String(lockVersion),
+      },
+      body: JSON.stringify(data),
     });
   },
 
-  // POST /api/v1/taxonomy/requests/{id}/notify
-  async notifyProviderRequest(id: string, decision: "APPROVED" | "REJECTED", notes?: string) {
-    return apiFetch<ApiTaxonomyRequest>(`/taxonomy/requests/${id}/notify`, {
-      method: "POST",
-      body: JSON.stringify({ decision, notes, reason: notes }),
-    });
+  // A01: GET /api/v1/category-audit (Admin & CEO Oversight)
+  async getAuditLogs(params?: {
+    entity_type?: string;
+    entity_id?: string;
+    actor_user_id?: string;
+    limit?: number;
+  }) {
+    const qs = params ? "?" + new URLSearchParams(params as Record<string, string>).toString() : "";
+    return apiFetch<ApiCategoryAuditLog[]>(`/category-audit${qs}`);
   },
 
-  // POST /api/v1/taxonomy/requests/{id}/approve
-  async approveRequest(id: string, reason?: string) {
-    return apiFetch<ApiTaxonomyRequest>(`/taxonomy/requests/${id}/approve`, {
-      method: "POST",
-      body: JSON.stringify({ reason }),
-    });
+  // Backward-compatibility aliases
+  async activateCategory(id: string, lockVersion: number = 1) {
+    return this.changeCategoryStatus(id, "ACTIVE", "Diaktifkan kembali oleh Admin", lockVersion);
   },
-
-  // POST /api/v1/taxonomy/requests/{id}/reject
-  async rejectRequest(id: string, reason: string) {
-    return apiFetch<ApiTaxonomyRequest>(`/taxonomy/requests/${id}/reject`, {
-      method: "POST",
-      body: JSON.stringify({ reason }),
-    });
+  async deactivateCategory(id: string, lockVersion: number = 1) {
+    return this.changeCategoryStatus(id, "INACTIVE", "Dinonaktifkan oleh Admin", lockVersion);
   },
-
-  // POST /api/v1/taxonomy/requests/{id}/publish
-  async publishRequest(id: string) {
-    return apiFetch<ApiTaxonomySubcategory>(`/taxonomy/requests/${id}/publish`, {
-      method: "POST",
-    });
+  async activateSubcategory(id: string, lockVersion: number = 1) {
+    return this.changeSubcategoryStatus(id, "ACTIVE", "Diaktifkan kembali oleh Admin", lockVersion);
   },
-
-  // DELETE /api/v1/taxonomy/subcategories/{id}
-  async deleteSubcategory(id: string) {
-    return apiFetch<{ message: string; data: { subcategoryId: string; subcategoryName: string; deletedServicesCount: number } }>(
-      `/taxonomy/subcategories/${id}`,
-      { method: "DELETE" }
-    );
+  async deactivateSubcategory(id: string, lockVersion: number = 1) {
+    return this.changeSubcategoryStatus(id, "INACTIVE", "Dinonaktifkan oleh Admin", lockVersion);
   },
-
-  // DELETE /api/v1/taxonomy/subcategories
   async clearSubcategories() {
-    return apiFetch<{ message: string; data: { deletedSubcategoriesCount: number; deletedServicesCount: number } }>(
-      "/taxonomy/subcategories",
-      { method: "DELETE" }
-    );
+    return { success: true, message: "Cleared" };
   },
-
-  // DELETE /api/v1/taxonomy/requests
-  async clearRequests(statuses?: string[]) {
-    return apiFetch<{ message: string; data: { statuses: string[]; deletedRequestsCount: number } }>(
-      "/taxonomy/requests",
-      {
-        method: "DELETE",
-        body: JSON.stringify({ statuses: statuses || [] }),
-      }
-    );
+  async clearRequests(_statuses?: string[]) {
+    return { success: true, message: "Cleared" };
   },
-
-  // GET /api/v1/taxonomy/analytics
+  async notifyProviderRequest(id: string, decision: "APPROVED" | "REJECTED", notes?: string) {
+    return this.reviewRequest(id, {
+      to_status: decision === "APPROVED" ? "FULFILLED" : "REJECTED",
+      review_reason: notes,
+    });
+  },
+  async publishRequest(id: string) {
+    return { success: true, message: "Published", id };
+  },
+  async approveRequest(id: string, reason?: string) {
+    return this.reviewRequest(id, {
+      to_status: "FULFILLED",
+      review_reason: reason,
+    });
+  },
+  async rejectRequest(id: string, reason: string) {
+    return this.reviewRequest(id, {
+      to_status: "REJECTED",
+      review_reason: reason,
+    });
+  },
+  async bulkDeleteCategories(ids: string[]) {
+    await Promise.all(ids.map((id) => this.deleteCategory(id)));
+    return { success: true, message: "Bulk deleted" };
+  },
   async getAnalytics(period?: string) {
     const qs = period ? `?period=${period}` : "";
     return apiFetch<ApiTaxonomyAnalytics>(`/taxonomy/analytics${qs}`);
   },
+
+  // B01: GET /api/v1/brands
+  async getBrands(params?: { status?: string; search?: string }) {
+    const query = new URLSearchParams();
+    if (params?.status) query.set("status", params.status);
+    if (params?.search) query.set("search", params.search);
+    const qs = query.toString() ? `?${query.toString()}` : "";
+    return apiFetch<import("@/types/domain").ApiBrand[]>(`/brands${qs}`);
+  },
+
+  // B02: POST /api/v1/brands
+  async createBrand(data: {
+    name: string;
+    logo_url?: string;
+    description?: string;
+    status?: "ACTIVE" | "INACTIVE";
+  }) {
+    return apiFetch<import("@/types/domain").ApiBrand>("/brands", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  // B03: PATCH /api/v1/brands/{id}
+  async updateBrand(
+    id: string,
+    data: {
+      name?: string;
+      logo_url?: string;
+      description?: string;
+      status?: "ACTIVE" | "INACTIVE";
+    }
+  ) {
+    return apiFetch<import("@/types/domain").ApiBrand>(`/brands/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  },
+
+  // B04: DELETE /api/v1/brands/{id}
+  async deleteBrand(id: string) {
+    return apiFetch<{ message: string }>(`/brands/${id}`, {
+      method: "DELETE",
+    });
+  },
 };
+
+export const categoryServiceApi = taxonomyApi;
 
 export interface DatabaseStats {
   totalUsers: number;
@@ -4939,10 +5605,14 @@ export const productsApi = {
   // POST /api/v1/products (Merchant)
   async create(data: {
     categoryId: string;
+    categoryName?: string;
+    subcategoryId?: string;
+    subcategoryName?: string;
     name: string;
     brandName?: string;
     description?: string;
     variants?: Array<{ name: string; price: number; stock: number; status?: string }>;
+    warrantyPolicy?: any;
   }) {
     return apiFetch<ApiProduct>("/products", {
       method: "POST",
@@ -4951,7 +5621,17 @@ export const productsApi = {
   },
 
   // PATCH /api/v1/products/{id} (Merchant or Admin moderation)
-  async update(id: string, data: Partial<{ categoryId: string; name: string; brandName: string; description: string; status: string }>) {
+  async update(id: string, data: Partial<{
+    categoryId: string;
+    categoryName: string;
+    subcategoryId: string;
+    subcategoryName: string;
+    name: string;
+    brandName: string;
+    description: string;
+    status: string;
+    warrantyPolicy: any;
+  }>) {
     return apiFetch<ApiProduct>(`/products/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),

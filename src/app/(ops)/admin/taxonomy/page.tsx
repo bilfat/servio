@@ -1,17 +1,36 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useCallback } from "react";
-import { useDomainRepository } from "@/lib/repository/domainRepository";
 import { useActiveRole } from "@/context/RoleContext";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Badge } from "@/components/ui/Badge";
 import {
+  Wrench,
+  HouseLine,
+  Broom,
+  GearSix,
+  TreeEvergreen,
+  Car,
+  Lightning,
+  ShieldCheck,
+  Drop,
+  Flame,
+  Fan,
+  PaintRoller,
+  Scissors,
+  Truck,
+  Camera,
+  Plug,
+  DeviceMobile,
+  FirstAid,
+  Package,
+  Storefront,
+  Lock,
+  Sparkle,
   Folder,
   TreeStructure,
-  Wrench,
-  ChartLineUp,
   Plus,
   PencilSimple,
   CheckCircle,
@@ -19,164 +38,239 @@ import {
   ToggleLeft,
   ToggleRight,
   MagnifyingGlass,
-  ArrowRight,
-  ShieldCheck,
   PaperPlaneTilt,
-  LockKey,
-  Info,
-  Clock,
-  Eye,
-  ArrowsLeftRight,
   Trash,
+  ClipboardText,
+  Tag,
+  Image as ImageIcon,
 } from "@phosphor-icons/react";
-import { ServiceCategory, ServiceSubcategory, SubcategoryRequest, ProviderMasterService } from "@/types/domain";
-import { taxonomyApi, publicCatalogApi, ApiTaxonomyAnalytics } from "@/lib/servioApi";
+import {
+  taxonomyApi,
+  ApiCategoryMaster,
+  ApiCategoryNode,
+  ApiSubcategoryNode,
+  ApiCategorySuggestion,
+  ApiCategoryAuditLog,
+} from "@/lib/servioApi";
+import type { ApiBrand } from "@/types/domain";
 
-type AdminMainTab = "category" | "subcategory" | "master-service" | "analysis";
-type SubcategorySubSection = "list" | "requests" | "accepted" | "rejected";
+// Mapping Icon Phosphor ke Komponen React
+export const CATEGORY_ICON_MAP: Record<string, React.ElementType> = {
+  Wrench,
+  HouseLine,
+  Broom,
+  GearSix,
+  TreeEvergreen,
+  Car,
+  Lightning,
+  ShieldCheck,
+  Drop,
+  Flame,
+  Fan,
+  PaintRoller,
+  Scissors,
+  Truck,
+  Camera,
+  Plug,
+  DeviceMobile,
+  FirstAid,
+  Package,
+  Storefront,
+  Lock,
+  Sparkle,
+  Folder,
+};
+
+// Daftar Icon Pilihan untuk Modal Tambah Kategori Jasa
+export const AVAILABLE_SERVICE_ICONS = [
+  { name: "Wrench", label: "Repair & Teknik", icon: Wrench, isDefault: true },
+  { name: "HouseLine", label: "Home & Bangunan", icon: HouseLine, isDefault: true },
+  { name: "Broom", label: "Cleaning & Kebersihan", icon: Broom, isDefault: true },
+  { name: "GearSix", label: "Maintenance & Mesin", icon: GearSix, isDefault: true },
+  { name: "TreeEvergreen", label: "Environment & Taman", icon: TreeEvergreen, isDefault: true },
+  { name: "Car", label: "Automotive & Kendaraan", icon: Car, isDefault: true },
+  { name: "Lightning", label: "Kelistrikan & Daya", icon: Lightning },
+  { name: "Drop", label: "Pipa Air & Plumbing", icon: Drop },
+  { name: "Flame", label: "Gas & Pemanas", icon: Flame },
+  { name: "Fan", label: "AC & Ventilasi", icon: Fan },
+  { name: "PaintRoller", label: "Pengecatan & Dinding", icon: PaintRoller },
+  { name: "Scissors", label: "Grooming & Potong", icon: Scissors },
+  { name: "Plug", label: "Elektronik & Perangkat", icon: Plug },
+  { name: "DeviceMobile", label: "Gadget & Handphone", icon: DeviceMobile },
+  { name: "Camera", label: "CCTV & Keamanan", icon: Camera },
+  { name: "ShieldCheck", label: "Inspeksi & Sertifikasi", icon: ShieldCheck },
+  { name: "Truck", label: "Logistik & Pindahan", icon: Truck },
+  { name: "Lock", label: "Ahli Kunci & Brankas", icon: Lock },
+  { name: "FirstAid", label: "Sanitasi Medis & Fogging", icon: FirstAid },
+  { name: "Sparkle", label: "Layanan Spesialis", icon: Sparkle },
+  { name: "Folder", label: "Umum & Lainnya", icon: Folder },
+];
+
+type MainModuleTab = "JASA" | "PRODUK" | "REQUESTS" | "BRANDS" | "AUDIT";
+type SubModuleTab = "CATEGORY" | "SUBCATEGORY";
+type RequestFilterStatus = "ALL" | "NEW" | "PROCESSING" | "APPROVED" | "FULFILLED" | "REJECTED";
+
+const REQUEST_FILTER_OPTIONS: { id: RequestFilterStatus; label: string }[] = [
+  { id: "ALL", label: "All" },
+  { id: "NEW", label: "New" },
+  { id: "PROCESSING", label: "In Review" },
+  { id: "APPROVED", label: "Approved" },
+  { id: "FULFILLED", label: "Published" },
+  { id: "REJECTED", label: "Rejected" },
+];
 
 export default function AdminTaxonomyPage() {
-  const repo = useDomainRepository();
   const { user } = useActiveRole();
 
-  // Exactly 4 main tabs (Locked Decision Section 14 & 45)
-  const [activeTab, setActiveTab] = useState<AdminMainTab>("category");
-  // Inside Subkategori: sub-section toggle (Daftar vs Pengajuan Subkategori)
-  const [subSection, setSubSection] = useState<SubcategorySubSection>("list");
+  // Tab Utama: Layanan Jasa, Produk & Barang, Pengajuan Mitra, Merek Produk, Audit Log
+  const [mainTab, setMainTab] = useState<MainModuleTab>("JASA");
+  // Sub-tab di dalam Jasa atau Produk: Kategori vs Sub Kategori
+  const [subTab, setSubTab] = useState<SubModuleTab>("CATEGORY");
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [brandSearchQuery, setBrandSearchQuery] = useState("");
+  const [brandStatusFilter, setBrandStatusFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
+  const [requestStatusFilter, setRequestStatusFilter] = useState<RequestFilterStatus>("ALL");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Subcategory Create / Edit / Map Modals
-  const [isAddSubOpen, setIsAddSubOpen] = useState(false);
-  const [newSubCatId, setNewSubCatId] = useState("cat-repair");
-  const [newSubName, setNewSubName] = useState("");
-  const [newSubDesc, setNewSubDesc] = useState("");
-
-  const [editingSub, setEditingSub] = useState<ServiceSubcategory | null>(null);
-  const [editSubName, setEditSubName] = useState("");
-  const [editSubDesc, setEditSubDesc] = useState("");
-
-  const [mappingSub, setMappingSub] = useState<ServiceSubcategory | null>(null);
-  const [targetCatId, setTargetCatId] = useState("cat-repair");
-
-  // Request Review Modal
-  const [selectedReq, setSelectedReq] = useState<SubcategoryRequest | null>(null);
-  const [reviewAction, setReviewAction] = useState<"FORWARD" | "REJECT" | "PUBLISH" | "NOTIFY_PROVIDER">("FORWARD");
-  const [notifyDecision, setNotifyDecision] = useState<"APPROVED" | "REJECTED">("APPROVED");
-  const [adminNotes, setAdminNotes] = useState("");
-
-  // Live Canonical Backend Data
-  const [apiCategories, setApiCategories] = useState<ServiceCategory[] | null>(null);
-  const [apiSubcategories, setApiSubcategories] = useState<ServiceSubcategory[] | null>(null);
-  const [apiRequests, setApiRequests] = useState<SubcategoryRequest[] | null>(null);
-  const [apiProviderServices, setApiProviderServices] = useState<ProviderMasterService[] | null>(null);
-  const [serverAnalytics, setServerAnalytics] = useState<ApiTaxonomyAnalytics | null>(null);
+  // Live Backend Data States
+  const [masters, setMasters] = useState<ApiCategoryMaster[]>([]);
+  const [categories, setCategories] = useState<ApiCategoryNode[]>([]);
+  const [subcategories, setSubcategories] = useState<ApiSubcategoryNode[]>([]);
+  const [requests, setRequests] = useState<ApiCategorySuggestion[]>([]);
+  const [auditLogs, setAuditLogs] = useState<ApiCategoryAuditLog[]>([]);
+  const [brands, setBrands] = useState<ApiBrand[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const actor = useMemo(
-    () => ({
-      id: user.id || "usr-admin-ops-01",
-      name: user.name || "Fajar Wicaksono (Admin Operations)",
-    }),
-    [user]
-  );
+  // =========================================================================
+  // BRANDS MANAGEMENT STATE
+  // =========================================================================
+  const [isAddBrandOpen, setIsAddBrandOpen] = useState(false);
+  const [editingBrand, setEditingBrand] = useState<ApiBrand | null>(null);
+  const [deleteBrandTarget, setDeleteBrandTarget] = useState<ApiBrand | null>(null);
 
+  const [brandFormName, setBrandFormName] = useState("");
+  const [brandFormLogo, setBrandFormLogo] = useState("");
+  const [brandFormDesc, setBrandFormDesc] = useState("");
+  const [brandFormStatus, setBrandFormStatus] = useState<"ACTIVE" | "INACTIVE">("ACTIVE");
+
+  // =========================================================================
+  // MODALS STATE
+  // =========================================================================
+
+  // Modal: Tambah Kategori Jasa (Nama + Icon Picker)
+  const [isAddJasaCategoryOpen, setIsAddJasaCategoryOpen] = useState(false);
+  const [newJasaCatName, setNewJasaCatName] = useState("");
+  const [newJasaCatIcon, setNewJasaCatIcon] = useState("Wrench");
+
+  // Modal: Tambah Sub Kategori Jasa (Pilih Kategori Induk Jasa + Nama)
+  const [isAddJasaSubOpen, setIsAddJasaSubOpen] = useState(false);
+  const [newJasaSubCatId, setNewJasaSubCatId] = useState("");
+  const [newJasaSubName, setNewJasaSubName] = useState("");
+
+  // Modal: Tambah Kategori Barang (Nama saja)
+  const [isAddProdukCategoryOpen, setIsAddProdukCategoryOpen] = useState(false);
+  const [newProdukCatName, setNewProdukCatName] = useState("");
+
+  // Modal: Tambah Sub Kategori Barang (Pilih Kategori Induk Barang + Nama)
+  const [isAddProdukSubOpen, setIsAddProdukSubOpen] = useState(false);
+  const [newProdukSubCatId, setNewProdukSubCatId] = useState("");
+  const [newProdukSubName, setNewProdukSubName] = useState("");
+
+  // Edit Kategori Modal
+  const [editingCategory, setEditingCategory] = useState<ApiCategoryNode | null>(null);
+  const [editCatName, setEditCatName] = useState("");
+  const [editCatIcon, setEditCatIcon] = useState("Folder");
+
+  // Edit Subkategori Modal
+  const [editingSub, setEditingSub] = useState<ApiSubcategoryNode | null>(null);
+  const [editSubName, setEditSubName] = useState("");
+
+  // Ubah Status Modals
+  const [statusCategoryModal, setStatusCategoryModal] = useState<{
+    cat: ApiCategoryNode;
+    nextStatus: "ACTIVE" | "INACTIVE";
+  } | null>(null);
+  const [statusSubcategoryModal, setStatusSubcategoryModal] = useState<{
+    sub: ApiSubcategoryNode;
+    nextStatus: "ACTIVE" | "INACTIVE";
+  } | null>(null);
+
+  // Hard Delete Modals
+  const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<ApiCategoryNode | null>(null);
+  const [deleteSubcategoryTarget, setDeleteSubcategoryTarget] = useState<ApiSubcategoryNode | null>(null);
+
+  // Request Review Modal
+  const [selectedReq, setSelectedReq] = useState<ApiCategorySuggestion | null>(null);
+  const [reviewAction, setReviewAction] = useState<"APPROVED" | "PROCESSING" | "FULFILLED" | "REJECTED">("APPROVED");
+  const [reviewReason, setReviewReason] = useState("");
+  const [fulfilledNodeType, setFulfilledNodeType] = useState<"CATEGORY" | "SUBCATEGORY">("SUBCATEGORY");
+  const [fulfilledNodeId, setFulfilledNodeId] = useState("");
+  const [linkedRequestId, setLinkedRequestId] = useState<string | null>(null);
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const showError = (err: any) => {
+    let msg = "";
+    if (typeof err === "string") {
+      msg = err;
+    } else if (err?.errors && typeof err.errors === "object") {
+      const details = Object.entries(err.errors)
+        .map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(", ") : msgs}`)
+        .join("; ");
+      msg = `${err.message || "Validasi gagal"}: ${details}`;
+    } else {
+      msg = err?.message || "Terjadi kesalahan.";
+    }
+    setErrorMessage(msg);
+    setTimeout(() => setErrorMessage(null), 6000);
+  };
+
+  // Load data dari Category Service
   const loadData = useCallback(async () => {
     try {
-      const [catsRes, subsRes, reqsRes, pmsRes, analyticsRes] = await Promise.allSettled([
-        taxonomyApi.getCategories(),
-        taxonomyApi.getSubcategories(),
+      setIsLoading(true);
+      const [mastersRes, catsRes, subsRes, reqsRes, auditRes, brandsRes] = await Promise.allSettled([
+        taxonomyApi.getMasters(),
+        taxonomyApi.getCategories({ limit: 100 }),
+        taxonomyApi.getSubcategories({ limit: 100 }),
         taxonomyApi.getRequests(),
-        publicCatalogApi.getCatalog(),
-        taxonomyApi.getAnalytics("all"),
+        taxonomyApi.getAuditLogs({ limit: 50 }),
+        taxonomyApi.getBrands(),
       ]);
 
+      if (mastersRes.status === "fulfilled" && Array.isArray(mastersRes.value?.data)) {
+        setMasters(mastersRes.value.data);
+      }
+
       if (catsRes.status === "fulfilled" && Array.isArray(catsRes.value?.data)) {
-        const cats = catsRes.value.data;
-        if (cats.length > 0) {
-          setApiCategories(
-            cats.map((c) => ({
-              id: c.id || c._id,
-              name: c.name,
-              code: c.code,
-              description: c.description || "",
-              status: (c.status || "ACTIVE") as "ACTIVE" | "INACTIVE",
-              iconName: c.iconName || "Folder",
-              sortOrder: c.sortOrder || 1,
-              subcategoriesCount: 0,
-              activeServicesCount: 0,
-              createdAt: c.createdAt || "",
-              updatedAt: c.updatedAt || "",
-            }))
-          );
-        }
+        setCategories(catsRes.value.data);
       }
 
       if (subsRes.status === "fulfilled" && Array.isArray(subsRes.value?.data)) {
-        setApiSubcategories(
-          subsRes.value.data.map((s) => ({
-            id: s.id || s._id,
-            categoryId: s.categoryId,
-            name: s.name,
-            code: s.code,
-            description: s.description || "",
-            status: (s.status || "ACTIVE") as "ACTIVE" | "INACTIVE",
-            activeServicesCount: 0,
-            createdAt: s.createdAt || "",
-            updatedAt: s.updatedAt || "",
-          }))
-        );
+        setSubcategories(subsRes.value.data);
       }
 
       if (reqsRes.status === "fulfilled" && Array.isArray(reqsRes.value?.data)) {
-        setApiRequests(
-          reqsRes.value.data.map((r: any) => ({
-            id: r._id || r.id,
-            providerId: r.providerOrganizationId || r.providerId || "prov-001",
-            providerName: r.providerName || "Mitra Servio",
-            categoryId: r.requestedCategoryId || r.categoryId || "",
-            categoryName: r.category?.name || r.categoryName || "",
-            requestedSubcategoryName: r.requestedName || r.requestedSubcategoryName || "",
-            reason: r.reason || "",
-            notes: r.notes || "",
-            status: r.status as SubcategoryRequest["status"],
-            createdAt: r.createdAt || new Date().toISOString(),
-            adminReviewNotes: r.adminReview?.reason || r.adminNotes,
-            ceoReviewNotes: r.ceoReview?.reason || r.reviewNotes,
-          }))
-        );
+        setRequests(reqsRes.value.data);
       }
 
-      if (pmsRes.status === "fulfilled" && Array.isArray(pmsRes.value?.data)) {
-        setApiProviderServices(
-          pmsRes.value.data.map((p: any) => ({
-            id: p._id || p.id,
-            providerId: p.providerId,
-            providerName: p.providerName || "Mitra Servio",
-            categoryId: p.categoryId,
-            categoryName: p.categoryName || "",
-            subcategoryId: p.subcategoryId,
-            subcategoryName: p.subcategoryName || "",
-            name: p.name || p.title,
-            description: p.description || p.shortDescription || "",
-            priceMin: p.priceMin || p.basePrice || 0,
-            priceMax: p.priceMax || p.basePrice || 0,
-            surveyFee: p.surveyFee || 0,
-            serviceMethods: (p.serviceMethods || ["HOME_SERVICE"]) as ("HOME_SERVICE" | "WORKSHOP" | "ON_SITE")[],
-            status: (p.status || "ACTIVE") as "ACTIVE" | "INACTIVE",
-            warrantyDurationDays: p.warrantyDurationDays || p.warrantyDays || 30,
-            createdAt: p.createdAt || "",
-            updatedAt: p.updatedAt || "",
-          }))
-        );
+      if (auditRes.status === "fulfilled" && Array.isArray(auditRes.value?.data)) {
+        setAuditLogs(auditRes.value.data);
       }
 
-      if (analyticsRes.status === "fulfilled" && analyticsRes.value?.data) {
-        setServerAnalytics(analyticsRes.value.data);
+      if (brandsRes.status === "fulfilled" && Array.isArray(brandsRes.value?.data)) {
+        setBrands(brandsRes.value.data);
       }
-    } catch (err) {
-      console.warn("Admin taxonomy API load warning:", err);
+    } catch (err: any) {
+      console.warn("Failed to load category service data:", err);
+      showError(err);
     } finally {
       setIsLoading(false);
     }
@@ -186,258 +280,575 @@ export default function AdminTaxonomyPage() {
     loadData();
   }, [loadData]);
 
-  const categories = apiCategories !== null ? apiCategories : repo.categories;
-  const subcategories = apiSubcategories !== null ? apiSubcategories : repo.subcategories;
-  const providerServices = apiProviderServices !== null ? apiProviderServices : repo.providerMasterServices;
-  const requests = apiRequests !== null ? apiRequests : (isLoading ? [] : repo.taxonomyRequests);
-
-  const analytics = useMemo(() => {
-    const base = repo.getTaxonomyAnalytics("all");
-    if (serverAnalytics) {
-      return {
-        ...base,
-        totalCategories: serverAnalytics.totalCategories,
-        totalSubcategories: serverAnalytics.totalSubcategories,
-        totalProviderMasterServices: serverAnalytics.totalProviderMasterServices,
-        activeProvidersCount: serverAnalytics.activeProviders,
-        totalServiceOrders: serverAnalytics.validServiceOrders,
-        pendingRequestsCount: serverAnalytics.pendingRequests,
-        categoryOrders: serverAnalytics.categoryBreakdown.map((cb) => ({
-          categoryId: cb.categoryId,
-          categoryName: cb.categoryName,
-          orderCount: cb.orderVolume,
-          percentage: serverAnalytics.validServiceOrders > 0 ? Math.round((cb.orderVolume / serverAnalytics.validServiceOrders) * 100) : 0,
-          gmvAmount: 0,
-        })),
-      };
-    }
-    return base;
-  }, [serverAnalytics, repo, categories, subcategories, providerServices]);
-
-  const pendingRequestsCount = useMemo(
-    () => requests.filter((r) => r.status === "SUBMITTED" || r.status === "UNDER_ADMIN_REVIEW" || r.status === "FORWARDED_TO_CEO").length,
-    [requests]
+  // Master Root IDs
+  const jasaMasterId = useMemo(
+    () => masters.find((m) => m.code === "JASA")?.id || "804cc0e5-9a5a-43c1-9acd-fc5fe7712c35",
+    [masters]
+  );
+  const produkMasterId = useMemo(
+    () => masters.find((m) => m.code === "PRODUK")?.id || "6a03b42e-0171-40ad-ac0a-e452b86855dd",
+    [masters]
   );
 
-  const acceptedRequestsCount = useMemo(
-    () => requests.filter((r) => r.status === "APPROVED" || r.status === "PUBLISHED").length,
-    [requests]
+  // Kategori Jasa & Kategori Produk Aktif
+  const jasaCategories = useMemo(
+    () => categories.filter((c) => c.master_code === "JASA"),
+    [categories]
+  );
+  const produkCategories = useMemo(
+    () => categories.filter((c) => c.master_code === "PRODUK"),
+    [categories]
   );
 
-  const rejectedRequestsCount = useMemo(
-    () => requests.filter((r) => r.status === "REJECTED_BY_ADMIN" || r.status === "REJECTED_BY_CEO").length,
-    [requests]
+  // Subkategori Jasa & Subkategori Produk
+  const jasaSubcategories = useMemo(
+    () => subcategories.filter((s) => s.master_code === "JASA"),
+    [subcategories]
+  );
+  const produkSubcategories = useMemo(
+    () => subcategories.filter((s) => s.master_code === "PRODUK"),
+    [subcategories]
   );
 
-  const handleDeleteSubcategory = async (sub: ServiceSubcategory) => {
-    if (!confirm(`Apakah Anda yakin ingin menghapus subkategori "${sub.name}"? Seluruh Master Service di bawahnya juga akan ikut terhapus.`)) {
-      return;
+  // Inisialisasi dropdown kategori induk saat membuka modal subkategori
+  useEffect(() => {
+    if (jasaCategories.length > 0 && !newJasaSubCatId) {
+      setNewJasaSubCatId(jasaCategories[0].id);
     }
-
-    try {
-      try {
-        await taxonomyApi.deleteSubcategory(sub.id);
-      } catch (apiErr) {
-        console.warn("taxonomyApi.deleteSubcategory warning:", apiErr);
-      }
-      repo.deleteSubcategory(sub.id, actor);
-      setToastMessage(`Subkategori "${sub.name}" berhasil dihapus.`);
-      loadData();
-      setTimeout(() => setToastMessage(null), 3000);
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Gagal menghapus subkategori");
+    if (produkCategories.length > 0 && !newProdukSubCatId) {
+      setNewProdukSubCatId(produkCategories[0].id);
     }
-  };
+  }, [jasaCategories, produkCategories, newJasaSubCatId, newProdukSubCatId]);
 
-  const handleClearAllSubcategories = async () => {
-    if (subcategories.length === 0) return;
-    if (!confirm(`PERINGATAN: Apakah Anda yakin ingin MENGHAPUS SEMUA (${subcategories.length}) subkategori? Tindakan ini tidak dapat dibatalkan.`)) {
-      return;
-    }
-
-    try {
-      try {
-        await taxonomyApi.clearSubcategories();
-      } catch (apiErr) {
-        console.warn("taxonomyApi.clearSubcategories warning:", apiErr);
-      }
-      repo.clearAllSubcategories(actor);
-      setToastMessage("Seluruh subkategori berhasil dibersihkan.");
-      loadData();
-      setTimeout(() => setToastMessage(null), 3000);
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Gagal membersihkan subkategori");
-    }
-  };
-
-  const handleClearRequestsByTab = async (type: "requests" | "accepted" | "rejected") => {
-    let statuses: string[] = [];
-    let label = "";
-
-    if (type === "requests") {
-      statuses = ["SUBMITTED", "UNDER_ADMIN_REVIEW", "FORWARDED_TO_CEO"];
-      label = "Inbox Pengajuan Baru";
-    } else if (type === "accepted") {
-      statuses = ["APPROVED", "PUBLISHED"];
-      label = "Riwayat Disetujui CEO & Terbit";
-    } else if (type === "rejected") {
-      statuses = ["REJECTED_BY_ADMIN", "REJECTED_BY_CEO"];
-      label = "Riwayat Ditolak";
-    }
-
-    if (!confirm(`Apakah Anda yakin ingin MENGHAPUS SEMUA data pada tab "${label}"?`)) {
-      return;
-    }
-
-    try {
-      try {
-        await taxonomyApi.clearRequests(statuses);
-      } catch (apiErr) {
-        console.warn("taxonomyApi.clearRequests warning:", apiErr);
-      }
-      repo.clearTaxonomyRequestsByStatus(statuses, actor);
-      setToastMessage(`Data pada tab "${label}" berhasil dibersihkan.`);
-      loadData();
-      setTimeout(() => setToastMessage(null), 3000);
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Gagal membersihkan riwayat pengajuan");
-    }
-  };
-
-  const handleCreateSubcategory = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newSubName.trim()) return;
-    try {
-      try {
-        await taxonomyApi.createSubcategory({
-          categoryId: newSubCatId,
-          name: newSubName.trim(),
-          description: newSubDesc.trim(),
-        });
-      } catch (apiErr) {
-        console.warn("taxonomyApi.createSubcategory warning:", apiErr);
-      }
-      repo.createSubcategory(
-        { categoryId: newSubCatId, name: newSubName.trim(), description: newSubDesc.trim() },
-        actor
+  // Filtered List berdasarkan search query
+  const displayedCategories = useMemo(() => {
+    const list = mainTab === "JASA" ? jasaCategories : produkCategories;
+    return list.filter((c) => {
+      return (
+        !searchQuery ||
+        c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.code.toLowerCase().includes(searchQuery.toLowerCase())
       );
-      setNewSubName("");
-      setNewSubDesc("");
-      setIsAddSubOpen(false);
-      setToastMessage("Subkategori baru berhasil dibuat dan dimapping.");
+    });
+  }, [mainTab, jasaCategories, produkCategories, searchQuery]);
+
+  const displayedSubcategories = useMemo(() => {
+    const list = mainTab === "JASA" ? jasaSubcategories : produkSubcategories;
+    return list.filter((s) => {
+      return (
+        !searchQuery ||
+        s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        s.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (s.category_name || "").toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    });
+  }, [mainTab, jasaSubcategories, produkSubcategories, searchQuery]);
+
+  // Pengelompokan Sub Kategori per Kategori Induk (UI Hierarkis User-Friendly)
+  const groupedSubcategories = useMemo(() => {
+    const parentCats = mainTab === "JASA" ? jasaCategories : produkCategories;
+    
+    const groups: {
+      category: ApiCategoryNode;
+      subcategories: ApiSubcategoryNode[];
+    }[] = [];
+
+    parentCats.forEach((cat) => {
+      const matchingSubs = displayedSubcategories.filter((s) => s.category_id === cat.id);
+      
+      if (searchQuery.trim()) {
+        const catMatches =
+          cat.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          cat.code.toLowerCase().includes(searchQuery.toLowerCase());
+        if (catMatches || matchingSubs.length > 0) {
+          groups.push({ category: cat, subcategories: matchingSubs });
+        }
+      } else {
+        groups.push({ category: cat, subcategories: matchingSubs });
+      }
+    });
+
+    const knownCatIds = new Set(parentCats.map((c) => c.id));
+    const orphans = displayedSubcategories.filter((s) => !knownCatIds.has(s.category_id));
+    if (orphans.length > 0) {
+      groups.push({
+        category: {
+          id: "other",
+          master_id: "",
+          master_code: mainTab === "JASA" ? "JASA" : "PRODUK",
+          name: "Kategori Lainnya",
+          code: "OTHER",
+          description: null,
+          icon_name: "Folder",
+          status: "ACTIVE",
+          effective_active: true,
+          sort_order: 99,
+          lock_version: 1,
+          created_at: "",
+          updated_at: "",
+        },
+        subcategories: orphans,
+      });
+    }
+
+    return groups;
+  }, [mainTab, jasaCategories, produkCategories, displayedSubcategories, searchQuery]);
+
+  // Request status counts
+  const pendingRequestsCount = useMemo(
+    () => requests.filter((r) => r.status === "NEW").length,
+    [requests]
+  );
+
+  // =========================================================================
+  // ACTIONS: KATEGORI JASA
+  // =========================================================================
+  const handleCreateJasaCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newJasaCatName.trim()) return;
+
+    try {
+      setIsSubmitting(true);
+      const res = await taxonomyApi.createCategory({
+        master_id: jasaMasterId,
+        name: newJasaCatName.trim(),
+        icon_name: newJasaCatIcon || "Wrench",
+      });
+      const createdCatId = res.data?.id;
+      if (linkedRequestId && createdCatId) {
+        try {
+          await taxonomyApi.reviewRequest(linkedRequestId, {
+            to_status: "FULFILLED",
+            fulfilled_node: {
+              node_type: "CATEGORY",
+              node_id: createdCatId,
+            },
+          });
+        } catch (linkErr) {
+          console.warn("Failed to fulfill linked request:", linkErr);
+        }
+        setLinkedRequestId(null);
+      }
+      showToast(`Kategori Jasa "${newJasaCatName.trim()}" berhasil dibuat di sistem.`);
+      setIsAddJasaCategoryOpen(false);
+      setNewJasaCatName("");
       loadData();
-      setTimeout(() => setToastMessage(null), 3000);
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Gagal membuat subkategori");
+    } catch (err: any) {
+      showError(err.message || "Gagal membuat kategori jasa.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCreateJasaSubcategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newJasaSubName.trim() || !newJasaSubCatId) return;
+
+    try {
+      setIsSubmitting(true);
+      const res = await taxonomyApi.createSubcategory({
+        category_id: newJasaSubCatId,
+        name: newJasaSubName.trim(),
+      });
+      const createdSubId = res.data?.id;
+      if (linkedRequestId && createdSubId) {
+        try {
+          await taxonomyApi.reviewRequest(linkedRequestId, {
+            to_status: "FULFILLED",
+            fulfilled_node: {
+              node_type: "SUBCATEGORY",
+              node_id: createdSubId,
+            },
+          });
+        } catch (linkErr) {
+          console.warn("Failed to fulfill linked request:", linkErr);
+        }
+        setLinkedRequestId(null);
+      }
+      showToast(`Subkategori Jasa "${newJasaSubName.trim()}" berhasil dibuat di sistem.`);
+      setIsAddJasaSubOpen(false);
+      setNewJasaSubName("");
+      loadData();
+    } catch (err: any) {
+      showError(err.message || "Gagal membuat subkategori jasa.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // =========================================================================
+  // ACTIONS: KATEGORI BARANG / PRODUK
+  // =========================================================================
+  const handleCreateProdukCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProdukCatName.trim()) return;
+
+    try {
+      setIsSubmitting(true);
+      const res = await taxonomyApi.createCategory({
+        master_id: produkMasterId,
+        name: newProdukCatName.trim(),
+      });
+      const createdCatId = res.data?.id;
+      if (linkedRequestId && createdCatId) {
+        try {
+          await taxonomyApi.reviewRequest(linkedRequestId, {
+            to_status: "FULFILLED",
+            fulfilled_node: {
+              node_type: "CATEGORY",
+              node_id: createdCatId,
+            },
+          });
+        } catch (linkErr) {
+          console.warn("Failed to fulfill linked request:", linkErr);
+        }
+        setLinkedRequestId(null);
+      }
+      showToast(`Kategori Barang "${newProdukCatName.trim()}" berhasil dibuat di sistem.`);
+      setIsAddProdukCategoryOpen(false);
+      setNewProdukCatName("");
+      loadData();
+    } catch (err: any) {
+      showError(err.message || "Gagal membuat kategori barang.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCreateProdukSubcategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newProdukSubName.trim() || !newProdukSubCatId) return;
+
+    try {
+      setIsSubmitting(true);
+      const res = await taxonomyApi.createSubcategory({
+        category_id: newProdukSubCatId,
+        name: newProdukSubName.trim(),
+      });
+      const createdSubId = res.data?.id;
+      if (linkedRequestId && createdSubId) {
+        try {
+          await taxonomyApi.reviewRequest(linkedRequestId, {
+            to_status: "FULFILLED",
+            fulfilled_node: {
+              node_type: "SUBCATEGORY",
+              node_id: createdSubId,
+            },
+          });
+        } catch (linkErr) {
+          console.warn("Failed to fulfill linked request:", linkErr);
+        }
+        setLinkedRequestId(null);
+      }
+      showToast(`Subkategori Barang "${newProdukSubName.trim()}" berhasil dibuat di sistem.`);
+      setIsAddProdukSubOpen(false);
+      setNewProdukSubName("");
+      loadData();
+    } catch (err: any) {
+      showError(err.message || "Gagal membuat subkategori barang.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // =========================================================================
+  // ACTIONS: EDIT & STATUS
+  // =========================================================================
+  const handleUpdateCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCategory || !editCatName.trim()) return;
+
+    try {
+      setIsSubmitting(true);
+      await taxonomyApi.updateCategory(
+        editingCategory.id,
+        {
+          name: editCatName.trim(),
+          icon_name: editingCategory.master_code === "JASA" ? editCatIcon : undefined,
+        },
+        editingCategory.lock_version
+      );
+      showToast(`Kategori "${editCatName.trim()}" berhasil diperbarui.`);
+      setEditingCategory(null);
+      loadData();
+    } catch (err: any) {
+      showError(err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleUpdateSubcategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingSub || !editSubName.trim()) return;
+
     try {
-      try {
-        await taxonomyApi.updateSubcategory(editingSub.id, {
-          categoryId: editingSub.categoryId,
-          name: editSubName.trim(),
-          description: editSubDesc.trim(),
-        });
-      } catch (apiErr) {
-        console.warn("taxonomyApi.updateSubcategory warning:", apiErr);
-      }
-      repo.updateSubcategory(
+      setIsSubmitting(true);
+      await taxonomyApi.updateSubcategory(
         editingSub.id,
-        { name: editSubName.trim(), description: editSubDesc.trim() },
-        actor
+        {
+          name: editSubName.trim(),
+        },
+        editingSub.lock_version
       );
+      showToast(`Subkategori "${editSubName.trim()}" berhasil diperbarui.`);
       setEditingSub(null);
-      setToastMessage("Subkategori berhasil diperbarui.");
       loadData();
-      setTimeout(() => setToastMessage(null), 3000);
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Gagal memperbarui subkategori");
+    } catch (err: any) {
+      showError(err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleMapSubcategory = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!mappingSub) return;
+  const handleChangeCategoryStatus = async () => {
+    if (!statusCategoryModal) return;
+
     try {
-      repo.mapSubcategoryToCategory(mappingSub.id, targetCatId, actor);
-      setMappingSub(null);
-      setToastMessage("Mapping kategori induk subkategori berhasil diperbarui.");
+      setIsSubmitting(true);
+      await taxonomyApi.changeCategoryStatus(
+        statusCategoryModal.cat.id,
+        statusCategoryModal.nextStatus,
+        `Diubah ke ${statusCategoryModal.nextStatus} oleh Admin Operasi`,
+        statusCategoryModal.cat.lock_version
+      );
+      showToast(`Status kategori "${statusCategoryModal.cat.name}" berhasil diubah.`);
+      setStatusCategoryModal(null);
       loadData();
-      setTimeout(() => setToastMessage(null), 3000);
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Gagal mapping subkategori");
+    } catch (err: any) {
+      showError(err.message || "Gagal mengubah status kategori.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleToggleSubcategory = (sub: ServiceSubcategory) => {
-    if (sub.status === "ACTIVE") {
-      repo.deactivateSubcategory(sub.id, actor);
-      setToastMessage(`Subkategori "${sub.name}" dinonaktifkan (arsip historis tetap aman).`);
-    } else {
-      repo.activateSubcategory(sub.id, actor);
-      setToastMessage(`Subkategori "${sub.name}" diaktifkan.`);
+  const handleChangeSubcategoryStatus = async () => {
+    if (!statusSubcategoryModal) return;
+
+    try {
+      setIsSubmitting(true);
+      await taxonomyApi.changeSubcategoryStatus(
+        statusSubcategoryModal.sub.id,
+        statusSubcategoryModal.nextStatus,
+        `Diubah ke ${statusSubcategoryModal.nextStatus} oleh Admin Operasi`,
+        statusSubcategoryModal.sub.lock_version
+      );
+      showToast(`Status subkategori "${statusSubcategoryModal.sub.name}" berhasil diubah.`);
+      setStatusSubcategoryModal(null);
+      loadData();
+    } catch (err: any) {
+      showError(err.message || "Gagal mengubah status subkategori.");
+    } finally {
+      setIsSubmitting(false);
     }
-    loadData();
-    setTimeout(() => setToastMessage(null), 3000);
   };
 
+  const handleDeleteCategory = async () => {
+    if (!deleteCategoryTarget) return;
+
+    try {
+      setIsSubmitting(true);
+      await taxonomyApi.deleteCategory(deleteCategoryTarget.id, deleteCategoryTarget.lock_version);
+      showToast(`Kategori "${deleteCategoryTarget.name}" berhasil dihapus.`);
+      setDeleteCategoryTarget(null);
+      loadData();
+    } catch (err: any) {
+      showError(err.message || "Gagal menghapus kategori. Pastikan tidak ada subkategori atau pesanan terkait.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteSubcategory = async () => {
+    if (!deleteSubcategoryTarget) return;
+
+    try {
+      setIsSubmitting(true);
+      await taxonomyApi.deleteSubcategory(deleteSubcategoryTarget.id, deleteSubcategoryTarget.lock_version);
+      showToast(`Subkategori "${deleteSubcategoryTarget.name}" berhasil dihapus.`);
+      setDeleteSubcategoryTarget(null);
+      loadData();
+    } catch (err: any) {
+      showError(err.message || "Gagal menghapus subkategori. Pastikan tidak ada penawaran katalog terkait.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Review Usulan Mitra
   const handleExecuteRequestReview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedReq) return;
 
-    try {
-      if (reviewAction === "FORWARD") {
-        try {
-          await taxonomyApi.reviewRequest(selectedReq.id, "FORWARD_TO_CEO", adminNotes);
-        } catch (apiErr) {
-          console.warn("taxonomyApi.reviewRequest forward warning:", apiErr);
-        }
-        repo.forwardSubcategoryRequest(selectedReq.id, adminNotes, actor);
-        setToastMessage("Pengajuan subkategori diteruskan ke CEO untuk Executive Review.");
-      } else if (reviewAction === "REJECT") {
-        try {
-          await taxonomyApi.reviewRequest(selectedReq.id, "REJECT", adminNotes || "Ditolak oleh Admin Operasi.");
-        } catch (apiErr) {
-          console.warn("taxonomyApi.reviewRequest reject warning:", apiErr);
-        }
-        repo.rejectSubcategoryRequestByAdmin(selectedReq.id, adminNotes || "Ditolak oleh Admin Operasi.", actor);
-        setToastMessage("Pengajuan subkategori ditolak dan alasan dikirim ke mitra pemohon.");
-      } else if (reviewAction === "NOTIFY_PROVIDER") {
-        // Admin sends confirmation / notification note to provider for CEO reviewed request
-        try {
-          await taxonomyApi.notifyProviderRequest(selectedReq.id, notifyDecision, adminNotes.trim());
-        } catch (apiErr) {
-          console.warn("taxonomyApi.notifyProviderRequest warning:", apiErr);
-        }
+    if (reviewAction === "REJECTED" && !reviewReason.trim()) {
+      showError("Alasan penolakan wajib diisi untuk penolakan pengajuan.");
+      return;
+    }
 
-        if (notifyDecision === "APPROVED") {
-          selectedReq.status = "APPROVED";
-          selectedReq.adminReviewNotes = adminNotes.trim() || "Pengajuan subkategori Anda telah disetujui.";
-          setToastMessage("Keterangan persetujuan berhasil dikirim ke mitra!");
-        } else {
-          selectedReq.status = "REJECTED_BY_ADMIN";
-          selectedReq.adminReviewNotes = adminNotes.trim() || "Pengajuan subkategori belum dapat disetujui.";
-          setToastMessage("Keterangan penolakan berhasil dikirim ke mitra.");
-        }
-      } else if (reviewAction === "PUBLISH") {
-        try {
-          await taxonomyApi.publishRequest(selectedReq.id);
-        } catch (apiErr) {
-          console.warn("taxonomyApi.publishRequest warning:", apiErr);
-        }
-        repo.publishSubcategoryRequest(selectedReq.id, actor);
-        setToastMessage("Subkategori hasil pengajuan resmi dipublikasikan!");
-      }
+    if (reviewAction === "APPROVED" && !reviewReason.trim()) {
+      showError("Keterangan jadwal kapan ditambahkan ke sistem wajib diisi.");
+      return;
+    }
+
+    if (reviewAction === "FULFILLED" && !fulfilledNodeId) {
+      showError("Pilih node taksonomi resmi yang ditautkan untuk memenuhi pengajuan.");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      await taxonomyApi.reviewRequest(
+        selectedReq.id,
+        {
+          to_status: reviewAction,
+          review_reason: reviewReason.trim() || undefined,
+          fulfilled_node:
+            reviewAction === "FULFILLED"
+              ? {
+                  node_type: fulfilledNodeType,
+                  node_id: fulfilledNodeId,
+                }
+              : null,
+        },
+        selectedReq.lock_version
+      );
+
+      showToast(
+        reviewAction === "APPROVED"
+          ? "Pengajuan berhasil disetujui (ACC) & dijadwalkan! Kategori/subkategori belum dibuat hingga Admin menginputnya ke sistem."
+          : reviewAction === "PROCESSING"
+          ? "Pengajuan ditandai sedang diproses."
+          : reviewAction === "FULFILLED"
+          ? "Pengajuan berhasil disetujui & ditandai sudah aktif di sistem."
+          : "Pengajuan berhasil ditolak."
+      );
       setSelectedReq(null);
-      setAdminNotes("");
+      setReviewReason("");
+      setFulfilledNodeId("");
       loadData();
-      setTimeout(() => setToastMessage(null), 3000);
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Gagal memproses pengajuan");
+    } catch (err: any) {
+      showError(err.message || "Gagal memproses review pengajuan.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleOpenInputToSystem = (req: ApiCategorySuggestion) => {
+    setLinkedRequestId(req.id);
+    if (req.request_type === "SUBCATEGORY") {
+      if (req.master_code === "JASA") {
+        setNewJasaSubCatId(req.proposed_parent_category_id || (jasaCategories[0]?.id || ""));
+        setNewJasaSubName(req.suggested_name);
+        setIsAddJasaSubOpen(true);
+      } else {
+        setNewProdukSubCatId(req.proposed_parent_category_id || (produkCategories[0]?.id || ""));
+        setNewProdukSubName(req.suggested_name);
+        setIsAddProdukSubOpen(true);
+      }
+    } else {
+      if (req.master_code === "JASA") {
+        setNewJasaCatName(req.suggested_name);
+        setIsAddJasaCategoryOpen(true);
+      } else {
+        setNewProdukCatName(req.suggested_name);
+        setIsAddProdukCategoryOpen(true);
+      }
+    }
+  };
+
+  // =========================================================================
+  // BRAND ACTIONS (CRUD & STATUS)
+  // =========================================================================
+  const handleOpenAddBrand = () => {
+    setBrandFormName("");
+    setBrandFormLogo("");
+    setBrandFormDesc("");
+    setBrandFormStatus("ACTIVE");
+    setIsAddBrandOpen(true);
+  };
+
+  const handleOpenEditBrand = (brand: ApiBrand) => {
+    setEditingBrand(brand);
+    setBrandFormName(brand.name);
+    setBrandFormLogo(brand.logo_url || brand.logoUrl || "");
+    setBrandFormDesc(brand.description || "");
+    setBrandFormStatus(brand.status);
+  };
+
+  const handleCreateBrand = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!brandFormName.trim()) {
+      showError("Nama merek wajib diisi.");
+      return;
+    }
+    try {
+      setIsSubmitting(true);
+      await taxonomyApi.createBrand({
+        name: brandFormName.trim(),
+        logo_url: brandFormLogo.trim() || undefined,
+        description: brandFormDesc.trim() || undefined,
+        status: brandFormStatus,
+      });
+      showToast(`Merek "${brandFormName}" berhasil ditambahkan ke direktori resmi!`);
+      setIsAddBrandOpen(false);
+      loadData();
+    } catch (err: any) {
+      showError(err.message || "Gagal menambahkan merek.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdateBrand = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBrand || !brandFormName.trim()) {
+      showError("Nama merek wajib diisi.");
+      return;
+    }
+    try {
+      setIsSubmitting(true);
+      await taxonomyApi.updateBrand(editingBrand.id, {
+        name: brandFormName.trim(),
+        logo_url: brandFormLogo.trim() || undefined,
+        description: brandFormDesc.trim() || undefined,
+        status: brandFormStatus,
+      });
+      showToast(`Merek "${brandFormName}" berhasil diperbarui!`);
+      setEditingBrand(null);
+      loadData();
+    } catch (err: any) {
+      showError(err.message || "Gagal memperbarui merek.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleToggleBrandStatus = async (brand: ApiBrand) => {
+    const nextStatus = brand.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+    try {
+      setIsSubmitting(true);
+      await taxonomyApi.updateBrand(brand.id, { status: nextStatus });
+      showToast(`Status merek "${brand.name}" berhasil diubah menjadi ${nextStatus === "ACTIVE" ? "Aktif" : "Nonaktif"}.`);
+      loadData();
+    } catch (err: any) {
+      showError(err.message || "Gagal mengubah status merek.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteBrand = async () => {
+    if (!deleteBrandTarget) return;
+    try {
+      setIsSubmitting(true);
+      await taxonomyApi.deleteBrand(deleteBrandTarget.id);
+      showToast(`Merek "${deleteBrandTarget.name}" berhasil dihapus.`);
+      setDeleteBrandTarget(null);
+      loadData();
+    } catch (err: any) {
+      showError(err.message || "Gagal menghapus merek.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -451,42 +862,69 @@ export default function AdminTaxonomyPage() {
         </div>
       )}
 
+      {/* Error Notification */}
+      {errorMessage && (
+        <div className="fixed top-20 right-6 z-50 p-4 rounded-2xl bg-rose-900 text-white shadow-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2 text-xs font-semibold">
+          <XCircle size={20} className="text-rose-300" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
+
       {/* Page Header */}
       <PageHeader
-        title="Manajemen Kategori Jasa Operasional"
-        description="Kontrol operasional Subkategori, peninjauan pengajuan subkategori mitra, mapping kategori, dan pengawasan katalog jasa."
+        title="Manajemen Kategori dan Sub Kategori"
+        description="Kelola kategori dan subkategori layanan jasa serta produk & barang resmi platform SERVIO secara mandiri."
         breadcrumbs={[
-          { label: "Operations", href: "/ops/admin/dashboard" },
-          { label: "Kategori Jasa", href: "/ops/admin/taxonomy" },
+          { label: "Operations", href: "/admin/dashboard" },
+          { label: "Kategori dan Sub Kategori", href: "/admin/taxonomy" },
         ]}
       />
 
-      {/* 4 MAIN TABS (LOCKED SPECIFICATION: EXACTLY 4 TABS) */}
-      <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2">
+      {/* 4 TAB UTAMA: JASA, PRODUK, PENGAJUAN, AUDIT */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200/80 pb-2">
         <button
           type="button"
-          onClick={() => setActiveTab("category")}
+          onClick={() => {
+            setMainTab("JASA");
+            setSubTab("CATEGORY");
+          }}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-            activeTab === "category"
+            mainTab === "JASA"
               ? "bg-[#0F4C81] text-white shadow-xs"
               : "bg-white border border-slate-200 text-slate-600 hover:text-slate-900"
           }`}
         >
-          <Folder size={16} weight={activeTab === "category" ? "fill" : "bold"} />
-          <span>Kategori ({categories.length})</span>
+          <Wrench size={16} weight={mainTab === "JASA" ? "fill" : "bold"} />
+          <span>Layanan Jasa ({jasaCategories.length})</span>
         </button>
 
         <button
           type="button"
-          onClick={() => setActiveTab("subcategory")}
+          onClick={() => {
+            setMainTab("PRODUK");
+            setSubTab("CATEGORY");
+          }}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-            activeTab === "subcategory"
+            mainTab === "PRODUK"
               ? "bg-[#0F4C81] text-white shadow-xs"
               : "bg-white border border-slate-200 text-slate-600 hover:text-slate-900"
           }`}
         >
-          <TreeStructure size={16} weight={activeTab === "subcategory" ? "fill" : "bold"} />
-          <span>Subkategori ({subcategories.length})</span>
+          <Package size={16} weight={mainTab === "PRODUK" ? "fill" : "bold"} />
+          <span>Produk &amp; Barang ({produkCategories.length})</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMainTab("REQUESTS")}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
+            mainTab === "REQUESTS"
+              ? "bg-[#0F4C81] text-white shadow-xs"
+              : "bg-white border border-slate-200 text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          <PaperPlaneTilt size={16} weight={mainTab === "REQUESTS" ? "fill" : "bold"} />
+          <span>Pengajuan Mitra ({requests.length})</span>
           {pendingRequestsCount > 0 && (
             <span className="px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-900 text-[10px] font-black">
               {pendingRequestsCount}
@@ -496,456 +934,236 @@ export default function AdminTaxonomyPage() {
 
         <button
           type="button"
-          onClick={() => setActiveTab("master-service")}
+          onClick={() => setMainTab("BRANDS")}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-            activeTab === "master-service"
+            mainTab === "BRANDS"
               ? "bg-[#0F4C81] text-white shadow-xs"
               : "bg-white border border-slate-200 text-slate-600 hover:text-slate-900"
           }`}
         >
-          <Wrench size={16} weight={activeTab === "master-service" ? "fill" : "bold"} />
-          <span>Master Service ({providerServices.length})</span>
+          <Tag size={16} weight={mainTab === "BRANDS" ? "fill" : "bold"} />
+          <span>Merek Produk ({brands.length})</span>
         </button>
 
         <button
           type="button"
-          onClick={() => setActiveTab("analysis")}
+          onClick={() => setMainTab("AUDIT")}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${
-            activeTab === "analysis"
+            mainTab === "AUDIT"
               ? "bg-[#0F4C81] text-white shadow-xs"
               : "bg-white border border-slate-200 text-slate-600 hover:text-slate-900"
           }`}
         >
-          <ChartLineUp size={16} weight={activeTab === "analysis" ? "fill" : "bold"} />
-          <span>Analisis</span>
+          <ClipboardText size={16} weight={mainTab === "AUDIT" ? "fill" : "bold"} />
+          <span>Audit Log</span>
         </button>
       </div>
 
       {/* ========================================================================= */}
-      {/* TAB 1: KATEGORI (READ-ONLY GOVERNANCE MONITORING)                         */}
+      {/* KONTEN TAB: JASA ATAU PRODUK                                             */}
       {/* ========================================================================= */}
-      {activeTab === "category" && (
+      {(mainTab === "JASA" || mainTab === "PRODUK") && (
         <div className="space-y-4">
-          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900">Daftar Kategori Layanan Platform</h2>
-              <p className="text-xs text-slate-500">
-                Pondasi kategori jasa tingkat tertinggi. Kewenangan membuat dan mengubah struktur kategori berada di CEO.
-              </p>
-            </div>
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-xs font-semibold">
-              <LockKey size={14} />
-              <span>Tata Kelola CEO</span>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 border-b border-slate-200/80 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
-                  <tr>
-                    <th className="py-3.5 px-4">Nama Kategori</th>
-                    <th className="py-3.5 px-4 text-center">Subkategori Aktif</th>
-                    <th className="py-3.5 px-4 text-center">Master Service</th>
-                    <th className="py-3.5 px-4 text-center">Pesanan Terpenuhi</th>
-                    <th className="py-3.5 px-4 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-medium">
-                  {categories.map((cat) => {
-                    const subCount = subcategories.filter((s) => s.categoryId === cat.id && s.status === "ACTIVE").length;
-                    const pmsCount = providerServices.filter((p) => p.categoryId === cat.id).length;
-                    const catAnalytics = analytics.categoryOrders.find((c) => c.categoryId === cat.id);
-
-                    return (
-                      <tr key={cat.id} className="hover:bg-slate-50/60 transition">
-                        <td className="py-3.5 px-4">
-                          <div className="flex items-center gap-2.5">
-                            <span className="p-2 rounded-xl bg-sky-50 text-[#0F4C81] border border-sky-200 shrink-0">
-                              <Folder size={18} weight="duotone" />
-                            </span>
-                            <div>
-                              <p className="font-bold text-slate-900">{cat.name}</p>
-                              {cat.description && (
-                                <p className="text-[11px] text-slate-500 max-w-sm truncate">{cat.description}</p>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-3.5 px-4 text-center font-bold text-slate-700">{subCount}</td>
-                        <td className="py-3.5 px-4 text-center font-bold text-slate-700">{pmsCount}</td>
-                        <td className="py-3.5 px-4 text-center font-bold text-slate-900">{catAnalytics?.orderCount || 0}</td>
-                        <td className="py-3.5 px-4 text-center">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                              cat.status === "ACTIVE"
-                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                : "bg-slate-100 text-slate-500 border-slate-200"
-                            }`}
-                          >
-                            {cat.status === "ACTIVE" ? "Aktif" : "Nonaktif"}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 2: SUBKATEGORI (DAFTAR SUBKATEGORI, PENGAJUAN BARU, DI ACC CEO, DITOLAK) */}
-      {/* ========================================================================= */}
-      {activeTab === "subcategory" && (
-        <div className="space-y-4">
-          {/* Sub-Section Toggle Bar */}
+          {/* Sub-Tab Selector & Tombol Tambah */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs">
-            <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+            {/* Sub-Tab Switcher */}
+            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
               <button
                 type="button"
-                onClick={() => setSubSection("list")}
+                onClick={() => setSubTab("CATEGORY")}
                 className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
-                  subSection === "list"
+                  subTab === "CATEGORY"
                     ? "bg-white text-slate-900 shadow-xs"
-                    : "text-slate-500 hover:text-slate-900"
+                    : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                Daftar Subkategori ({subcategories.length})
+                Kategori {mainTab === "JASA" ? "Jasa" : "Barang"} (
+                {mainTab === "JASA" ? jasaCategories.length : produkCategories.length})
               </button>
               <button
                 type="button"
-                onClick={() => setSubSection("requests")}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
-                  subSection === "requests"
+                onClick={() => setSubTab("SUBCATEGORY")}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+                  subTab === "SUBCATEGORY"
                     ? "bg-white text-slate-900 shadow-xs"
-                    : "text-slate-500 hover:text-slate-900"
+                    : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                <span>Pengajuan Baru</span>
-                {pendingRequestsCount > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-900 text-[10px] font-black">
-                    {pendingRequestsCount}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setSubSection("accepted")}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
-                  subSection === "accepted"
-                    ? "bg-emerald-600 text-white shadow-xs"
-                    : "text-slate-500 hover:text-slate-900"
-                }`}
-              >
-                <span>Di ACC CEO</span>
-                {acceptedRequestsCount > 0 && (
-                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${subSection === "accepted" ? "bg-white text-emerald-700" : "bg-emerald-100 text-emerald-800"}`}>
-                    {acceptedRequestsCount}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setSubSection("rejected")}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
-                  subSection === "rejected"
-                    ? "bg-rose-600 text-white shadow-xs"
-                    : "text-slate-500 hover:text-slate-900"
-                }`}
-              >
-                <span>Ditolak</span>
-                {rejectedRequestsCount > 0 && (
-                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${subSection === "rejected" ? "bg-white text-rose-700" : "bg-rose-100 text-rose-800"}`}>
-                    {rejectedRequestsCount}
-                  </span>
-                )}
+                Sub Kategori {mainTab === "JASA" ? "Jasa" : "Barang"} (
+                {mainTab === "JASA" ? jasaSubcategories.length : produkSubcategories.length})
               </button>
             </div>
 
-            <div className="flex items-center gap-2 self-start sm:self-auto">
-              {subSection === "list" && (
-                <>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    onClick={handleClearAllSubcategories}
-                    disabled={subcategories.length === 0}
-                    className="flex items-center gap-1.5"
-                    title="Hapus semua subkategori yang ada"
-                  >
-                    <Trash size={16} weight="bold" />
-                    <span>Hapus Semua Subkategori</span>
-                  </Button>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    onClick={() => setIsAddSubOpen(true)}
-                    className="flex items-center gap-1.5"
-                  >
-                    <Plus size={16} weight="bold" />
-                    <span>Tambah Subkategori</span>
-                  </Button>
-                </>
-              )}
-
-              {subSection === "requests" && (
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={() => handleClearRequestsByTab("requests")}
-                  disabled={pendingRequestsCount === 0}
-                  className="flex items-center gap-1.5"
-                  title="Hapus semua data pengajuan baru"
-                >
-                  <Trash size={16} weight="bold" />
-                  <span>Hapus Semua Pengajuan</span>
-                </Button>
-              )}
-
-              {subSection === "accepted" && (
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={() => handleClearRequestsByTab("accepted")}
-                  disabled={acceptedRequestsCount === 0}
-                  className="flex items-center gap-1.5"
-                  title="Hapus semua riwayat yang di ACC CEO"
-                >
-                  <Trash size={16} weight="bold" />
-                  <span>Hapus Semua Di ACC</span>
-                </Button>
-              )}
-
-              {subSection === "rejected" && (
-                <Button
-                  variant="danger"
-                  size="sm"
-                  onClick={() => handleClearRequestsByTab("rejected")}
-                  disabled={rejectedRequestsCount === 0}
-                  className="flex items-center gap-1.5"
-                  title="Hapus semua riwayat pengajuan yang ditolak"
-                >
-                  <Trash size={16} weight="bold" />
-                  <span>Hapus Semua Ditolak</span>
-                </Button>
-              )}
-            </div>
-          </div>
-
-          {/* SUB-SECTION 1: DAFTAR SUBKATEGORI */}
-          {subSection === "list" && (
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-              <div className="p-4 border-b border-slate-200/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div className="relative w-full sm:w-72">
-                  <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Cari nama subkategori..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs font-medium"
-                  />
-                </div>
+            {/* Search Input & Action Buttons */}
+            <div className="flex items-center gap-2">
+              <div className="relative w-full sm:w-56">
+                <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Cari nama..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-slate-200 text-xs font-medium"
+                />
               </div>
 
+              {/* Tombol Tambah Kategori / Sub Kategori */}
+              {mainTab === "JASA" && subTab === "CATEGORY" && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setIsAddJasaCategoryOpen(true)}
+                  className="flex items-center gap-1.5 shrink-0"
+                >
+                  <Plus size={16} weight="bold" />
+                  <span>Tambah Kategori Jasa</span>
+                </Button>
+              )}
+
+              {mainTab === "JASA" && subTab === "SUBCATEGORY" && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setIsAddJasaSubOpen(true)}
+                  className="flex items-center gap-1.5 shrink-0"
+                >
+                  <Plus size={16} weight="bold" />
+                  <span>Tambah Sub Kategori Jasa</span>
+                </Button>
+              )}
+
+              {mainTab === "PRODUK" && subTab === "CATEGORY" && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setIsAddProdukCategoryOpen(true)}
+                  className="flex items-center gap-1.5 shrink-0"
+                >
+                  <Plus size={16} weight="bold" />
+                  <span>Tambah Kategori Barang</span>
+                </Button>
+              )}
+
+              {mainTab === "PRODUK" && subTab === "SUBCATEGORY" && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => setIsAddProdukSubOpen(true)}
+                  className="flex items-center gap-1.5 shrink-0"
+                >
+                  <Plus size={16} weight="bold" />
+                  <span>Tambah Sub Kategori Barang</span>
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* TABEL: DAFTAR KATEGORI */}
+          {subTab === "CATEGORY" && (
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50 border-b border-slate-200/80 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
                     <tr>
-                      <th className="py-3.5 px-4">Subkategori</th>
-                      <th className="py-3.5 px-4">Kategori Induk</th>
-                      <th className="py-3.5 px-4 text-center">Master Service</th>
+                      <th className="py-3.5 px-4">Nama Kategori</th>
+                      {mainTab === "JASA" && <th className="py-3.5 px-4 text-center">Ikon</th>}
+                      <th className="py-3.5 px-4">Kode Taksonomi</th>
+                      <th className="py-3.5 px-4 text-center">Sub Kategori Terdaftar</th>
                       <th className="py-3.5 px-4 text-center">Status</th>
-                      <th className="py-3.5 px-4 text-right">Aksi Operasional</th>
+                      <th className="py-3.5 px-4 text-right">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
-                    {subcategories.length === 0 ? (
+                    {displayedCategories.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="py-8 text-center text-slate-400 font-semibold">
-                          Belum ada subkategori aktif. Klik "Tambah Subkategori" untuk membuat baru.
+                        <td colSpan={6} className="py-8 text-center text-slate-400 font-semibold">
+                          {isLoading ? "Memuat kategori..." : `Belum ada kategori ${mainTab.toLowerCase()}.`}
                         </td>
                       </tr>
                     ) : (
-                      subcategories
-                        .filter((s) => !searchQuery || s.name.toLowerCase().includes(searchQuery.toLowerCase()) || (s.categoryName || "").toLowerCase().includes(searchQuery.toLowerCase()))
-                        .map((sub) => {
-                          const pmsCount = providerServices.filter((p) => p.subcategoryId === sub.id).length;
+                      displayedCategories.map((cat) => {
+                        const IconComponent = CATEGORY_ICON_MAP[cat.icon_name || ""] || Folder;
+                        const childCount = subcategories.filter((s) => s.category_id === cat.id).length;
 
-                          return (
-                            <tr key={sub.id} className="hover:bg-slate-50/60 transition">
-                              <td className="py-3.5 px-4">
-                                <p className="font-bold text-slate-900">{sub.name}</p>
-                                {sub.description && (
-                                  <p className="text-[11px] text-slate-500 max-w-sm truncate">{sub.description}</p>
-                                )}
-                              </td>
-                              <td className="py-3.5 px-4">
-                                <span className="font-semibold text-slate-800">{sub.categoryName}</span>
-                              </td>
-                              <td className="py-3.5 px-4 text-center font-bold text-slate-700">{pmsCount}</td>
+                        return (
+                          <tr key={cat.id} className="hover:bg-slate-50/60 transition">
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center gap-2.5">
+                                <span className="p-2 rounded-xl bg-sky-50 text-[#0F4C81] border border-sky-200 shrink-0">
+                                  <IconComponent size={18} weight="duotone" />
+                                </span>
+                                <span className="font-bold text-slate-900 text-sm">{cat.name}</span>
+                              </div>
+                            </td>
+                            {mainTab === "JASA" && (
                               <td className="py-3.5 px-4 text-center">
-                                <span
-                                  className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                                    sub.status === "ACTIVE"
-                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                      : "bg-slate-100 text-slate-500 border-slate-200"
-                                  }`}
-                                >
-                                  {sub.status === "ACTIVE" ? "Aktif" : "Nonaktif"}
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-mono text-[11px]">
+                                  <IconComponent size={14} />
+                                  <span>{cat.icon_name || "Folder"}</span>
                                 </span>
                               </td>
-                              <td className="py-3.5 px-4 text-right">
-                                <div className="flex items-center justify-end gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setEditingSub(sub);
-                                      setEditSubName(sub.name);
-                                      setEditSubDesc(sub.description || "");
-                                    }}
-                                    className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                                    title="Edit Subkategori"
-                                  >
-                                    <PencilSimple size={14} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setMappingSub(sub);
-                                      setTargetCatId(sub.categoryId);
-                                    }}
-                                    className="p-1.5 rounded-lg border border-slate-200 text-indigo-600 hover:text-indigo-900 hover:bg-indigo-50"
-                                    title="Map Ulang Kategori"
-                                  >
-                                    <ArrowsLeftRight size={14} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleToggleSubcategory(sub)}
-                                    className={`p-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 ${
-                                      sub.status === "ACTIVE"
-                                        ? "border-amber-200 text-amber-700 hover:bg-amber-50"
-                                        : "border-emerald-200 text-emerald-700 hover:bg-emerald-50"
-                                    }`}
-                                    title={sub.status === "ACTIVE" ? "Nonaktifkan" : "Aktifkan"}
-                                  >
-                                    {sub.status === "ACTIVE" ? <ToggleRight size={16} weight="fill" /> : <ToggleLeft size={16} />}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteSubcategory(sub)}
-                                    className="p-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-800"
-                                    title="Hapus Subkategori"
-                                  >
-                                    <Trash size={14} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* SUB-SECTION 2: PENGAJUAN BARU (INBOX WAITING / UNDER REVIEW / FORWARDED) */}
-          {subSection === "requests" && (
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-              <div className="p-4 border-b border-slate-200/80 flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Inbox Pengajuan Subkategori Baru dari Mitra</h3>
-                  <p className="text-xs text-slate-500">
-                    Tinjau permintaan subkategori baru, tolak, atau teruskan ke CEO untuk otorisasi struktural.
-                  </p>
-                </div>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 border-b border-slate-200/80 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
-                    <tr>
-                      <th className="py-3.5 px-4">Mitra Pemohon</th>
-                      <th className="py-3.5 px-4">Kategori Induk</th>
-                      <th className="py-3.5 px-4">Subkategori yang Diajukan</th>
-                      <th className="py-3.5 px-4">Tanggal Pengajuan</th>
-                      <th className="py-3.5 px-4 text-center">Status Alur</th>
-                      <th className="py-3.5 px-4 text-right">Aksi Review</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium">
-                    {requests.filter((r) => ["SUBMITTED", "UNDER_ADMIN_REVIEW", "FORWARDED_TO_CEO"].includes(r.status)).length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="py-8 text-center text-slate-400 font-semibold">
-                          Tidak ada pengajuan subkategori baru yang menunggu review.
-                        </td>
-                      </tr>
-                    ) : (
-                      requests
-                        .filter((r) => ["SUBMITTED", "UNDER_ADMIN_REVIEW", "FORWARDED_TO_CEO"].includes(r.status))
-                        .map((req) => (
-                          <tr key={req.id} className="hover:bg-slate-50/60 transition">
-                            <td className="py-3.5 px-4 font-bold text-[#0F4C81]">
-                              {req.providerName || req.providerId}
-                            </td>
-                            <td className="py-3.5 px-4 font-semibold text-slate-800">{req.categoryName}</td>
-                            <td className="py-3.5 px-4">
-                              <p className="font-bold text-slate-900">{req.requestedSubcategoryName}</p>
-                              <p className="text-[11px] text-slate-500 line-clamp-1">{req.reason}</p>
-                            </td>
-                            <td className="py-3.5 px-4 text-slate-500">{req.createdAt}</td>
+                            )}
+                            <td className="py-3.5 px-4 font-mono text-[11px] text-slate-600">{cat.code}</td>
+                            <td className="py-3.5 px-4 text-center font-bold text-slate-700">{childCount}</td>
                             <td className="py-3.5 px-4 text-center">
-                              {req.status === "SUBMITTED" && (
-                                <Badge variant="warning" size="sm">Baru Diajukan</Badge>
-                              )}
-                              {req.status === "UNDER_ADMIN_REVIEW" && (
-                                <Badge variant="neutral" size="sm">Review Admin</Badge>
-                              )}
-                              {req.status === "FORWARDED_TO_CEO" && (
-                                <Badge variant="warning" size="sm">Menunggu CEO</Badge>
-                              )}
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                                  cat.status === "ACTIVE"
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                    : "bg-slate-100 text-slate-500 border-slate-200"
+                                }`}
+                              >
+                                {cat.status === "ACTIVE" ? "Aktif" : "Nonaktif"}
+                              </span>
                             </td>
                             <td className="py-3.5 px-4 text-right">
                               <div className="flex items-center justify-end gap-1.5">
-                                {["SUBMITTED", "UNDER_ADMIN_REVIEW"].includes(req.status) && (
-                                  <>
-                                    <Button
-                                      variant="secondary"
-                                      size="sm"
-                                      onClick={() => {
-                                        setSelectedReq(req);
-                                        setReviewAction("REJECT");
-                                      }}
-                                    >
-                                      Tolak
-                                    </Button>
-                                    <Button
-                                      variant="primary"
-                                      size="sm"
-                                      onClick={() => {
-                                        setSelectedReq(req);
-                                        setReviewAction("FORWARD");
-                                      }}
-                                    >
-                                      Teruskan ke CEO
-                                    </Button>
-                                  </>
-                                )}
-                                {req.status === "FORWARDED_TO_CEO" && (
-                                  <span className="text-[11px] text-amber-600 font-bold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg">
-                                    Sedang Ditinjau CEO
-                                  </span>
-                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingCategory(cat);
+                                    setEditCatName(cat.name);
+                                    setEditCatIcon(cat.icon_name || "Wrench");
+                                  }}
+                                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                                  title="Edit Kategori"
+                                >
+                                  <PencilSimple size={14} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setStatusCategoryModal({
+                                      cat,
+                                      nextStatus: cat.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
+                                    })
+                                  }
+                                  className={`p-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 ${
+                                    cat.status === "ACTIVE"
+                                      ? "border-amber-200 text-amber-700 hover:bg-amber-50"
+                                      : "border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                                  }`}
+                                  title={cat.status === "ACTIVE" ? "Nonaktifkan" : "Aktifkan"}
+                                >
+                                  {cat.status === "ACTIVE" ? (
+                                    <ToggleRight size={16} weight="fill" />
+                                  ) : (
+                                    <ToggleLeft size={16} />
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteCategoryTarget(cat)}
+                                  className="p-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-800"
+                                  title="Hapus Kategori"
+                                >
+                                  <Trash size={14} />
+                                </button>
                               </div>
                             </td>
                           </tr>
-                        ))
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -953,208 +1171,209 @@ export default function AdminTaxonomyPage() {
             </div>
           )}
 
-          {/* SUB-SECTION 3: DI ACC CEO (APPROVED & PUBLISHED) */}
-          {subSection === "accepted" && (
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-              <div className="p-4 border-b border-slate-200/80 flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Riwayat Pengajuan Disetujui CEO & Terbit</h3>
-                  <p className="text-xs text-slate-500">
-                    Pengajuan subkategori yang telah mendapatkan persetujuan CEO dan siap dipublikasikan atau sudah aktif dalam katalog.
-                  </p>
+          {/* PENGELOMPOKAN SUB KATEGORI PER KATEGORI INDUK */}
+          {subTab === "SUBCATEGORY" && (
+            <div className="space-y-4">
+              {groupedSubcategories.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-slate-200/80 p-8 text-center text-slate-400 font-semibold shadow-xs">
+                  {isLoading ? "Memuat subkategori..." : `Tidak ada subkategori ${mainTab.toLowerCase()} yang ditemukan.`}
                 </div>
-              </div>
+              ) : (
+                groupedSubcategories.map(({ category: cat, subcategories: subs }) => {
+                  const IconComponent = CATEGORY_ICON_MAP[cat.icon_name || ""] || Folder;
+                  return (
+                    <div
+                      key={cat.id}
+                      className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden transition-all hover:border-slate-300"
+                    >
+                      {/* Header Kategori Induk */}
+                      <div className="bg-slate-50/80 px-5 py-3.5 border-b border-slate-200/80 flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-3">
+                          <span className="p-2.5 rounded-xl bg-white text-[#0F4C81] border border-slate-200/90 shadow-2xs shrink-0">
+                            <IconComponent size={20} weight="duotone" />
+                          </span>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="font-bold text-slate-900 text-sm tracking-tight">{cat.name}</h3>
+                              {cat.code && <span className="font-mono text-[11px] text-slate-400 font-semibold">({cat.code})</span>}
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                                  cat.status === "ACTIVE"
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                    : "bg-slate-100 text-slate-500 border-slate-200"
+                                }`}
+                              >
+                                {cat.status === "ACTIVE" ? "Kategori Aktif" : "Nonaktif"}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              {subs.length} Sub Kategori Terdaftar di bawah kategori ini
+                            </p>
+                          </div>
+                        </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 border-b border-slate-200/80 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
-                    <tr>
-                      <th className="py-3.5 px-4">Mitra Pemohon</th>
-                      <th className="py-3.5 px-4">Kategori Induk</th>
-                      <th className="py-3.5 px-4">Subkategori yang Diajukan</th>
-                      <th className="py-3.5 px-4">Catatan CEO</th>
-                      <th className="py-3.5 px-4 text-center">Status</th>
-                      <th className="py-3.5 px-4 text-right">Aksi Operasional</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium">
-                    {requests.filter((r) => ["APPROVED", "CEO_APPROVED", "PUBLISHED"].includes(r.status)).length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="py-8 text-center text-slate-400 font-semibold">
-                          Belum ada riwayat pengajuan yang disetujui CEO.
-                        </td>
-                      </tr>
-                    ) : (
-                      requests
-                        .filter((r) => ["APPROVED", "CEO_APPROVED", "PUBLISHED"].includes(r.status))
-                        .map((req) => (
-                          <tr key={req.id} className="hover:bg-slate-50/60 transition">
-                            <td className="py-3.5 px-4 font-bold text-[#0F4C81]">
-                              {req.providerName || req.providerId}
-                            </td>
-                            <td className="py-3.5 px-4 font-semibold text-slate-800">{req.categoryName}</td>
-                            <td className="py-3.5 px-4">
-                              <p className="font-bold text-slate-900">{req.requestedSubcategoryName}</p>
-                              <p className="text-[11px] text-slate-500 line-clamp-1">{req.reason}</p>
-                            </td>
-                            <td className="py-3.5 px-4 text-slate-600">
-                              <p className="text-[11px] italic bg-emerald-50 text-emerald-900 p-1.5 rounded-lg border border-emerald-100">
-                                {req.ceoReviewNotes || "Disetujui tanpa catatan khusus."}
-                              </p>
-                              {req.adminReviewNotes && (
-                                <p className="text-[10px] text-slate-500 mt-1">
-                                  Keterangan Admin: {req.adminReviewNotes}
-                                </p>
-                              )}
-                            </td>
-                            <td className="py-3.5 px-4 text-center">
-                              {req.status === "CEO_APPROVED" && (
-                                <Badge variant="warning" size="sm">Menunggu Input Admin</Badge>
-                              )}
-                              {req.status === "APPROVED" && (
-                                <Badge variant="success" size="sm">Telah Dikirim ke Mitra</Badge>
-                              )}
-                              {req.status === "PUBLISHED" && (
-                                <Badge variant="neutral" size="sm">Aktif di Katalog</Badge>
-                              )}
-                            </td>
-                            <td className="py-3.5 px-4 text-right">
-                              <div className="flex items-center justify-end gap-1.5">
-                                {req.status === "CEO_APPROVED" && (
-                                  <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={() => {
-                                      setSelectedReq(req);
-                                      setAdminNotes(req.adminReviewNotes || "");
-                                      setReviewAction("NOTIFY_PROVIDER");
-                                    }}
-                                  >
-                                    Kirim Keterangan ke Mitra
-                                  </Button>
-                                )}
-                                {req.status === "APPROVED" && (
-                                  <div className="flex items-center justify-end gap-1.5">
-                                    <Button
-                                      variant="secondary"
-                                      size="sm"
-                                      onClick={() => {
-                                        setSelectedReq(req);
-                                        setAdminNotes(req.adminReviewNotes || "");
-                                        setReviewAction("NOTIFY_PROVIDER");
-                                      }}
+                        {/* Tombol Cepat: Tambah Sub Kategori ke Kategori Ini */}
+                        {cat.id !== "other" && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (mainTab === "JASA") {
+                                setNewJasaSubCatId(cat.id);
+                                setNewJasaSubName("");
+                                setIsAddJasaSubOpen(true);
+                              } else {
+                                setNewProdukSubCatId(cat.id);
+                                setNewProdukSubName("");
+                                setIsAddProdukSubOpen(true);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-[#0F4C81] hover:bg-sky-50/70 hover:border-sky-300 font-bold text-xs shadow-2xs transition"
+                          >
+                            <Plus size={14} weight="bold" />
+                            <span>Tambah Sub ke {cat.name}</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Tabel Sub Kategori dalam Kategori Induk */}
+                      {subs.length === 0 ? (
+                        <div className="p-6 text-center text-slate-400 text-xs font-medium bg-slate-50/30">
+                          Belum ada subkategori pada kategori <span className="font-bold text-slate-600">{cat.name}</span>. Klik tombol di atas untuk menambahkan.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-slate-50/50 border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                              <tr>
+                                <th className="py-2.5 px-5">Nama Sub Kategori</th>
+                                <th className="py-2.5 px-4">Kode Taksonomi</th>
+                                <th className="py-2.5 px-4 text-center">Status</th>
+                                <th className="py-2.5 px-5 text-right">Aksi</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 font-medium">
+                              {subs.map((sub) => (
+                                <tr key={sub.id} className="hover:bg-slate-50/60 transition">
+                                  <td className="py-3 px-5">
+                                    <div className="flex items-center gap-2.5">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0"></span>
+                                      <span className="font-bold text-slate-900 text-sm">{sub.name}</span>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-4 font-mono text-[11px] text-slate-600">{sub.code}</td>
+                                  <td className="py-3 px-4 text-center">
+                                    <span
+                                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                                        sub.status === "ACTIVE"
+                                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                          : "bg-slate-100 text-slate-500 border-slate-200"
+                                      }`}
                                     >
-                                      Ubah Keterangan
-                                    </Button>
-                                    <Button
-                                      variant="primary"
-                                      size="sm"
-                                      onClick={() => {
-                                        setSelectedReq(req);
-                                        setReviewAction("PUBLISH");
-                                      }}
-                                    >
-                                      Publikasi
-                                    </Button>
-                                  </div>
-                                )}
-                                {req.status === "PUBLISHED" && (
-                                  <span className="text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
-                                    Sudah Terdaftar
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* SUB-SECTION 4: DITOLAK (REJECTED BY ADMIN & REJECTED BY CEO) */}
-          {subSection === "rejected" && (
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-              <div className="p-4 border-b border-slate-200/80 flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Riwayat Pengajuan Subkategori yang Ditolak</h3>
-                  <p className="text-xs text-slate-500">
-                    Daftar permintaan subkategori yang ditolak oleh Admin Operasi maupun CEO beserta alasan penolakan.
-                  </p>
-                </div>
-              </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 border-b border-slate-200/80 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
-                    <tr>
-                      <th className="py-3.5 px-4">Mitra Pemohon</th>
-                      <th className="py-3.5 px-4">Kategori Induk</th>
-                      <th className="py-3.5 px-4">Subkategori yang Diajukan</th>
-                      <th className="py-3.5 px-4">Alasan Penolakan</th>
-                      <th className="py-3.5 px-4 text-center">Pihak Penolak</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium">
-                    {requests.filter((r) => ["REJECTED_BY_ADMIN", "REJECTED_BY_CEO", "CEO_REJECTED"].includes(r.status)).length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="py-8 text-center text-slate-400 font-semibold">
-                          Tidak ada riwayat pengajuan yang ditolak.
-                        </td>
-                      </tr>
-                    ) : (
-                      requests
-                        .filter((r) => ["REJECTED_BY_ADMIN", "REJECTED_BY_CEO", "CEO_REJECTED"].includes(r.status))
-                        .map((req) => (
-                          <tr key={req.id} className="hover:bg-slate-50/60 transition">
-                            <td className="py-3.5 px-4 font-bold text-[#0F4C81]">
-                              {req.providerName || req.providerId}
-                            </td>
-                            <td className="py-3.5 px-4 font-semibold text-slate-800">{req.categoryName}</td>
-                            <td className="py-3.5 px-4">
-                              <p className="font-bold text-slate-900">{req.requestedSubcategoryName}</p>
-                              <p className="text-[11px] text-slate-500 line-clamp-1">{req.reason}</p>
-                            </td>
-                            <td className="py-3.5 px-4 text-rose-700">
-                              <p className="text-[11px] bg-rose-50 p-1.5 rounded-lg border border-rose-100">
-                                {req.ceoReviewNotes || req.adminReviewNotes || "Ditolak tanpa rincian alasan."}
-                              </p>
-                            </td>
-                            <td className="py-3.5 px-4 text-center">
-                              {req.status === "REJECTED_BY_ADMIN" ? (
-                                <Badge variant="danger" size="sm">Ditolak Admin</Badge>
-                              ) : (
-                                <Badge variant="danger" size="sm">Ditolak CEO</Badge>
-                              )}
-                            </td>
-                          </tr>
-                        ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                                      {sub.status === "ACTIVE" ? "Aktif" : "Nonaktif"}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-5 text-right">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingSub(sub);
+                                          setEditSubName(sub.name);
+                                        }}
+                                        className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition"
+                                        title="Edit Sub Kategori"
+                                      >
+                                        <PencilSimple size={14} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setStatusSubcategoryModal({
+                                            sub,
+                                            nextStatus: sub.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
+                                          })
+                                        }
+                                        className={`p-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 transition ${
+                                          sub.status === "ACTIVE"
+                                            ? "border-amber-200 text-amber-700 hover:bg-amber-50"
+                                            : "border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                                        }`}
+                                        title={sub.status === "ACTIVE" ? "Nonaktifkan" : "Aktifkan"}
+                                      >
+                                        {sub.status === "ACTIVE" ? (
+                                          <ToggleRight size={16} weight="fill" />
+                                        ) : (
+                                          <ToggleLeft size={16} />
+                                        )}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setDeleteSubcategoryTarget(sub)}
+                                        className="p-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-800 transition"
+                                        title="Hapus Sub Kategori"
+                                      >
+                                        <Trash size={14} />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
           )}
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 3: MASTER SERVICE (MONITORING VIEW ONLY - NO COMMERCIAL EDITING)       */}
+      {/* TAB: PENGAJUAN MITRA                                                      */}
       {/* ========================================================================= */}
-      {activeTab === "master-service" && (
+      {mainTab === "REQUESTS" && (
         <div className="space-y-4">
           <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <h2 className="text-sm font-bold text-slate-900">Monitoring Master Service Penawaran Mitra</h2>
+              <h2 className="text-sm font-bold text-slate-900">Antrean Pengajuan Kategori &amp; Subkategori Mitra</h2>
               <p className="text-xs text-slate-500">
-                Pengawasan penawaran layanan aktif. Admin tidak memiliki wewenang mengubah harga penawaran atau survei fee milik mitra.
+                Usulan penambahan spesialisasi dari Merchant, Service Provider, dan Supplier.
               </p>
             </div>
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-xs font-semibold">
-              <ShieldCheck size={16} />
-              <span>Privasi Penawaran Terjaga</span>
+            <div className="flex flex-wrap items-center gap-1.5 bg-slate-100/90 p-1 rounded-xl">
+              {REQUEST_FILTER_OPTIONS.map((opt) => {
+                const isActive = requestStatusFilter === opt.id;
+                const count =
+                  opt.id === "ALL"
+                    ? requests.length
+                    : requests.filter((r) => r.status === opt.id).length;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setRequestStatusFilter(opt.id)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                      isActive
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
+                    }`}
+                  >
+                    <span>{opt.label}</span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold tabular-nums ${
+                        isActive
+                          ? "bg-[#0F4C81] text-white"
+                          : "bg-slate-200/80 text-slate-600"
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -1163,49 +1382,96 @@ export default function AdminTaxonomyPage() {
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 border-b border-slate-200/80 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
                   <tr>
-                    <th className="py-3.5 px-4">Master Service</th>
-                    <th className="py-3.5 px-4">Kategori &amp; Subkategori</th>
-                    <th className="py-3.5 px-4">Mitra Pemilik</th>
-                    <th className="py-3.5 px-4 text-center">Metode Layanan</th>
+                    <th className="py-3.5 px-4">Request No.</th>
+                    <th className="py-3.5 px-4">Proposed Specification</th>
+                    <th className="py-3.5 px-4">Type &amp; Master</th>
+                    <th className="py-3.5 px-4">Requester</th>
                     <th className="py-3.5 px-4 text-center">Status</th>
+                    <th className="py-3.5 px-4 text-right">Review Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {providerServices.map((pms) => (
-                    <tr key={pms.id} className="hover:bg-slate-50/60 transition">
-                      <td className="py-3.5 px-4">
-                        <p className="font-bold text-slate-900">{pms.name}</p>
-                        <p className="text-[11px] text-slate-500 max-w-sm truncate">{pms.description}</p>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <p className="font-bold text-slate-800">{pms.subcategoryName}</p>
-                        <p className="text-[10px] text-slate-500">{pms.categoryName}</p>
-                      </td>
-                      <td className="py-3.5 px-4 font-bold text-[#0F4C81]">
-                        {pms.providerName || pms.providerId}
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          {pms.serviceMethods.map((m) => (
-                            <span key={m} className="px-1.5 py-0.5 rounded bg-slate-100 text-[10px] text-slate-700 font-medium">
-                              {m === "HOME_SERVICE" ? "Home Service" : m === "WORKSHOP" ? "Workshop" : "On-Site"}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <span
-                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                            pms.status === "ACTIVE"
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : "bg-slate-100 text-slate-500 border-slate-200"
-                          }`}
-                        >
-                          {pms.status === "ACTIVE" ? "Aktif" : "Nonaktif"}
-                        </span>
+                  {requests.filter(
+                    (r) => requestStatusFilter === "ALL" || r.status === requestStatusFilter
+                  ).length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-400 font-semibold">
+                        No proposals found matching the selected filter.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    requests
+                      .filter((r) => requestStatusFilter === "ALL" || r.status === requestStatusFilter)
+                      .map((req) => (
+                        <tr key={req.id} className="hover:bg-slate-50/60 transition">
+                          <td className="py-3.5 px-4 font-mono font-bold text-[#0F4C81]">{req.request_number}</td>
+                          <td className="py-3.5 px-4">
+                            <p className="font-bold text-slate-900">{req.suggested_name}</p>
+                            <p className="text-[11px] text-slate-500 line-clamp-1">{req.reason}</p>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <span className="px-1.5 py-0.5 rounded bg-slate-100 text-[10px] font-bold text-slate-700">
+                              {req.request_type} • {req.master_code}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <p className="font-bold text-slate-800">{req.submitted_by_name || req.submitted_by_role}</p>
+                            <p className="text-[10px] text-slate-500">{new Date(req.created_at).toLocaleDateString("id-ID")}</p>
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            {req.status === "NEW" && <Badge variant="warning" size="sm">Menunggu Review</Badge>}
+                            {req.status === "PROCESSING" && <Badge variant="neutral" size="sm">Sedang Diproses</Badge>}
+                            {req.status === "APPROVED" && <Badge variant="success" size="sm">Disetujui (Terjadwal)</Badge>}
+                            {req.status === "FULFILLED" && <Badge variant="primary" size="sm">Sudah Aktif di Sistem</Badge>}
+                            {req.status === "REJECTED" && <Badge variant="danger" size="sm">Ditolak</Badge>}
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            {["NEW", "PROCESSING"].includes(req.status) ? (
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedReq(req);
+                                  setReviewAction("APPROVED");
+                                  setReviewReason("");
+                                  setFulfilledNodeType(req.request_type);
+                                  setFulfilledNodeId("");
+                                }}
+                              >
+                                Review Usulan
+                              </Button>
+                            ) : req.status === "APPROVED" ? (
+                              <div className="flex items-center justify-end gap-2">
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                                  onClick={() => handleOpenInputToSystem(req)}
+                                >
+                                  + Input ke Sistem
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-slate-600 border-slate-300 hover:bg-slate-50 text-[11px]"
+                                  onClick={() => {
+                                    setSelectedReq(req);
+                                    setReviewAction("REJECTED");
+                                    setReviewReason("");
+                                  }}
+                                >
+                                  Batal/Tolak
+                                </Button>
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-slate-400 font-semibold italic">
+                                {req.status === "FULFILLED" ? "Telah Terbit" : "Ditolak"}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -1214,305 +1480,821 @@ export default function AdminTaxonomyPage() {
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 4: ANALISIS OPERASIONAL                                              */}
+      {/* TAB: MEREK PRODUK (BRANDS REGISTRY)                                      */}
       {/* ========================================================================= */}
-      {activeTab === "analysis" && (
-        <div className="space-y-6">
-          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
-            <h2 className="text-sm font-bold text-slate-900">Analisis Operasional Kategori Jasa &amp; Kualitas</h2>
-            <p className="text-xs text-slate-500">
-              Evaluasi utilisasi subkategori, volume pengajuan baru, dan deteksi kategori jasa yang belum memiliki penawaran aktif.
-            </p>
+      {mainTab === "BRANDS" && (
+        <div className="space-y-4">
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">Master Merek &amp; Brand Resmi Platform</h2>
+              <p className="text-xs text-slate-500">
+                Kelola direktori merek resmi suku cadang &amp; barang. Merek ini dapat dipilih oleh Merchant dan difilter oleh Pelanggan.
+              </p>
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleOpenAddBrand}
+              className="flex items-center gap-2 bg-[#0F4C81] text-white shrink-0"
+            >
+              <Plus size={16} weight="bold" />
+              <span>Tambah Merek Baru</span>
+            </Button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-3">
-              <h3 className="text-sm font-bold text-slate-900">Kategori Order Terbanyak</h3>
-              <div className="space-y-2.5 text-xs">
-                {analytics.categoryOrders.slice(0, 4).map((cat) => (
-                  <div key={cat.categoryId} className="flex justify-between p-2 rounded-lg bg-slate-50">
-                    <span className="font-bold text-slate-800">{cat.categoryName}</span>
-                    <span className="font-bold text-[#0F4C81]">{cat.orderCount} pesanan</span>
-                  </div>
-                ))}
-              </div>
+          {/* Search & Filter Bar */}
+          <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="relative w-full sm:w-72">
+              <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Cari nama atau deskripsi merek..."
+                value={brandSearchQuery}
+                onChange={(e) => setBrandSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 font-medium"
+              />
             </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-3">
-              <h3 className="text-sm font-bold text-slate-900">Subkategori Terpopuler</h3>
-              <div className="space-y-2.5 text-xs">
-                {analytics.topSubcategories.slice(0, 4).map((sub) => (
-                  <div key={sub.subcategoryId} className="flex justify-between p-2 rounded-lg bg-slate-50">
-                    <span className="font-bold text-slate-800">{sub.subcategoryName}</span>
-                    <span className="font-bold text-indigo-700">{sub.orderCount} pesanan</span>
-                  </div>
-                ))}
-              </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-medium">Filter Status:</span>
+              <select
+                value={brandStatusFilter}
+                onChange={(e) => setBrandStatusFilter(e.target.value as any)}
+                className="text-xs py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:outline-none"
+              >
+                <option value="ALL">Semua Status</option>
+                <option value="ACTIVE">Aktif</option>
+                <option value="INACTIVE">Nonaktif</option>
+              </select>
             </div>
+          </div>
 
-            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-3">
-              <h3 className="text-sm font-bold text-slate-900">Status Pengajuan Subkategori</h3>
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between p-2 rounded-lg bg-amber-50 text-amber-900 font-bold">
-                  <span>Menunggu Review / CEO</span>
-                  <span>{requests.filter((r) => ["SUBMITTED", "UNDER_ADMIN_REVIEW", "FORWARDED_TO_CEO"].includes(r.status)).length}</span>
-                </div>
-                <div className="flex justify-between p-2 rounded-lg bg-emerald-50 text-emerald-900 font-bold">
-                  <span>Disetujui / Dipublikasikan</span>
-                  <span>{requests.filter((r) => ["APPROVED", "PUBLISHED"].includes(r.status)).length}</span>
-                </div>
-                <div className="flex justify-between p-2 rounded-lg bg-rose-50 text-rose-900 font-bold">
-                  <span>Ditolak</span>
-                  <span>{requests.filter((r) => ["REJECTED_BY_ADMIN", "REJECTED_BY_CEO"].includes(r.status)).length}</span>
-                </div>
-              </div>
+          {/* Tabel Merek dengan Scroll Internal */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+            <div className="max-h-[520px] overflow-y-auto overflow-x-auto scrollbar-thin">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px] shadow-xs">
+                  <tr>
+                    <th className="py-3 px-4 bg-slate-100">Foto / Logo Merek</th>
+                    <th className="py-3 px-4 bg-slate-100">Nama Merek &amp; Slug</th>
+                    <th className="py-3 px-4 bg-slate-100">Deskripsi / Keterangan</th>
+                    <th className="py-3 px-4 bg-slate-100 text-center">Produk Terkait</th>
+                    <th className="py-3 px-4 bg-slate-100 text-center">Status</th>
+                    <th className="py-3 px-4 bg-slate-100 text-right">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {brands
+                    .filter((b) => {
+                      const matchStatus = brandStatusFilter === "ALL" || b.status === brandStatusFilter;
+                      const q = brandSearchQuery.toLowerCase();
+                      const matchSearch =
+                        !q || b.name.toLowerCase().includes(q) || (b.description && b.description.toLowerCase().includes(q));
+                      return matchStatus && matchSearch;
+                    })
+                    .length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-12 text-center text-slate-400 font-semibold">
+                        Belum ada merek terdaftar atau tidak cocok dengan filter pencarian.
+                      </td>
+                    </tr>
+                  ) : (
+                    brands
+                      .filter((b) => {
+                        const matchStatus = brandStatusFilter === "ALL" || b.status === brandStatusFilter;
+                        const q = brandSearchQuery.toLowerCase();
+                        const matchSearch =
+                          !q || b.name.toLowerCase().includes(q) || (b.description && b.description.toLowerCase().includes(q));
+                        return matchStatus && matchSearch;
+                      })
+                      .map((brand) => (
+                        <tr key={brand.id} className="hover:bg-slate-50/60 transition">
+                          <td className="py-3.5 px-4">
+                            <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200/80 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
+                              {brand.logo_url || brand.logoUrl ? (
+                                <img
+                                  src={brand.logo_url || brand.logoUrl}
+                                  alt={brand.name}
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <Tag size={20} className="text-slate-400" />
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-4">
+                            <div className="font-bold text-slate-900 text-sm">{brand.name}</div>
+                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">slug: {brand.slug}</div>
+                          </td>
+                          <td className="py-3.5 px-4 text-slate-600 max-w-xs">
+                            <p className="line-clamp-2">{brand.description || "-"}</p>
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-sky-50 border border-sky-200 text-[#0F4C81] text-xs font-bold">
+                              <Package size={13} weight="bold" />
+                              <span>{brand.product_count ?? brand.productCount ?? 0} Produk</span>
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-center">
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${
+                                brand.status === "ACTIVE"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  : "bg-slate-100 text-slate-500 border-slate-200"
+                              }`}
+                            >
+                              {brand.status === "ACTIVE" ? "Aktif" : "Nonaktif"}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditBrand(brand)}
+                                className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition"
+                                title="Edit Merek"
+                              >
+                                <PencilSimple size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleBrandStatus(brand)}
+                                className={`p-1.5 rounded-lg border text-xs font-bold flex items-center gap-1 transition ${
+                                  brand.status === "ACTIVE"
+                                    ? "border-amber-200 text-amber-700 hover:bg-amber-50"
+                                    : "border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                                }`}
+                                title={brand.status === "ACTIVE" ? "Nonaktifkan Merek" : "Aktifkan Merek"}
+                              >
+                                {brand.status === "ACTIVE" ? (
+                                  <ToggleRight size={16} weight="fill" />
+                                ) : (
+                                  <ToggleLeft size={16} />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeleteBrandTarget(brand)}
+                                className="p-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-800 transition"
+                                title="Hapus Merek"
+                              >
+                                <Trash size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL: Tambah Subkategori */}
-      {isAddSubOpen && (
-        <Modal
-          isOpen={isAddSubOpen}
-          onClose={() => setIsAddSubOpen(false)}
-          title="Tambah Subkategori Operasional"
-        >
-          <form onSubmit={handleCreateSubcategory} className="space-y-4 text-xs font-body">
+      {/* ========================================================================= */}
+      {/* TAB: AUDIT LOG (TABEL DENGAN SCROLL INTERNAL MANDIRI)                      */}
+      {/* ========================================================================= */}
+      {mainTab === "AUDIT" && (
+        <div className="space-y-4">
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex items-center justify-between">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Pilih Kategori Induk</label>
-              <select
-                value={newSubCatId}
-                onChange={(e) => setNewSubCatId(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-              >
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <h2 className="text-sm font-bold text-slate-900">Audit Trail Perubahan Taksonomi Kategori</h2>
+              <p className="text-xs text-slate-500">
+                Catatan kronologis immutable dari seluruh aksi mutasi kategori dan subkategori.
+              </p>
             </div>
+            <div className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
+              Total {auditLogs.length} Catatan Log
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+            <div className="max-h-[520px] overflow-y-auto overflow-x-auto scrollbar-thin">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="sticky top-0 z-10 bg-slate-100 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px] shadow-xs">
+                  <tr>
+                    <th className="py-3 px-4 bg-slate-100">Waktu</th>
+                    <th className="py-3 px-4 bg-slate-100">Aksi</th>
+                    <th className="py-3 px-4 bg-slate-100">Entitas</th>
+                    <th className="py-3 px-4 bg-slate-100">Aktor / Role</th>
+                    <th className="py-3 px-4 bg-slate-100">Alasan</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {auditLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-12 text-center text-slate-400 font-semibold">
+                        Belum ada catatan log audit.
+                      </td>
+                    </tr>
+                  ) : (
+                    auditLogs.map((log) => (
+                      <tr key={log.id} className="hover:bg-slate-50/60 transition">
+                        <td className="py-3.5 px-4 text-slate-500 whitespace-nowrap">
+                          {(() => {
+                            const rawTime = log.occurred_at || log.created_at;
+                            if (!rawTime) return "-";
+                            const clean = String(rawTime).replace(/ZZ$/, "Z");
+                            const d = new Date(clean);
+                            return !isNaN(d.getTime())
+                              ? d.toLocaleString("id-ID", {
+                                  day: "2-digit",
+                                  month: "short",
+                                  year: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })
+                              : "-";
+                          })()}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded text-[11px]">
+                            {log.action}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 font-bold text-slate-800">{log.entity_type}</td>
+                        <td className="py-3.5 px-4 font-bold text-[#0F4C81]">{log.actor_name || log.actor_role}</td>
+                        <td className="py-3.5 px-4 text-slate-600">{log.reason || "-"}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 1: Tambah Kategori Jasa (Nama + Icon Picker)                        */}
+      {/* ========================================================================= */}
+      {isAddJasaCategoryOpen && (
+        <Modal
+          isOpen={isAddJasaCategoryOpen}
+          onClose={() => setIsAddJasaCategoryOpen(false)}
+          title="Tambah Kategori Jasa Baru"
+        >
+          <form onSubmit={handleCreateJasaCategory} className="space-y-4 text-xs font-body">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Nama Subkategori</label>
+              <label className="block font-bold text-slate-700 mb-1">Nama Kategori Jasa</label>
               <input
                 type="text"
                 required
-                placeholder="Contoh: AC Cassette & VRV System"
-                value={newSubName}
-                onChange={(e) => setNewSubName(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
+                placeholder="Contoh: Repair & Technical"
+                value={newJasaCatName}
+                onChange={(e) => setNewJasaCatName(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium text-xs focus:ring-2 focus:ring-[#0F4C81]/20"
               />
             </div>
+
+            {/* Visual Icon Picker */}
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Deskripsi Ruang Lingkup</label>
-              <textarea
-                rows={3}
-                placeholder="Jelaskan spesialisasi pekerjaan dalam subkategori ini..."
-                value={newSubDesc}
-                onChange={(e) => setNewSubDesc(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-              />
+              <div className="flex items-center justify-between mb-2">
+                <label className="block font-bold text-slate-700">Pilih Ikon Kategori</label>
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 text-[#0F4C81] font-bold border border-sky-200">
+                  {React.createElement(CATEGORY_ICON_MAP[newJasaCatIcon] || Folder, { size: 16, weight: "duotone" })}
+                  <span>Terpilih: {newJasaCatIcon}</span>
+                </div>
+              </div>
+
+              {/* 6 Icon Utama Default */}
+              <div className="mb-2">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  6 Ikon Utama SERVIO (Rekomendasi)
+                </p>
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                  {AVAILABLE_SERVICE_ICONS.filter((i) => i.isDefault).map((item) => {
+                    const IconComp = item.icon;
+                    const isSelected = newJasaCatIcon === item.name;
+                    return (
+                      <button
+                        key={item.name}
+                        type="button"
+                        onClick={() => setNewJasaCatIcon(item.name)}
+                        className={`p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all text-center ${
+                          isSelected
+                            ? "bg-[#0F4C81] text-white border-[#0F4C81] shadow-xs"
+                            : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                        }`}
+                        title={item.label}
+                      >
+                        <IconComp size={22} weight={isSelected ? "bold" : "duotone"} />
+                        <span className="text-[9px] font-bold truncate max-w-full">{item.label.split(" ")[0]}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Pilihan Ikon Lainnya */}
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Ikon Tambahan Lainnya (Klik untuk Memilih)
+                </p>
+                <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 max-h-40 overflow-y-auto p-1 border border-slate-100 rounded-xl bg-slate-50/50">
+                  {AVAILABLE_SERVICE_ICONS.filter((i) => !i.isDefault).map((item) => {
+                    const IconComp = item.icon;
+                    const isSelected = newJasaCatIcon === item.name;
+                    return (
+                      <button
+                        key={item.name}
+                        type="button"
+                        onClick={() => setNewJasaCatIcon(item.name)}
+                        className={`p-2 rounded-lg border flex flex-col items-center justify-center gap-1 transition-all ${
+                          isSelected
+                            ? "bg-[#0F4C81] text-white border-[#0F4C81] shadow-xs"
+                            : "bg-white border-slate-200 text-slate-600 hover:bg-slate-100"
+                        }`}
+                        title={item.label}
+                      >
+                        <IconComp size={18} weight={isSelected ? "bold" : "duotone"} />
+                        <span className="text-[8px] truncate max-w-full font-medium">{item.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
+
             <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
-              <Button variant="secondary" size="sm" type="button" onClick={() => setIsAddSubOpen(false)}>
+              <Button variant="secondary" size="sm" type="button" onClick={() => setIsAddJasaCategoryOpen(false)}>
                 Batal
               </Button>
-              <Button variant="primary" size="sm" type="submit">
-                Simpan Subkategori
+              <Button variant="primary" size="sm" type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Menyimpan..." : "Simpan Kategori Jasa"}
               </Button>
             </div>
           </form>
         </Modal>
       )}
 
-      {/* MODAL: Edit Subkategori */}
+      {/* ========================================================================= */}
+      {/* MODAL 2: Tambah Sub Kategori Jasa (Kategori Induk + Nama)                  */}
+      {/* ========================================================================= */}
+      {isAddJasaSubOpen && (
+        <Modal
+          isOpen={isAddJasaSubOpen}
+          onClose={() => setIsAddJasaSubOpen(false)}
+          title="Tambah Sub Kategori Jasa"
+        >
+          <form onSubmit={handleCreateJasaSubcategory} className="space-y-4 text-xs font-body">
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Pilih Kategori Jasa Induk</label>
+              <select
+                value={newJasaSubCatId}
+                onChange={(e) => setNewJasaSubCatId(e.target.value)}
+                required
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium text-xs focus:ring-2 focus:ring-[#0F4C81]/20"
+              >
+                {jasaCategories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Nama Sub Kategori Jasa</label>
+              <input
+                type="text"
+                required
+                placeholder="Contoh: AC & Pendingin Udara"
+                value={newJasaSubName}
+                onChange={(e) => setNewJasaSubName(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium text-xs focus:ring-2 focus:ring-[#0F4C81]/20"
+              />
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+              <Button variant="secondary" size="sm" type="button" onClick={() => setIsAddJasaSubOpen(false)}>
+                Batal
+              </Button>
+              <Button variant="primary" size="sm" type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Menyimpan..." : "Simpan Sub Kategori"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 3: Tambah Kategori Barang (Nama saja)                               */}
+      {/* ========================================================================= */}
+      {isAddProdukCategoryOpen && (
+        <Modal
+          isOpen={isAddProdukCategoryOpen}
+          onClose={() => setIsAddProdukCategoryOpen(false)}
+          title="Tambah Kategori Barang Baru"
+        >
+          <form onSubmit={handleCreateProdukCategory} className="space-y-4 text-xs font-body">
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Nama Kategori Barang</label>
+              <input
+                type="text"
+                required
+                placeholder="Contoh: Sparepart AC & Pendingin"
+                value={newProdukCatName}
+                onChange={(e) => setNewProdukCatName(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium text-xs focus:ring-2 focus:ring-[#0F4C81]/20"
+              />
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+              <Button variant="secondary" size="sm" type="button" onClick={() => setIsAddProdukCategoryOpen(false)}>
+                Batal
+              </Button>
+              <Button variant="primary" size="sm" type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Menyimpan..." : "Simpan Kategori Barang"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL 4: Tambah Sub Kategori Barang (Kategori Induk + Nama)                */}
+      {/* ========================================================================= */}
+      {isAddProdukSubOpen && (
+        <Modal
+          isOpen={isAddProdukSubOpen}
+          onClose={() => setIsAddProdukSubOpen(false)}
+          title="Tambah Sub Kategori Barang"
+        >
+          <form onSubmit={handleCreateProdukSubcategory} className="space-y-4 text-xs font-body">
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Pilih Kategori Barang Induk</label>
+              <select
+                value={newProdukSubCatId}
+                onChange={(e) => setNewProdukSubCatId(e.target.value)}
+                required
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium text-xs focus:ring-2 focus:ring-[#0F4C81]/20"
+              >
+                {produkCategories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Nama Sub Kategori Barang</label>
+              <input
+                type="text"
+                required
+                placeholder="Contoh: Kompresor & Filter Dryer"
+                value={newProdukSubName}
+                onChange={(e) => setNewProdukSubName(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium text-xs focus:ring-2 focus:ring-[#0F4C81]/20"
+              />
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+              <Button variant="secondary" size="sm" type="button" onClick={() => setIsAddProdukSubOpen(false)}>
+                Batal
+              </Button>
+              <Button variant="primary" size="sm" type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Menyimpan..." : "Simpan Sub Kategori"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL EDIT KATEGORI                                                       */}
+      {/* ========================================================================= */}
+      {editingCategory && (
+        <Modal
+          isOpen={!!editingCategory}
+          onClose={() => setEditingCategory(null)}
+          title={`Edit Kategori (${editingCategory.master_code})`}
+        >
+          <form onSubmit={handleUpdateCategory} className="space-y-4 text-xs font-body">
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Nama Kategori</label>
+              <input
+                type="text"
+                required
+                value={editCatName}
+                onChange={(e) => setEditCatName(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium text-xs focus:ring-2 focus:ring-[#0F4C81]/20"
+              />
+            </div>
+
+            {editingCategory.master_code === "JASA" && (
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Pilih Ikon Kategori</label>
+                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-40 overflow-y-auto p-1 border border-slate-100 rounded-xl bg-slate-50/50">
+                  {AVAILABLE_SERVICE_ICONS.map((item) => {
+                    const IconComp = item.icon;
+                    const isSelected = editCatIcon === item.name;
+                    return (
+                      <button
+                        key={item.name}
+                        type="button"
+                        onClick={() => setEditCatIcon(item.name)}
+                        className={`p-2 rounded-lg border flex flex-col items-center justify-center gap-1 transition-all ${
+                          isSelected
+                            ? "bg-[#0F4C81] text-white border-[#0F4C81] shadow-xs"
+                            : "bg-white border-slate-200 text-slate-600 hover:bg-slate-100"
+                        }`}
+                      >
+                        <IconComp size={18} weight={isSelected ? "bold" : "duotone"} />
+                        <span className="text-[8px] truncate max-w-full font-medium">{item.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+              <Button variant="secondary" size="sm" type="button" onClick={() => setEditingCategory(null)}>
+                Batal
+              </Button>
+              <Button variant="primary" size="sm" type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Menyimpan..." : "Simpan Perubahan"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL EDIT SUBKATEGORI                                                    */}
+      {/* ========================================================================= */}
       {editingSub && (
         <Modal
           isOpen={!!editingSub}
           onClose={() => setEditingSub(null)}
-          title="Edit Subkategori"
+          title="Edit Sub Kategori"
         >
           <form onSubmit={handleUpdateSubcategory} className="space-y-4 text-xs font-body">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Nama Subkategori</label>
+              <label className="block font-bold text-slate-700 mb-1">Nama Sub Kategori</label>
               <input
                 type="text"
                 required
                 value={editSubName}
                 onChange={(e) => setEditSubName(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium text-xs focus:ring-2 focus:ring-[#0F4C81]/20"
               />
             </div>
-            <div>
-              <label className="block font-bold text-slate-700 mb-1">Deskripsi</label>
-              <textarea
-                rows={3}
-                value={editSubDesc}
-                onChange={(e) => setEditSubDesc(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-              />
-            </div>
+
             <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
               <Button variant="secondary" size="sm" type="button" onClick={() => setEditingSub(null)}>
                 Batal
               </Button>
-              <Button variant="primary" size="sm" type="submit">
-                Simpan Perubahan
+              <Button variant="primary" size="sm" type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Menyimpan..." : "Simpan Perubahan"}
               </Button>
             </div>
           </form>
         </Modal>
       )}
 
-      {/* MODAL: Mapping Ulang Kategori */}
-      {mappingSub && (
+      {/* ========================================================================= */}
+      {/* MODAL STATUS KATEGORI                                                     */}
+      {/* ========================================================================= */}
+      {statusCategoryModal && (
         <Modal
-          isOpen={!!mappingSub}
-          onClose={() => setMappingSub(null)}
-          title="Pindahkan Mapping Kategori Induk"
+          isOpen={!!statusCategoryModal}
+          onClose={() => setStatusCategoryModal(null)}
+          title={statusCategoryModal.nextStatus === "ACTIVE" ? "Aktifkan Kategori" : "Nonaktifkan Kategori"}
         >
-          <form onSubmit={handleMapSubcategory} className="space-y-4 text-xs font-body">
+          <div className="space-y-4 text-xs font-body">
             <p className="text-slate-600">
-              Pindahkan subkategori <span className="font-bold text-slate-900">{mappingSub.name}</span> ke kategori induk yang baru:
+              Ubah status kategori <span className="font-bold text-slate-900">{statusCategoryModal.cat.name}</span> menjadi{" "}
+              <span className="font-bold text-[#0F4C81]">
+                {statusCategoryModal.nextStatus === "ACTIVE" ? "Aktif" : "Nonaktif"}
+              </span>
+              ?
             </p>
-            <div>
-              <label className="block font-bold text-slate-700 mb-1">Pilih Kategori Tujuan</label>
-              <select
-                value={targetCatId}
-                onChange={(e) => setTargetCatId(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-              >
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
             <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
-              <Button variant="secondary" size="sm" type="button" onClick={() => setMappingSub(null)}>
+              <Button variant="secondary" size="sm" type="button" onClick={() => setStatusCategoryModal(null)}>
                 Batal
               </Button>
-              <Button variant="primary" size="sm" type="submit">
-                Konfirmasi Pindah Mapping
+              <Button
+                variant={statusCategoryModal.nextStatus === "ACTIVE" ? "primary" : "danger"}
+                size="sm"
+                onClick={handleChangeCategoryStatus}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Memproses..." : "Konfirmasi"}
               </Button>
             </div>
-          </form>
+          </div>
         </Modal>
       )}
 
-      {/* MODAL: Review Pengajuan Subkategori */}
+      {/* ========================================================================= */}
+      {/* MODAL STATUS SUBKATEGORI                                                  */}
+      {/* ========================================================================= */}
+      {statusSubcategoryModal && (
+        <Modal
+          isOpen={!!statusSubcategoryModal}
+          onClose={() => setStatusSubcategoryModal(null)}
+          title={statusSubcategoryModal.nextStatus === "ACTIVE" ? "Aktifkan Sub Kategori" : "Nonaktifkan Sub Kategori"}
+        >
+          <div className="space-y-4 text-xs font-body">
+            <p className="text-slate-600">
+              Ubah status subkategori <span className="font-bold text-slate-900">{statusSubcategoryModal.sub.name}</span> menjadi{" "}
+              <span className="font-bold text-[#0F4C81]">
+                {statusSubcategoryModal.nextStatus === "ACTIVE" ? "Aktif" : "Nonaktif"}
+              </span>
+              ?
+            </p>
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+              <Button variant="secondary" size="sm" type="button" onClick={() => setStatusSubcategoryModal(null)}>
+                Batal
+              </Button>
+              <Button
+                variant={statusSubcategoryModal.nextStatus === "ACTIVE" ? "primary" : "danger"}
+                size="sm"
+                onClick={handleChangeSubcategoryStatus}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? "Memproses..." : "Konfirmasi"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL DELETE KATEGORI                                                     */}
+      {/* ========================================================================= */}
+      {deleteCategoryTarget && (
+        <Modal
+          isOpen={!!deleteCategoryTarget}
+          onClose={() => setDeleteCategoryTarget(null)}
+          title="Konfirmasi Hapus Kategori"
+        >
+          <div className="space-y-4 text-xs font-body">
+            <p className="text-slate-600">
+              Apakah Anda yakin ingin menghapus permanen kategori{" "}
+              <span className="font-bold text-slate-900">{deleteCategoryTarget.name}</span>?
+            </p>
+            <p className="text-[11px] text-rose-600 bg-rose-50 p-2.5 rounded-xl border border-rose-100">
+              Kategori hanya dapat dihapus jika belum memiliki subkategori aktif atau transaksi riwayat terkait.
+            </p>
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+              <Button variant="secondary" size="sm" type="button" onClick={() => setDeleteCategoryTarget(null)}>
+                Batal
+              </Button>
+              <Button variant="danger" size="sm" onClick={handleDeleteCategory} disabled={isSubmitting}>
+                {isSubmitting ? "Menghapus..." : "Hapus Permanen"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL DELETE SUBKATEGORI                                                  */}
+      {/* ========================================================================= */}
+      {deleteSubcategoryTarget && (
+        <Modal
+          isOpen={!!deleteSubcategoryTarget}
+          onClose={() => setDeleteSubcategoryTarget(null)}
+          title="Konfirmasi Hapus Sub Kategori"
+        >
+          <div className="space-y-4 text-xs font-body">
+            <p className="text-slate-600">
+              Apakah Anda yakin ingin menghapus permanen subkategori{" "}
+              <span className="font-bold text-slate-900">{deleteSubcategoryTarget.name}</span>?
+            </p>
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+              <Button variant="secondary" size="sm" type="button" onClick={() => setDeleteSubcategoryTarget(null)}>
+                Batal
+              </Button>
+              <Button variant="danger" size="sm" onClick={handleDeleteSubcategory} disabled={isSubmitting}>
+                {isSubmitting ? "Menghapus..." : "Hapus Permanen"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL REVIEW PENGAJUAN                                                    */}
+      {/* ========================================================================= */}
       {selectedReq && (
         <Modal
           isOpen={!!selectedReq}
           onClose={() => setSelectedReq(null)}
-          title={
-            reviewAction === "FORWARD"
-              ? "Teruskan Pengajuan Subkategori ke CEO"
-              : reviewAction === "REJECT"
-              ? "Tolak Pengajuan Subkategori"
-              : reviewAction === "NOTIFY_PROVIDER"
-              ? "Kirim Keterangan Status Persetujuan ke Mitra"
-              : "Publikasikan Subkategori Baru"
-          }
+          title={`Review Usulan Mitra: ${selectedReq.request_number}`}
         >
           <form onSubmit={handleExecuteRequestReview} className="space-y-4 text-xs font-body">
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
-              <p className="font-bold text-slate-900">
-                {selectedReq.requestedSubcategoryName} ({selectedReq.categoryName})
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] text-[#0F4C81] font-bold">
+                  {selectedReq.master_code} • USULAN {selectedReq.request_type}
+                </span>
+                <span className="text-[10px] text-slate-500 font-medium">
+                  {new Date(selectedReq.created_at).toLocaleDateString("id-ID")}
+                </span>
+              </div>
+              <p className="font-bold text-slate-900 text-sm">{selectedReq.suggested_name}</p>
+              <p className="text-slate-600 text-xs">
+                <span className="font-semibold text-slate-700">Alasan Bisnis: </span>
+                {selectedReq.reason}
               </p>
-              <p className="text-[11px] text-slate-500">Diajukan oleh: {selectedReq.providerName || selectedReq.providerId}</p>
-              <p className="text-slate-600 pt-1">{selectedReq.reason}</p>
-              {selectedReq.ceoReviewNotes && (
-                <div className="pt-2 mt-2 border-t border-slate-200 text-emerald-800 text-[11px]">
-                  <span className="font-bold">Catatan Keputusan CEO: </span>
-                  {selectedReq.ceoReviewNotes}
-                </div>
+              {selectedReq.business_context && (
+                <p className="text-slate-500 text-[11px] italic bg-white p-2 rounded-lg border border-slate-200/60">
+                  <span className="font-semibold text-slate-700 not-italic">Catatan Tambahan: </span>
+                  {selectedReq.business_context}
+                </p>
               )}
             </div>
 
-            {reviewAction === "NOTIFY_PROVIDER" && (
-              <div className="space-y-3">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1.5">
-                    Keputusan yang Diberikan ke Mitra
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setNotifyDecision("APPROVED")}
-                      className={`p-2.5 rounded-xl border text-left font-bold transition flex items-center justify-between ${
-                        notifyDecision === "APPROVED"
-                          ? "bg-emerald-50 border-emerald-500 text-emerald-900 ring-2 ring-emerald-500/20"
-                          : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
-                      }`}
-                    >
-                      <span>Setujui (Di-ACC)</span>
-                      {notifyDecision === "APPROVED" && <span className="text-emerald-600 text-xs">● Terpilih</span>}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setNotifyDecision("REJECTED")}
-                      className={`p-2.5 rounded-xl border text-left font-bold transition flex items-center justify-between ${
-                        notifyDecision === "REJECTED"
-                          ? "bg-rose-50 border-rose-500 text-rose-900 ring-2 ring-rose-500/20"
-                          : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
-                      }`}
-                    >
-                      <span>Tolak Pengajuan</span>
-                      {notifyDecision === "REJECTED" && <span className="text-rose-600 text-xs">● Terpilih</span>}
-                    </button>
-                  </div>
-                </div>
+            <div>
+              <label className="block font-bold text-slate-700 mb-1.5">Pilihan Keputusan Admin</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReviewAction("APPROVED");
+                    if (!reviewReason) {
+                      setReviewReason("Disetujui. Subkategori ini akan kami tambahkan ke sistem pada pembaruan katalog minggu depan.");
+                    }
+                  }}
+                  className={`p-3 rounded-xl border text-left font-bold transition flex flex-col gap-1 ${
+                    reviewAction === "APPROVED"
+                      ? "bg-emerald-50 border-emerald-500 text-emerald-900 ring-2 ring-emerald-500/20"
+                      : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
+                    ✓ Setujui (ACC)
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-normal">
+                    Jadwalkan penambahan &amp; beri keterangan kapan diinput
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReviewAction("REJECTED");
+                    setReviewReason("");
+                  }}
+                  className={`p-3 rounded-xl border text-left font-bold transition flex flex-col gap-1 ${
+                    reviewAction === "REJECTED"
+                      ? "bg-rose-50 border-rose-500 text-rose-900 ring-2 ring-rose-500/20"
+                      : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span className="text-xs font-bold text-rose-700 flex items-center gap-1.5">
+                    ✕ Tolak Usulan
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-normal">
+                    Tolak usulan dengan mencantumkan alasan
+                  </span>
+                </button>
+              </div>
+            </div>
 
+            {reviewAction === "APPROVED" && (
+              <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2">
+                <p className="font-bold text-emerald-900 text-xs">ℹ️ Keterangan Jadwal Penambahan ke Sistem</p>
+                <p className="text-[11px] text-emerald-800">
+                  Menyetujui usulan ini <strong>tidak otomatis</strong> memasukkannya ke katalog sistem. Kategori/subkategori baru hanya akan masuk ke database saat Anda menginputnya secara manual via tombol <strong>+ Input ke Sistem</strong>.
+                </p>
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">
-                    {notifyDecision === "APPROVED" ? "Keterangan Persetujuan untuk Mitra" : "Alasan Penolakan untuk Mitra"}
+                    Kapan Akan Ditambahkan ke Sistem? (Wajib untuk Keterangan Mitra)
                   </label>
                   <textarea
-                    rows={3}
+                    rows={2}
                     required
-                    placeholder={
-                      notifyDecision === "APPROVED"
-                        ? "Contoh: Pengajuan subkategori Anda telah disetujui. Admin sedang mendaftarkan subkategori ke sistem..."
-                        : "Contoh: Mohon maaf, pengajuan subkategori belum dapat diproses karena..."
-                    }
-                    value={adminNotes}
-                    onChange={(e) => setAdminNotes(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
+                    placeholder="Contoh: Disetujui. Subkategori ini akan kami tambahkan ke sistem pada pembaruan katalog tanggal 25 Oktober 2026."
+                    value={reviewReason}
+                    onChange={(e) => setReviewReason(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-emerald-300 bg-white font-medium text-xs focus:ring-2 focus:ring-emerald-500/20"
                   />
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Keterangan ini akan langsung tampil di halaman Riwayat Mitra (Catatan CEO bersifat rahasia internal dan tidak akan dilihat mitra).
-                  </p>
                 </div>
               </div>
             )}
 
-            {reviewAction !== "PUBLISH" && reviewAction !== "NOTIFY_PROVIDER" && (
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">
-                  {reviewAction === "FORWARD" ? "Catatan Rekomendasi untuk CEO" : "Alasan Penolakan"}
-                </label>
-                <textarea
-                  rows={3}
-                  required
-                  placeholder={
-                    reviewAction === "FORWARD"
-                      ? "Jelaskan mengapa subkategori ini layak disahkan oleh CEO..."
-                      : "Jelaskan alasan penolakan pengajuan kepada mitra..."
-                  }
-                  value={adminNotes}
-                  onChange={(e) => setAdminNotes(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-                />
+            {reviewAction === "REJECTED" && (
+              <div className="p-3.5 bg-rose-50/70 border border-rose-200 rounded-xl space-y-2">
+                <p className="font-bold text-rose-900 text-xs">⚠️ Alasan Penolakan</p>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">
+                    Alasan Penolakan (Wajib dibaca oleh Mitra)
+                  </label>
+                  <textarea
+                    rows={2}
+                    required
+                    placeholder="Contoh: Layanan ini sudah tercakup dalam subkategori X / di luar standar platform SERVIO."
+                    value={reviewReason}
+                    onChange={(e) => setReviewReason(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-rose-300 bg-white font-medium text-xs focus:ring-2 focus:ring-rose-500/20"
+                  />
+                </div>
               </div>
-            )}
-
-            {reviewAction === "PUBLISH" && (
-              <p className="text-slate-600">
-                Pengajuan ini telah disetujui oleh CEO. Klik tombol di bawah untuk membuat subkategori aktif ke platform.
-              </p>
             )}
 
             <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
@@ -1520,20 +2302,199 @@ export default function AdminTaxonomyPage() {
                 Batal
               </Button>
               <Button
-                variant={reviewAction === "REJECT" || (reviewAction === "NOTIFY_PROVIDER" && notifyDecision === "REJECTED") ? "danger" : "primary"}
+                variant={reviewAction === "REJECTED" ? "danger" : "primary"}
                 size="sm"
                 type="submit"
+                disabled={isSubmitting}
               >
-                {reviewAction === "FORWARD"
-                  ? "Kirim ke CEO"
-                  : reviewAction === "REJECT"
-                  ? "Konfirmasi Tolak"
-                  : reviewAction === "NOTIFY_PROVIDER"
-                  ? (notifyDecision === "APPROVED" ? "Kirim Persetujuan ke Mitra" : "Kirim Penolakan ke Mitra")
-                  : "Publikasikan Sekarang"}
+                {isSubmitting ? "Menyimpan..." : reviewAction === "APPROVED" ? "Setujui & Jadwalkan" : "Tolak Usulan"}
               </Button>
             </div>
           </form>
+        </Modal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: TAMBAH MEREK BARU (NAMA + FOTO MEREK)                              */}
+      {/* ========================================================================= */}
+      {isAddBrandOpen && (
+        <Modal
+          isOpen={isAddBrandOpen}
+          onClose={() => setIsAddBrandOpen(false)}
+          title="Tambah Merek Produk Baru"
+        >
+          <form onSubmit={handleCreateBrand} className="space-y-4 text-xs font-body">
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Nama Merek *</label>
+              <input
+                type="text"
+                required
+                placeholder="Misal: Daikin Genuine, Panasonic, Bosch, Motul"
+                value={brandFormName}
+                onChange={(e) => setBrandFormName(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-medium text-xs focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">URL Foto / Logo Merek (Opsional)</label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="text"
+                  placeholder="https://... atau /brands/logo.png"
+                  value={brandFormLogo}
+                  onChange={(e) => setBrandFormLogo(e.target.value)}
+                  className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-medium text-xs focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
+                />
+                <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                  {brandFormLogo ? (
+                    <img src={brandFormLogo} alt="Preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <ImageIcon size={18} className="text-slate-400" />
+                  )}
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">
+                Tautkan logo resmi merek untuk ditampilkan pada kartu katalog dan filter pelanggan.
+              </p>
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Deskripsi / Keterangan Merek</label>
+              <textarea
+                rows={2}
+                placeholder="Keterangan singkat spesialisasi produk atau prinsipal manufaktur..."
+                value={brandFormDesc}
+                onChange={(e) => setBrandFormDesc(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-white font-medium text-xs focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Status Publikasi *</label>
+              <select
+                value={brandFormStatus}
+                onChange={(e) => setBrandFormStatus(e.target.value as any)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-medium text-xs focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
+              >
+                <option value="ACTIVE">Aktif (Tersedia untuk Merchant &amp; Pelanggan)</option>
+                <option value="INACTIVE">Nonaktif (Disembunyikan sementara)</option>
+              </select>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+              <Button variant="secondary" size="sm" type="button" onClick={() => setIsAddBrandOpen(false)}>
+                Batal
+              </Button>
+              <Button variant="primary" size="sm" type="submit" disabled={isSubmitting} className="bg-[#0F4C81] text-white">
+                {isSubmitting ? "Menyimpan..." : "Simpan Merek"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: EDIT MEREK PRODUK                                                  */}
+      {/* ========================================================================= */}
+      {editingBrand && (
+        <Modal
+          isOpen={!!editingBrand}
+          onClose={() => setEditingBrand(null)}
+          title={`Edit Merek: ${editingBrand.name}`}
+        >
+          <form onSubmit={handleUpdateBrand} className="space-y-4 text-xs font-body">
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Nama Merek *</label>
+              <input
+                type="text"
+                required
+                value={brandFormName}
+                onChange={(e) => setBrandFormName(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-medium text-xs focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">URL Foto / Logo Merek</label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="text"
+                  placeholder="https://... atau /brands/logo.png"
+                  value={brandFormLogo}
+                  onChange={(e) => setBrandFormLogo(e.target.value)}
+                  className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-medium text-xs focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
+                />
+                <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                  {brandFormLogo ? (
+                    <img src={brandFormLogo} alt="Preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <ImageIcon size={18} className="text-slate-400" />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Deskripsi / Keterangan</label>
+              <textarea
+                rows={2}
+                value={brandFormDesc}
+                onChange={(e) => setBrandFormDesc(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl border border-slate-200 bg-white font-medium text-xs focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block font-bold text-slate-700 mb-1">Status Publikasi *</label>
+              <select
+                value={brandFormStatus}
+                onChange={(e) => setBrandFormStatus(e.target.value as any)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white font-medium text-xs focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
+              >
+                <option value="ACTIVE">Aktif (Tersedia untuk Merchant &amp; Pelanggan)</option>
+                <option value="INACTIVE">Nonaktif (Disembunyikan sementara)</option>
+              </select>
+            </div>
+
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+              <Button variant="secondary" size="sm" type="button" onClick={() => setEditingBrand(null)}>
+                Batal
+              </Button>
+              <Button variant="primary" size="sm" type="submit" disabled={isSubmitting} className="bg-[#0F4C81] text-white">
+                {isSubmitting ? "Menyimpan..." : "Simpan Perubahan"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: KONFIRMASI HAPUS MEREK                                             */}
+      {/* ========================================================================= */}
+      {deleteBrandTarget && (
+        <Modal
+          isOpen={!!deleteBrandTarget}
+          onClose={() => setDeleteBrandTarget(null)}
+          title="Konfirmasi Hapus Merek"
+        >
+          <div className="space-y-4 text-xs font-body">
+            <p className="text-slate-600">
+              Apakah Anda yakin ingin menghapus merek resmi{" "}
+              <span className="font-bold text-slate-900">{deleteBrandTarget.name}</span> dari platform?
+            </p>
+            <p className="text-[11px] text-amber-700 bg-amber-50 p-2.5 rounded-xl border border-amber-200">
+              Perhatian: Merek yang dihapus tidak akan lagi muncul sebagai opsi pilihan cepat bagi Merchant baru.
+            </p>
+            <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+              <Button variant="secondary" size="sm" type="button" onClick={() => setDeleteBrandTarget(null)}>
+                Batal
+              </Button>
+              <Button variant="danger" size="sm" onClick={handleDeleteBrand} disabled={isSubmitting}>
+                {isSubmitting ? "Menghapus..." : "Hapus Merek"}
+              </Button>
+            </div>
+          </div>
         </Modal>
       )}
     </div>

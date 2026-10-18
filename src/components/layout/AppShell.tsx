@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { usePathname } from "next/navigation";
 import { useActiveRole } from "@/context/RoleContext";
+import { useProviderOperations } from "@/features/provider/useProviderOperations";
 import { Navbar } from "@/components/navigation/Navbar";
 import { RoleSidebar } from "@/components/navigation/RoleSidebar";
 import { BottomNav } from "@/components/navigation/BottomNav";
@@ -13,6 +14,7 @@ interface AppShellProps {
 
 export function AppShell({ children }: AppShellProps) {
   const { activeRole, isPublicGuest } = useActiveRole();
+  const { storeStatus } = useProviderOperations();
   const pathname = usePathname();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -40,6 +42,11 @@ export function AppShell({ children }: AppShellProps) {
     pathname?.startsWith("/support")
   );
 
+  const isProviderRoute = Boolean(
+    pathname?.startsWith("/provider") || pathname?.startsWith("/business/provider")
+  );
+  const isProviderClosed = isProviderRoute && storeStatus === "TEMPORARY_CLOSED";
+
   const isCustomer = !isOperationalRoute && !isPublicGuest && activeRole === "CUSTOMER" && !isAuthPage;
   const isWorker = (pathname?.startsWith("/worker") || (!isPublicGuest && activeRole === "WORKER_TECHNICIAN")) && !isAuthPage;
   const isDashboardRole = (isOperationalRoute || (!isPublicGuest && activeRole !== "CUSTOMER")) && !isAuthPage;
@@ -61,17 +68,18 @@ export function AppShell({ children }: AppShellProps) {
     (pathname?.startsWith("/warranties/") && pathname !== "/warranties");
 
   return (
-    <div className="min-h-screen bg-white flex flex-col selection:bg-sky selection:text-primary">
+    <div className={`min-h-screen bg-white flex flex-col selection:bg-sky selection:text-primary ${isProviderClosed ? "overflow-hidden" : ""}`}>
       {/* Top Navbar */}
       <Navbar
         onToggleSidebar={handleToggleSidebar}
         isMobileSidebarOpen={mobileSidebarOpen}
+        hideSidebarToggle={isProviderClosed}
       />
 
       {/* Main Layout Body */}
       <div className="flex-1 flex w-full">
-        {/* Sidebar for Dashboard roles */}
-        {isDashboardRole && (
+        {/* Sidebar for Dashboard roles: Disembunyikan saat Toko Tutup */}
+        {isDashboardRole && !isProviderClosed && (
           <RoleSidebar
             isCollapsed={sidebarCollapsed}
             onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -83,12 +91,17 @@ export function AppShell({ children }: AppShellProps) {
         {/* Content Viewport */}
         <main
           className={`flex-1 flex flex-col min-w-0 transition-all ${
-            isCustomer ? "pb-20 md:pb-8" : isWorker ? "pb-20 md:pb-12" : "pb-12"
+            isProviderClosed
+              ? "p-0 overflow-hidden"
+              : isCustomer
+              ? "pb-20 md:pb-8"
+              : isWorker
+              ? "pb-20 md:pb-12"
+              : "pb-12"
           }`}
         >
-
-          {isFullBleed ? (
-            <div className="flex-1 w-full">{children}</div>
+          {isFullBleed || isProviderClosed ? (
+            <div className="flex-1 w-full overflow-hidden">{children}</div>
           ) : isDashboardRole ? (
             <div className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6">
               {children}

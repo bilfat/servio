@@ -89,6 +89,48 @@ const nextConfig: NextConfig = {
         source: "/storage/:path*",
         destination: "http://127.0.0.1:8001/storage/:path*",
       },
+      // Category Service (Modul 02 - Port 8002)
+      {
+        source: "/api/v1/category-masters/:path*",
+        destination: "http://127.0.0.1:8002/api/v1/category-masters/:path*",
+      },
+      {
+        source: "/api/v1/category-masters",
+        destination: "http://127.0.0.1:8002/api/v1/category-masters",
+      },
+      {
+        source: "/api/v1/categories/:path*",
+        destination: "http://127.0.0.1:8002/api/v1/categories/:path*",
+      },
+      {
+        source: "/api/v1/categories",
+        destination: "http://127.0.0.1:8002/api/v1/categories",
+      },
+      {
+        source: "/api/v1/subcategories/:path*",
+        destination: "http://127.0.0.1:8002/api/v1/subcategories/:path*",
+      },
+      {
+        source: "/api/v1/subcategories",
+        destination: "http://127.0.0.1:8002/api/v1/subcategories",
+      },
+      {
+        source: "/api/v1/category-requests/:path*",
+        destination: "http://127.0.0.1:8002/api/v1/category-requests/:path*",
+      },
+      {
+        source: "/api/v1/category-requests",
+        destination: "http://127.0.0.1:8002/api/v1/category-requests",
+      },
+      {
+        source: "/api/v1/category-audit/:path*",
+        destination: "http://127.0.0.1:8002/api/v1/category-audit/:path*",
+      },
+      {
+        source: "/api/v1/category-audit",
+        destination: "http://127.0.0.1:8002/api/v1/category-audit",
+      },
+      // Identity Service (Modul 01 - Port 8001)
       {
         source: "/api/v1/:path*",
         destination: "http://127.0.0.1:8001/api/v1/:path*",

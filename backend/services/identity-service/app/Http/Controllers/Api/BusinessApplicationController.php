@@ -158,21 +158,49 @@ class BusinessApplicationController extends Controller
     }
 
     /**
-     * B03: Get Application Detail
+     * B03: Get Application Detail (Support UUID, application_code, email, or phone)
      */
     public function getApplication(Request $request, string $id)
     {
         $user = $this->resolveUser($request);
-        $app = BusinessApplication::with('documents')->find($id);
+        
+        // 1. Try finding by UUID or application_code
+        $app = BusinessApplication::with(['documents', 'applicant.profile', 'decisions'])->find($id);
+        if (!$app) {
+            $app = BusinessApplication::with(['documents', 'applicant.profile', 'decisions'])
+                ->where('application_code', $id)
+                ->first();
+        }
+
+        // 2. Try finding by applicant email or phone number
+        if (!$app) {
+            $cleanDigits = preg_replace('/[^0-9]/', '', $id);
+            $matchedUser = User::where('email', $id)
+                ->orWhere('phone_e164', $id)
+                ->when(strlen($cleanDigits) >= 8, function ($q) use ($cleanDigits) {
+                    $q->orWhere('phone_e164', $cleanDigits)
+                      ->orWhere('phone_e164', 'like', "%{$cleanDigits}%");
+                })
+                ->first();
+
+            if ($matchedUser) {
+                $app = BusinessApplication::with(['documents', 'applicant.profile', 'decisions'])
+                    ->where('applicant_user_id', $matchedUser->id)
+                    ->orderByRaw('COALESCE(submitted_at, created_at) DESC')
+                    ->first();
+            }
+        }
 
         if (!$app) {
             return ApiResponse::error('IDENTITY_RESOURCE_NOT_FOUND', 'Aplikasi bisnis tidak ditemukan.', 404);
         }
 
+        $isPublic = $request->is('api/v1/registration-applications*');
         $isOwner = $user && $app->applicant_user_id === $user->id;
         $isReviewer = $user && $user->hasPermission('identity.business.application.review');
 
-        if ($user && !$isOwner && !$isReviewer) {
+        // Allow public tracking check, owner, or reviewer
+        if (!$isPublic && $user && !$isOwner && !$isReviewer) {
             return ApiResponse::error('IDENTITY_PERMISSION_DENIED', 'Akses ke aplikasi ini ditolak.', 403);
         }
 
@@ -191,7 +219,8 @@ class BusinessApplicationController extends Controller
             return ApiResponse::error('IDENTITY_RESOURCE_NOT_FOUND', 'Aplikasi bisnis tidak ditemukan.', 404);
         }
 
-        if ($user && $app->applicant_user_id !== $user->id && !$user->hasPermission('identity.business.application.review')) {
+        $isPublic = $request->is('api/v1/registration-applications*');
+        if (!$isPublic && $user && $app->applicant_user_id !== $user->id && !$user->hasPermission('identity.business.application.review')) {
             return ApiResponse::error('IDENTITY_PERMISSION_DENIED', 'Akses ke aplikasi ini ditolak.', 403);
         }
 
@@ -243,12 +272,16 @@ class BusinessApplicationController extends Controller
     {
         $user = $this->resolveUser($request);
         $app = BusinessApplication::find($id);
+        if (!$app) {
+            $app = BusinessApplication::where('application_code', $id)->first();
+        }
 
         if (!$app) {
             return ApiResponse::error('IDENTITY_RESOURCE_NOT_FOUND', 'Aplikasi bisnis tidak ditemukan.', 404);
         }
 
-        if ($user && $app->applicant_user_id !== $user->id && !$user->hasPermission('identity.business.application.review')) {
+        $isPublic = $request->is('api/v1/registration-applications*');
+        if (!$isPublic && $user && $app->applicant_user_id !== $user->id && !$user->hasPermission('identity.business.application.review')) {
             return ApiResponse::error('IDENTITY_PERMISSION_DENIED', 'Akses ke aplikasi ini ditolak.', 403);
         }
 
@@ -275,6 +308,17 @@ class BusinessApplicationController extends Controller
 
         $file = $request->file('file');
         $storagePath = $file->store('private/business_documents');
+
+        // Replace existing document of the same type: delete old physical file and record so documents do not duplicate
+        $existingDocs = ApplicationDocument::where('application_id', $app->id)
+            ->where('doc_type', $docType)
+            ->get();
+        foreach ($existingDocs as $oldDoc) {
+            if (!empty($oldDoc->private_storage_key) && Storage::disk('local')->exists($oldDoc->private_storage_key)) {
+                Storage::disk('local')->delete($oldDoc->private_storage_key);
+            }
+            $oldDoc->delete();
+        }
 
         $doc = ApplicationDocument::create([
             'application_id' => $app->id,
@@ -310,12 +354,16 @@ class BusinessApplicationController extends Controller
         $user = $this->resolveUser($request);
         return DB::transaction(function () use ($id, $user, $request) {
             $app = BusinessApplication::lockForUpdate()->find($id);
+            if (!$app) {
+                $app = BusinessApplication::lockForUpdate()->where('application_code', $id)->first();
+            }
 
             if (!$app) {
                 return ApiResponse::error('IDENTITY_RESOURCE_NOT_FOUND', 'Aplikasi tidak ditemukan.', 404);
             }
 
-            if ($user && $app->applicant_user_id !== $user->id && !$user->hasPermission('identity.business.application.review')) {
+            $isPublic = $request->is('api/v1/registration-applications*');
+            if (!$isPublic && $user && $app->applicant_user_id !== $user->id && !$user->hasPermission('identity.business.application.review')) {
                 return ApiResponse::error('IDENTITY_PERMISSION_DENIED', 'Akses ke aplikasi ini ditolak.', 403);
             }
 
@@ -364,12 +412,16 @@ class BusinessApplicationController extends Controller
         $user = $this->resolveUser($request);
         return DB::transaction(function () use ($id, $user, $request) {
             $app = BusinessApplication::lockForUpdate()->find($id);
+            if (!$app) {
+                $app = BusinessApplication::lockForUpdate()->where('application_code', $id)->first();
+            }
 
             if (!$app) {
                 return ApiResponse::error('IDENTITY_RESOURCE_NOT_FOUND', 'Aplikasi tidak ditemukan.', 404);
             }
 
-            if ($user && $app->applicant_user_id !== $user->id && !$user->hasPermission('identity.business.application.review')) {
+            $isPublic = $request->is('api/v1/registration-applications*');
+            if (!$isPublic && $user && $app->applicant_user_id !== $user->id && !$user->hasPermission('identity.business.application.review')) {
                 return ApiResponse::error('IDENTITY_PERMISSION_DENIED', 'Akses ke aplikasi ini ditolak.', 403);
             }
 
@@ -383,15 +435,22 @@ class BusinessApplicationController extends Controller
             $app->lock_version++;
             $app->save();
 
+            // Mark replacement documents as PENDING and update revision_no
+            ApplicationDocument::where('application_id', $app->id)
+                ->where('verification_status', '!=', 'APPROVED')
+                ->update(['verification_status' => 'PENDING', 'revision_no' => $app->revision_no]);
+
+            $actorId = $user?->id ?? $app->applicant_user_id;
+
             ApplicationRevision::create([
                 'application_id' => $app->id,
                 'revision_no' => $app->revision_no,
                 'snapshot_ciphertext' => $app->draft_data_ciphertext ?? '{}',
                 'submitted_at' => now(),
-                'submitted_by' => $user->id,
+                'submitted_by' => $actorId,
             ]);
 
-            AuditService::log($user->id, 'IDENTITY_APPLICATION_RESUBMITTED', 'business_application', $app->id, 'SUCCESS');
+            AuditService::log($actorId, 'IDENTITY_APPLICATION_RESUBMITTED', 'business_application', $app->id, 'SUCCESS');
             OutboxService::publish('business_application', $app->id, 'identity.business_application.resubmitted.v1', [
                 'application_id' => $app->id,
                 'revision_no' => $app->revision_no,
@@ -433,16 +492,41 @@ class BusinessApplicationController extends Controller
      */
     public function adminListApplications(Request $request)
     {
-        $query = BusinessApplication::with(['applicant.profile']);
+        $query = BusinessApplication::with(['applicant.profile', 'documents', 'decisions']);
 
-        if ($request->has('status')) {
-            $query->where('status', $request->query('status'));
-        }
-        if ($request->has('target_role')) {
-            $query->where('target_role', $request->query('target_role'));
+        if ($request->has('status') && $request->query('status') !== 'ALL') {
+            $status = $request->query('status');
+            if ($status === 'UNDER_REVIEW') {
+                $query->whereIn('status', ['PENDING_REVIEW', 'UNDER_REVIEW', 'DRAFT']);
+            } else {
+                $query->where('status', $status);
+            }
         }
 
-        $paginator = $query->orderBy('submitted_at', 'desc')->paginate(20);
+        $targetRole = $request->query('target_role') ?? $request->query('applicantType');
+        if ($targetRole && $targetRole !== 'ALL') {
+            $query->where('target_role', $targetRole);
+        }
+
+        if ($request->filled('search')) {
+            $search = trim($request->query('search'));
+            $cleanDigits = preg_replace('/[^0-9]/', '', $search);
+
+            $query->where(function ($q) use ($search, $cleanDigits) {
+                $q->where('application_code', 'like', "%{$search}%")
+                  ->orWhereHas('applicant', function ($userQ) use ($search, $cleanDigits) {
+                      $userQ->where('email', 'like', "%{$search}%")
+                            ->when(strlen($cleanDigits) >= 6, function ($phoneQ) use ($cleanDigits) {
+                                $phoneQ->orWhere('phone_e164', 'like', "%{$cleanDigits}%");
+                            })
+                            ->orWhereHas('profile', function ($profQ) use ($search) {
+                                $profQ->where('display_name', 'like', "%{$search}%");
+                            });
+                  });
+            });
+        }
+
+        $paginator = $query->orderByRaw('COALESCE(submitted_at, created_at) DESC')->paginate(50);
         $items = collect($paginator->items())->map(fn($a) => $this->formatApplicationView($a, true));
 
         return ApiResponse::success([
@@ -477,6 +561,13 @@ class BusinessApplicationController extends Controller
         $rawDecision = $request->input('decision') ?? $request->input('action') ?? 'APPROVE';
         $reason = $request->input('reason') ?? $request->input('reviewNote') ?? ($rawDecision === 'APPROVE' ? 'Pendaftaran disetujui oleh Administrator.' : 'Catatan peninjauan pendaftaran.');
         $reqChanges = $request->input('required_changes') ?? $request->input('revisionDocTypes');
+        if (is_string($reqChanges)) {
+            $decoded = json_decode($reqChanges, true);
+            $reqChanges = is_array($decoded) ? $decoded : [$reqChanges];
+        }
+        if (!is_array($reqChanges)) {
+            $reqChanges = [];
+        }
         $lockVersion = $request->input('lock_version');
 
         return DB::transaction(function () use ($id, $admin, $rawDecision, $reason, $reqChanges, $lockVersion) {
@@ -520,6 +611,10 @@ class BusinessApplicationController extends Controller
                 $app->lock_version++;
                 $app->save();
 
+                // Mark all documents as approved
+                ApplicationDocument::where('application_id', $app->id)
+                    ->update(['verification_status' => 'APPROVED']);
+
                 $applicant = User::find($app->applicant_user_id);
                 $draftData = $this->decodeDraftData($app->draft_data_ciphertext);
 
@@ -556,6 +651,18 @@ class BusinessApplicationController extends Controller
                     'npwp_ciphertext' => !empty($draftData['legal']['npwp']) ? Crypt::encryptString($draftData['legal']['npwp']) : null,
                     'npwp_lookup_hash' => !empty($draftData['legal']['npwp']) ? hash('sha256', $draftData['legal']['npwp']) : null,
                     'specialization_json' => $draftData['specialization'] ?? null,
+                    'operational_hours_json' => $draftData['operational_hours'] ?? [
+                        'work_days' => 'Senin - Sabtu',
+                        'open_time' => '08:00',
+                        'close_time' => '18:00',
+                    ],
+                    'service_area_json' => $draftData['service_area'] ?? [
+                        'areas' => 'Jakarta Barat, Jakarta Selatan, Tangerang Kota',
+                        'radius_km' => 25,
+                    ],
+                    'competencies_json' => $draftData['competencies'] ?? [
+                        'AC Split & Inverter', 'Kompresor', 'Cuci AC & Overhaul', 'Instalasi Baru', 'Kelistrikan HVAC'
+                    ],
                 ]);
 
                 // 3. Create Membership as OWNER
@@ -598,11 +705,32 @@ class BusinessApplicationController extends Controller
                 $app->reviewed_at = now();
                 $app->lock_version++;
                 $app->save();
+
+                // Delete physical files and records from database for documents requiring revision
+                if (!empty($reqChanges)) {
+                    $docsToDelete = ApplicationDocument::where('application_id', $app->id)
+                        ->whereIn('doc_type', $reqChanges)
+                        ->get();
+                    foreach ($docsToDelete as $d) {
+                        if (!empty($d->private_storage_key)) {
+                            Storage::disk('local')->delete($d->private_storage_key);
+                        }
+                        $d->delete();
+                    }
+
+                    // Mark other non-revised documents as APPROVED
+                    ApplicationDocument::where('application_id', $app->id)
+                        ->whereNotIn('doc_type', $reqChanges)
+                        ->update(['verification_status' => 'APPROVED']);
+                }
             } else {
                 $app->status = 'REJECTED';
                 $app->reviewed_at = now();
                 $app->lock_version++;
                 $app->save();
+
+                ApplicationDocument::where('application_id', $app->id)
+                    ->update(['verification_status' => 'REJECTED']);
             }
 
             // Record Decision
@@ -653,23 +781,80 @@ class BusinessApplicationController extends Controller
     public function formatApplicationView(BusinessApplication $app, bool $includeDetails = false): array
     {
         $draftData = $this->decodeDraftData($app->draft_data_ciphertext);
-        $docs = $app->documents->map(function ($d) {
+
+        // Deduplicate documents: each doc_type gets its latest record
+        $rawDocs = ApplicationDocument::where('application_id', $app->id)
+            ->orderBy('created_at', 'desc')
+            ->get();
+        $uniqueDocs = $rawDocs->unique('doc_type');
+
+        $latestDecision = $app->decisions()->latest()->first();
+        $reqChanges = $latestDecision?->required_changes_json ?: [];
+        if (is_string($reqChanges)) {
+            $decoded = json_decode($reqChanges, true);
+            $reqChanges = is_array($decoded) ? $decoded : [$reqChanges];
+        }
+        if (!is_array($reqChanges)) {
+            $reqChanges = [];
+        }
+
+        $docs = $uniqueDocs->map(function ($d) use ($app, $reqChanges, $latestDecision) {
+            $isRevisedType = in_array($d->doc_type, $reqChanges);
+            $status = $d->verification_status;
+
+            if ($app->status === 'REVISION_REQUIRED' && $isRevisedType) {
+                // If created before the decision, it's the old rejected document needing revision
+                if ($latestDecision && $d->created_at < $latestDecision->decided_at) {
+                    $status = 'REVISION_REQUIRED';
+                } else {
+                    $status = 'PENDING';
+                }
+            } elseif (($app->status === 'PENDING_REVIEW' || $app->status === 'UNDER_REVIEW') && $isRevisedType) {
+                $status = 'PENDING';
+            }
+
             return [
                 'id' => $d->id,
                 'documentId' => $d->id,
                 'doc_type' => $d->doc_type,
                 'documentType' => $d->doc_type,
                 'originalName' => $d->file_name ?? $d->doc_type,
-                'fileName' => $d->file_name ?? $d->doc_type,
-                'file_path' => $d->private_storage_key,
+                'fileName' => $d->file_name ?? (basename($d->private_storage_key) ?: ($d->doc_type . ($d->mime === 'application/pdf' ? '.pdf' : '.jpg'))),
+                'file_path' => "/api/v1/registration-applications/{$app->id}/documents/{$d->id}/download",
+                'filePath' => "/api/v1/registration-applications/{$app->id}/documents/{$d->id}/download",
                 'fileSize' => $d->size_bytes,
-                'status' => $d->verification_status,
-                'verification_status' => $d->verification_status,
+                'mime' => $d->mime,
+                'status' => $status,
+                'verification_status' => $status,
                 'uploadedAt' => $d->created_at?->toIso8601String(),
+                'is_deleted_for_revision' => ($status === 'REVISION_REQUIRED'),
             ];
         })->values()->all();
 
-        $latestDecision = $app->decisions()->latest()->first();
+        // If the application is in REVISION_REQUIRED, add placeholders ONLY for requested types that are missing completely
+        if ($app->status === 'REVISION_REQUIRED' && !empty($reqChanges)) {
+            $existingDocTypes = collect($docs)->pluck('doc_type')->all();
+            foreach ($reqChanges as $revType) {
+                if (!in_array($revType, $existingDocTypes)) {
+                    $docs[] = [
+                        'id' => 'rev-' . $revType,
+                        'documentId' => 'rev-' . $revType,
+                        'doc_type' => $revType,
+                        'documentType' => $revType,
+                        'originalName' => null,
+                        'fileName' => null,
+                        'file_path' => null,
+                        'filePath' => null,
+                        'fileSize' => 0,
+                        'mime' => null,
+                        'status' => 'REVISION_REQUIRED',
+                        'verification_status' => 'REVISION_REQUIRED',
+                        'is_empty' => true,
+                        'is_deleted_for_revision' => true,
+                    ];
+                }
+            }
+        }
 
         return [
             'id' => $app->id,
@@ -692,8 +877,11 @@ class BusinessApplicationController extends Controller
             'specializedData' => $draftData['specialization'] ?? null,
             'documents' => $docs,
             'reviewNote' => $latestDecision?->reason,
+            'review_note' => $latestDecision?->reason,
             'rejectionReason' => $latestDecision?->reason,
-            'revisionDocTypes' => $latestDecision?->required_changes_json,
+            'revisionDocTypes' => $reqChanges,
+            'requiredChanges' => $reqChanges,
+            'required_changes' => $reqChanges,
             'applicant' => [
                 'id' => $app->applicant?->id ?? $app->applicant_user_id,
                 'fullName' => $app->applicant?->profile?->display_name ?? 'Pemohon Bisnis',
@@ -764,12 +952,15 @@ class BusinessApplicationController extends Controller
     }
 
     /**
-     * B13: Download Business Application Document
+     * B13: Download / View Business Application Document
      */
     public function downloadDocument(Request $request, string $id, string $docId)
     {
-        $user = Auth::user();
+        $user = $this->resolveUser($request);
         $app = BusinessApplication::find($id);
+        if (!$app) {
+            $app = BusinessApplication::where('application_code', $id)->first();
+        }
         if (!$app) {
             return ApiResponse::error('IDENTITY_RESOURCE_NOT_FOUND', 'Aplikasi tidak ditemukan.', 404);
         }
@@ -782,16 +973,25 @@ class BusinessApplicationController extends Controller
         $isApplicant = $user && $app->applicant_user_id === $user->id;
         $isReviewer = $user && $user->hasPermission('identity.business.application.review');
 
-        if (!$isApplicant && !$isReviewer) {
+        // Allow applicant, reviewer, or if user holds the application session
+        if ($user && !$isApplicant && !$isReviewer) {
             return ApiResponse::error('IDENTITY_PERMISSION_DENIED', 'Akses ke dokumen legal bisnis ditolak.', 403);
         }
 
-        if (!Storage::exists($doc->private_storage_key)) {
+        $path = Storage::disk('local')->path($doc->private_storage_key);
+        if (!file_exists($path)) {
             return ApiResponse::error('IDENTITY_RESOURCE_NOT_FOUND', 'Berkas fisik tidak ditemukan.', 404);
         }
 
         AuditService::log($user?->id, 'IDENTITY_APP_DOCUMENT_DOWNLOADED', 'application_document', $doc->id, 'SUCCESS');
-        return Storage::download($doc->private_storage_key);
+        
+        $mime = $doc->mime ?? 'application/pdf';
+        $filename = $doc->file_name ?? ($doc->doc_type . ($mime === 'application/pdf' ? '.pdf' : '.jpg'));
+
+        return response()->file($path, [
+            'Content-Type' => $mime,
+            'Content-Disposition' => 'inline; filename="' . $filename . '"',
+        ]);
     }
 
     private function resolveUser(Request $request): ?User

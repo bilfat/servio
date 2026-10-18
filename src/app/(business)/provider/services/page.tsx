@@ -42,13 +42,14 @@ const PLATFORM_SERVICE_METHODS: { id: ProviderServiceMethod; label: string }[] =
   { id: "MOBILE_SERVICE", label: "Mobile Service (Unit Bergerak)" },
 ];
 
-function getCategoryIcon(catId: string) {
-  if (catId.includes("repair")) return Wrench;
-  if (catId.includes("home") || catId.includes("building")) return House;
-  if (catId.includes("clean")) return Sparkle;
-  if (catId.includes("maint")) return GearSix;
-  if (catId.includes("env")) return TreeStructure;
-  if (catId.includes("auto")) return Car;
+function getCategoryIcon(catId: string, catName?: string) {
+  const target = `${catId} ${catName || ""}`.toLowerCase();
+  if (target.includes("repair") || target.includes("teknik") || target.includes("perbaikan")) return Wrench;
+  if (target.includes("home") || target.includes("building") || target.includes("bangunan") || target.includes("rumah")) return House;
+  if (target.includes("clean") || target.includes("kebersihan")) return Sparkle;
+  if (target.includes("maint") || target.includes("perawatan")) return GearSix;
+  if (target.includes("env") || target.includes("lingkungan") || target.includes("taman")) return TreeStructure;
+  if (target.includes("auto") || target.includes("otomotif") || target.includes("kendaraan")) return Car;
   return Folder;
 }
 
@@ -67,7 +68,7 @@ export default function ProviderServiceOfferingsPage() {
   // Canonical API State
   const [apiServices, setApiServices] = useState<ApiProviderMasterService[]>([]);
   const [apiCategories, setApiCategories] = useState<{ id: string; name: string; code?: string; status: string }[]>([]);
-  const [apiSubcategories, setApiSubcategories] = useState<{ id: string; categoryId: string; name: string; code?: string; status: string }[]>([]);
+  const [apiSubcategories, setApiSubcategories] = useState<{ id: string; categoryId: string; categoryName?: string; name: string; code?: string; status: string }[]>([]);
   const [apiWarrantyDurations, setApiWarrantyDurations] = useState<{ id: string; durationDays: number; status: string }[]>([]);
   const [apiStoreActive, setApiStoreActive] = useState<boolean | null>(null);
   const [isLoadingServices, setIsLoadingServices] = useState(true);
@@ -79,8 +80,8 @@ export default function ProviderServiceOfferingsPage() {
       setAuthWarning(null);
       const [svcRes, catRes, subRes, warRes] = await Promise.allSettled([
         providerServiceApi.list(),
-        taxonomyApi.getCategories(),
-        taxonomyApi.getSubcategories(),
+        taxonomyApi.getCategories({ master: "JASA", status: "ACTIVE" }),
+        taxonomyApi.getSubcategories({ master: "JASA", status: "ACTIVE" }),
         providerWarrantyApi.getSettings(),
       ]);
 
@@ -109,7 +110,8 @@ export default function ProviderServiceOfferingsPage() {
         setApiSubcategories(
           subRes.value.data.map((s: any) => ({
             id: s.id || s._id,
-            categoryId: s.categoryId,
+            categoryId: s.category_id || s.categoryId,
+            categoryName: s.category_name || s.categoryName,
             name: s.name,
             code: s.code,
             status: s.status,
@@ -246,7 +248,7 @@ export default function ProviderServiceOfferingsPage() {
       // ONLY consider ACTIVE services for category cards (Prompt Section 4, 5, 8)
       if (service.status !== "ACTIVE") return;
 
-      const cat = repo.categories.find((c) => c.id === service.categoryId);
+      const cat = apiCategories.find((c) => c.id === service.categoryId) || repo.categories.find((c) => c.id === service.categoryId);
       const catName = cat?.name || service.categoryName || "Kategori Lain";
       const catId = service.categoryId;
 
@@ -265,7 +267,7 @@ export default function ProviderServiceOfferingsPage() {
 
     // Only return categories that have active services (Section 8: tidak boleh menampilkan kategori kosong)
     return Array.from(map.values()).filter((c) => c.serviceCount > 0);
-  }, [myServices, repo.categories]);
+  }, [myServices, apiCategories, repo.categories]);
 
   // Status counters
   const totalAllServicesCount = useMemo(() => myServices.length, [myServices]);
@@ -307,11 +309,11 @@ export default function ProviderServiceOfferingsPage() {
   }, [myServices, selectedCategoryFilter, selectedStatusFilter, searchQuery]);
 
   const handleOpenAddModal = () => {
-    const defaultCat = activeCategories[0]?.id || "cat-repair";
+    const defaultCat = activeCategories[0]?.id || "";
     setSelectedCatId(defaultCat);
-    const subcats = apiSubcategories.length > 0
-      ? apiSubcategories.filter((s) => s.categoryId === defaultCat && s.status === "ACTIVE")
-      : repo.subcategories.filter((s) => s.categoryId === defaultCat && s.status === "ACTIVE");
+    const subcats = defaultCat
+      ? apiSubcategories.filter((s) => (s.categoryId === defaultCat || String(s.categoryId) === String(defaultCat)) && s.status === "ACTIVE")
+      : [];
     setSelectedSubId(subcats[0]?.id || "");
     setServiceName("");
     setServiceDesc("");
@@ -346,11 +348,31 @@ export default function ProviderServiceOfferingsPage() {
 
   const handleCategoryChange = (catId: string) => {
     setSelectedCatId(catId);
-    const subcats = apiSubcategories.length > 0
-      ? apiSubcategories.filter((s) => s.categoryId === catId && s.status === "ACTIVE")
-      : repo.subcategories.filter((s) => s.categoryId === catId && s.status === "ACTIVE");
+    const subcats = apiSubcategories.filter(
+      (s) => (s.categoryId === catId || String(s.categoryId) === String(catId)) && s.status === "ACTIVE"
+    );
     setSelectedSubId(subcats[0]?.id || "");
   };
+
+  // Synchronize category and subcategory selection when modal is opened or categories load
+  useEffect(() => {
+    if (!isAddModalOpen) return;
+    if (!selectedCatId && activeCategories.length > 0) {
+      setSelectedCatId(activeCategories[0].id);
+    }
+  }, [isAddModalOpen, selectedCatId, activeCategories]);
+
+  useEffect(() => {
+    if (!isAddModalOpen) return;
+    if (availableSubcategories.length > 0) {
+      const exists = availableSubcategories.some((s) => s.id === selectedSubId);
+      if (!exists) {
+        setSelectedSubId(availableSubcategories[0].id);
+      }
+    } else {
+      setSelectedSubId("");
+    }
+  }, [isAddModalOpen, availableSubcategories, selectedSubId]);
 
   const handleToggleMethod = (method: ProviderServiceMethod) => {
     setSelectedMethods((prev) =>
@@ -366,9 +388,14 @@ export default function ProviderServiceOfferingsPage() {
     }
 
     try {
+      const catObj = apiCategories.find((c) => c.id === selectedCatId) || repo.categories.find((c) => c.id === selectedCatId);
+      const subObj = apiSubcategories.find((s) => s.id === selectedSubId) || repo.subcategories.find((s) => s.id === selectedSubId);
+
       await providerServiceApi.create({
         categoryId: selectedCatId,
+        categoryName: catObj?.name,
         subcategoryId: selectedSubId,
+        subcategoryName: subObj?.name,
         name: serviceName.trim(),
         description: serviceDesc.trim(),
         priceMin: Number(priceMin),
@@ -378,7 +405,7 @@ export default function ProviderServiceOfferingsPage() {
         status,
         warrantyConfig: isStoreActive && isWarrantySupported ? {
           warrantyEnabled: true,
-          durationDays: 30,
+          durationDays: warrantyDurationDays || 30,
         } : {
           warrantyEnabled: false,
           durationDays: 0,
@@ -686,7 +713,7 @@ export default function ProviderServiceOfferingsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {providerActiveCategories.map((cat) => {
               const isSelected = selectedCategoryFilter === cat.id;
-              const IconComponent = getCategoryIcon(cat.id);
+              const IconComponent = getCategoryIcon(cat.id, cat.name);
 
               return (
                 <button
@@ -994,13 +1021,17 @@ export default function ProviderServiceOfferingsPage() {
               <select
                 value={selectedCatId}
                 onChange={(e) => handleCategoryChange(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium bg-white"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium bg-white focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
               >
-                {activeCategories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
+                {activeCategories.length === 0 ? (
+                  <option value="" disabled>Memuat kategori...</option>
+                ) : (
+                  activeCategories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 
@@ -1024,13 +1055,18 @@ export default function ProviderServiceOfferingsPage() {
               <select
                 value={selectedSubId}
                 onChange={(e) => setSelectedSubId(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium bg-white"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium bg-white focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
+                disabled={availableSubcategories.length === 0}
               >
-                {availableSubcategories.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
+                {availableSubcategories.length === 0 ? (
+                  <option value="" disabled>Belum ada subkategori untuk kategori ini</option>
+                ) : (
+                  availableSubcategories.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 

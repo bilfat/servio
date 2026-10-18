@@ -1222,7 +1222,7 @@ export default function ProviderWorkersPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        const match = Array.isArray(apiWorkers) ? apiWorkers.find((aw) => aw.id === worker.id || aw.userId === worker.id || (aw as any).name === worker.name) : undefined;
+                        const match = Array.isArray(apiWorkers) ? apiWorkers.find((aw) => aw.id === worker.id || (aw as any).userId === worker.id || (aw as any).name === worker.name) : undefined;
                         const resolvedEmpId = match?.employeeId 
                           || match?.workerCode 
                           || (match as any)?.employee_id 

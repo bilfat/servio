@@ -17,16 +17,31 @@ import {
   Trash,
 } from "@phosphor-icons/react";
 import { useUrlQueryState } from "@/hooks/useUrlQueryState";
-import { productsApi, productCategoriesApi, productVariantsApi } from "@/lib/servioApi";
-import type { ApiProduct, ApiProductCategory, ApiProductVariant } from "@/types/domain";
+import { productsApi, taxonomyApi, productVariantsApi } from "@/lib/servioApi";
+import type { ApiProduct, ApiProductVariant, ApiBrand } from "@/types/domain";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Toast } from "@/components/feedback/Toast";
 
+interface CategoryOption {
+  id: string;
+  name: string;
+  code?: string;
+}
+
+interface SubcategoryOption {
+  id: string;
+  category_id: string;
+  name: string;
+  code?: string;
+}
+
 function MerchantProductsContent() {
   const [products, setProducts] = useState<ApiProduct[]>([]);
-  const [categories, setCategories] = useState<ApiProductCategory[]>([]);
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [subcategories, setSubcategories] = useState<SubcategoryOption[]>([]);
+  const [brands, setBrands] = useState<ApiBrand[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [searchQuery, setSearchQuery] = useUrlQueryState<string>("q", "");
@@ -40,8 +55,10 @@ function MerchantProductsContent() {
 
   // Form State for Adding Product
   const [formCategoryId, setFormCategoryId] = useState("");
+  const [formSubcategoryId, setFormSubcategoryId] = useState("");
   const [formName, setFormName] = useState("");
   const [formBrandName, setFormBrandName] = useState("");
+  const [isCustomBrand, setIsCustomBrand] = useState(false);
   const [formDescription, setFormDescription] = useState("");
   const [formVariants, setFormVariants] = useState<Array<{ name: string; price: number; stock: number }>>([
     { name: "Varian Standard", price: 100000, stock: 10 },
@@ -56,8 +73,10 @@ function MerchantProductsContent() {
   // Edit Product Modal State (Step 8)
   const [editingProduct, setEditingProduct] = useState<ApiProduct | null>(null);
   const [editCategoryId, setEditCategoryId] = useState("");
+  const [editSubcategoryId, setEditSubcategoryId] = useState("");
   const [editName, setEditName] = useState("");
   const [editBrandName, setEditBrandName] = useState("");
+  const [isEditCustomBrand, setIsEditCustomBrand] = useState(false);
   const [editDescription, setEditDescription] = useState("");
   const [editWarrantyDuration, setEditWarrantyDuration] = useState(12);
   const [editWarrantyType, setEditWarrantyType] = useState("MANUFACTURER_AND_STORE");
@@ -73,17 +92,70 @@ function MerchantProductsContent() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Subkategori yang tersedia sesuai kategori terpilih
+  const availableFormSubcategories = useMemo(() => {
+    if (!formCategoryId) return [];
+    return subcategories.filter((s) => s.category_id === formCategoryId);
+  }, [subcategories, formCategoryId]);
+
+  const availableEditSubcategories = useMemo(() => {
+    if (!editCategoryId) return [];
+    return subcategories.filter((s) => s.category_id === editCategoryId);
+  }, [subcategories, editCategoryId]);
+
+  const handleCategoryChange = (catId: string) => {
+    setFormCategoryId(catId);
+    const subs = subcategories.filter((s) => s.category_id === catId);
+    if (subs.length > 0) {
+      setFormSubcategoryId(subs[0].id);
+    } else {
+      setFormSubcategoryId("");
+    }
+  };
+
+  const handleEditCategoryChange = (catId: string) => {
+    setEditCategoryId(catId);
+    const subs = subcategories.filter((s) => s.category_id === catId);
+    if (subs.length > 0) {
+      setEditSubcategoryId(subs[0].id);
+    } else {
+      setEditSubcategoryId("");
+    }
+  };
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [prodRes, catRes] = await Promise.all([
+      const [prodRes, catRes, subcatRes, brandRes] = await Promise.all([
         productsApi.list({ scope: "merchant", search: searchQuery, categoryId: categoryFilter, status: statusFilter }),
-        productCategoriesApi.list({ status: "ACTIVE" }),
+        taxonomyApi.getCategories({ master: "PRODUK", status: "ACTIVE" }),
+        taxonomyApi.getSubcategories({ master: "PRODUK", status: "ACTIVE" }),
+        taxonomyApi.getBrands({ status: "ACTIVE" }),
       ]);
       setProducts(prodRes.data || []);
-      setCategories(catRes.data || []);
-      if (!formCategoryId && catRes.data && catRes.data.length > 0) {
-        setFormCategoryId(catRes.data[0].categoryId);
+      setBrands(brandRes?.data || []);
+
+      const cats: CategoryOption[] = (catRes?.data || []).map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        code: c.code,
+      }));
+      const subs: SubcategoryOption[] = (subcatRes?.data || []).map((s: any) => ({
+        id: s.id,
+        category_id: s.category_id,
+        name: s.name,
+        code: s.code,
+      }));
+
+      setCategories(cats);
+      setSubcategories(subs);
+
+      if (!formCategoryId && cats.length > 0) {
+        setFormCategoryId(cats[0].id);
+        const matchingSubs = subs.filter((s) => s.category_id === cats[0].id);
+        if (matchingSubs.length > 0) {
+          setFormSubcategoryId(matchingSubs[0].id);
+        }
       }
     } catch (err: unknown) {
       console.error("Failed to load merchant data:", err);
@@ -112,9 +184,15 @@ function MerchantProductsContent() {
       return;
     }
 
+    const selectedCat = categories.find((c) => c.id === formCategoryId);
+    const selectedSubcat = subcategories.find((s) => s.id === formSubcategoryId);
+
     try {
       const res = await productsApi.create({
         categoryId: formCategoryId,
+        categoryName: selectedCat?.name || "Sparepart AC & Pendingin",
+        subcategoryId: formSubcategoryId || undefined,
+        subcategoryName: selectedSubcat?.name || undefined,
         name: formName.trim(),
         brandName: formBrandName.trim() || undefined,
         description: formDescription.trim() || undefined,
@@ -126,7 +204,7 @@ function MerchantProductsContent() {
           exclusions: warrantyExclusions.trim(),
           terms: "Wajib menyertakan bukti invoice transaksi resmi dan segel unit tidak rusak.",
         } : null,
-      } as any);
+      });
 
       // Activate product
       if (res.data?.productId) {
@@ -136,6 +214,7 @@ function MerchantProductsContent() {
       setIsAddModalOpen(false);
       setFormName("");
       setFormBrandName("");
+      setIsCustomBrand(false);
       setFormDescription("");
       setFormVariants([{ name: "Varian Standard", price: 100000, stock: 10 }]);
       setFormError(null);
@@ -150,8 +229,12 @@ function MerchantProductsContent() {
   const handleOpenEditModal = (p: ApiProduct) => {
     setEditingProduct(p);
     setEditCategoryId(p.categoryId || "");
+    setEditSubcategoryId(p.subcategoryId || "");
     setEditName(p.name || "");
-    setEditBrandName(p.brandName || "");
+    const currentBrand = (p.brandName || "").trim();
+    setEditBrandName(currentBrand);
+    const isRegistered = brands.some((b) => b.name.toLowerCase() === currentBrand.toLowerCase());
+    setIsEditCustomBrand(!isRegistered && Boolean(currentBrand));
     setEditDescription(p.description || "");
     setEditWarrantyDuration(p.warrantyPolicy?.durationMonths ?? 0);
     setEditWarrantyType(p.warrantyPolicy?.type || "MANUFACTURER_AND_STORE");
@@ -167,9 +250,15 @@ function MerchantProductsContent() {
       return;
     }
 
+    const selectedCat = categories.find((c) => c.id === editCategoryId);
+    const selectedSubcat = subcategories.find((s) => s.id === editSubcategoryId);
+
     try {
       await productsApi.update(editingProduct.productId, {
         categoryId: editCategoryId,
+        categoryName: selectedCat?.name || "Sparepart AC & Pendingin",
+        subcategoryId: editSubcategoryId || undefined,
+        subcategoryName: selectedSubcat?.name || undefined,
         name: editName.trim(),
         brandName: editBrandName.trim() || undefined,
         description: editDescription.trim() || undefined,
@@ -180,7 +269,7 @@ function MerchantProductsContent() {
           exclusions: editWarrantyExclusions.trim(),
           terms: "Wajib menyertakan bukti invoice transaksi resmi dan segel unit tidak rusak.",
         } : null,
-      } as any);
+      });
 
       setEditingProduct(null);
       setToastMessage(`Produk "${editName}" dan kebijakan garansi berhasil diperbarui!`);
@@ -313,7 +402,7 @@ function MerchantProductsContent() {
             >
               <option value="ALL">Semua Kategori</option>
               {categories.map((c) => (
-                <option key={c.categoryId} value={c.categoryId}>
+                <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
               ))}
@@ -363,9 +452,15 @@ function MerchantProductsContent() {
                       </div>
                     </td>
                     <td className="p-4">
-                      <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-semibold text-[10px]">
+                      <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-semibold text-[10px] inline-block">
                         {p.categoryName || p.categoryId}
                       </span>
+                      {p.subcategoryName && (
+                        <div className="text-[10px] text-slate-500 font-medium mt-1 flex items-center gap-1">
+                          <Tag size={11} className="text-slate-400 shrink-0" />
+                          <span>{p.subcategoryName}</span>
+                        </div>
+                      )}
                     </td>
                     <td className="p-4">
                       <div className="font-bold text-[#0F4C81]">
@@ -472,39 +567,103 @@ function MerchantProductsContent() {
                   <label className="block text-xs font-bold text-slate-700 mb-1">Kategori Produk *</label>
                   <select
                     value={formCategoryId}
-                    onChange={(e) => setFormCategoryId(e.target.value)}
+                    onChange={(e) => handleCategoryChange(e.target.value)}
                     required
-                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
                   >
                     {categories.map((c) => (
-                      <option key={c.categoryId} value={c.categoryId}>
+                      <option key={c.id} value={c.id}>
                         {c.name}
                       </option>
                     ))}
                   </select>
                 </div>
+
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Merek (Opsional)</label>
-                  <input
-                    type="text"
-                    placeholder="Misal: Daikin Genuine"
-                    value={formBrandName}
-                    onChange={(e) => setFormBrandName(e.target.value)}
-                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                  />
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Sub Kategori Produk *</label>
+                  <select
+                    value={formSubcategoryId}
+                    onChange={(e) => setFormSubcategoryId(e.target.value)}
+                    required
+                    disabled={availableFormSubcategories.length === 0}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    {availableFormSubcategories.length === 0 ? (
+                      <option value="">Tidak ada subkategori</option>
+                    ) : (
+                      availableFormSubcategories.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))
+                    )}
+                  </select>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Nama Produk *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Misal: Freon R32 Refrigerant Eco-Friendly"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-bold text-slate-700">
+                        Merek Produk <span className="text-slate-400 font-normal">(Opsional)</span>
+                      </label>
+                      <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                        Opsional
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      Pilih merek resmi atau kosongkan jika produk adalah barang tanpa merek / OEM umum.
+                    </p>
+                  </div>
+                  <select
+                    value={isCustomBrand ? "CUSTOM" : formBrandName}
+                    onChange={(e) => {
+                      if (e.target.value === "CUSTOM") {
+                        setIsCustomBrand(true);
+                        setFormBrandName("");
+                      } else {
+                        setIsCustomBrand(false);
+                        setFormBrandName(e.target.value);
+                      }
+                    }}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
+                  >
+                    <option value="">-- Tanpa Merek / OEM / Polos --</option>
+                    {brands.length > 0 && (
+                      <optgroup label="Merek Resmi Terdaftar (Brand Registry)">
+                        {brands.map((b) => (
+                          <option key={b.id} value={b.name}>
+                            {b.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <option value="CUSTOM">+ Tulis Merek Lainnya (Ketik Manual)...</option>
+                  </select>
+
+                  {isCustomBrand && (
+                    <input
+                      type="text"
+                      placeholder="Ketik nama merek produk..."
+                      value={formBrandName}
+                      onChange={(e) => setFormBrandName(e.target.value)}
+                      autoFocus
+                      className="w-full text-xs p-2.5 bg-white border border-sky-300 rounded-xl focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none animate-in fade-in slide-in-from-top-1"
+                    />
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Nama Produk *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Misal: Freon R32 Refrigerant Eco-Friendly"
+                    value={formName}
+                    onChange={(e) => setFormName(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div>
@@ -703,38 +862,101 @@ function MerchantProductsContent() {
                   <label className="block text-xs font-bold text-slate-700 mb-1">Kategori Produk *</label>
                   <select
                     value={editCategoryId}
-                    onChange={(e) => setEditCategoryId(e.target.value)}
+                    onChange={(e) => handleEditCategoryChange(e.target.value)}
                     required
-                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
                   >
                     {categories.map((c) => (
-                      <option key={c.categoryId} value={c.categoryId}>
+                      <option key={c.id} value={c.id}>
                         {c.name}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Merek</label>
-                  <input
-                    type="text"
-                    value={editBrandName}
-                    onChange={(e) => setEditBrandName(e.target.value)}
-                    placeholder="Merek produk"
-                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                  />
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Sub Kategori Produk *</label>
+                  <select
+                    value={editSubcategoryId}
+                    onChange={(e) => setEditSubcategoryId(e.target.value)}
+                    required
+                    disabled={availableEditSubcategories.length === 0}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    {availableEditSubcategories.length === 0 ? (
+                      <option value="">Tidak ada subkategori</option>
+                    ) : (
+                      availableEditSubcategories.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))
+                    )}
+                  </select>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Nama Produk *</label>
-                <input
-                  type="text"
-                  required
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-bold text-slate-700">
+                        Merek Produk <span className="text-slate-400 font-normal">(Opsional)</span>
+                      </label>
+                      <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                        Opsional
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      Pilih merek resmi atau kosongkan jika produk adalah barang tanpa merek / OEM umum.
+                    </p>
+                  </div>
+                  <select
+                    value={isEditCustomBrand ? "CUSTOM" : editBrandName}
+                    onChange={(e) => {
+                      if (e.target.value === "CUSTOM") {
+                        setIsEditCustomBrand(true);
+                        setEditBrandName("");
+                      } else {
+                        setIsEditCustomBrand(false);
+                        setEditBrandName(e.target.value);
+                      }
+                    }}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
+                  >
+                    <option value="">-- Tanpa Merek / OEM / Polos --</option>
+                    {brands.length > 0 && (
+                      <optgroup label="Merek Resmi Terdaftar (Brand Registry)">
+                        {brands.map((b) => (
+                          <option key={b.id} value={b.name}>
+                            {b.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <option value="CUSTOM">+ Tulis Merek Lainnya (Ketik Manual)...</option>
+                  </select>
+
+                  {isEditCustomBrand && (
+                    <input
+                      type="text"
+                      placeholder="Ketik nama merek produk..."
+                      value={editBrandName}
+                      onChange={(e) => setEditBrandName(e.target.value)}
+                      autoFocus
+                      className="w-full text-xs p-2.5 bg-white border border-sky-300 rounded-xl focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none animate-in fade-in slide-in-from-top-1"
+                    />
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Nama Produk *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
+                  />
+                </div>
               </div>
 
               <div>

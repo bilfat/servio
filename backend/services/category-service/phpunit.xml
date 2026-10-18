@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="BROADCAST_CONNECTION" value="null"/>
+        <env name="CACHE_STORE" value="array"/>
+        <env name="DB_CONNECTION" value="mysql"/>
+        <env name="DB_HOST" value="127.0.0.1"/>
+        <env name="DB_PORT" value="3306"/>
+        <env name="DB_DATABASE" value="servio_category_test_db"/>
+        <env name="DB_USERNAME" value="root"/>
+        <env name="DB_PASSWORD" value=""/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SESSION_DRIVER" value="array"/>
+        <env name="PULSE_ENABLED" value="false"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <env name="IDENTITY_INTERNAL_BASE_URL" value="http://localhost:8001"/>
+        <env name="CATEGORY_GATEWAY_KEY" value="servio_local_gateway_key_2026"/>
+        <env name="CATEGORY_M2M_KEY_PRODUCT_SERVICE" value="test_m2m_key_product_service_2026"/>
+        <env name="CATEGORY_M2M_KEY_SERVICE_OFFERING_SERVICE" value="test_m2m_key_service_offering_2026"/>
+        <env name="CATEGORY_M2M_KEY_ORDER_SERVICE" value="test_m2m_key_order_service_2026"/>
+        <env name="CATEGORY_M2M_KEY_CATALOG_SERVICE" value="test_m2m_key_catalog_service_2026"/>
+        <env name="CATEGORY_M2M_KEY_CART_SERVICE" value="test_m2m_key_cart_service_2026"/>
+        <env name="CATEGORY_M2M_KEY_BOOKING_SERVICE" value="test_m2m_key_booking_service_2026"/>
+        <env name="CATEGORY_M2M_KEY_PROMOTION_SERVICE" value="test_m2m_key_promotion_service_2026"/>
+        <env name="CATEGORY_M2M_KEY_IDENTITY_SERVICE" value="test_m2m_key_identity_service_2026"/>
+        <env name="CATEGORY_M2M_KEY_CATEGORY_ORCHESTRATOR" value="test_m2m_key_category_orchestrator_2026"/>
+        <env name="CATEGORY_INTERNAL_SERVICE_KEY" value="servio_local_internal_service_key_2026"/>
+    </php>
+</phpunit>

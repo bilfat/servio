@@ -2,7 +2,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useDomainRepository } from "@/lib/repository/domainRepository";
 import { useActiveRole } from "@/context/RoleContext";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/Button";
@@ -20,154 +19,124 @@ import {
   ArrowLeft,
   ArrowsClockwise,
   Sparkle,
+  Folder,
 } from "@phosphor-icons/react";
-import { taxonomyApi, ApiTaxonomyCategory, ApiTaxonomyRequest } from "@/lib/servioApi";
-import { SubcategoryRequest } from "@/types/domain";
+import {
+  taxonomyApi,
+  ApiCategoryNode,
+  ApiCategorySuggestion,
+} from "@/lib/servioApi";
 
 export default function ProviderTaxonomyRequestPage() {
-  const repo = useDomainRepository();
   const { user } = useActiveRole();
 
-  const currentProviderId = user.id || "prov-bintang-teknik";
-  const currentProviderName = user.name || "PT Bintang Teknik Mandiri";
-
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successModalData, setSuccessModalData] = useState<{
     categoryName: string;
     subcategoryName: string;
     reason: string;
+    requestNumber: string;
   } | null>(null);
 
   // Form State
+  const [requestType, setRequestType] = useState<"SUBCATEGORY" | "CATEGORY">("SUBCATEGORY");
   const [selectedCatId, setSelectedCatId] = useState("");
   const [reqSubName, setReqSubName] = useState("");
   const [reqReason, setReqReason] = useState("");
   const [reqNotes, setReqNotes] = useState("");
 
   // Live Backend State
-  const [apiCategories, setApiCategories] = useState<ApiTaxonomyCategory[] | null>(null);
-  const [apiRequests, setApiRequests] = useState<SubcategoryRequest[] | null>(null);
+  const [apiCategories, setApiCategories] = useState<ApiCategoryNode[]>([]);
+  const [myRequests, setMyRequests] = useState<ApiCategorySuggestion[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const showError = (msg: string) => {
+    setErrorMessage(msg);
+    setTimeout(() => setErrorMessage(null), 6000);
+  };
+
+  // Load active JASA categories and provider's requests
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
       const [catsRes, reqsRes] = await Promise.allSettled([
-        taxonomyApi.getCategories({ status: "ACTIVE" }),
-        taxonomyApi.getRequests(),
+        taxonomyApi.getCategories({ master_code: "JASA", status: "ACTIVE" }),
+        taxonomyApi.getRequests({ master_code: "JASA" }),
       ]);
 
       if (catsRes.status === "fulfilled" && Array.isArray(catsRes.value?.data)) {
         setApiCategories(catsRes.value.data);
+        if (!selectedCatId && catsRes.value.data.length > 0) {
+          setSelectedCatId(catsRes.value.data[0].id);
+        }
       }
 
       if (reqsRes.status === "fulfilled" && Array.isArray(reqsRes.value?.data)) {
-        setApiRequests(
-          reqsRes.value.data.map((r: any) => ({
-            id: r._id || r.id,
-            providerId: r.providerOrganizationId || r.providerId || currentProviderId,
-            providerName: r.providerName || currentProviderName,
-            categoryId: r.requestedCategoryId || r.categoryId || "",
-            categoryName: r.category?.name || r.categoryName || "",
-            requestedSubcategoryName: r.requestedName || r.requestedSubcategoryName || "",
-            reason: r.reason || "",
-            notes: r.notes || "",
-            status: r.status as SubcategoryRequest["status"],
-            createdAt: r.createdAt ? new Date(r.createdAt).toLocaleString("id-ID") : new Date().toLocaleString("id-ID"),
-            adminReviewNotes: r.adminReview?.reason || r.adminNotes,
-            ceoReviewNotes: r.ceoReview?.reason || r.reviewNotes,
-          }))
-        );
+        setMyRequests(reqsRes.value.data);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn("Provider taxonomy API load warning:", err);
     } finally {
       setLoading(false);
     }
-  }, [currentProviderId, currentProviderName]);
+  }, [selectedCatId]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  const activeCategories = useMemo(() => {
-    if (apiCategories && apiCategories.length > 0) {
-      return apiCategories.map((c) => ({
-        id: c._id || c.id,
-        name: c.name,
-        code: c.code,
-      }));
-    }
-    return repo.categories.filter((c) => c.status === "ACTIVE");
-  }, [apiCategories, repo.categories]);
-
-  const actor = useMemo(
-    () => ({
-      id: currentProviderId,
-      name: currentProviderName,
-    }),
-    [currentProviderId, currentProviderName]
-  );
-
-  // My requests (filtered from live API or fallback)
-  const myRequests = useMemo(() => {
-    if (apiRequests) {
-      return apiRequests.filter((r) => r.providerId === currentProviderId || !r.providerId || r.providerId === "prov-001");
-    }
-    return repo.taxonomyRequests.filter((r) => r.providerId === currentProviderId);
-  }, [apiRequests, repo.taxonomyRequests, currentProviderId]);
-
   const handleSubmitRequest = async (e: React.FormEvent) => {
     e.preventDefault();
-    const catId = selectedCatId || activeCategories[0]?.id;
-    const catObj = activeCategories.find((c) => c.id === catId);
     const subNameClean = reqSubName.trim();
     const reasonClean = reqReason.trim();
 
-    if (!catId || !subNameClean || !reasonClean) {
-      alert("Harap lengkapi kategori, nama subkategori, dan alasan pengajuan.");
+    if (!subNameClean || !reasonClean) {
+      showError("Harap lengkapi nama usulan dan alasan pengajuan.");
       return;
     }
 
+    if (requestType === "SUBCATEGORY" && !selectedCatId) {
+      showError("Harap pilih kategori induk untuk usulan subkategori.");
+      return;
+    }
+
+    const catObj = apiCategories.find((c) => c.id === selectedCatId);
+
     try {
       setIsSubmitting(true);
-      try {
-        await taxonomyApi.submitRequest({
-          categoryId: catId,
-          requestedSubcategoryName: subNameClean,
-          reason: reasonClean,
-          notes: reqNotes.trim() || undefined,
-        });
-      } catch (apiErr) {
-        console.warn("taxonomyApi.submitRequest warning:", apiErr);
-      }
+      const res = await taxonomyApi.submitRequest({
+        master_code: "JASA",
+        request_type: requestType,
+        suggested_name: subNameClean,
+        proposed_parent_category_id: requestType === "SUBCATEGORY" ? selectedCatId : null,
+        reason: reasonClean,
+        business_context: reqNotes.trim() || undefined,
+      });
 
-      repo.submitSubcategoryRequest(
-        {
-          categoryId: catId,
-          requestedSubcategoryName: subNameClean,
-          reason: reasonClean,
-          notes: reqNotes.trim() || undefined,
-        },
-        actor
-      );
+      const created = res.data;
 
-      // Open Success Modal with animated checkmark
+      // Open Success Modal
       setSuccessModalData({
-        categoryName: catObj?.name || "Kategori Terpilih",
+        categoryName: requestType === "SUBCATEGORY" ? (catObj?.name || "Kategori Terpilih") : "Kategori Baru (Root)",
         subcategoryName: subNameClean,
         reason: reasonClean,
+        requestNumber: created?.request_number || "REQ-" + Date.now().toString().slice(-6),
       });
 
       setReqSubName("");
       setReqReason("");
       setReqNotes("");
-      setToastMessage("Pengajuan subkategori berhasil dikirim ke Admin Operasi.");
-      await loadData();
-      setTimeout(() => setToastMessage(null), 3500);
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Gagal mengirim pengajuan");
+      showToast("Pengajuan taksonomi berhasil dikirim ke Admin Operasi.");
+      loadData();
+    } catch (err: any) {
+      showError(err.message || "Gagal mengirim pengajuan. Pastikan profil dan izin organisasi valid.");
     } finally {
       setIsSubmitting(false);
     }
@@ -183,15 +152,23 @@ export default function ProviderTaxonomyRequestPage() {
         </div>
       )}
 
+      {/* Error Notification */}
+      {errorMessage && (
+        <div className="fixed top-20 right-6 z-50 p-4 rounded-2xl bg-rose-900 text-white shadow-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2 text-xs font-semibold">
+          <XCircle size={20} className="text-rose-300" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <PageHeader
-          title="Pengajuan Subkategori Baru"
-          description="Ajukan penambahan subkategori spesialisasi baru jika ruang lingkup keahlian bengkel Anda belum tersedia pada kategori jasa aktif platform."
+          title="Pengajuan Taksonomi Jasa Baru (Mitra Penyedia)"
+          description="Ajukan penambahan subkategori atau kategori jasa baru jika ruang lingkup keahlian mitra Anda belum terdaftar pada taksonomi aktif platform SERVIO."
           breadcrumbs={[
-            { label: "Mitra Bengkel", href: "/provider/dashboard" },
+            { label: "Mitra Jasa", href: "/provider/dashboard" },
             { label: "Katalog Layanan", href: "/provider/services" },
-            { label: "Ajukan Subkategori", href: "/provider/taxonomy-request" },
+            { label: "Ajukan Taksonomi", href: "/provider/taxonomy-request" },
           ]}
         />
         <Link
@@ -211,33 +188,74 @@ export default function ProviderTaxonomyRequestPage() {
               <TreeStructure size={20} weight="duotone" />
             </span>
             <div>
-              <h2 className="text-sm font-bold text-slate-900">Formulir Pengajuan Subkategori</h2>
-              <p className="text-[11px] text-slate-500">Ditinjau oleh Admin Operasi &amp; disahkan oleh CEO.</p>
+              <h2 className="text-sm font-bold text-slate-900">Formulir Usulan Kategori dan Sub Kategori Jasa</h2>
+              <p className="text-[11px] text-slate-500">
+                Sesuai DEC-11: Mitra Penyedia Jasa mengajukan spesialisasi dalam ruang lingkup JASA.
+              </p>
             </div>
           </div>
 
           <form onSubmit={handleSubmitRequest} className="space-y-4">
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Kategori Induk</label>
-              <select
-                value={selectedCatId || activeCategories[0]?.id || ""}
-                onChange={(e) => setSelectedCatId(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-              >
-                {activeCategories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <label className="block font-bold text-slate-700 mb-1">Tipe Usulan</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRequestType("SUBCATEGORY")}
+                  className={`p-2.5 rounded-xl border text-center font-bold transition ${
+                    requestType === "SUBCATEGORY"
+                      ? "bg-sky-50 border-sky-500 text-sky-900 ring-2 ring-sky-500/20"
+                      : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  Subkategori Baru
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRequestType("CATEGORY")}
+                  className={`p-2.5 rounded-xl border text-center font-bold transition ${
+                    requestType === "CATEGORY"
+                      ? "bg-sky-50 border-sky-500 text-sky-900 ring-2 ring-sky-500/20"
+                      : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  Kategori Utama Baru
+                </button>
+              </div>
             </div>
 
+            {requestType === "SUBCATEGORY" && (
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Kategori Induk (Jasa)</label>
+                <select
+                  value={selectedCatId}
+                  onChange={(e) => setSelectedCatId(e.target.value)}
+                  required
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
+                >
+                  {apiCategories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Nama Subkategori yang Diajukan</label>
+              <label className="block font-bold text-slate-700 mb-1">
+                {requestType === "SUBCATEGORY"
+                  ? "Nama Subkategori yang Diusulkan"
+                  : "Nama Kategori Utama yang Diusulkan"}
+              </label>
               <input
                 type="text"
                 required
-                placeholder="Contoh: Waterproofing Membran Bakar"
+                placeholder={
+                  requestType === "SUBCATEGORY"
+                    ? "Contoh: Waterproofing Membran Bakar"
+                    : "Contoh: Otomasi Gedung Pintar"
+                }
                 value={reqSubName}
                 onChange={(e) => setReqSubName(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
@@ -249,7 +267,7 @@ export default function ProviderTaxonomyRequestPage() {
               <textarea
                 rows={3}
                 required
-                placeholder="Jelaskan potensi permintaan konsumen, kebutuhan industri, atau volume pesanan terkait..."
+                placeholder="Jelaskan mengapa layanan spesialisasi ini diperlukan dan bagaimana prospek pasarnya..."
                 value={reqReason}
                 onChange={(e) => setReqReason(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
@@ -257,208 +275,171 @@ export default function ProviderTaxonomyRequestPage() {
             </div>
 
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Catatan Tambahan (Opsional)</label>
+              <label className="block font-bold text-slate-700 mb-1">
+                Konteks Bisnis &amp; Spesifikasi Teknis (Opsional)
+              </label>
               <textarea
                 rows={2}
-                placeholder="Sertakan informasi sertifikasi teknisi atau kemitraan peralatan bila ada..."
+                placeholder="Rincian peralatan khusus, sertifikasi keahlian teknisi, atau estimasi harga pasar..."
                 value={reqNotes}
                 onChange={(e) => setReqNotes(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
               />
             </div>
 
-            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-600 text-[11px] space-y-1">
-              <p className="font-bold text-slate-700">Alur Tata Kelola Kategori Jasa:</p>
-              <p>1. Diajukan oleh Mitra &bull; 2. Verifikasi Admin Operasi &bull; 3. Otorisasi CEO &bull; 4. Dipublikasikan</p>
-            </div>
-
             <Button
-              variant="primary"
-              size="md"
               type="submit"
+              variant="primary"
               disabled={isSubmitting}
-              className="w-full flex items-center justify-center gap-1.5 bg-[#0F4C81] hover:bg-[#0d3f6c] text-white font-bold"
+              className="w-full py-3 rounded-xl flex items-center justify-center gap-2"
             >
-              {isSubmitting ? (
-                <>
-                  <ArrowsClockwise size={16} className="animate-spin" />
-                  <span>Mengirim Pengajuan...</span>
-                </>
-              ) : (
-                <>
-                  <PaperPlaneTilt size={16} weight="bold" />
-                  <span>Kirim Pengajuan Subkategori</span>
-                </>
-              )}
+              <PaperPlaneTilt size={16} weight="bold" />
+              <span>{isSubmitting ? "Mengirim Usulan..." : "Kirim Usulan Taksonomi"}</span>
             </Button>
           </form>
         </div>
 
-        {/* History Pengajuan Saya (Right Column) */}
-        <div className="lg:col-span-7 bg-white rounded-3xl border border-slate-200/80 p-6 shadow-xs space-y-4">
+        {/* History List (Right Column) */}
+        <div className="lg:col-span-7 bg-white rounded-3xl border border-slate-200/80 p-6 shadow-xs space-y-4 text-xs">
           <div className="flex items-center justify-between pb-2 border-b border-slate-100">
             <div>
-              <h2 className="text-sm font-bold text-slate-900">Riwayat Pengajuan Saya</h2>
-              <p className="text-xs text-slate-500">Status peninjauan dan riwayat pengajuan subkategori dari bengkel Anda.</p>
+              <h2 className="text-sm font-bold text-slate-900">Riwayat Usulan Anda</h2>
+              <p className="text-[11px] text-slate-500">
+                Pantau status review berkas dari Admin Operasional platform.
+              </p>
             </div>
-            <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-full">
-              {myRequests.length} Pengajuan
-            </span>
+            <button
+              type="button"
+              onClick={loadData}
+              className="p-1.5 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition"
+              title="Refresh Riwayat"
+            >
+              <ArrowsClockwise size={16} />
+            </button>
           </div>
 
-          {myRequests.length === 0 ? (
-            <div className="p-12 text-center text-slate-400 space-y-2">
-              <TreeStructure size={32} weight="duotone" className="mx-auto text-slate-300" />
-              <p className="text-xs font-semibold">Belum ada riwayat pengajuan subkategori.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {myRequests.map((req) => (
+          <div className="space-y-3">
+            {loading ? (
+              <p className="text-center py-8 text-slate-400 font-semibold">Memuat riwayat usulan...</p>
+            ) : myRequests.length === 0 ? (
+              <div className="text-center py-12 text-slate-400 space-y-2">
+                <TreeStructure size={36} className="mx-auto text-slate-300" />
+                <p className="font-semibold text-slate-600">Belum Ada Pengajuan Taksonomi</p>
+                <p className="text-[11px]">
+                  Gunakan formulir di sebelah kiri untuk mengusulkan kategori atau subkategori jasa baru.
+                </p>
+              </div>
+            ) : (
+              myRequests.map((req) => (
                 <div
                   key={req.id}
-                  className="p-4 rounded-2xl border border-slate-200/80 space-y-2 text-xs hover:border-slate-300 transition"
+                  className="p-4 rounded-2xl border border-slate-200/70 hover:border-slate-300 transition space-y-2"
                 >
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start justify-between gap-2">
                     <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                        {req.categoryName}
-                      </span>
-                      <h4 className="text-sm font-bold text-slate-900 mt-1">{req.requestedSubcategoryName}</h4>
-                      <p className="text-[11px] text-slate-400">Diajukan pada: {req.createdAt}</p>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm text-slate-900">{req.suggested_name}</span>
+                        <span className="px-1.5 py-0.2 rounded bg-slate-100 font-mono text-[10px] text-slate-600 font-bold">
+                          {req.request_type}
+                        </span>
+                      </div>
+                      <p className="font-mono text-[10px] text-[#0F4C81]">{req.request_number}</p>
                     </div>
                     <div>
-                      {req.status === "SUBMITTED" && (
-                        <Badge variant="warning" size="sm">Menunggu Review</Badge>
-                      )}
-                      {["UNDER_ADMIN_REVIEW", "FORWARDED_TO_CEO", "CEO_APPROVED", "CEO_REJECTED"].includes(req.status) && (
-                        <Badge variant="neutral" size="sm">Sedang Ditinjau</Badge>
-                      )}
-                      {req.status === "APPROVED" && (
-                        <Badge variant="success" size="sm">Disetujui</Badge>
-                      )}
-                      {req.status === "PUBLISHED" && (
-                        <Badge variant="success" size="sm">Dipublikasikan</Badge>
-                      )}
-                      {["REJECTED_BY_ADMIN", "REJECTED_BY_CEO"].includes(req.status) && (
-                        <Badge variant="danger" size="sm">Ditolak</Badge>
-                      )}
+                      {req.status === "NEW" && <Badge variant="warning" size="sm">Menunggu Review</Badge>}
+                      {req.status === "PROCESSING" && <Badge variant="neutral" size="sm">Sedang Diproses</Badge>}
+                      {req.status === "APPROVED" && <Badge variant="success" size="sm">Disetujui (Terjadwal)</Badge>}
+                      {req.status === "FULFILLED" && <Badge variant="primary" size="sm">Sudah Aktif di Sistem</Badge>}
+                      {req.status === "REJECTED" && <Badge variant="danger" size="sm">Ditolak</Badge>}
                     </div>
                   </div>
 
-                  <p className="text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-                    <span className="font-bold text-slate-700">Alasan: </span>
-                    {req.reason}
+                  <p className="text-slate-600 text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                    <span className="font-semibold text-slate-700">Alasan: </span>{req.reason}
                   </p>
 
-                  {/* Status Note Card for Provider: Only display official communication from Admin */}
-                  {req.status === "APPROVED" && (
-                    <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl space-y-1">
-                      <div className="flex items-center gap-1.5 text-emerald-800 font-bold text-xs">
-                        <CheckCircle size={16} weight="fill" className="text-emerald-600" />
-                        <span>Pengajuan Disetujui Admin</span>
+                  {/* Review / Schedule Notes from Admin */}
+                  {req.review_reason && (
+                    <div
+                      className={`p-3 rounded-xl border text-[11px] space-y-1 ${
+                        req.status === "APPROVED"
+                          ? "bg-emerald-50 border-emerald-300 text-emerald-900"
+                          : req.status === "FULFILLED"
+                          ? "bg-sky-50 border-sky-300 text-sky-900"
+                          : req.status === "REJECTED"
+                          ? "bg-rose-50 border-rose-300 text-rose-900"
+                          : "bg-blue-50 border-blue-200 text-blue-900"
+                      }`}
+                    >
+                      <div className="font-bold flex items-center gap-1.5">
+                        {req.status === "APPROVED" && <span>📅 Keterangan Jadwal Penambahan ke Sistem:</span>}
+                        {req.status === "FULFILLED" && <span>✅ Keterangan Penerbitan Sistem:</span>}
+                        {req.status === "REJECTED" && <span>⚠️ Alasan Penolakan:</span>}
+                        {req.status === "PROCESSING" && <span>ℹ️ Catatan Review Admin:</span>}
                       </div>
-                      <p className="text-[11px] text-emerald-700">
-                        {req.adminReviewNotes || "Pengajuan subkategori Anda telah disetujui. Admin sedang menyiapkan pendaftaran subkategori ke katalog platform."}
-                      </p>
+                      <p>{req.review_reason}</p>
+                      {req.status === "APPROVED" && (
+                        <p className="text-[10px] text-emerald-700 italic border-t border-emerald-200/80 pt-1 mt-1">
+                          * Subkategori belum dapat digunakan untuk membuat layanan hingga tim Admin selesai menginputnya ke sistem.
+                        </p>
+                      )}
                     </div>
                   )}
 
-                  {req.status === "PUBLISHED" && (
-                    <div className="p-3 bg-sky-50/80 border border-sky-200 rounded-xl space-y-1">
-                      <div className="flex items-center gap-1.5 text-[#0F4C81] font-bold text-xs">
-                        <Sparkle size={16} weight="fill" className="text-[#0F4C81]" />
-                        <span>Subkategori Resmi Aktif di Katalog</span>
-                      </div>
-                      <p className="text-[11px] text-slate-600">
-                        Subkategori ini sekarang sudah dapat dipilih saat Anda membuat Master Service dan paket layanan baru.
-                      </p>
+                  {req.status === "FULFILLED" && (
+                    <div className="flex justify-end pt-1">
+                      <Link
+                        href="/provider/services"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#0F4C81] text-white rounded-xl text-xs font-bold hover:bg-[#0c3d68] transition"
+                      >
+                        <span>+ Buat Layanan dengan Subkategori Ini</span>
+                      </Link>
                     </div>
                   )}
 
-                  {["REJECTED_BY_ADMIN", "REJECTED_BY_CEO"].includes(req.status) && (
-                    <div className="p-3 bg-rose-50/80 border border-rose-200 rounded-xl space-y-1">
-                      <div className="flex items-center gap-1.5 text-rose-800 font-bold text-xs">
-                        <XCircle size={16} weight="fill" className="text-rose-600" />
-                        <span>Pengajuan Ditolak</span>
-                      </div>
-                      <p className="text-[11px] text-rose-700">
-                        <span className="font-semibold">Keterangan Admin: </span>
-                        {req.adminReviewNotes || "Pengajuan belum memenuhi kriteria standardisasi kategori jasa saat ini."}
-                      </p>
-                    </div>
-                  )}
-
-                  {["UNDER_ADMIN_REVIEW", "FORWARDED_TO_CEO", "CEO_APPROVED", "CEO_REJECTED"].includes(req.status) && (
-                    <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1">
-                      <div className="flex items-center gap-1.5 text-amber-800 font-bold text-xs">
-                        <HourglassSimple size={16} weight="bold" className="text-amber-600" />
-                        <span>Sedang Ditinjau Tim Operasi</span>
-                      </div>
-                      <p className="text-[11px] text-amber-700">
-                        Pengajuan subkategori Anda sedang dalam proses peninjauan tata kelola operasional dan standardisasi platform.
-                      </p>
-                    </div>
-                  )}
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                    <span>Diajukan pada {new Date(req.created_at).toLocaleDateString("id-ID")}</span>
+                    {req.reviewed_at && (
+                      <span>Ditinjau pada {new Date(req.reviewed_at).toLocaleDateString("id-ID")}</span>
+                    )}
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
+              ))
+            )}
+          </div>
         </div>
       </div>
 
-      {/* MODAL POPUP: Pengajuan Berhasil dengan Animasi Checklist */}
+      {/* Success Modal */}
       {successModalData && (
         <Modal
           isOpen={!!successModalData}
           onClose={() => setSuccessModalData(null)}
-          title="Pengajuan Terkirim"
+          title="Pengajuan Berhasil Terkirim"
         >
-          <div className="space-y-5 text-center py-2 font-body">
-            {/* Animated Checkmark Circle */}
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-50 border-4 border-emerald-100 animate-in zoom-in-50 duration-300">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 animate-in fade-in zoom-in-75 duration-500">
-                <CheckCircle size={36} weight="bold" className="animate-bounce" />
-              </div>
+          <div className="space-y-4 text-xs font-body text-center py-2">
+            <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+              <CheckCircle size={28} weight="bold" />
             </div>
-
-            <div className="space-y-1">
-              <h3 className="text-base font-bold text-slate-900">
-                Pengajuan Subkategori Berhasil Diajukan!
-              </h3>
-              <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                Permintaan penambahan subkategori baru Anda telah masuk ke sistem antrean peninjauan Admin Operasi.
+            <div>
+              <h3 className="text-base font-bold text-slate-900">Usulan Berhasil Didaftarkan</h3>
+              <p className="font-mono text-xs text-[#0F4C81] font-bold mt-0.5">
+                {successModalData.requestNumber}
+              </p>
+              <p className="text-slate-500 mt-1">
+                Usulan penambahan subkategori{" "}
+                <span className="font-bold text-slate-900">"{successModalData.subcategoryName}"</span> di bawah{" "}
+                <span className="font-bold text-slate-900">"{successModalData.categoryName}"</span> telah masuk ke antrean Admin Operasional.
               </p>
             </div>
-
-            <div className="text-left bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-2 text-xs">
-              <div className="flex justify-between items-center pb-2 border-b border-slate-200">
-                <span className="text-slate-500 font-medium">Kategori Induk:</span>
-                <span className="font-bold text-slate-900">{successModalData.categoryName}</span>
-              </div>
-              <div className="flex justify-between items-center pb-2 border-b border-slate-200">
-                <span className="text-slate-500 font-medium">Nama Subkategori:</span>
-                <span className="font-bold text-[#0F4C81]">{successModalData.subcategoryName}</span>
-              </div>
-              <div>
-                <span className="text-slate-500 font-medium block mb-0.5">Alasan Pengajuan:</span>
-                <p className="text-slate-700 bg-white p-2.5 rounded-xl border border-slate-200 font-medium text-[11px] italic">
-                  &ldquo;{successModalData.reason}&rdquo;
-                </p>
-              </div>
-              <div className="pt-1 flex items-center gap-1.5 text-[11px] text-amber-700 font-medium">
-                <Clock size={14} />
-                <span>Status: Menunggu Review Admin Operasi &rarr; Verifikasi CEO</span>
-              </div>
-            </div>
-
-            <div className="pt-2 flex justify-end">
+            <div className="pt-2">
               <Button
                 variant="primary"
-                size="md"
-                className="w-full bg-[#0F4C81] hover:bg-[#0d3f6c] text-white font-bold"
+                size="sm"
                 onClick={() => setSuccessModalData(null)}
+                className="w-full"
               >
-                Mengerti &amp; Pantau Riwayat
+                Tutup &amp; Lihat Riwayat
               </Button>
             </div>
           </div>

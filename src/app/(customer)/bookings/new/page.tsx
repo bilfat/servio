@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useServices } from "@/features/discovery/useServices";
 import { useBookingWizard } from "@/features/booking/useBookingWizard";
-import { MOCK_TAXONOMY_DOMAINS } from "@/mocks/taxonomy";
 import { DynamicFieldRenderer, FieldSchema, FieldType } from "@/components/form/DynamicFieldRenderer";
 import { SchedulePicker } from "@/components/form/SchedulePicker";
 import { UploadDropzone } from "@/components/form/UploadDropzone";
@@ -137,45 +136,22 @@ function BookingWizardContent() {
     }
   }, [state.step, state.scheduledDate, state.service?.id]);
 
-  // Convert taxonomy schema to FieldSchema without any-type casting
-  const subcategory = MOCK_TAXONOMY_DOMAINS.flatMap((d) => d.subcategories).find(
-    (sub) => sub.id === state.service?.subcategoryId
-  );
-
-  const dynamicFields: FieldSchema[] = (subcategory?.dynamicSchema || []).map((sch) => {
-    let fieldType: FieldType = "text";
-    if (["text", "number", "textarea", "select", "radio", "checkbox", "toggle", "date"].includes(sch.type)) {
-      fieldType = sch.type as FieldType;
-    }
-    return {
-      id: sch.id,
-      type: fieldType,
-      label: sch.label,
-      placeholder: sch.placeholder,
-      required: sch.required,
-      options: sch.options,
-      helperText: sch.helperText,
-    };
-  });
-
-  if (dynamicFields.length === 0) {
-    dynamicFields.push(
-      {
-        id: "brand",
-        label: "Merk & Model Unit",
-        type: "text",
-        placeholder: "Contoh: Daikin FTKQ25SVM4",
-        required: true,
-      },
-      {
-        id: "issueDetails",
-        label: "Deskripsi Detail Masalah / Gejala",
-        type: "textarea",
-        placeholder: "Jelaskan apa yang terjadi pada unit Anda...",
-        required: true,
-      }
-    );
-  }
+  const dynamicFields: FieldSchema[] = [
+    {
+      id: "brand",
+      label: "Merk & Model Unit",
+      type: "text",
+      placeholder: "Contoh: Daikin FTKQ25SVM4",
+      required: true,
+    },
+    {
+      id: "issueDetails",
+      label: "Deskripsi Detail Masalah / Gejala",
+      type: "textarea",
+      placeholder: "Jelaskan apa yang terjadi pada unit Anda...",
+      required: true,
+    },
+  ];
 
   const steps = [
     { number: 1, label: "Detail Unit & Kendala" },

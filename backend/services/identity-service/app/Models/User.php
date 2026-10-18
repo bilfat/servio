@@ -148,6 +148,11 @@ class User extends Authenticatable
             })->exists();
     }
 
+    public function applicationRevisions()
+    {
+        return $this->hasMany(ApplicationRevision::class, 'submitted_by', 'id');
+    }
+
     /**
      * Hapus akun pengguna yang statusnya masih VERIFICATION_REQUIRED dan tidak memasukkan
      * kode verifikasi dalam jangka waktu tertentu (default: 1 jam).
@@ -156,25 +161,36 @@ class User extends Authenticatable
     {
         $threshold = now()->subHours($hours);
         $expiredUsers = self::where('status', 'VERIFICATION_REQUIRED')
+            ->whereNull('email_verified_at')
+            ->whereNull('phone_verified_at')
             ->where('created_at', '<', $threshold)
+            ->whereDoesntHave('businessApplications')
+            ->whereDoesntHave('applicationRevisions')
+            ->whereDoesntHave('verificationRequests')
+            ->whereDoesntHave('staffOnboarding')
+            ->whereDoesntHave('memberships')
             ->get();
 
         $count = 0;
         foreach ($expiredUsers as $user) {
-            \Illuminate\Support\Facades\DB::transaction(function () use ($user) {
-                UserProfile::where('user_id', $user->id)->delete();
-                RoleAssignment::where('user_id', $user->id)->delete();
-                Membership::where('user_id', $user->id)->delete();
-                AuthSession::where('user_id', $user->id)->delete();
-                PasswordResetGrant::where('user_id', $user->id)->delete();
-                OtpChallenge::where('user_id', $user->id)->delete();
-                if ($user->email) {
-                    $hash = \App\Services\OtpService::hashIdentifier($user->email);
-                    OtpChallenge::where('identifier_hash', $hash)->delete();
-                }
-                $user->delete();
-            });
-            $count++;
+            try {
+                \Illuminate\Support\Facades\DB::transaction(function () use ($user) {
+                    UserProfile::where('user_id', $user->id)->delete();
+                    RoleAssignment::where('user_id', $user->id)->delete();
+                    Membership::where('user_id', $user->id)->delete();
+                    AuthSession::where('user_id', $user->id)->delete();
+                    PasswordResetGrant::where('user_id', $user->id)->delete();
+                    OtpChallenge::where('user_id', $user->id)->delete();
+                    if ($user->email) {
+                        $hash = \App\Services\OtpService::hashIdentifier($user->email);
+                        OtpChallenge::where('identifier_hash', $hash)->delete();
+                    }
+                    $user->delete();
+                });
+                $count++;
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning("Failed to cleanup expired user {$user->id}: " . $e->getMessage());
+            }
         }
 
         return $count;

@@ -297,7 +297,7 @@ class BrevoService
 
               <!-- EXPIRY NOTE -->
               <p style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 11px; color: #64748b; line-height: 1.4; margin: 0 0 4px 0;">
-                Kode ini berlaku selama <strong style="color: #94a3b8;">10 menit</strong>. Jangan bagikan kode ini kepada siapa pun demi keamanan akun Anda.
+                Kode ini berlaku selama <strong style="color: #94a3b8;">5 menit</strong>. Jangan bagikan kode ini kepada siapa pun demi keamanan akun Anda.
               </p>
 
               <!-- FOOTER COPYRIGHT -->

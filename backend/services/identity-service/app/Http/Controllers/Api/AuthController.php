@@ -4,7 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuthSession;
+use App\Models\BusinessApplication;
 use App\Models\ExternalAuthIdentity;
+use App\Models\Membership;
+use App\Models\OtpChallenge;
 use App\Models\PasswordResetGrant;
 use App\Models\Role;
 use App\Models\RoleAssignment;
@@ -17,6 +20,7 @@ use App\Services\OutboxService;
 use App\Support\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -235,6 +239,21 @@ class AuthController extends Controller
         }
 
         if ($user->status === 'VERIFICATION_REQUIRED') {
+            $businessApp = BusinessApplication::where('applicant_user_id', $user->id)->latest()->first();
+            if ($businessApp) {
+                $latestDecision = $businessApp->decisions()->latest()->first();
+                return ApiResponse::error(
+                    'IDENTITY_APPLICATION_' . $businessApp->status,
+                    "Pendaftaran bisnis Anda saat ini berstatus {$businessApp->status}. " . ($latestDecision?->reason ? "Catatan: {$latestDecision->reason}" : "Silakan periksa perkembangan pendaftaran Anda."),
+                    403,
+                    [
+                        'applicationStatus' => [$businessApp->status],
+                        'registrationNumber' => [$businessApp->application_code],
+                        'reviewNote' => [$latestDecision?->reason ?? ''],
+                    ]
+                );
+            }
+
             return ApiResponse::error(
                 'IDENTITY_VERIFICATION_REQUIRED',
                 'Akun Anda belum aktif. Silakan masukkan kode OTP yang telah dikirim ke email Anda untuk menyelesaikan pendaftaran.',
@@ -730,6 +749,118 @@ class AuthController extends Controller
         $isOperationalReady = ($user->status === 'ACTIVE' && in_array($staffStatus, ['COMPLETED', 'OPERATIONAL_READY']));
         $readiness = $isOperationalReady ? 'READY' : 'NOT_READY';
 
+        // Resolve business application and documents for business roles (PROVIDER, MERCHANT, SUPPLIER)
+        $businessApp = \App\Models\BusinessApplication::where('applicant_user_id', $user->id)
+            ->with('documents')
+            ->orderByRaw('COALESCE(submitted_at, created_at) DESC')
+            ->first();
+
+        $businessProfile = null;
+        $documentsList = [];
+
+        // Check if user has an active organization
+        $membership = Membership::where('user_id', $user->id)
+            ->where('status', 'ACTIVE')
+            ->with(['organization.profile'])
+            ->first();
+
+        $org = $membership?->organization;
+        $orgProf = $org?->profile;
+
+        if ($businessApp) {
+            $draftData = [];
+            if (!empty($businessApp->draft_data_ciphertext)) {
+                try {
+                    $dec = Crypt::decryptString($businessApp->draft_data_ciphertext);
+                    $draftData = json_decode($dec, true) ?: [];
+                } catch (\Throwable) {
+                    $draftData = json_decode($businessApp->draft_data_ciphertext, true) ?: [];
+                }
+            }
+
+            $businessProfile = [
+                'id' => $businessApp->id,
+                'applicationId' => $businessApp->id,
+                'registrationNumber' => $businessApp->application_code,
+                'applicantType' => $businessApp->target_role,
+                'targetRole' => $businessApp->target_role,
+                'status' => $businessApp->status,
+                'businessData' => [
+                    'brandName' => $orgProf?->display_name ?? $draftData['business']['brand_name'] ?? $draftData['business']['brandName'] ?? null,
+                    'legalName' => $orgProf?->legal_name ?? $draftData['business']['legal_name'] ?? $draftData['business']['legalName'] ?? null,
+                    'businessType' => $draftData['business']['business_type'] ?? $draftData['business']['businessType'] ?? ($org ? 'PT / Badan Usaha' : null),
+                    'nib' => $draftData['legal']['nib'] ?? $draftData['business']['nib'] ?? null,
+                    'npwp' => $draftData['legal']['npwp'] ?? $draftData['business']['npwp'] ?? null,
+                    'address' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['address'] ?? null) : $orgProf?->address_json) ?? ($draftData['business']['address'] ?? null),
+                    'city' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['city'] ?? null) : null) ?? ($draftData['business']['city'] ?? null),
+                    'province' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['province'] ?? null) : null) ?? ($draftData['business']['province'] ?? null),
+                    'district' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['district'] ?? null) : null) ?? ($draftData['business']['district'] ?? null),
+                    'postalCode' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['postal_code'] ?? null) : null) ?? ($draftData['business']['postal_code'] ?? $draftData['business']['postalCode'] ?? null),
+                ],
+                'picData' => [
+                    'fullName' => $draftData['pic']['full_name'] ?? $draftData['pic']['fullName'] ?? $profile?->display_name,
+                    'nik' => $draftData['pic']['nik'] ?? null,
+                    'position' => $draftData['pic']['position'] ?? null,
+                    'phone' => $draftData['pic']['phone'] ?? $user->phone_e164,
+                    'email' => $draftData['pic']['email'] ?? $user->email,
+                ],
+                'specializedData' => $orgProf?->specialization_json ?? $draftData['specialization'] ?? $draftData['specializedData'] ?? null,
+                'operationalStatus' => $org?->operational_status ?? 'ONLINE_ACCEPTING',
+                'operational_status' => $org?->operational_status ?? 'ONLINE_ACCEPTING',
+                'operationalHours' => $orgProf?->operational_hours_json,
+                'serviceArea' => $orgProf?->service_area_json,
+                'competencies' => $orgProf?->competencies_json,
+            ];
+
+            $documentsList = $businessApp->documents->map(function ($d) use ($businessApp) {
+                return [
+                    'id' => $d->id,
+                    'documentId' => $d->id,
+                    'documentType' => $d->doc_type,
+                    'doc_type' => $d->doc_type,
+                    'fileName' => $d->file_name ?? ($d->doc_type . ($d->mime === 'application/pdf' ? '.pdf' : '.jpg')),
+                    'originalName' => $d->file_name ?? $d->doc_type,
+                    'fileSize' => $d->size_bytes,
+                    'filePath' => "/api/v1/registration-applications/{$businessApp->id}/documents/{$d->id}/download",
+                    'status' => $d->verification_status,
+                    'verification_status' => $d->verification_status,
+                    'version' => 1,
+                    'uploadedAt' => $d->created_at?->toIso8601String(),
+                ];
+            })->values()->all();
+        } elseif ($org && $orgProf) {
+            $businessProfile = [
+                'id' => $org->id,
+                'registrationNumber' => 'REG-' . substr($org->id, 0, 8),
+                'applicantType' => $org->type === 'PROVIDER' ? 'SERVICE_PROVIDER' : $org->type,
+                'targetRole' => $org->type === 'PROVIDER' ? 'SERVICE_PROVIDER' : $org->type,
+                'status' => 'APPROVED',
+                'operationalStatus' => $org->operational_status ?? 'ONLINE_ACCEPTING',
+                'operational_status' => $org->operational_status ?? 'ONLINE_ACCEPTING',
+                'businessData' => [
+                    'brandName' => $orgProf->display_name,
+                    'legalName' => $orgProf->legal_name,
+                    'businessType' => 'PT / Badan Usaha',
+                    'nib' => !empty($orgProf->nib_ciphertext) ? Crypt::decryptString($orgProf->nib_ciphertext) : null,
+                    'npwp' => !empty($orgProf->npwp_ciphertext) ? Crypt::decryptString($orgProf->npwp_ciphertext) : null,
+                    'address' => is_array($orgProf->address_json) ? ($orgProf->address_json['address'] ?? null) : $orgProf->address_json,
+                    'city' => is_array($orgProf->address_json) ? ($orgProf->address_json['city'] ?? null) : null,
+                    'province' => is_array($orgProf->address_json) ? ($orgProf->address_json['province'] ?? null) : null,
+                    'postalCode' => is_array($orgProf->address_json) ? ($orgProf->address_json['postal_code'] ?? null) : null,
+                ],
+                'picData' => [
+                    'fullName' => $profile?->display_name,
+                    'phone' => $user->phone_e164,
+                    'email' => $user->email,
+                ],
+                'specializedData' => $orgProf->specialization_json,
+            ];
+        }
+
+        $userObj['businessProfile'] = $businessProfile;
+        $userObj['business_profile'] = $businessProfile;
+        $userObj['documents'] = $documentsList;
+
         return [
             // Flat root attributes for direct destructuring
             'id' => $user->id,
@@ -755,6 +886,21 @@ class AuthController extends Controller
             'activeRole' => $activeRoleContext,
             'active_context' => $activeRoleContext,
             'permissions' => $permissions,
+            'businessProfile' => $businessProfile,
+            'business_profile' => $businessProfile,
+            'documents' => $documentsList,
+            'activeOrganization' => $org ? [
+                'id' => $org->id,
+                'type' => $org->type,
+                'status' => $org->status,
+                'operational_status' => $org->operational_status ?? 'ONLINE_ACCEPTING',
+                'operationalStatus' => $org->operational_status ?? 'ONLINE_ACCEPTING',
+                'name' => $orgProf?->display_name ?? $orgProf?->legal_name,
+                'legalName' => $orgProf?->legal_name,
+                'operational_hours' => $orgProf?->operational_hours_json,
+                'service_area' => $orgProf?->service_area_json,
+                'competencies' => $orgProf?->competencies_json,
+            ] : null,
             'onboarding' => [
                 'kind' => $activeAssignment?->role?->code ?? 'CUSTOMER',
                 'status' => $user->status === 'ACTIVE' ? 'COMPLETE' : 'INCOMPLETE',

@@ -1084,7 +1084,7 @@ function RegisterContent() {
                     Masukkan Kode Verifikasi
                   </h3>
                   <p className="text-xs text-neutral-slate mt-1 max-w-sm mx-auto">
-                    Kode OTP telah dikirimkan ke <strong>{custData.email}</strong>.
+                    Kode OTP telah dikirimkan ke <strong>{custData.email}</strong> (berlaku selama 5 menit).
                   </p>
                 </div>
 
@@ -1361,7 +1361,7 @@ function RegisterContent() {
                         <span>Verifikasi Email Mitra Wajib Sebelum Melengkapi Berkas</span>
                       </div>
                       <p className="text-slate-600 leading-relaxed">
-                        Kode verifikasi resmi 6 digit telah dikirimkan ke email <strong>{bizAccount.email}</strong> melalui sistem Brevo. Silakan masukkan kode di bawah ini:
+                        Kode verifikasi resmi 6 digit telah dikirimkan ke email <strong>{bizAccount.email}</strong> melalui sistem Brevo (berlaku selama 5 menit). Silakan masukkan kode di bawah ini:
                       </p>
                     </div>
 

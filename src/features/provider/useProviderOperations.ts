@@ -1,18 +1,77 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { WorkerTechnician } from "@/types/domain";
 import { useDomainRepository } from "@/lib/repository/domainRepository";
+import { organizationApi } from "@/lib/servioApi";
+import { useActiveRole } from "@/context/RoleContext";
 
 export type ProviderStoreStatus = "ONLINE_ACCEPTING" | "BUSY_DELAYED" | "TEMPORARY_CLOSED";
 
+let globalStoreStatus: ProviderStoreStatus | null = null;
+const listeners = new Set<(status: ProviderStoreStatus) => void>();
+
 export function useProviderOperations() {
   const repo = useDomainRepository();
-  const [storeStatus, setStoreStatus] = useState<ProviderStoreStatus>("ONLINE_ACCEPTING");
+  const { user } = useActiveRole();
 
-  // 1. Store operational status toggle
-  const updateStoreStatus = (newStatus: ProviderStoreStatus) => {
+  const getResolvedInitialStatus = (): ProviderStoreStatus => {
+    if (globalStoreStatus) return globalStoreStatus;
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("servio_provider_store_status") as ProviderStoreStatus | null;
+      if (stored && ["ONLINE_ACCEPTING", "BUSY_DELAYED", "TEMPORARY_CLOSED"].includes(stored)) {
+        globalStoreStatus = stored;
+        return stored;
+      }
+    }
+    const fromUser =
+      (user.activeOrganization?.operational_status as ProviderStoreStatus) ||
+      ((user.businessProfile as any)?.operationalStatus as ProviderStoreStatus);
+    if (fromUser && ["ONLINE_ACCEPTING", "BUSY_DELAYED", "TEMPORARY_CLOSED"].includes(fromUser)) {
+      globalStoreStatus = fromUser;
+      return fromUser;
+    }
+    return "ONLINE_ACCEPTING";
+  };
+
+  const [storeStatus, setStoreStatus] = useState<ProviderStoreStatus>(getResolvedInitialStatus);
+
+  useEffect(() => {
+    const handleStatusUpdate = (newStatus: ProviderStoreStatus) => {
+      setStoreStatus(newStatus);
+    };
+    listeners.add(handleStatusUpdate);
+
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("servio_provider_store_status") as ProviderStoreStatus | null;
+      if (stored && stored !== storeStatus && ["ONLINE_ACCEPTING", "BUSY_DELAYED", "TEMPORARY_CLOSED"].includes(stored)) {
+        setStoreStatus(stored);
+        globalStoreStatus = stored;
+      }
+    }
+
+    return () => {
+      listeners.delete(handleStatusUpdate);
+    };
+  }, []);
+
+  // 1. Store operational status toggle with backend sync
+  const updateStoreStatus = async (newStatus: ProviderStoreStatus) => {
+    globalStoreStatus = newStatus;
+    if (typeof window !== "undefined") {
+      localStorage.setItem("servio_provider_store_status", newStatus);
+    }
     setStoreStatus(newStatus);
+    listeners.forEach((l) => l(newStatus));
+
+    const orgId = user.activeOrganization?.id || user.organizationId;
+    if (orgId) {
+      try {
+        await organizationApi.updateOperationalStatus(orgId, newStatus);
+      } catch (err) {
+        console.error("Gagal sinkron status operasional toko ke backend:", err);
+      }
+    }
   };
 
   // 2. Worker assignment & directory

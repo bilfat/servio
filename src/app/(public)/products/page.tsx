@@ -17,23 +17,68 @@ import {
   ArrowLeft,
   X,
   Sparkle,
+  Tag,
+  Funnel,
+  CaretRight,
+  CaretDown,
+  Check,
+  SlidersHorizontal,
+  Fan,
+  Wrench,
+  Lightning,
+  Broom,
+  HouseLine,
+  Car,
 } from "@phosphor-icons/react";
-import { productsApi, productCategoriesApi, shopsApi } from "@/lib/servioApi";
-import { ApiProduct, ApiProductCategory, ApiShopProfile, getProductMediaUrl } from "@/types/domain";
+import { productsApi, taxonomyApi, shopsApi } from "@/lib/servioApi";
+import { ApiProduct, ApiShopProfile, ApiBrand, getProductMediaUrl } from "@/types/domain";
 import { useCart } from "@/features/cart/useCart";
+import { Modal } from "@/components/ui/Modal";
+import { Button } from "@/components/ui/Button";
 
 type ProductSortOption = "POPULAR" | "PRICE_LOW" | "PRICE_HIGH";
+
+const PRODUCT_CATEGORY_ICONS: Record<string, React.ElementType> = {
+  "Sparepart AC & Pendingin": Fan,
+  "Peralatan & Perkakas Servis": Wrench,
+  "Komponen Elektrik & Sanitasi": Lightning,
+  "Perlengkapan Cleaning & Sanitasi": Broom,
+  "Material Bangunan & Waterproofing": HouseLine,
+  "Suku Cadang Otomotif": Car,
+};
+
+function getCategoryIcon(catName: string) {
+  for (const [key, icon] of Object.entries(PRODUCT_CATEGORY_ICONS)) {
+    if (
+      catName.toLowerCase().includes(key.toLowerCase()) ||
+      key.toLowerCase().includes(catName.toLowerCase())
+    ) {
+      return icon;
+    }
+  }
+  return Package;
+}
 
 function ProductCatalogContent() {
   const { totalItemCount } = useCart();
   const searchParams = useSearchParams();
   const router = useRouter();
 
+  const parseParamArray = (val: string | null) => {
+    if (!val || val === "ALL") return [];
+    return val.split(",").map((s) => s.trim()).filter(Boolean);
+  };
+
   const initialSearch = searchParams.get("search") || "";
   const initialMerchantId = searchParams.get("merchantId") || "";
+  const initialCategoryParam = searchParams.get("category") || searchParams.get("categoryId");
+  const initialSubcategoryParam = searchParams.get("subcategory") || searchParams.get("subcategoryId");
+  const initialBrandParam = searchParams.get("brand");
 
   const [products, setProducts] = useState<ApiProduct[]>([]);
-  const [categories, setCategories] = useState<ApiProductCategory[]>([]);
+  const [categories, setCategories] = useState<{ id: string; name: string; code?: string }[]>([]);
+  const [subcategories, setSubcategories] = useState<{ id: string; category_id: string; name: string; code?: string }[]>([]);
+  const [brands, setBrands] = useState<ApiBrand[]>([]);
   const [matchedMerchants, setMatchedMerchants] = useState<ApiShopProfile[]>([]);
   const [selectedShop, setSelectedShop] = useState<ApiShopProfile | null>(null);
   const [recommendations, setRecommendations] = useState<ApiProduct[]>([]);
@@ -41,8 +86,17 @@ function ProductCatalogContent() {
 
   const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
-  const [selectedCategory, setSelectedCategory] = useState("ALL");
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(parseParamArray(initialCategoryParam));
+  const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>(parseParamArray(initialSubcategoryParam));
+  const [selectedBrands, setSelectedBrands] = useState<string[]>(parseParamArray(initialBrandParam));
   const [sortBy, setSortBy] = useState<ProductSortOption>("POPULAR");
+
+  // State untuk Pop-up Filter Kategori, Subkategori & Merek (Multi-Select)
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [tempCategories, setTempCategories] = useState<string[]>(parseParamArray(initialCategoryParam));
+  const [tempSubcategories, setTempSubcategories] = useState<string[]>(parseParamArray(initialSubcategoryParam));
+  const [tempBrands, setTempBrands] = useState<string[]>(parseParamArray(initialBrandParam));
+  const [activePreviewCatId, setActivePreviewCatId] = useState<string | null>(null);
 
   // Debounce search query changes
   useEffect(() => {
@@ -69,42 +123,142 @@ function ProductCatalogContent() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const prodRes = await productsApi.list({
-        scope: "public",
-        search: debouncedSearch,
-        categoryId: selectedCategory,
-        merchantOrganizationId: selectedShop?.id,
-      });
-
-      const catRes = await productCategoriesApi.list({ status: "ACTIVE" });
-
-      const uniqueCats: ApiProductCategory[] = [];
-      const seenNames = new Set<string>();
-      for (const cat of catRes.data || []) {
-        const key = cat.name.trim().toLowerCase();
-        if (!seenNames.has(key)) {
-          seenNames.add(key);
-          uniqueCats.push(cat);
-        }
-      }
+      const [prodRes, catRes, subRes, brandRes] = await Promise.all([
+        productsApi.list({
+          scope: "public",
+          search: debouncedSearch,
+          merchantOrganizationId: selectedShop?.id,
+        }),
+        taxonomyApi.getCategories({ master: "PRODUK", status: "ACTIVE" }),
+        taxonomyApi.getSubcategories({ master: "PRODUK", status: "ACTIVE" }),
+        taxonomyApi.getBrands({ status: "ACTIVE" }),
+      ]);
 
       setProducts(prodRes.data || []);
-      setCategories(uniqueCats);
       setMatchedMerchants(prodRes.matchedMerchants || []);
       setRecommendations(prodRes.recommendations || []);
+
+      if (catRes && Array.isArray(catRes.data)) {
+        setCategories(
+          catRes.data.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            code: c.code,
+          }))
+        );
+      }
+
+      if (subRes && Array.isArray(subRes.data)) {
+        setSubcategories(
+          subRes.data.map((s: any) => ({
+            id: s.id,
+            category_id: s.category_id || s.categoryId,
+            name: s.name,
+            code: s.code,
+          }))
+        );
+      }
+
+      if (brandRes && Array.isArray(brandRes.data)) {
+        setBrands(brandRes.data);
+      }
     } catch (err: unknown) {
       console.error("Failed to load catalog products:", err);
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, selectedCategory, selectedShop?.id]);
+  }, [debouncedSearch, selectedShop?.id]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
+  // Available subcategories for current category selection
+  const availableSubcategories = useMemo(() => {
+    if (selectedCategories.length === 0) {
+      return subcategories;
+    }
+    return subcategories.filter((s) => selectedCategories.includes(s.category_id));
+  }, [subcategories, selectedCategories]);
+
+  // Active Filter Helpers
+  const isFilterActive =
+    selectedCategories.length > 0 ||
+    selectedSubcategories.length > 0 ||
+    selectedBrands.length > 0;
+
+  const totalActiveFilterCount =
+    selectedCategories.length +
+    selectedSubcategories.length +
+    selectedBrands.length;
+
+  const handleOpenFilterModal = () => {
+    setTempCategories([...selectedCategories]);
+    setTempSubcategories([...selectedSubcategories]);
+    setTempBrands([...selectedBrands]);
+    setActivePreviewCatId(selectedCategories[0] || categories[0]?.id || null);
+    setIsFilterModalOpen(true);
+  };
+
+  const handleApplyFilter = () => {
+    setSelectedCategories(tempCategories);
+    setSelectedSubcategories(tempSubcategories);
+    setSelectedBrands(tempBrands);
+    setIsFilterModalOpen(false);
+  };
+
+  const handleClearAllFilters = () => {
+    setSelectedCategories([]);
+    setSelectedSubcategories([]);
+    setSelectedBrands([]);
+    setTempCategories([]);
+    setTempSubcategories([]);
+    setTempBrands([]);
+  };
+
   const sortedProducts = useMemo(() => {
-    const list = [...products];
+    let list = [...products];
+
+    // Filter by Categories (Multi-select: Match ANY of selected categories)
+    if (selectedCategories.length > 0) {
+      list = list.filter((p) => {
+        return selectedCategories.some((catId) => {
+          if (p.categoryId === catId) return true;
+          const activeCat = categories.find((c) => c.id === catId);
+          const catName = activeCat?.name.toLowerCase() || "";
+          const catWords = catName.split(/[\s&,/]+/).filter((w) => w.length > 2);
+          if (p.categoryName && catName && p.categoryName.toLowerCase().includes(catName)) return true;
+          const targetText = `${p.name} ${p.brandName || ""} ${p.description || ""} ${p.categoryName || ""}`.toLowerCase();
+          return catWords.some((w) => targetText.includes(w));
+        });
+      });
+    }
+
+    // Filter by Subcategories (Multi-select: Match ANY of selected subcategories)
+    if (selectedSubcategories.length > 0) {
+      list = list.filter((p) => {
+        return selectedSubcategories.some((subId) => {
+          if ((p as any).subcategoryId === subId) return true;
+          const activeSub = subcategories.find((s) => s.id === subId);
+          const subName = activeSub?.name.toLowerCase() || "";
+          const subWords = subName.split(/[\s&,/]+/).filter((w) => w.length > 2);
+          const targetText = `${p.name} ${p.brandName || ""} ${p.description || ""} ${p.categoryName || ""}`.toLowerCase();
+          return subWords.some((w) => targetText.includes(w)) || targetText.includes(subName);
+        });
+      });
+    }
+
+    // Filter by Brands (Multi-select: Match ANY of selected brands)
+    if (selectedBrands.length > 0) {
+      list = list.filter((p) => {
+        const pb = (p.brandName || "").toLowerCase();
+        return selectedBrands.some((bName) => {
+          const bLower = bName.toLowerCase();
+          return pb.includes(bLower) || bLower.includes(pb);
+        });
+      });
+    }
+
     if (sortBy === "PRICE_LOW") {
       return list.sort((a, b) => (a.minPrice || 0) - (b.minPrice || 0));
     }
@@ -112,7 +266,7 @@ function ProductCatalogContent() {
       return list.sort((a, b) => (b.maxPrice || b.minPrice || 0) - (a.maxPrice || a.minPrice || 0));
     }
     return list;
-  }, [products, sortBy]);
+  }, [products, selectedCategories, selectedSubcategories, selectedBrands, categories, subcategories, sortBy]);
 
   const sortedRecommendations = useMemo(() => {
     const list = [...recommendations];
@@ -313,36 +467,88 @@ function ProductCatalogContent() {
             </div>
           </div>
 
-          {/* Search & Filters */}
-          <div className="mt-6 flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="relative w-full md:w-96">
-              <MagnifyingGlass size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Cari spare part, freon, atau nama toko (misal: Glodok)..."
-                className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-[#0F4C81] transition-all"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  <X size={14} weight="bold" />
-                </button>
+          {/* Search, Filter Button, and Sort */}
+          <div className="mt-6 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+            {/* Search + Filter Kategori Group */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1 max-w-3xl">
+              {/* Search Bar */}
+              <div className="relative flex-1 min-w-[260px]">
+                <MagnifyingGlass size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Cari spare part, freon, atau nama toko (misal: Glodok)..."
+                  className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#0F4C81] focus:bg-white transition-all shadow-xs"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                  >
+                    <X size={14} weight="bold" />
+                  </button>
+                )}
+              </div>
+
+              {/* Tombol Filter Produk & Merek (Sebelah Search) */}
+              <button
+                type="button"
+                onClick={handleOpenFilterModal}
+                className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                  isFilterActive
+                    ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm ring-2 ring-emerald-500/25"
+                    : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300 shadow-xs"
+                }`}
+              >
+                {isFilterActive ? (
+                  <>
+                    {/* Bentuk ceklis saat filter sudah dipilih */}
+                    <CheckCircle size={17} weight="fill" className="text-white shrink-0" />
+                    <span>Filter Aktif ({totalActiveFilterCount})</span>
+                  </>
+                ) : (
+                  <>
+                    <Funnel size={16} weight="bold" className="text-[#0F4C81] shrink-0" />
+                    <span>Filter Produk &amp; Merek</span>
+                  </>
+                )}
+                <CaretDown size={13} weight="bold" className={isFilterActive ? "text-emerald-100" : "text-slate-400"} />
+              </button>
+
+              {/* Tag Filter Terpilih di Samping Tombol Filter */}
+              {isFilterActive && (
+                <div className="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold animate-in fade-in truncate max-w-[340px]">
+                  <Tag size={13} weight="bold" className="text-emerald-700 shrink-0" />
+                  <span className="truncate">
+                    {[
+                      selectedCategories.length > 0 ? `${selectedCategories.length} Kategori` : null,
+                      selectedSubcategories.length > 0 ? `${selectedSubcategories.length} Sub` : null,
+                      selectedBrands.length > 0 ? `${selectedBrands.length} Merek` : null,
+                    ].filter(Boolean).join(" • ")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleClearAllFilters}
+                    className="text-emerald-700 hover:text-emerald-900 p-0.5 rounded-md hover:bg-emerald-200/60 transition shrink-0 ml-0.5"
+                    title="Hapus semua filter"
+                  >
+                    <X size={12} weight="bold" />
+                  </button>
+                </div>
               )}
             </div>
 
-            <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end">
+            {/* Sort Dropdown */}
+            <div className="flex items-center gap-2 self-end lg:self-auto shrink-0">
               <div className="flex items-center gap-1.5 text-xs text-slate-500">
                 <ArrowsDownUp size={16} />
                 <span>Urutkan:</span>
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as ProductSortOption)}
-                  className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-semibold text-slate-700 focus:outline-none"
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 cursor-pointer"
                 >
                   <option value="POPULAR">Paling Relevan</option>
                   <option value="PRICE_LOW">Harga Terendah</option>
@@ -352,31 +558,128 @@ function ProductCatalogContent() {
             </div>
           </div>
 
-          {/* Category Tabs */}
-          <div className="mt-4 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+          {/* Active Filter Chips di Bawah Search & Filter */}
+          {isFilterActive && (
+            <div className="mt-3.5 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2 animate-in fade-in slide-in-from-top-1 text-xs">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                <SlidersHorizontal size={13} className="text-[#0F4C81]" />
+                Filter Aktif ({totalActiveFilterCount}):
+              </span>
+
+              {selectedCategories.map((catId) => {
+                const cat = categories.find((c) => c.id === catId);
+                if (!cat) return null;
+                return (
+                  <span key={`cat-${catId}`} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0F4C81] text-white font-semibold text-xs shadow-xs">
+                    <span className="text-sky-200 text-[10px] uppercase font-bold">Kategori:</span>
+                    <span>{cat.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategories((prev) => prev.filter((id) => id !== catId))}
+                      className="p-0.5 hover:bg-white/20 rounded-full transition ml-0.5 cursor-pointer"
+                      title={`Hapus filter ${cat.name}`}
+                    >
+                      <X size={12} weight="bold" />
+                    </button>
+                  </span>
+                );
+              })}
+
+              {selectedSubcategories.map((subId) => {
+                const sub = subcategories.find((s) => s.id === subId);
+                if (!sub) return null;
+                return (
+                  <span key={`sub-${subId}`} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-900 font-semibold text-xs border border-emerald-300 shadow-xs">
+                    <span className="text-emerald-700 text-[10px] uppercase font-bold">Sub:</span>
+                    <span>{sub.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSubcategories((prev) => prev.filter((id) => id !== subId))}
+                      className="p-0.5 hover:bg-emerald-200 rounded-full transition ml-0.5 cursor-pointer"
+                      title={`Hapus filter ${sub.name}`}
+                    >
+                      <X size={12} weight="bold" />
+                    </button>
+                  </span>
+                );
+              })}
+
+              {selectedBrands.map((bName) => (
+                <span key={`brand-${bName}`} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-950 font-semibold text-xs border border-amber-300 shadow-xs">
+                  <span className="text-amber-800 text-[10px] uppercase font-bold">Merek:</span>
+                  <span>{bName}</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBrands((prev) => prev.filter((b) => b !== bName))}
+                    className="p-0.5 hover:bg-amber-200 rounded-full transition ml-0.5 cursor-pointer"
+                    title={`Hapus filter ${bName}`}
+                  >
+                    <X size={12} weight="bold" />
+                  </button>
+                </span>
+              ))}
+
+              <button
+                type="button"
+                onClick={handleClearAllFilters}
+                className="text-xs text-rose-600 hover:text-rose-700 font-bold hover:underline ml-1 cursor-pointer"
+              >
+                Reset Semua Filter
+              </button>
+            </div>
+          )}
+
+          {/* Quick Brand Filter Bar (Pilihan Merek Cepat di Halaman Utama - Multi-Select) */}
+          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none text-xs">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1 shrink-0">
+              <Tag size={13} className="text-[#0F4C81]" />
+              Merek:
+            </span>
             <button
-              onClick={() => setSelectedCategory("ALL")}
-              className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${
-                selectedCategory === "ALL"
-                  ? "bg-[#0F4C81] text-white shadow-sm"
+              type="button"
+              onClick={() => setSelectedBrands([])}
+              className={`px-3 py-1 rounded-full text-xs font-bold transition-all shrink-0 cursor-pointer ${
+                selectedBrands.length === 0
+                  ? "bg-[#0F4C81] text-white shadow-xs"
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
             >
-              Semua Kategori
+              Semua ({products.length})
             </button>
-            {categories.map((cat) => (
-              <button
-                key={cat.categoryId}
-                onClick={() => setSelectedCategory(cat.categoryId)}
-                className={`px-4 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition ${
-                  selectedCategory === cat.categoryId
-                    ? "bg-[#0F4C81] text-white shadow-sm"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
-              >
-                {cat.name}
-              </button>
-            ))}
+            {brands.map((b) => {
+              const isSelected = selectedBrands.includes(b.name);
+              const count = b.product_count ?? b.productCount ?? 0;
+              return (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedBrands((prev) =>
+                      isSelected ? prev.filter((x) => x !== b.name) : [...prev, b.name]
+                    );
+                  }}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs transition-all shrink-0 cursor-pointer ${
+                    isSelected
+                      ? "bg-amber-500 text-slate-950 font-bold shadow-xs ring-2 ring-amber-500/30"
+                      : "bg-white border border-slate-200/90 text-slate-700 hover:bg-slate-50 font-medium"
+                  }`}
+                >
+                  <div className="w-3.5 h-3.5 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
+                    {b.logo_url || b.logoUrl ? (
+                      <img src={b.logo_url || b.logoUrl} alt={b.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <Tag size={9} weight="bold" className="text-slate-400" />
+                    )}
+                  </div>
+                  <span>{b.name}</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    isSelected ? "bg-slate-950/15 text-slate-950" : "bg-sky-50 text-[#0F4C81]"
+                  }`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -605,6 +908,372 @@ function ProductCatalogContent() {
           </div>
         )}
       </div>
+
+      {/* Pop-up Modal Filter Kategori & Merek Produk (Multi-Select) */}
+      <Modal
+        isOpen={isFilterModalOpen}
+        onClose={() => setIsFilterModalOpen(false)}
+        title="Filter Katalog Produk & Merek (Multi-Pilih)"
+        maxWidth="3xl"
+      >
+        <div className="space-y-5 font-body">
+          {/* ========================================================================= */}
+          {/* SECTION 1: FILTER BERDASARKAN MEREK (MULTI-SELECT CHIP MEREK)            */}
+          {/* ========================================================================= */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50/80 via-orange-50/40 to-amber-50/60 border border-amber-200/80 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-xl bg-amber-500/20 text-amber-800 flex items-center justify-center shrink-0 shadow-2xs">
+                  <Tag size={16} weight="bold" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-bold text-slate-900">Filter Berdasarkan Merek</h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 font-bold border border-amber-300">
+                      Multi-Pilih • Independen
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Bisa memilih lebih dari 1 merek sekaligus (tidak dibatasi atau terikat kategori tertentu).
+                  </p>
+                </div>
+              </div>
+              {tempBrands.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setTempBrands([])}
+                  className="text-xs text-amber-900 hover:text-amber-950 font-bold underline cursor-pointer shrink-0 ml-2"
+                >
+                  Reset Merek ({tempBrands.length})
+                </button>
+              )}
+            </div>
+
+            {/* Chips Merek */}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {/* Chip: Semua Merek */}
+              <button
+                type="button"
+                onClick={() => setTempBrands([])}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                  tempBrands.length === 0
+                    ? "bg-[#0F4C81] text-white shadow-xs ring-2 ring-[#0F4C81]/25"
+                    : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 hover:border-slate-300"
+                }`}
+              >
+                <span>Semua Merek</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                  tempBrands.length === 0 ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                }`}>
+                  {products.length}
+                </span>
+              </button>
+
+              {/* List Chips Merek Resmi Multi-Select */}
+              {brands.map((b) => {
+                const isSelected = tempBrands.includes(b.name);
+                const count = b.product_count ?? b.productCount ?? 0;
+                return (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => {
+                      setTempBrands((prev) =>
+                        isSelected ? prev.filter((x) => x !== b.name) : [...prev, b.name]
+                      );
+                    }}
+                    className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs transition-all cursor-pointer ${
+                      isSelected
+                        ? "bg-amber-500 text-slate-950 font-bold shadow-xs ring-2 ring-amber-500/40"
+                        : "bg-white text-slate-700 border border-slate-200/90 hover:bg-slate-100 hover:border-slate-300 font-semibold"
+                    }`}
+                  >
+                    <div className="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
+                      {b.logo_url || b.logoUrl ? (
+                        <img src={b.logo_url || b.logoUrl} alt={b.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <Tag size={10} weight="bold" className="text-slate-400" />
+                      )}
+                    </div>
+                    <span>{b.name}</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                      isSelected
+                        ? "bg-slate-950/15 text-slate-950"
+                        : "bg-sky-50 text-[#0F4C81]"
+                    }`}>
+                      {count} Produk
+                    </span>
+                    {isSelected && <Check size={12} weight="bold" className="text-slate-950 shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ========================================================================= */}
+          {/* SECTION 2: FILTER BERDASARKAN KATEGORI & SUBKATEGORI (MULTI-SELECT)       */}
+          {/* ========================================================================= */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between px-0.5">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-xl bg-sky-50 text-[#0F4C81] flex items-center justify-center shrink-0 shadow-2xs">
+                  <Package size={16} weight="bold" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-bold text-slate-900">Filter Berdasarkan Kategori &amp; Subkategori</h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-100 text-[#0F4C81] font-bold border border-sky-300">
+                      Multi-Pilih
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Bisa memilih lebih dari 1 kategori dan subkategori. Klik nama kategori untuk melihat subkategorinya.
+                  </p>
+                </div>
+              </div>
+              {(tempCategories.length > 0 || tempSubcategories.length > 0) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTempCategories([]);
+                    setTempSubcategories([]);
+                  }}
+                  className="text-xs text-rose-600 hover:text-rose-700 font-bold hover:underline cursor-pointer shrink-0 ml-2"
+                >
+                  Reset Kategori &amp; Sub
+                </button>
+              )}
+            </div>
+
+            {/* Grid 2 Kolom Kategori & Subkategori */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 border border-slate-200/80 rounded-2xl overflow-hidden bg-slate-50/50">
+              {/* Kolom Kiri: Kategori Utama dengan Checkbox Multi-Pilih */}
+              <div className="md:col-span-5 bg-white border-r border-slate-200/80 p-3 space-y-1.5 overflow-y-auto max-h-[320px]">
+                <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2.5 py-1">
+                  <span>Kategori Utama ({categories.length})</span>
+                  {tempCategories.length > 0 && (
+                    <span className="text-[#0F4C81] font-bold lowercase tracking-normal">
+                      {tempCategories.length} dipilih
+                    </span>
+                  )}
+                </div>
+
+                {/* Opsi Semua Kategori */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTempCategories([]);
+                    setTempSubcategories([]);
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
+                    tempCategories.length === 0
+                      ? "bg-[#0F4C81] text-white shadow-xs"
+                      : "text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Package size={18} weight={tempCategories.length === 0 ? "fill" : "regular"} />
+                    <span>Semua Kategori</span>
+                  </div>
+                  {tempCategories.length === 0 && <Check size={16} weight="bold" />}
+                </button>
+
+                {/* Daftar Kategori Resmi dengan Checkbox Multi-Select */}
+                {categories.map((cat) => {
+                  const Icon = getCategoryIcon(cat.name);
+                  const isChecked = tempCategories.includes(cat.id);
+                  const isPreviewed = (activePreviewCatId || categories[0]?.id) === cat.id;
+                  const catSubIds = subcategories.filter((s) => s.category_id === cat.id).map((s) => s.id);
+                  const selectedSubInCatCount = tempSubcategories.filter((sId) => catSubIds.includes(sId)).length;
+                  const totalSubInCat = catSubIds.length;
+
+                  return (
+                    <div
+                      key={cat.id}
+                      onClick={() => setActivePreviewCatId(cat.id)}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all text-left cursor-pointer border ${
+                        isPreviewed
+                          ? "border-[#0F4C81]/30 bg-sky-50/60 ring-1 ring-[#0F4C81]/20"
+                          : "border-transparent hover:bg-slate-100"
+                      } ${isChecked ? "text-[#0F4C81] font-bold" : "text-slate-700"}`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                        {/* Custom Checkbox */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActivePreviewCatId(cat.id);
+                            setTempCategories((prev) =>
+                              isChecked ? prev.filter((id) => id !== cat.id) : [...prev, cat.id]
+                            );
+                          }}
+                          className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+                            isChecked
+                              ? "bg-[#0F4C81] border-[#0F4C81] text-white"
+                              : "border-slate-300 bg-white hover:border-[#0F4C81]"
+                          }`}
+                        >
+                          {isChecked && <Check size={11} weight="bold" />}
+                        </button>
+
+                        <Icon size={17} weight={isChecked ? "fill" : "regular"} className="shrink-0" />
+                        <span className="truncate">{cat.name}</span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {selectedSubInCatCount > 0 && (
+                          <span className="text-[10px] px-1.5 py-0.2 rounded-full font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            {selectedSubInCatCount} sub
+                          </span>
+                        )}
+                        <span className="text-[10px] px-1.5 py-0.2 rounded-full font-bold bg-slate-100 text-slate-500">
+                          {totalSubInCat}
+                        </span>
+                        <CaretRight size={12} weight="bold" className={isPreviewed ? "text-[#0F4C81]" : "text-slate-400"} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Kolom Kanan: Subkategori Sesuai Kategori yang sedang Dilihat (Multi-Select) */}
+              <div className="md:col-span-7 p-3 bg-white space-y-2 overflow-y-auto max-h-[320px]">
+                {(() => {
+                  const currentPreviewCat = categories.find(
+                    (c) => c.id === (activePreviewCatId || categories[0]?.id)
+                  );
+                  const previewCatSubs = currentPreviewCat
+                    ? subcategories.filter((s) => s.category_id === currentPreviewCat.id)
+                    : [];
+                  const allPreviewSubsSelected =
+                    previewCatSubs.length > 0 &&
+                    previewCatSubs.every((s) => tempSubcategories.includes(s.id));
+
+                  return (
+                    <>
+                      <div className="flex items-center justify-between pb-1.5 border-b border-slate-100 px-1">
+                        <div>
+                          <span className="text-[11px] font-bold text-slate-800">
+                            Subkategori: {currentPreviewCat?.name || "Pilih Kategori"}
+                          </span>
+                          <p className="text-[10px] text-slate-400">
+                            Bisa memilih beberapa subkategori sekaligus
+                          </p>
+                        </div>
+                        {previewCatSubs.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const subIds = previewCatSubs.map((s) => s.id);
+                              if (allPreviewSubsSelected) {
+                                // unselect all in this category
+                                setTempSubcategories((prev) => prev.filter((id) => !subIds.includes(id)));
+                              } else {
+                                // select all in this category
+                                setTempSubcategories((prev) => Array.from(new Set([...prev, ...subIds])));
+                                // Also ensure this category is marked checked
+                                if (currentPreviewCat && !tempCategories.includes(currentPreviewCat.id)) {
+                                  setTempCategories((prev) => [...prev, currentPreviewCat.id]);
+                                }
+                              }
+                            }}
+                            className="text-[10px] font-bold text-[#0F4C81] hover:underline cursor-pointer"
+                          >
+                            {allPreviewSubsSelected ? "Batalkan Semua" : "Pilih Semua Sub"}
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5 pt-1">
+                        {previewCatSubs.length === 0 ? (
+                          <div className="py-12 text-center text-slate-400 text-xs">
+                            Tidak ada subkategori tersedia di kategori ini.
+                          </div>
+                        ) : (
+                          previewCatSubs.map((sub) => {
+                            const isSubChecked = tempSubcategories.includes(sub.id);
+                            return (
+                              <button
+                                key={sub.id}
+                                type="button"
+                                onClick={() => {
+                                  setTempSubcategories((prev) =>
+                                    isSubChecked ? prev.filter((id) => id !== sub.id) : [...prev, sub.id]
+                                  );
+                                  // Auto-include parent category if checking sub
+                                  if (!isSubChecked && currentPreviewCat && !tempCategories.includes(currentPreviewCat.id)) {
+                                    setTempCategories((prev) => [...prev, currentPreviewCat.id]);
+                                  }
+                                }}
+                                className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs font-semibold transition text-left border cursor-pointer ${
+                                  isSubChecked
+                                    ? "bg-emerald-50 border-emerald-500 text-emerald-900 font-bold ring-1 ring-emerald-500/30"
+                                    : "border-slate-200/80 hover:bg-slate-50 text-slate-700"
+                                }`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+                                      isSubChecked
+                                        ? "bg-emerald-600 border-emerald-600 text-white"
+                                        : "border-slate-300 bg-white"
+                                    }`}
+                                  >
+                                    {isSubChecked && <Check size={11} weight="bold" />}
+                                  </div>
+                                  <span>{sub.name}</span>
+                                </div>
+                                {isSubChecked && (
+                                  <span className="text-[10px] font-bold text-emerald-700 bg-white px-2 py-0.5 rounded-full border border-emerald-200">
+                                    Terpilih
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          </div>
+
+          {/* Modal Footer */}
+          <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => {
+                setTempCategories([]);
+                setTempSubcategories([]);
+                setTempBrands([]);
+              }}
+              className="text-xs font-bold text-slate-500 hover:text-slate-800 transition cursor-pointer"
+            >
+              Reset Semua Filter
+            </button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsFilterModalOpen(false)}
+              >
+                Batal
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleApplyFilter}
+                className="bg-[#0F4C81] hover:bg-[#0c3c66] text-white font-bold"
+              >
+                Terapkan Filter ({tempCategories.length + tempSubcategories.length + tempBrands.length})
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

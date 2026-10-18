@@ -119,6 +119,8 @@ Route::prefix('v1')->group(function () {
     Route::post('/registration-applications/{id}/resubmit', [BusinessApplicationController::class, 'resubmitApplication']);
     Route::post('/registration-applications/{id}/documents', [BusinessApplicationController::class, 'uploadDocument']);
     Route::delete('/registration-applications/{id}/documents/{docId}', [BusinessApplicationController::class, 'deleteDocument']);
+    Route::get('/registration-applications/{id}/documents/{docId}/download', [BusinessApplicationController::class, 'downloadDocument']);
+    Route::get('/registration-applications/{id}/documents/{docId}/view', [BusinessApplicationController::class, 'downloadDocument']);
 
     // Protected Routes (Session / Token Authenticated)
     Route::middleware('identity.auth')->group(function () {
@@ -194,6 +196,8 @@ Route::prefix('v1')->group(function () {
         Route::get('/organizations/{id}', [ProfileOrganizationController::class, 'getOrganization']);
         Route::match(['patch', 'put'], '/organizations/{id}/profile', [ProfileOrganizationController::class, 'updateOrganizationProfile']);
         Route::match(['patch', 'put'], '/organizations/{id}', [ProfileOrganizationController::class, 'updateOrganizationProfile']);
+        Route::match(['patch', 'post'], '/organizations/{id}/operational-status', [ProfileOrganizationController::class, 'updateOperationalStatus']);
+        Route::match(['patch', 'post'], '/organizations/{id}/status', [ProfileOrganizationController::class, 'updateOperationalStatus']);
         Route::get('/organizations/{id}/memberships', [ProfileOrganizationController::class, 'organizationMemberships']);
         Route::get('/roles/me', [ProfileOrganizationController::class, 'myRoles']);
         Route::get('/permissions/me', [ProfileOrganizationController::class, 'myPermissions']);

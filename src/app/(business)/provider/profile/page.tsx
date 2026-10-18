@@ -7,7 +7,7 @@ import { Toast } from "@/components/feedback/Toast";
 import { Button } from "@/components/ui/Button";
 import { useDomainRepository } from "@/lib/repository/domainRepository";
 import { useActiveRole } from "@/context/RoleContext";
-import { organizationApi } from "@/lib/servioApi";
+import { organizationApi, registrationApi } from "@/lib/servioApi";
 import {
   Building,
   Phone,
@@ -22,6 +22,7 @@ import {
   ArrowRight,
   FileText,
   DownloadSimple,
+  ArrowSquareOut,
   Copy,
 } from "@phosphor-icons/react";
 
@@ -34,6 +35,7 @@ export default function ProviderProfilePage() {
   const [activeTab, setActiveTab] = useState<ProfileTab>("business");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [liveDocuments, setLiveDocuments] = useState<any[]>(user.documents || []);
 
   // Business Info initialized from live user.businessProfile with safe fallback
   const [providerName, setProviderName] = useState(
@@ -110,7 +112,55 @@ export default function ProviderProfilePage() {
       if (p.phone) setPhone(p.phone);
       if (p.email) setEmail(p.email);
     }
+    if (user.documents && user.documents.length > 0) {
+      setLiveDocuments(user.documents);
+    }
+    const opHours = user.activeOrganization?.operational_hours || (user.businessProfile as any)?.operationalHours || (user.businessProfile as any)?.operational_hours;
+    if (opHours) {
+      if (opHours.open_time || opHours.openTime) setOpenTime(opHours.open_time || opHours.openTime);
+      if (opHours.close_time || opHours.closeTime) setCloseTime(opHours.close_time || opHours.closeTime);
+      if (opHours.work_days || opHours.workDays) setWorkDays(opHours.work_days || opHours.workDays);
+    }
+    const servArea = user.activeOrganization?.service_area || (user.businessProfile as any)?.serviceArea || (user.businessProfile as any)?.service_area;
+    if (servArea) {
+      if (servArea.areas) setServiceAreas(servArea.areas);
+      if (servArea.radius_km || servArea.radiusKm) setCoverageRadiusKm(Number(servArea.radius_km || servArea.radiusKm));
+    }
   }, [user]);
+
+  // Load latest registered company profile & uploaded documents from database
+  useEffect(() => {
+    registrationApi.myApplications().then((res: any) => {
+      const items = res.data?.items || (Array.isArray(res.data) ? res.data : []);
+      if (items.length > 0) {
+        const latest = items[0];
+        if (latest.documents && latest.documents.length > 0) {
+          setLiveDocuments(latest.documents);
+        }
+        if (latest.businessData) {
+          const b = latest.businessData;
+          if (b.brandName || b.legalName) setProviderName(b.brandName || b.legalName || "");
+          if (b.legalName) setLegalName(b.legalName);
+          if (b.nib) setNib(b.nib);
+          if (b.npwp) setNpwp(b.npwp);
+          if (b.businessType) setBusinessType(b.businessType);
+          if (b.address) setAddress(b.address);
+          if (b.city) setCity(b.city);
+          if (b.postalCode) setPostalCode(b.postalCode);
+        }
+        if (latest.picData) {
+          const p = latest.picData;
+          if (p.fullName) setPicName(p.fullName);
+          if (p.nik) setPicNik(p.nik);
+          if (p.phone) setPhone(p.phone);
+          if (p.email) setEmail(p.email);
+        }
+        if (latest.registrationNumber) {
+          setRegistrationNumber(latest.registrationNumber);
+        }
+      }
+    }).catch(() => {});
+  }, []);
 
   // Hours
   const [openTime, setOpenTime] = useState("08:00");
@@ -212,9 +262,23 @@ export default function ProviderProfilePage() {
           description,
           businessType,
           registrationNumber,
+          address: {
+            address,
+            city,
+            postalCode,
+          },
+          operationalHours: {
+            work_days: workDays,
+            open_time: openTime,
+            close_time: closeTime,
+          },
+          serviceArea: {
+            areas: serviceAreas,
+            radius_km: coverageRadiusKm,
+          },
         });
       }
-      setToastMessage("Profil dan konfigurasi operasional bengkel berhasil disimpan.");
+      setToastMessage("Profil dan konfigurasi operasional bengkel berhasil disimpan ke database.");
       await refreshUser();
     } catch (err: unknown) {
       setToastMessage(err instanceof Error ? err.message : "Gagal menyimpan profil organisasi.");
@@ -495,66 +559,66 @@ export default function ProviderProfilePage() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {(user.documents && user.documents.length > 0
-                  ? user.documents
-                  : [
-                      {
-                        id: "doc-1",
-                        documentType: "RESPONSIBLE_PERSON_ID",
-                        fileName: "ktp_budi_santoso.pdf",
-                        filePath: "/storage/registration/docs/ktp_budi_santoso.pdf",
-                        fileSize: 1024000,
-                        status: "APPROVED",
-                        version: 1,
-                      },
-                      {
-                        id: "doc-2",
-                        documentType: "BUSINESS_ID",
-                        fileName: "nib_oss_pt_servio_mandiri.pdf",
-                        filePath: "/storage/registration/docs/nib_oss_pt_servio_mandiri.pdf",
-                        fileSize: 2048000,
-                        status: "APPROVED",
-                        version: 1,
-                      },
-                      {
-                        id: "doc-3",
-                        documentType: "BUSINESS_ADDRESS_PROOF",
-                        fileName: "foto_plang_workshop_kebon_jeruk.jpg",
-                        filePath: "/storage/registration/docs/foto_plang_workshop_kebon_jeruk.jpg",
-                        fileSize: 1536000,
-                        status: "APPROVED",
-                        version: 1,
-                      },
-                      {
-                        id: "doc-4",
-                        documentType: "LEGAL_DOCUMENT",
-                        fileName: "akta_notaris_pendirian_pt.pdf",
-                        filePath: "/storage/registration/docs/akta_notaris_pendirian_pt.pdf",
-                        fileSize: 3072000,
-                        status: "APPROVED",
-                        version: 1,
-                      },
-                      {
-                        id: "doc-5",
-                        documentType: "TAX_DOCUMENT",
-                        fileName: "npwp_badan_pt_servio_mandiri.pdf",
-                        filePath: "/storage/registration/docs/npwp_badan_pt_servio_mandiri.pdf",
-                        fileSize: 512000,
-                        status: "APPROVED",
-                        version: 1,
-                      },
-                      {
-                        id: "doc-6",
-                        documentType: "TECHNICAL_CERTIFICATION",
-                        fileName: "sertifikasi_bnsp_hvac_level3.pdf",
-                        filePath: "/storage/registration/docs/sertifikasi_bnsp_hvac_level3.pdf",
-                        fileSize: 1280000,
-                        status: "APPROVED",
-                        version: 1,
-                      },
-                    ]
-                ).map((doc) => {
+                {(liveDocuments && liveDocuments.length > 0
+                  ? liveDocuments
+                  : (user.documents && user.documents.length > 0
+                      ? user.documents
+                      : [
+                          {
+                            id: "doc-1",
+                            documentType: "RESPONSIBLE_PERSON_ID",
+                            fileName: "ktp_budi_santoso.pdf",
+                            filePath: "/storage/registration/docs/ktp_budi_santoso.pdf",
+                            fileSize: 1024000,
+                            status: "APPROVED",
+                            version: 1,
+                          },
+                          {
+                            id: "doc-2",
+                            documentType: "BUSINESS_ID",
+                            fileName: "nib_oss_pt_servio_mandiri.pdf",
+                            filePath: "/storage/registration/docs/nib_oss_pt_servio_mandiri.pdf",
+                            fileSize: 2048000,
+                            status: "APPROVED",
+                            version: 1,
+                          },
+                          {
+                            id: "doc-3",
+                            documentType: "BUSINESS_ADDRESS_PROOF",
+                            fileName: "foto_plang_workshop_kebon_jeruk.jpg",
+                            filePath: "/storage/registration/docs/foto_plang_workshop_kebon_jeruk.jpg",
+                            fileSize: 1536000,
+                            status: "APPROVED",
+                            version: 1,
+                          },
+                          {
+                            id: "doc-4",
+                            documentType: "LEGAL_DOCUMENT",
+                            fileName: "akta_notaris_pendirian_pt.pdf",
+                            filePath: "/storage/registration/docs/akta_notaris_pendirian_pt.pdf",
+                            fileSize: 3072000,
+                            status: "APPROVED",
+                            version: 1,
+                          },
+                          {
+                            id: "doc-5",
+                            documentType: "TAX_DOCUMENT",
+                            fileName: "npwp_badan_pt_servio_mandiri.pdf",
+                            filePath: "/storage/registration/docs/npwp_badan_pt_servio_mandiri.pdf",
+                            fileSize: 512000,
+                            status: "APPROVED",
+                            version: 1,
+                          },
+                        ]
+                    )
+                ).map((doc: any) => {
                   const typeLabels: Record<string, string> = {
+                    KTP_PIC: "KTP Penanggung Jawab (PIC)",
+                    NPWP_BISNIS: "NPWP Badan / Usaha",
+                    NIB: "Nomor Induk Berusaha (NIB)",
+                    FOTO_BENGKEL: "Foto Fisik Bengkel / Workshop",
+                    FOTO_TOKO: "Foto Fisik Toko / Gudang",
+                    AKTA_PERUSAHAAN: "Akta Pendirian / SK Kemenkumham",
                     RESPONSIBLE_PERSON_ID: "Identitas Penanggung Jawab (KTP)",
                     BUSINESS_ID: "Nomor Induk Berusaha (NIB)",
                     BUSINESS_ADDRESS_PROOF: "Bukti Alamat Usaha / Workshop",
@@ -562,8 +626,9 @@ export default function ProviderProfilePage() {
                     TAX_DOCUMENT: "NPWP Badan Usaha",
                     TECHNICAL_CERTIFICATION: "Sertifikasi Kompetensi BNSP",
                   };
-                  const label = typeLabels[doc.documentType] || doc.documentType;
+                  const label = typeLabels[doc.documentType || doc.doc_type] || doc.documentType || doc.doc_type || "Dokumen Legalitas";
                   const sizeMB = doc.fileSize ? (doc.fileSize / (1024 * 1024)).toFixed(2) + " MB" : "1.2 MB";
+                  const downloadUrl = doc.filePath || doc.file_path || (doc.id ? `/api/v1/registration-applications/${registrationNumber}/documents/${doc.id}/download` : "#");
 
                   return (
                     <div
@@ -580,13 +645,19 @@ export default function ProviderProfilePage() {
                               {label}
                             </span>
                             <p className="font-bold text-slate-900 text-xs truncate max-w-[190px]">
-                              {doc.fileName}
+                              {doc.fileName || label}
                             </p>
                             <span className="text-[11px] text-slate-400 font-mono">{sizeMB}</span>
                           </div>
                         </div>
 
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 shrink-0">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 shrink-0 ${
+                          doc.status === "APPROVED"
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                            : doc.status === "REPLACEMENT_REQUIRED"
+                            ? "bg-amber-50 text-amber-800 border border-amber-200"
+                            : "bg-blue-50 text-blue-700 border border-blue-200"
+                        }`}>
                           <CheckCircle size={12} weight="fill" />
                           {doc.status || "APPROVED"}
                         </span>
@@ -596,14 +667,15 @@ export default function ProviderProfilePage() {
                         <span className="text-[11px] text-slate-500 font-mono">
                           Ver: v{doc.version || 1} • Dokumen Resmi
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => setToastMessage(`Mengunduh berkas ${doc.fileName}...`)}
-                          className="text-[#0F4C81] font-bold hover:underline flex items-center gap-1"
+                        <a
+                          href={downloadUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[#0F4C81] font-bold hover:underline flex items-center gap-1 cursor-pointer"
                         >
-                          <DownloadSimple size={14} weight="bold" />
-                          <span>Unduh</span>
-                        </button>
+                          <ArrowSquareOut size={14} weight="bold" />
+                          <span>Buka Dokumen</span>
+                        </a>
                       </div>
                     </div>
                   );

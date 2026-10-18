@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { useDomainRepository } from "@/lib/repository/domainRepository";
 import { useActiveRole } from "@/context/RoleContext";
-import { MOCK_TAXONOMY_DOMAINS } from "@/mocks/taxonomy";
 
 export function useAdminOperations() {
   const repo = useDomainRepository();
@@ -356,8 +355,6 @@ export function useAdminOperations() {
     kycSearchQuery,
     setKycSearchQuery,
     evaluateKYC,
-    // Taxonomy
-    taxonomyDomains: MOCK_TAXONOMY_DOMAINS,
     // Services
     serviceOrders: repo.orders,
     // Products

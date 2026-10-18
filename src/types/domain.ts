@@ -357,6 +357,11 @@ export interface ProductItem {
   thumbnailUrl?: string;
   isOriginal: boolean;
   warrantyMonths: number;
+  categoryId?: string;
+  categoryName?: string;
+  subcategoryId?: string;
+  subcategoryName?: string;
+  brandName?: string;
 }
 
 /**
@@ -2915,6 +2920,20 @@ export interface PlatformPolicyChangePayload {
 export type ProductLifecycleStatus = "DRAFT" | "ACTIVE" | "INACTIVE" | "ARCHIVED";
 export type ProductCategoryStatus = "ACTIVE" | "INACTIVE";
 
+export interface ApiBrand {
+  id: string;
+  name: string;
+  slug: string;
+  logo_url?: string;
+  logoUrl?: string;
+  description?: string;
+  status: "ACTIVE" | "INACTIVE";
+  product_count?: number;
+  productCount?: number;
+  created_at?: string;
+  createdAt?: string;
+}
+
 export interface ApiProductCategory {
   _id?: string;
   categoryId: string;
@@ -2953,6 +2972,8 @@ export interface ApiProduct {
   providerName?: string;
   categoryId: string;
   categoryName?: string;
+  subcategoryId?: string;
+  subcategoryName?: string;
   name: string;
   brandName?: string;
   description?: string;

@@ -23,6 +23,9 @@ class OrganizationProfile extends Model
         'npwp_ciphertext',
         'npwp_lookup_hash',
         'specialization_json',
+        'operational_hours_json',
+        'service_area_json',
+        'competencies_json',
     ];
 
     protected function casts(): array
@@ -30,6 +33,9 @@ class OrganizationProfile extends Model
         return [
             'address_json' => 'array',
             'specialization_json' => 'array',
+            'operational_hours_json' => 'array',
+            'service_area_json' => 'array',
+            'competencies_json' => 'array',
         ];
     }
 

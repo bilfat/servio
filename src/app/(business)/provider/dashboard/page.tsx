@@ -23,6 +23,7 @@ import {
   Warning,
   HourglassMedium,
   CheckSquareOffset,
+  Sparkle,
 } from "@phosphor-icons/react";
 import { useProviderOperations } from "@/features/provider/useProviderOperations";
 import { useServiceOrder } from "@/features/orders/useServiceOrder";
@@ -147,6 +148,89 @@ export default function ProviderDashboardPage() {
     setToastMessage(`Status operasional bengkel diperbarui: ${label}`);
   };
 
+  // =========================================================================
+  // JIKA STATUS TOKO TUTUP (TEMPORARY_CLOSED):
+  // Menampilkan HANYA:
+  // - Gambar ilustrasi toko tutup dari Gemini
+  // - Kata-kata penjelasan toko tutup
+  // - Tombol Buka Toko di tengah
+  // - Keterangan kata-kata panduan di bawah tombol
+  // Sidebar dihilangkan (via AppShell), header monitoring dihilangkan, no-scroll.
+  // =========================================================================
+  if (storeStatus === "TEMPORARY_CLOSED") {
+    return (
+      <div className="h-[calc(100vh-64px)] w-full flex flex-col items-center justify-center p-4 sm:p-6 text-center select-none overflow-hidden bg-white">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.35, ease: "easeOut" }}
+          className="w-full max-w-lg flex flex-col items-center my-auto"
+        >
+          {/* 1. GAMBAR ILUSTRASI GEMINI TOKO TUTUP */}
+          <div className="relative w-full max-w-sm sm:max-w-md rounded-3xl overflow-hidden shadow-2xl border-4 border-slate-900/10 mb-5 group shrink-0">
+            <img
+              src="/images/store_closed.jpg"
+              alt="Ilustrasi Toko Tutup Bengkel Servio"
+              className="w-full h-auto max-h-[220px] sm:max-h-[250px] object-cover transition-transform duration-700 group-hover:scale-105"
+            />
+            {/* Ambient Lighting & Badge Overlay */}
+            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-transparent to-transparent flex items-end justify-between p-3.5">
+              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-600/95 text-white text-[11px] font-black uppercase tracking-wider backdrop-blur-md shadow-md border border-rose-400/40">
+                <Storefront size={13} weight="fill" />
+                <span>Bengkel Tutup</span>
+              </div>
+              <span className="text-[10px] text-amber-200 font-semibold px-2.5 py-0.5 rounded-full bg-slate-900/80 backdrop-blur-md border border-amber-500/30">
+                Offline
+              </span>
+            </div>
+          </div>
+
+          {/* 2. KATA-KATA */}
+          <div className="space-y-2 mb-5">
+            <h1 className="text-2xl sm:text-3xl font-black font-display text-slate-900 tracking-tight">
+              Bengkel Anda Sedang Tutup
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-md mx-auto">
+              Saat ini bengkel Anda berstatus offline dan tidak menerima panggilan teknisi atau pesanan servis baru dari pelanggan. Toko Anda sementara tidak tampil dalam daftar pencarian aplikasi konsumen.
+            </p>
+          </div>
+
+          {/* 3. TOMBOL BUKA */}
+          <button
+            type="button"
+            onClick={() => handleStatusChange("ONLINE_ACCEPTING")}
+            className="inline-flex items-center justify-center gap-2.5 px-8 py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-extrabold text-sm sm:text-base shadow-xl shadow-emerald-600/30 transition-all cursor-pointer group mb-3"
+          >
+            <Sparkle size={18} weight="fill" className="text-amber-200 group-hover:rotate-12 transition-transform" />
+            <span>Mulai Buka Toko Sekarang</span>
+          </button>
+
+          {/* 4. KETERANGAN KATA-KATA */}
+          <div className="space-y-1">
+            <p className="text-[11px] sm:text-xs text-slate-400 leading-normal max-w-sm mx-auto">
+              Tekan tombol hijau di atas kapan saja untuk langsung membuka bengkel dan mulai menerima order pelanggan secara instan.
+            </p>
+            <Link
+              href="/provider/profile"
+              className="text-[11px] sm:text-xs font-semibold text-[#0F4C81] hover:underline inline-flex items-center gap-1 mt-1 transition"
+            >
+              <span>Atur jam buka dan jadwal operasional di profil</span>
+              <ArrowRight size={11} weight="bold" />
+            </Link>
+          </div>
+        </motion.div>
+
+        {toastMessage && (
+          <Toast
+            message={toastMessage}
+            type="success"
+            onClose={() => setToastMessage(null)}
+          />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 pb-16">
       {/* Top Header & Store Status Controls */}
@@ -212,17 +296,41 @@ export default function ProviderDashboardPage() {
             <button
               type="button"
               onClick={() => handleStatusChange("TEMPORARY_CLOSED")}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
-                storeStatus === "TEMPORARY_CLOSED"
-                  ? "bg-rose-600 text-white shadow-sm"
-                  : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
-              }`}
+              className="px-3 py-1.5 rounded-xl text-xs font-bold transition bg-white text-slate-600 hover:bg-slate-100 hover:text-rose-600 border border-slate-200 cursor-pointer"
             >
               Tutup
             </button>
           </div>
         </div>
       </div>
+
+      {/* Banner Peringatan Saat Toko Berstatus Sibuk */}
+      {storeStatus === "BUSY_DELAYED" && (
+        <motion.div
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-2xl bg-amber-50 border border-amber-200 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-amber-900 shadow-sm"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-sm">
+              <HourglassMedium size={22} weight="bold" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-amber-950">Status Bengkel: SIBUK (Jadwal Terbatas)</h4>
+              <p className="text-xs text-amber-800">
+                Bengkel Anda tetap aktif menerima order servis, namun sistem menginformasikan kepada calon pelanggan bahwa jadwal teknisi sedang padat dan penanganan mungkin membutuhkan waktu lebih lama.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleStatusChange("ONLINE_ACCEPTING")}
+            className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shrink-0 transition shadow-sm self-start sm:self-auto cursor-pointer"
+          >
+            Kembalikan ke Normal Online
+          </button>
+        </motion.div>
+      )}
 
       {/* 6 Primary Operational Monitoring KPIs (docs/todo.md Section 56C.5) */}
       <div className="space-y-3">

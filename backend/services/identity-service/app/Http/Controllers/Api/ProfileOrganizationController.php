@@ -93,6 +93,152 @@ class ProfileOrganizationController extends Controller
 
         $birthDateStr = $profile?->birth_date ? (is_string($profile->birth_date) ? substr($profile->birth_date, 0, 10) : $profile->birth_date->format('Y-m-d')) : null;
 
+        // Resolve business application and documents for business roles
+        $businessApp = \App\Models\BusinessApplication::where('applicant_user_id', $user->id)
+            ->with('documents')
+            ->orderByRaw('COALESCE(submitted_at, created_at) DESC')
+            ->first();
+
+        $businessProfile = null;
+        $documentsList = [];
+
+        $membership = Membership::where('user_id', $user->id)
+            ->where('status', 'ACTIVE')
+            ->with(['organization.profile'])
+            ->first();
+
+        $org = $membership?->organization;
+        $orgProf = $org?->profile;
+
+        if ($businessApp) {
+            $draftData = [];
+            if (!empty($businessApp->draft_data_ciphertext)) {
+                try {
+                    $dec = Crypt::decryptString($businessApp->draft_data_ciphertext);
+                    $draftData = json_decode($dec, true) ?: [];
+                } catch (\Throwable) {
+                    $draftData = json_decode($businessApp->draft_data_ciphertext, true) ?: [];
+                }
+            }
+
+            $businessProfile = [
+                'id' => $businessApp->id,
+                'applicationId' => $businessApp->id,
+                'registrationNumber' => $businessApp->application_code,
+                'applicantType' => $businessApp->target_role,
+                'targetRole' => $businessApp->target_role,
+                'status' => $businessApp->status,
+                'operationalStatus' => $org?->operational_status ?? 'ONLINE_ACCEPTING',
+                'operational_status' => $org?->operational_status ?? 'ONLINE_ACCEPTING',
+                'operationalHours' => $orgProf?->operational_hours_json ?? $draftData['operational_hours'] ?? [
+                    'work_days' => 'Senin - Sabtu',
+                    'open_time' => '08:00',
+                    'close_time' => '18:00',
+                ],
+                'operational_hours' => $orgProf?->operational_hours_json ?? $draftData['operational_hours'] ?? [
+                    'work_days' => 'Senin - Sabtu',
+                    'open_time' => '08:00',
+                    'close_time' => '18:00',
+                ],
+                'serviceArea' => $orgProf?->service_area_json ?? $draftData['service_area'] ?? [
+                    'areas' => 'Jakarta Barat, Jakarta Selatan, Tangerang Kota',
+                    'radius_km' => 25,
+                ],
+                'service_area' => $orgProf?->service_area_json ?? $draftData['service_area'] ?? [
+                    'areas' => 'Jakarta Barat, Jakarta Selatan, Tangerang Kota',
+                    'radius_km' => 25,
+                ],
+                'competencies' => $orgProf?->competencies_json ?? $draftData['competencies'] ?? [
+                    'AC Split & Inverter', 'Kompresor', 'Cuci AC & Overhaul', 'Instalasi Baru', 'Kelistrikan HVAC'
+                ],
+                'businessData' => [
+                    'brandName' => $orgProf?->display_name ?? $draftData['business']['brand_name'] ?? $draftData['business']['brandName'] ?? null,
+                    'legalName' => $orgProf?->legal_name ?? $draftData['business']['legal_name'] ?? $draftData['business']['legalName'] ?? null,
+                    'businessType' => $draftData['business']['business_type'] ?? $draftData['business']['businessType'] ?? ($org ? 'PT / Badan Usaha' : null),
+                    'nib' => $draftData['legal']['nib'] ?? $draftData['business']['nib'] ?? null,
+                    'npwp' => $draftData['legal']['npwp'] ?? $draftData['business']['npwp'] ?? null,
+                    'address' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['address'] ?? null) : $orgProf?->address_json) ?? ($draftData['business']['address'] ?? null),
+                    'city' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['city'] ?? null) : null) ?? ($draftData['business']['city'] ?? null),
+                    'province' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['province'] ?? null) : null) ?? ($draftData['business']['province'] ?? null),
+                    'district' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['district'] ?? null) : null) ?? ($draftData['business']['district'] ?? null),
+                    'postalCode' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['postal_code'] ?? null) : null) ?? ($draftData['business']['postal_code'] ?? $draftData['business']['postalCode'] ?? null),
+                ],
+                'picData' => [
+                    'fullName' => $draftData['pic']['full_name'] ?? $draftData['pic']['fullName'] ?? $profile?->display_name,
+                    'nik' => $draftData['pic']['nik'] ?? null,
+                    'position' => $draftData['pic']['position'] ?? null,
+                    'phone' => $draftData['pic']['phone'] ?? $user->phone_e164,
+                    'email' => $draftData['pic']['email'] ?? $user->email,
+                ],
+                'specializedData' => $orgProf?->specialization_json ?? $draftData['specialization'] ?? $draftData['specializedData'] ?? null,
+            ];
+
+            $documentsList = $businessApp->documents->map(function ($d) use ($businessApp) {
+                return [
+                    'id' => $d->id,
+                    'documentId' => $d->id,
+                    'documentType' => $d->doc_type,
+                    'doc_type' => $d->doc_type,
+                    'fileName' => $d->file_name ?? ($d->doc_type . ($d->mime === 'application/pdf' ? '.pdf' : '.jpg')),
+                    'originalName' => $d->file_name ?? $d->doc_type,
+                    'fileSize' => $d->size_bytes,
+                    'filePath' => "/api/v1/registration-applications/{$businessApp->id}/documents/{$d->id}/download",
+                    'status' => $d->verification_status,
+                    'verification_status' => $d->verification_status,
+                    'version' => 1,
+                    'uploadedAt' => $d->created_at?->toIso8601String(),
+                ];
+            })->values()->all();
+        } elseif ($org && $orgProf) {
+            $businessProfile = [
+                'id' => $org->id,
+                'registrationNumber' => 'REG-' . substr($org->id, 0, 8),
+                'applicantType' => $org->type === 'PROVIDER' ? 'SERVICE_PROVIDER' : $org->type,
+                'targetRole' => $org->type === 'PROVIDER' ? 'SERVICE_PROVIDER' : $org->type,
+                'status' => 'APPROVED',
+                'operationalStatus' => $org->operational_status ?? 'ONLINE_ACCEPTING',
+                'operational_status' => $org->operational_status ?? 'ONLINE_ACCEPTING',
+                'operationalHours' => $orgProf->operational_hours_json ?? [
+                    'work_days' => 'Senin - Sabtu',
+                    'open_time' => '08:00',
+                    'close_time' => '18:00',
+                ],
+                'operational_hours' => $orgProf->operational_hours_json ?? [
+                    'work_days' => 'Senin - Sabtu',
+                    'open_time' => '08:00',
+                    'close_time' => '18:00',
+                ],
+                'serviceArea' => $orgProf->service_area_json ?? [
+                    'areas' => 'Jakarta Barat, Jakarta Selatan, Tangerang Kota',
+                    'radius_km' => 25,
+                ],
+                'service_area' => $orgProf->service_area_json ?? [
+                    'areas' => 'Jakarta Barat, Jakarta Selatan, Tangerang Kota',
+                    'radius_km' => 25,
+                ],
+                'competencies' => $orgProf->competencies_json ?? [
+                    'AC Split & Inverter', 'Kompresor', 'Cuci AC & Overhaul', 'Instalasi Baru', 'Kelistrikan HVAC'
+                ],
+                'businessData' => [
+                    'brandName' => $orgProf->display_name,
+                    'legalName' => $orgProf->legal_name,
+                    'businessType' => 'PT / Badan Usaha',
+                    'nib' => !empty($orgProf->nib_ciphertext) ? Crypt::decryptString($orgProf->nib_ciphertext) : null,
+                    'npwp' => !empty($orgProf->npwp_ciphertext) ? Crypt::decryptString($orgProf->npwp_ciphertext) : null,
+                    'address' => is_array($orgProf->address_json) ? ($orgProf->address_json['address'] ?? null) : $orgProf->address_json,
+                    'city' => is_array($orgProf->address_json) ? ($orgProf->address_json['city'] ?? null) : null,
+                    'province' => is_array($orgProf->address_json) ? ($orgProf->address_json['province'] ?? null) : null,
+                    'postalCode' => is_array($orgProf->address_json) ? ($orgProf->address_json['postal_code'] ?? null) : null,
+                ],
+                'picData' => [
+                    'fullName' => $profile?->display_name,
+                    'phone' => $user->phone_e164,
+                    'email' => $user->email,
+                ],
+                'specializedData' => $orgProf->specialization_json,
+            ];
+        }
+
         return ApiResponse::success([
             'id' => $user->id,
             'name' => $profile?->display_name ?? 'Pengguna',
@@ -132,6 +278,21 @@ class ProfileOrganizationController extends Controller
             'phone_verified' => $user->phone_verified_at !== null,
             'is_staff' => $isStaff,
             'staff' => $staffData,
+            'businessProfile' => $businessProfile,
+            'business_profile' => $businessProfile,
+            'documents' => $documentsList,
+            'activeOrganization' => $org ? [
+                'id' => $org->id,
+                'type' => $org->type,
+                'status' => $org->status,
+                'operational_status' => $org->operational_status ?? 'ONLINE_ACCEPTING',
+                'operationalStatus' => $org->operational_status ?? 'ONLINE_ACCEPTING',
+                'name' => $orgProf?->display_name ?? $orgProf?->legal_name,
+                'legalName' => $orgProf?->legal_name,
+                'operational_hours' => $orgProf?->operational_hours_json,
+                'service_area' => $orgProf?->service_area_json,
+                'competencies' => $orgProf?->competencies_json,
+            ] : null,
         ], 'IDENTITY_PROFILE_LOADED', 200);
     }
 
@@ -328,11 +489,18 @@ class ProfileOrganizationController extends Controller
             'id' => $org->id,
             'type' => $org->type,
             'status' => $org->status,
+            'operational_status' => $org->operational_status ?? 'ONLINE_ACCEPTING',
+            'operationalStatus' => $org->operational_status ?? 'ONLINE_ACCEPTING',
             'display_name' => $prof?->display_name,
             'legal_name' => $prof?->legal_name,
             'business_email' => $prof?->business_email,
             'business_phone' => $prof?->business_phone,
             'address' => $prof?->address_json,
+            'operational_hours' => $prof?->operational_hours_json,
+            'operationalHours' => $prof?->operational_hours_json,
+            'service_area' => $prof?->service_area_json,
+            'serviceArea' => $prof?->service_area_json,
+            'competencies' => $prof?->competencies_json,
         ], 'IDENTITY_ORGANIZATION_LOADED', 200);
     }
 
@@ -348,27 +516,42 @@ class ProfileOrganizationController extends Controller
             return ApiResponse::error('IDENTITY_RESOURCE_NOT_FOUND', 'Organisasi tidak ditemukan.', 404);
         }
 
-        // Verify user is active OWNER of this organization
-        $isOwner = Membership::where('user_id', $user->id)
+        // Verify user is active member (OWNER / staff) of this organization
+        $isMember = Membership::where('user_id', $user->id)
             ->where('organization_id', $org->id)
-            ->where('kind', 'OWNER')
             ->where('status', 'ACTIVE')
             ->exists();
 
-        if (!$isOwner) {
-            return ApiResponse::error('IDENTITY_PERMISSION_DENIED', 'Hanya pemilik organisasi yang dapat memperbarui profil.', 403);
+        if (!$isMember && !$user->hasPermission('identity.organization.manage')) {
+            return ApiResponse::error('IDENTITY_PERMISSION_DENIED', 'Akses ditolak. Hanya anggota aktif organisasi yang dapat memperbarui profil.', 403);
         }
 
         $validated = $request->validate([
             'display_name' => 'nullable|string|max:190',
+            'name' => 'nullable|string|max:190',
+            'brandName' => 'nullable|string|max:190',
+            'legal_name' => 'nullable|string|max:190',
+            'legalName' => 'nullable|string|max:190',
             'business_email' => 'nullable|email|max:191',
             'business_phone' => 'nullable|string|max:20',
-            'address' => 'nullable|array',
+            'address' => 'nullable',
+            'operational_status' => 'nullable|string|in:ONLINE_ACCEPTING,BUSY_DELAYED,TEMPORARY_CLOSED,ONLINE,BUSY,CLOSED',
+            'operationalStatus' => 'nullable|string|in:ONLINE_ACCEPTING,BUSY_DELAYED,TEMPORARY_CLOSED,ONLINE,BUSY,CLOSED',
+            'operational_hours' => 'nullable',
+            'operationalHours' => 'nullable',
+            'service_area' => 'nullable',
+            'serviceArea' => 'nullable',
+            'competencies' => 'nullable',
         ]);
 
         $prof = $org->profile ?? new OrganizationProfile(['organization_id' => $org->id]);
-        if (isset($validated['display_name'])) {
-            $prof->display_name = $validated['display_name'];
+        $name = $validated['display_name'] ?? $validated['name'] ?? $validated['brandName'] ?? null;
+        if (!empty($name)) {
+            $prof->display_name = $name;
+        }
+        $legal = $validated['legal_name'] ?? $validated['legalName'] ?? null;
+        if (!empty($legal)) {
+            $prof->legal_name = $legal;
         }
         if (isset($validated['business_email'])) {
             $prof->business_email = $validated['business_email'];
@@ -377,9 +560,43 @@ class ProfileOrganizationController extends Controller
             $prof->business_phone = $validated['business_phone'];
         }
         if (isset($validated['address'])) {
-            $prof->address_json = $validated['address'];
+            $prof->address_json = is_array($validated['address']) ? $validated['address'] : ['address' => (string) $validated['address']];
         }
+
+        $hours = $validated['operational_hours'] ?? $validated['operationalHours'] ?? null;
+        if (isset($hours)) {
+            $prof->operational_hours_json = is_array($hours) ? $hours : json_decode($hours, true);
+        }
+
+        $area = $validated['service_area'] ?? $validated['serviceArea'] ?? null;
+        if (isset($area)) {
+            $prof->service_area_json = is_array($area) ? $area : json_decode($area, true);
+        }
+
+        $comp = $validated['competencies'] ?? null;
+        if (isset($comp)) {
+            $prof->competencies_json = is_array($comp) ? $comp : json_decode($comp, true);
+        }
+
         $prof->save();
+
+        $opStatus = $validated['operational_status'] ?? $validated['operationalStatus'] ?? null;
+        if (!empty($opStatus)) {
+            $canonicalStatus = match ($opStatus) {
+                'ONLINE' => 'ONLINE_ACCEPTING',
+                'BUSY' => 'BUSY_DELAYED',
+                'CLOSED' => 'TEMPORARY_CLOSED',
+                default => $opStatus,
+            };
+            $org->operational_status = $canonicalStatus;
+            $org->save();
+
+            OutboxService::publish('organization', $org->id, 'identity.organization.operational_status_updated.v1', [
+                'organization_id' => $org->id,
+                'operational_status' => $canonicalStatus,
+                'changed_by' => $user->id,
+            ]);
+        }
 
         AuditService::log($user->id, 'IDENTITY_ORG_PROFILE_UPDATED', 'organization_profile', $org->id, 'SUCCESS');
 
@@ -387,7 +604,65 @@ class ProfileOrganizationController extends Controller
             'id' => $org->id,
             'display_name' => $prof->display_name,
             'status' => $org->status,
+            'operational_status' => $org->operational_status,
+            'operationalStatus' => $org->operational_status,
+            'operational_hours' => $prof->operational_hours_json,
+            'service_area' => $prof->service_area_json,
+            'competencies' => $prof->competencies_json,
         ], 'IDENTITY_ORG_PROFILE_UPDATED', 200);
+    }
+
+    /**
+     * P12: Quick Update Organization Operational Status (ONLINE, BUSY, CLOSED)
+     */
+    public function updateOperationalStatus(Request $request, string $id)
+    {
+        $user = Auth::user();
+        $org = Organization::find($id);
+
+        if (!$org) {
+            return ApiResponse::error('IDENTITY_RESOURCE_NOT_FOUND', 'Organisasi tidak ditemukan.', 404);
+        }
+
+        $isMember = Membership::where('user_id', $user->id)
+            ->where('organization_id', $org->id)
+            ->where('status', 'ACTIVE')
+            ->exists();
+
+        if (!$isMember && !$user->hasPermission('identity.organization.manage')) {
+            return ApiResponse::error('IDENTITY_PERMISSION_DENIED', 'Akses ditolak.', 403);
+        }
+
+        $validated = $request->validate([
+            'status' => 'required|string|in:ONLINE_ACCEPTING,BUSY_DELAYED,TEMPORARY_CLOSED,ONLINE,BUSY,CLOSED',
+        ]);
+
+        $canonicalStatus = match ($validated['status']) {
+            'ONLINE' => 'ONLINE_ACCEPTING',
+            'BUSY' => 'BUSY_DELAYED',
+            'CLOSED' => 'TEMPORARY_CLOSED',
+            default => $validated['status'],
+        };
+
+        $org->operational_status = $canonicalStatus;
+        $org->save();
+
+        AuditService::log($user->id, 'IDENTITY_ORG_OPERATIONAL_STATUS_CHANGED', 'organization', $org->id, 'SUCCESS', [
+            'operational_status' => $canonicalStatus,
+        ]);
+
+        OutboxService::publish('organization', $org->id, 'identity.organization.operational_status_updated.v1', [
+            'organization_id' => $org->id,
+            'operational_status' => $canonicalStatus,
+            'changed_by' => $user->id,
+            'updated_at' => now()->toIso8601String(),
+        ]);
+
+        return ApiResponse::success([
+            'id' => $org->id,
+            'operational_status' => $canonicalStatus,
+            'operationalStatus' => $canonicalStatus,
+        ], 'IDENTITY_ORG_OPERATIONAL_STATUS_UPDATED', 200);
     }
 
     /**

@@ -13,7 +13,7 @@ class OtpChallengeServiceTest extends TestCase
 {
     use DatabaseTransactions;
 
-    public function test_can_create_otp_challenge_with_thirty_second_expiration(): void
+    public function test_can_create_otp_challenge_with_five_minute_expiration(): void
     {
         $email = 'test_user_' . uniqid() . '@example.com';
         $challenge = OtpService::createChallenge(null, $email, 'ACCOUNT_VERIFICATION');
@@ -23,7 +23,7 @@ class OtpChallengeServiceTest extends TestCase
         $this->assertEquals(0, $challenge->attempts);
         $this->assertNotNull($challenge->otp_hmac);
         $this->assertTrue($challenge->expires_at->gt(now()));
-        $this->assertTrue($challenge->expires_at->lte(now()->addSeconds(35)));
+        $this->assertTrue($challenge->expires_at->lte(now()->addSeconds(305)));
         $this->assertEquals(OtpService::hashIdentifier($email), $challenge->identifier_hash);
     }
 

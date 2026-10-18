@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Toast } from "@/components/feedback/Toast";
 import { Button } from "@/components/ui/Button";
 import { useActiveRole } from "@/context/RoleContext";
-import { organizationApi } from "@/lib/servioApi";
+import { organizationApi, registrationApi } from "@/lib/servioApi";
 import {
   Buildings,
   Building,
@@ -17,6 +17,7 @@ import {
   CheckCircle,
   FileText,
   DownloadSimple,
+  ArrowSquareOut,
   Bank,
   Truck,
   Package,
@@ -31,6 +32,7 @@ export default function SupplierProfilePage() {
   const [activeTab, setActiveTab] = useState<SupplierTab>("company");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [liveDocuments, setLiveDocuments] = useState<any[]>(user.documents || []);
 
   // Distributor Info initialized from user.businessProfile with seed fallback
   const [brandName, setBrandName] = useState(
@@ -123,7 +125,46 @@ export default function SupplierProfilePage() {
       if (p.email) setEmail(p.email);
       if (p.position) setPicPosition(p.position);
     }
+    if (user.documents && user.documents.length > 0) {
+      setLiveDocuments(user.documents);
+    }
   }, [user]);
+
+  // Load latest registered distributor profile & uploaded documents directly from database
+  useEffect(() => {
+    registrationApi.myApplications().then((res: any) => {
+      const items = res.data?.items || (Array.isArray(res.data) ? res.data : []);
+      if (items.length > 0) {
+        const latest = items[0];
+        if (latest.documents && latest.documents.length > 0) {
+          setLiveDocuments(latest.documents);
+        }
+        if (latest.businessData) {
+          const b = latest.businessData;
+          if (b.brandName) setBrandName(b.brandName);
+          if (b.legalName) setLegalName(b.legalName);
+          if (b.nib) setNib(b.nib);
+          if (b.npwp) setNpwp(b.npwp);
+          if (b.address) setAddress(b.address);
+          if (b.city) setCity(b.city);
+          if (b.district) setDistrict(b.district);
+          if (b.postalCode) setPostalCode(b.postalCode);
+          if (b.businessType) setBusinessType(b.businessType);
+        }
+        if (latest.picData) {
+          const p = latest.picData;
+          if (p.fullName) setPicName(p.fullName);
+          if (p.nik) setPicNik(p.nik);
+          if (p.phone) setPhone(p.phone);
+          if (p.email) setEmail(p.email);
+          if (p.position) setPicPosition(p.position);
+        }
+        if (latest.registrationNumber) {
+          setRegistrationNumber(latest.registrationNumber);
+        }
+      }
+    }).catch(() => {});
+  }, []);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -449,9 +490,11 @@ export default function SupplierProfilePage() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {(user.documents && user.documents.length > 0
-                  ? user.documents
-                  : [
+                {(liveDocuments && liveDocuments.length > 0
+                  ? liveDocuments
+                  : (user.documents && user.documents.length > 0
+                      ? user.documents
+                      : [
                     {
                       id: "doc-s1",
                       documentType: "RESPONSIBLE_PERSON_ID",
@@ -498,16 +541,24 @@ export default function SupplierProfilePage() {
                       version: 1,
                     },
                   ]
-                ).map((doc) => {
+                )
+                ).map((doc: any) => {
                   const typeLabels: Record<string, string> = {
+                    KTP_PIC: "Identitas GM / Penanggung Jawab (KTP)",
+                    NPWP_BISNIS: "NPWP Badan Usaha PT",
+                    NIB: "Nomor Induk Berusaha (NIB Principal)",
+                    FOTO_TOKO: "Foto Gudang & Logistik",
+                    FOTO_BENGKEL: "Foto Fasilitas Distributor",
+                    AKTA_PERUSAHAAN: "Akta Pendirian PT / Surat Keagenan",
                     RESPONSIBLE_PERSON_ID: "Identitas GM / Penanggung Jawab (KTP)",
                     BUSINESS_ID: "Nomor Induk Berusaha (NIB Principal)",
                     BUSINESS_ADDRESS_PROOF: "Bukti Kepemilikan Gudang Pusat",
                     TAX_DOCUMENT: "NPWP Badan Usaha PT",
                     LEGAL_DOCUMENT: "Surat Keagenan Resmi / Akta Notaris",
                   };
-                  const label = typeLabels[doc.documentType] || doc.documentType;
+                  const label = typeLabels[doc.documentType || doc.doc_type] || doc.documentType || doc.doc_type || "Dokumen Distributor";
                   const sizeMB = doc.fileSize ? (doc.fileSize / (1024 * 1024)).toFixed(2) + " MB" : "1.8 MB";
+                  const downloadUrl = doc.filePath || doc.file_path || (doc.id ? `/api/v1/registration-applications/${registrationNumber}/documents/${doc.id}/download` : "#");
 
                   return (
                     <div
@@ -524,13 +575,19 @@ export default function SupplierProfilePage() {
                               {label}
                             </span>
                             <p className="font-bold text-slate-900 text-xs truncate max-w-[190px]">
-                              {doc.fileName}
+                              {doc.fileName || label}
                             </p>
                             <span className="text-[11px] text-slate-400 font-mono">{sizeMB}</span>
                           </div>
                         </div>
 
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 shrink-0">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 shrink-0 ${
+                          doc.status === "APPROVED"
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                            : doc.status === "REPLACEMENT_REQUIRED"
+                            ? "bg-amber-50 text-amber-800 border border-amber-200"
+                            : "bg-blue-50 text-blue-700 border border-blue-200"
+                        }`}>
                           <CheckCircle size={12} weight="fill" />
                           {doc.status || "APPROVED"}
                         </span>
@@ -540,14 +597,15 @@ export default function SupplierProfilePage() {
                         <span className="text-[11px] text-slate-500 font-mono">
                           v{doc.version || 1} • Dokumen Resmi
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => setToastMessage(`Mengunduh berkas ${doc.fileName}...`)}
-                          className="text-[#0F4C81] font-bold hover:underline flex items-center gap-1"
+                        <a
+                          href={downloadUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[#0F4C81] font-bold hover:underline flex items-center gap-1 cursor-pointer"
                         >
-                          <DownloadSimple size={14} weight="bold" />
-                          <span>Unduh</span>
-                        </button>
+                          <ArrowSquareOut size={14} weight="bold" />
+                          <span>Buka Dokumen</span>
+                        </a>
                       </div>
                     </div>
                   );
