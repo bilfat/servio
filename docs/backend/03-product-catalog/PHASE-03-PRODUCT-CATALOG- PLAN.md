@@ -489,20 +489,20 @@ Price Range
 Catalog menampilkan Product yang memenuhi public visibility requirements.
 
 
-# 10. PRODUCT CARD & CATALOG PROXIMITY
+# 10. PRODUCT CARD & DISTANCE PROXIMITY
 
 Recommended card:
 
 ```text
 ┌──────────────────────────┐
-│ [⚡ Sekota]              │
+│ [📍 2.4 km]              │
 │       PRODUCT IMAGE      │
 │                          │
 ├──────────────────────────┤
 │ AC Portable 1 PK         │
 │ Rp2.500.000–3.000.000    │
 │ ACME Elektronik          │
-│ 📍 Kota Surabaya         │
+│ 📍 2.4 km                │
 └──────────────────────────┘
 ```
 
@@ -513,14 +513,15 @@ Recommended card:
 3. Displayed price / price range.
 4. Merchant/store name.
 5. Merchant city location (e.g., `Kota Surabaya`).
-6. Proximity delivery badge:
-   - `⚡ Sekota` (Badge Hijau jika toko berada di kota yang sama dengan titik pengiriman aktif pembeli).
-   - `⚠️ Luar Kota` (Badge Abu-abu/Amber jika toko berada di luar jangkauan kota pembeli).
+6. **Proximity Distance Badge**:
+   - Menampilkan jarak fisik dalam kilometer (`📍 2.4 km`) dari titik lokasi aktif pembeli/guest ke toko merchant.
+   - Menggantikan label teks generik `Sekota` agar pembeli langsung mengetahui estimasi jarak tempuh pengiriman.
 
 ## Catalog Discovery & Filter Lokasi
 
-- **Location Chip Header**: Menampilkan titik pengiriman aktif pembeli (`📍 Lokasi Pengiriman: [Kota Pembeli] [Ubah]`).
-- **Filter "Toko Sekota Saja"**: Memungkinkan pembeli menyaring katalog hanya menampilkan toko yang dapat melayani pengiriman langsung dalam kota.
+- **Location Chip Header**: Menampilkan titik pengiriman aktif pembeli (`📍 Kirim ke: [Kota Pembeli] [Ubah]`).
+- **Enforced Same-City Filter (Hanya Toko Sekota)**: Katalog publik (`/products`) secara ketat menyaring dan hanya menampilkan produk dari mitra toko yang berada di kota yang sama dengan pembeli/guest. Toko di luar kota disembunyikan otomatis dari katalog publik.
+- **Empty State Sekota**: Jika belum ada toko mitra di kota pembeli, sistem menyajikan panduan interaktif dan tombol cepat untuk mengubah titik lokasi pengiriman ke kota terdekat.
 
 ## Optional
 

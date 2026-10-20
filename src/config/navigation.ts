@@ -233,7 +233,7 @@ export const CANONICAL_NAVIGATION_SECTIONS: Partial<Record<UserRole, NavigationS
       id: "prov-settings",
       title: "Pengaturan",
       items: [
-        { id: "prov-prof", label: "Profil", href: "/provider/profile", icon: GearSix, roles: ["SERVICE_PROVIDER"] },
+        { id: "prov-prof", label: "Profil", href: "/provider/profile", icon: User, roles: ["SERVICE_PROVIDER"] },
       ],
     },
   ],
@@ -359,7 +359,7 @@ export const CANONICAL_NAVIGATION_SECTIONS: Partial<Record<UserRole, NavigationS
       id: "merch-settings",
       title: "Pengaturan",
       items: [
-        { id: "merch-prof", label: "Profil Toko", href: "/merchant/profile", icon: Storefront, roles: ["MERCHANT"] },
+        { id: "merch-prof", label: "Profil Toko", href: "/merchant/profile", icon: User, roles: ["MERCHANT"] },
       ],
     },
   ],

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
-import { getCurrentGpsPosition, reverseGeocodeLocation } from "@/lib/geoUtils";
+import { getCurrentGpsPosition, reverseGeocodeLocation, formatStoreDistance } from "@/lib/geoUtils";
 import { profileApi, ApiAddress } from "@/lib/servioApi";
 import { useActiveRole } from "@/context/RoleContext";
 
@@ -30,6 +30,7 @@ export interface DeliveryCheckResult {
 
 export interface LocationContextType {
   location: ActiveLocation;
+  activeLocation: ActiveLocation;
   savedAddresses: ApiAddress[];
   isDetectingGps: boolean;
   isLoadingAddresses: boolean;
@@ -42,6 +43,14 @@ export interface LocationContextType {
   selectSavedAddress: (address: ApiAddress) => void;
   refreshAddresses: () => Promise<void>;
   checkDeliveryAvailability: (merchantCity?: string) => DeliveryCheckResult;
+  getStoreDistance: (merchant?: {
+    city?: string;
+    latitude?: number;
+    longitude?: number;
+    id?: string;
+    name?: string;
+    district?: string;
+  }) => string;
 }
 
 const DEFAULT_LOCATION: ActiveLocation = {
@@ -89,7 +98,34 @@ export function isSameCity(city1?: string | null, city2?: string | null): boolea
   const c1 = normalizeCityName(city1);
   const c2 = normalizeCityName(city2);
   if (!c1 || !c2) return true; // Graceful fallback if unknown
-  return c1 === c2 || c1.includes(c2) || c2.includes(c1);
+  if (c1 === c2) return true;
+  if (c1.startsWith("jakarta") && c2.startsWith("jakarta")) return true;
+  return c1.includes(c2) || c2.includes(c1);
+}
+
+export function calculateStoreDistance(
+  userLoc: ActiveLocation,
+  merchant?: {
+    city?: string;
+    latitude?: number;
+    longitude?: number;
+    id?: string;
+    name?: string;
+    district?: string;
+  }
+): string {
+  const mCity = merchant?.city || "Jakarta Selatan";
+  if (!isSameCity(mCity, userLoc.city)) {
+    return "Luar Kota";
+  }
+
+  return formatStoreDistance(
+    userLoc.latitude,
+    userLoc.longitude,
+    merchant?.latitude,
+    merchant?.longitude,
+    `${merchant?.id || merchant?.name || "merch"}-${userLoc.city}-${userLoc.district || ""}`
+  );
 }
 
 const LocationContext = createContext<LocationContextType | undefined>(undefined);
@@ -315,9 +351,25 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     [location.city]
   );
 
+  // 7. Calculate distance to merchant
+  const getStoreDistance = useCallback(
+    (merchant?: {
+      city?: string;
+      latitude?: number;
+      longitude?: number;
+      id?: string;
+      name?: string;
+      district?: string;
+    }): string => {
+      return calculateStoreDistance(location, merchant);
+    },
+    [location]
+  );
+
   const value = useMemo(
     () => ({
       location,
+      activeLocation: location,
       savedAddresses,
       isDetectingGps,
       isLoadingAddresses,
@@ -330,6 +382,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       selectSavedAddress,
       refreshAddresses,
       checkDeliveryAvailability,
+      getStoreDistance,
     }),
     [
       location,
@@ -343,6 +396,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       selectSavedAddress,
       refreshAddresses,
       checkDeliveryAvailability,
+      getStoreDistance,
     ]
   );
 
@@ -356,3 +410,6 @@ export function useActiveLocation() {
   }
   return context;
 }
+
+export const useLocation = useActiveLocation;
+

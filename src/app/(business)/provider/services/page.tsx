@@ -383,7 +383,7 @@ export default function ProviderServiceOfferingsPage() {
   const handleSaveNewService = async (e: React.FormEvent, status: "ACTIVE" | "DRAFT") => {
     e.preventDefault();
     if (!selectedCatId || !selectedSubId || !serviceName.trim()) {
-      alert("Harap lengkapi kategori, subkategori, dan nama master service.");
+      alert("Harap lengkapi kategori, subkategori, dan nama layanan service.");
       return;
     }
 
@@ -1076,7 +1076,7 @@ export default function ProviderServiceOfferingsPage() {
                 <span className="px-2 py-0.5 rounded-md bg-sky-50 text-[#0F4C81] border border-sky-200 text-[10px] font-black uppercase">
                   Langkah 3
                 </span>
-                <label className="font-bold text-slate-800">Nama Master Service</label>
+                <label className="font-bold text-slate-800">Nama layanan Service</label>
               </div>
               <input
                 type="text"

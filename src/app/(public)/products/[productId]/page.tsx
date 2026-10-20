@@ -36,7 +36,7 @@ export default function ProductDetailPage() {
   const productId = (params?.productId as string) || "";
 
   const { addItem, totalItemCount } = useCart();
-  const { location: activeLocation, checkDeliveryAvailability, openLocationModal } = useActiveLocation();
+  const { location: activeLocation, checkDeliveryAvailability, openLocationModal, getStoreDistance } = useActiveLocation();
   const [product, setProduct] = useState<ApiProduct | null>(null);
   const [selectedVariant, setSelectedVariant] = useState<ApiProductVariant | null>(null);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
@@ -171,8 +171,11 @@ export default function ProductDetailPage() {
       const res = await productsApi.get(productId);
       const prod = res.data;
       setProduct(prod || null);
-      // Initially keep selectedVariant null so customer/guest sees general photos and price range
-      setSelectedVariant(null);
+      if (prod?.variants && prod.variants.length > 0) {
+        setSelectedVariant(prod.variants[0]);
+      } else {
+        setSelectedVariant(null);
+      }
       setLoading(false);
 
       // Load compatibilities if product has default variant or first variant
@@ -501,18 +504,11 @@ export default function ProductDetailPage() {
                     <span>100% Suku Cadang Asli</span>
                   </div>
 
-                  {currentSlide && (
-                    currentSlide.scope === "VARIANT" ? (
-                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#0F4C81] text-white text-[10px] font-bold shadow-md animate-in fade-in duration-200">
-                        <Sparkle size={12} weight="fill" className="text-amber-300 animate-pulse" />
-                        <span>Foto Varian: {currentSlide.variantName}</span>
-                      </div>
-                    ) : (
-                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900/80 text-white text-[10px] font-semibold backdrop-blur-xs shadow-xs">
-                        <Package size={12} weight="duotone" />
-                        <span>Foto Umum Produk</span>
-                      </div>
-                    )
+                  {currentSlide && currentSlide.scope === "VARIANT" && (
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#0F4C81] text-white text-[10px] font-bold shadow-md animate-in fade-in duration-200">
+                      <Sparkle size={12} weight="fill" className="text-amber-300 animate-pulse" />
+                      <span>Foto Varian: {currentSlide.variantName}</span>
+                    </div>
                   )}
                 </div>
 
@@ -602,13 +598,9 @@ export default function ProductDetailPage() {
                         title={slide.variantName ? `Varian: ${slide.variantName}` : `Foto Umum ${idx + 1}`}
                       >
                         <img src={slide.url} alt={`Thumbnail ${idx + 1}`} className="w-full h-full object-cover" />
-                        {slide.scope === "VARIANT" ? (
+                        {slide.scope === "VARIANT" && (
                           <span className="absolute bottom-0 inset-x-0 bg-[#0F4C81]/90 text-[8px] font-bold text-white text-center py-0.5 truncate px-0.5">
                             Varian
-                          </span>
-                        ) : (
-                          <span className="absolute bottom-0 inset-x-0 bg-slate-800/70 text-[8px] font-medium text-white text-center py-0.5 truncate px-0.5">
-                            Umum
                           </span>
                         )}
                       </button>
@@ -723,6 +715,11 @@ export default function ProductDetailPage() {
                   {product.merchant?.district && (
                     <span className="text-slate-400">({product.merchant.district})</span>
                   )}
+                  {isDeliverable && (
+                    <span className="ml-auto font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[10px]">
+                      📍 {getStoreDistance(product.merchant || { city: merchantCity, name: merchantStoreName, id: product.merchantOrganizationId })}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -767,7 +764,7 @@ export default function ProductDetailPage() {
                     <div className="flex items-center gap-2">
                       <CheckCircle size={18} className="text-emerald-600 shrink-0" weight="fill" />
                       <span className="text-xs font-bold text-emerald-950 font-heading">
-                        Pengiriman Sekota Tersedia ke {deliveryCheck.userCity}
+                        Pengiriman Sekota Tersedia ke {deliveryCheck.userCity} ({getStoreDistance(product.merchant || { city: merchantCity, name: merchantStoreName, id: product.merchantOrganizationId })})
                       </span>
                     </div>
                     <button
@@ -813,29 +810,6 @@ export default function ProductDetailPage() {
                   </button>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {/* Foto Umum Button (Resets variant selection to general photos) */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const firstGenIdx = allSlides.findIndex((s) => s.scope === "GENERAL");
-                      if (firstGenIdx !== -1) setCurrentSlideIndex(firstGenIdx);
-                      setSelectedVariant(null);
-                    }}
-                    className={`px-3 py-2 rounded-xl text-xs font-semibold transition border text-left cursor-pointer ${
-                      selectedVariant === null
-                        ? "bg-[#0F4C81] text-white border-[#0F4C81] shadow-md ring-2 ring-[#0F4C81]/30 font-bold scale-[1.02]"
-                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      {selectedVariant === null && <CheckCircle size={13} weight="fill" className="text-sky-300" />}
-                      <span>Foto Umum</span>
-                    </div>
-                    <div className={`text-[10px] mt-0.5 ${selectedVariant === null ? "text-sky-200" : "text-slate-500"}`}>
-                      Semua Varian
-                    </div>
-                  </button>
-
                   {product.variants?.map((v) => {
                     const isSelected = selectedVariant?.variantId === v.variantId;
                     return (
@@ -1264,28 +1238,6 @@ export default function ProductDetailPage() {
                   Pilihan Varian Produk
                 </h4>
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const firstGenIdx = allSlides.findIndex((s) => s.scope === "GENERAL");
-                      if (firstGenIdx !== -1) setCurrentSlideIndex(firstGenIdx);
-                      setSelectedVariant(null);
-                    }}
-                    className={`px-3 py-2 rounded-xl text-xs font-semibold transition border text-left cursor-pointer ${
-                      selectedVariant === null
-                        ? "bg-[#0F4C81] text-white border-[#0F4C81] shadow-xs font-bold"
-                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                    }`}
-                  >
-                    <div className="font-bold flex items-center gap-1">
-                      {selectedVariant === null && <CheckCircle size={12} weight="fill" className="text-sky-300" />}
-                      <span>Foto Umum</span>
-                    </div>
-                    <div className={`text-[10px] mt-0.5 ${selectedVariant === null ? "text-sky-200" : "text-slate-500"}`}>
-                      Semua Varian
-                    </div>
-                  </button>
-
                   {product.variants?.map((v) => {
                     const isSelected = selectedVariant?.variantId === v.variantId;
                     return (

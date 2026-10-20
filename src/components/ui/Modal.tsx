@@ -68,11 +68,11 @@ export function Modal({
             transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
             role="dialog"
             aria-modal="true"
-            className={`relative w-full rounded-2xl bg-white border border-slate-200/90 shadow-servio-lg z-10 overflow-hidden font-body text-left ${maxWidthStyles[size || maxWidth || "md"] || "max-w-2xl"}`}
+            className={`relative w-full max-h-[90vh] flex flex-col rounded-2xl bg-white border border-slate-200/90 shadow-servio-lg z-10 overflow-hidden font-body text-left ${maxWidthStyles[size || maxWidth || "md"] || "max-w-2xl"}`}
           >
             {/* Header */}
             {(title || description) && (
-              <div className="p-5 sm:p-6 border-b border-slate-100 flex items-start justify-between gap-4">
+              <div className="p-5 sm:p-6 border-b border-slate-100 flex items-start justify-between gap-4 shrink-0">
                 <div className="space-y-1">
                   {title && (
                     <h3 className="text-base font-bold font-display text-neutral-dark leading-tight">
@@ -99,11 +99,11 @@ export function Modal({
             )}
 
             {/* Body */}
-            <div className="p-5 sm:p-6 max-h-[70vh] overflow-y-auto">{children}</div>
+            <div className="p-5 sm:p-6 overflow-y-auto flex-1 min-h-0">{children}</div>
 
             {/* Footer */}
             {footer && (
-              <div className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50/60 flex items-center justify-end gap-2.5">
+              <div className="p-4 sm:p-5 border-t border-slate-100 bg-white/95 backdrop-blur-sm shrink-0 flex items-center justify-end gap-2.5">
                 {footer}
               </div>
             )}

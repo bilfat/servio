@@ -267,7 +267,7 @@ export default function ServicesCatalogPage() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="font-display font-bold text-base text-neutral-dark">
-            Daftar Layanan ({filteredServices.length})
+            Layanan Untuk kamu
           </h2>
         </div>
 

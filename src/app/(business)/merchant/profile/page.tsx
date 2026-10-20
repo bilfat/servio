@@ -363,7 +363,7 @@ export default function MerchantProfilePage() {
   };
 
   return (
-    <div className="space-y-6 font-body pb-20 max-w-5xl mx-auto text-left">
+    <div className="space-y-6 font-body pb-20 w-full text-left">
       {toastMessage && (
         <Toast message={toastMessage} type="success" onClose={() => setToastMessage(null)} />
       )}
@@ -448,8 +448,8 @@ export default function MerchantProfilePage() {
         <form onSubmit={handleSave} className="p-6 sm:p-8 space-y-6 text-xs">
           {/* TAB 1: INFORMASI TOKO */}
           {activeTab === "store" && (
-            <div className="space-y-4 max-w-xl">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-5 max-w-4xl">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Nomor Registrasi Toko</label>
                   <div className="flex items-center gap-1">
@@ -462,7 +462,7 @@ export default function MerchantProfilePage() {
                     <button
                       type="button"
                       onClick={() => copyToClipboard(registrationNumber, "Nomor Registrasi")}
-                      className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600"
+                      className="p-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-600 cursor-pointer"
                     >
                       <Copy size={16} />
                     </button>
@@ -472,32 +472,33 @@ export default function MerchantProfilePage() {
                   <label className="block font-bold text-slate-700 mb-1">Status Verifikasi Toko</label>
                   <div className="px-3.5 py-2.5 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 font-bold flex items-center gap-2">
                     <CheckCircle size={16} weight="fill" className="text-emerald-600" />
-                    <span>{user.businessProfile?.status || "APPROVED / AKTIF"}</span>
+                    <span>{user.businessProfile?.status || "APPROVED / TOKO RESMI"}</span>
                   </div>
                 </div>
               </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Nama Brand / Toko Komersial</label>
-                <input
-                  type="text"
-                  value={brandName}
-                  onChange={(e) => setBrandName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Nama Brand / Toko Komersial</label>
+                  <input
+                    type="text"
+                    value={brandName}
+                    onChange={(e) => setBrandName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Nama Legal Badan Usaha (UD / CV / PT)</label>
+                  <input
+                    type="text"
+                    value={legalName}
+                    onChange={(e) => setLegalName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Nama Legal Badan Usaha (UD / CV / PT)</label>
-                <input
-                  type="text"
-                  value={legalName}
-                  onChange={(e) => setLegalName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Nomor Induk Berusaha (NIB)</label>
                   <input
@@ -542,28 +543,29 @@ export default function MerchantProfilePage() {
 
           {/* TAB 2: KONTAK & PIC */}
           {activeTab === "contact" && (
-            <div className="space-y-4 max-w-xl">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Nomor WhatsApp &amp; Telepon Toko</label>
-                <input
-                  type="text"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-                />
+            <div className="space-y-5 max-w-4xl">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Nomor WhatsApp &amp; Telepon Toko</label>
+                  <input
+                    type="text"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Email Toko / Pemilik</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Email Toko / Pemilik</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Nama Pemilik / PIC Toko</label>
                   <input
@@ -584,7 +586,7 @@ export default function MerchantProfilePage() {
                 </div>
               </div>
 
-              <div>
+              <div className="max-w-md">
                 <label className="block font-bold text-slate-700 mb-1">NIK Pemilik Toko</label>
                 <input
                   type="text"
@@ -598,7 +600,7 @@ export default function MerchantProfilePage() {
 
           {/* TAB 3: ALAMAT TOKO & GUDANG (CR-04) */}
           {activeTab === "address" && (
-            <div className="space-y-5 max-w-2xl">
+            <div className="space-y-5 max-w-4xl">
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                 <div>
                   <h4 className="font-bold text-slate-900 text-sm">Alamat Usaha &amp; Lokasi Toko Fisik</h4>
@@ -696,9 +698,9 @@ export default function MerchantProfilePage() {
             </div>
           )}
 
-          {/* TAB 4: DOKUMEN TOKO TERVERIFIKASI (Section specifically requested) */}
+          {/* TAB 4: DOKUMEN TOKO TERVERIFIKASI */}
           {activeTab === "documents" && (
-            <div className="space-y-4 max-w-3xl">
+            <div className="space-y-5 max-w-5xl">
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <div>
                   <h4 className="font-bold text-slate-900 text-sm">Dokumen Toko &amp; Legalitas Usaha Dagang</h4>
@@ -706,10 +708,9 @@ export default function MerchantProfilePage() {
                     Dokumen resmi yang tersimpan di database MongoDB SERVIO dan telah disetujui oleh tim verifikator.
                   </p>
                 </div>
-                
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {(liveDocuments && liveDocuments.length > 0
                   ? liveDocuments
                   : (user.documents && user.documents.length > 0
@@ -825,9 +826,9 @@ export default function MerchantProfilePage() {
             </div>
           )}
 
-          {/* TAB 5: JAM OPERASIONAL & KURIR (Level 02+ features preserved) */}
+          {/* TAB 5: JAM OPERASIONAL & KURIR */}
           {activeTab === "operations" && (
-            <div className="space-y-4 max-w-xl">
+            <div className="space-y-5 max-w-4xl">
               {/* Level 08 Canonical Merchant Operational Availability */}
               <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-3">
                 <div className="flex items-center justify-between">
@@ -911,42 +912,44 @@ export default function MerchantProfilePage() {
               <div className="pt-3 border-t border-slate-100 space-y-3">
                 <p className="font-bold text-slate-800 text-xs">Dukungan Pengiriman Produk</p>
 
-                <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer bg-slate-50/50">
-                  <input
-                    type="checkbox"
-                    checked={instantDeliveryActive}
-                    onChange={(e) => setInstantDeliveryActive(e.target.checked)}
-                    className="rounded text-[#0F4C81]"
-                  />
-                  <div>
-                    <p className="font-bold text-slate-900">Kurir Instan / Sameday (GoSend / GrabExpress)</p>
-                    <p className="text-[11px] text-slate-500">
-                      Teknisi mitra di radius 25km dapat menerima sparepart dalam hitungan jam.
-                    </p>
-                  </div>
-                </label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <label className="flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 cursor-pointer bg-slate-50/50 hover:bg-slate-50 transition">
+                    <input
+                      type="checkbox"
+                      checked={instantDeliveryActive}
+                      onChange={(e) => setInstantDeliveryActive(e.target.checked)}
+                      className="rounded text-[#0F4C81]"
+                    />
+                    <div>
+                      <p className="font-bold text-slate-900">Kurir Instan / Sameday (GoSend / GrabExpress)</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Teknisi mitra di radius 25km dapat menerima sparepart dalam hitungan jam.
+                      </p>
+                    </div>
+                  </label>
 
-                <label className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 cursor-pointer bg-slate-50/50">
-                  <input
-                    type="checkbox"
-                    checked={cargoDeliveryActive}
-                    onChange={(e) => setCargoDeliveryActive(e.target.checked)}
-                    className="rounded text-[#0F4C81]"
-                  />
-                  <div>
-                    <p className="font-bold text-slate-900">Ekspedisi Logistik Kargo &amp; Reguler (JNE, SiCepat, Wahana)</p>
-                    <p className="text-[11px] text-slate-500">
-                      Pengiriman paket besar atau pesanan sparepart antar kota.
-                    </p>
-                  </div>
-                </label>
+                  <label className="flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 cursor-pointer bg-slate-50/50 hover:bg-slate-50 transition">
+                    <input
+                      type="checkbox"
+                      checked={cargoDeliveryActive}
+                      onChange={(e) => setCargoDeliveryActive(e.target.checked)}
+                      className="rounded text-[#0F4C81]"
+                    />
+                    <div>
+                      <p className="font-bold text-slate-900">Ekspedisi Logistik Kargo &amp; Reguler</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Pengiriman paket besar atau pesanan sparepart antar kota (JNE, SiCepat, Wahana).
+                      </p>
+                    </div>
+                  </label>
+                </div>
               </div>
             </div>
           )}
 
-          {/* TAB 6: REKENING SETTLEMENT (Level 02+ features preserved) */}
+          {/* TAB 6: REKENING SETTLEMENT */}
           {activeTab === "settlement" && (
-            <div className="space-y-4 max-w-xl">
+            <div className="space-y-5 max-w-4xl">
               <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-1">
                 <p className="font-bold">Informasi Penarikan Saldo Penjualan</p>
                 <p className="text-[11px]">
@@ -954,24 +957,26 @@ export default function MerchantProfilePage() {
                 </p>
               </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Nama Bank Penampung</label>
-                <input
-                  type="text"
-                  value={bankName}
-                  onChange={(e) => setBankName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-                />
-              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Nama Bank Penampung</label>
+                  <input
+                    type="text"
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
+                  />
+                </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Nomor Rekening Bank</label>
-                <input
-                  type="text"
-                  value={accountNumber}
-                  onChange={(e) => setAccountNumber(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-mono font-bold"
-                />
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Nomor Rekening Bank</label>
+                  <input
+                    type="text"
+                    value={accountNumber}
+                    onChange={(e) => setAccountNumber(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-mono font-bold"
+                  />
+                </div>
               </div>
 
               <div>

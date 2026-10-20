@@ -91,14 +91,14 @@ function ProductCatalogContent() {
   const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>(parseParamArray(initialSubcategoryParam));
   const [selectedBrands, setSelectedBrands] = useState<string[]>(parseParamArray(initialBrandParam));
   const [sortBy, setSortBy] = useState<ProductSortOption>("POPULAR");
-  const { location: activeLocation, openLocationModal } = useActiveLocation();
-  const [filterSameCityOnly, setFilterSameCityOnly] = useState<boolean>(false);
+  const { location: activeLocation, openLocationModal, getStoreDistance } = useActiveLocation();
 
   // State untuk Pop-up Filter Kategori, Subkategori & Merek (Multi-Select)
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [tempCategories, setTempCategories] = useState<string[]>(parseParamArray(initialCategoryParam));
   const [tempSubcategories, setTempSubcategories] = useState<string[]>(parseParamArray(initialSubcategoryParam));
   const [tempBrands, setTempBrands] = useState<string[]>(parseParamArray(initialBrandParam));
+  const [tempSortBy, setTempSortBy] = useState<ProductSortOption>("POPULAR");
   const [activePreviewCatId, setActivePreviewCatId] = useState<string | null>(null);
 
   // Debounce search query changes
@@ -215,17 +215,20 @@ function ProductCatalogContent() {
   const isFilterActive =
     selectedCategories.length > 0 ||
     selectedSubcategories.length > 0 ||
-    selectedBrands.length > 0;
+    selectedBrands.length > 0 ||
+    sortBy !== "POPULAR";
 
   const totalActiveFilterCount =
     selectedCategories.length +
     selectedSubcategories.length +
-    selectedBrands.length;
+    selectedBrands.length +
+    (sortBy !== "POPULAR" ? 1 : 0);
 
   const handleOpenFilterModal = () => {
     setTempCategories([...selectedCategories]);
     setTempSubcategories([...selectedSubcategories]);
     setTempBrands([...selectedBrands]);
+    setTempSortBy(sortBy);
     setActivePreviewCatId(selectedCategories[0] || categories[0]?.id || null);
     setIsFilterModalOpen(true);
   };
@@ -234,6 +237,7 @@ function ProductCatalogContent() {
     setSelectedCategories(tempCategories);
     setSelectedSubcategories(tempSubcategories);
     setSelectedBrands(tempBrands);
+    setSortBy(tempSortBy);
     setIsFilterModalOpen(false);
     updateUrlParams(tempCategories, tempSubcategories, tempBrands, debouncedSearch);
   };
@@ -260,9 +264,11 @@ function ProductCatalogContent() {
     setSelectedCategories([]);
     setSelectedSubcategories([]);
     setSelectedBrands([]);
+    setSortBy("POPULAR");
     setTempCategories([]);
     setTempSubcategories([]);
     setTempBrands([]);
+    setTempSortBy("POPULAR");
     updateUrlParams([], [], [], debouncedSearch);
   };
 
@@ -309,13 +315,11 @@ function ProductCatalogContent() {
       });
     }
 
-    // Filter by Same City Only
-    if (filterSameCityOnly) {
-      list = list.filter((p) => {
-        const mCity = p.merchant?.city || p.merchantCity || "Jakarta Selatan";
-        return isSameCity(mCity, activeLocation.city);
-      });
-    }
+    // Enforce: Hanya menampilkan toko yang sekota dengan lokasi aktif pembeli/guest (luar kota tidak ditampilkan)
+    list = list.filter((p) => {
+      const mCity = p.merchant?.city || p.merchantCity || "Jakarta Selatan";
+      return isSameCity(mCity, activeLocation.city);
+    });
 
     if (sortBy === "PRICE_LOW") {
       return list.sort((a, b) => (a.minPrice || 0) - (b.minPrice || 0));
@@ -324,10 +328,14 @@ function ProductCatalogContent() {
       return list.sort((a, b) => (b.maxPrice || b.minPrice || 0) - (a.maxPrice || a.minPrice || 0));
     }
     return list;
-  }, [products, selectedCategories, selectedSubcategories, selectedBrands, categories, subcategories, sortBy, filterSameCityOnly, activeLocation.city]);
+  }, [products, selectedCategories, selectedSubcategories, selectedBrands, categories, subcategories, sortBy, activeLocation.city]);
 
   const sortedRecommendations = useMemo(() => {
-    const list = [...recommendations];
+    // Hanya rekomendasikan toko yang sekota dengan lokasi pembeli
+    const list = [...recommendations].filter((p) => {
+      const mCity = p.merchant?.city || p.merchantCity || "Jakarta Selatan";
+      return isSameCity(mCity, activeLocation.city);
+    });
     if (sortBy === "PRICE_LOW") {
       return list.sort((a, b) => (a.minPrice || 0) - (b.minPrice || 0));
     }
@@ -335,7 +343,7 @@ function ProductCatalogContent() {
       return list.sort((a, b) => (b.maxPrice || b.minPrice || 0) - (a.maxPrice || a.minPrice || 0));
     }
     return list;
-  }, [recommendations, sortBy]);
+  }, [recommendations, sortBy, activeLocation.city]);
 
   const handleSelectShop = (shop: ApiShopProfile) => {
     setSelectedShop(shop);
@@ -435,23 +443,25 @@ function ProductCatalogContent() {
                     <span className="truncate max-w-[120px]">{p.merchantName || "Toko Mitra Resmi"}</span>
                   </button>
 
-                  {/* In-City vs Out-of-City Delivery Pill */}
-                  {isProdSameCity ? (
-                    <span
-                      className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200"
-                      title={`Toko ini berada di ${pMerchantCity} (Sekota dengan lokasi Anda)`}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      Sekota
-                    </span>
-                  ) : (
-                    <span
-                      className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200"
-                      title={`Toko di ${pMerchantCity}. Tidak dapat dikirim ke ${activeLocation.city}`}
-                    >
-                      Luar Kota
-                    </span>
-                  )}
+                  {/* Distance Pill: Menampilkan Jarak km dari Lokasi User (Bukan teks "Sekota") */}
+                  {(() => {
+                    const distanceStr = getStoreDistance(
+                      p.merchant || {
+                        city: pMerchantCity,
+                        name: p.merchantName,
+                        id: p.merchantOrganizationId,
+                      }
+                    );
+                    return (
+                      <span
+                        className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 shadow-2xs shrink-0"
+                        title={`Jarak toko dari titik pengiriman Anda di ${activeLocation.city}: ${distanceStr}`}
+                      >
+                        <MapPin size={10} weight="fill" className="text-emerald-600 shrink-0" />
+                        <span>{distanceStr}</span>
+                      </span>
+                    );
+                  })()}
                 </div>
               );
             })()}
@@ -475,8 +485,8 @@ function ProductCatalogContent() {
                   (p.minPrice !== undefined && p.maxPrice !== undefined && p.minPrice !== p.maxPrice
                     ? `Rp${p.minPrice.toLocaleString("id-ID")} - Rp${p.maxPrice.toLocaleString("id-ID")}`
                     : p.minPrice
-                    ? `Rp${p.minPrice.toLocaleString("id-ID")}`
-                    : "Rp0")}
+                      ? `Rp${p.minPrice.toLocaleString("id-ID")}`
+                      : "Rp0")}
               </p>
             </div>
 
@@ -574,26 +584,24 @@ function ProductCatalogContent() {
                 )}
               </div>
 
-              {/* Tombol Filter Produk & Merek (Sebelah Search) */}
+              {/* Tombol Filter (Sebelah Search) */}
               <button
                 type="button"
                 onClick={handleOpenFilterModal}
-                className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                  isFilterActive
-                    ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm ring-2 ring-emerald-500/25"
-                    : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300 shadow-xs"
-                }`}
+                className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${isFilterActive
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm ring-2 ring-emerald-500/25"
+                  : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300 shadow-xs"
+                  }`}
               >
                 {isFilterActive ? (
                   <>
-                    {/* Bentuk ceklis saat filter sudah dipilih */}
                     <CheckCircle size={17} weight="fill" className="text-white shrink-0" />
-                    <span>Filter Aktif ({totalActiveFilterCount})</span>
+                    <span>Filter ({totalActiveFilterCount})</span>
                   </>
                 ) : (
                   <>
                     <Funnel size={16} weight="bold" className="text-[#0F4C81] shrink-0" />
-                    <span>Filter Produk &amp; Merek</span>
+                    <span>Filter</span>
                   </>
                 )}
                 <CaretDown size={13} weight="bold" className={isFilterActive ? "text-emerald-100" : "text-slate-400"} />
@@ -605,6 +613,8 @@ function ProductCatalogContent() {
                   <Tag size={13} weight="bold" className="text-emerald-700 shrink-0" />
                   <span className="truncate">
                     {[
+                      sortBy === "PRICE_LOW" ? "Harga Terendah" : null,
+                      sortBy === "PRICE_HIGH" ? "Harga Tertinggi" : null,
                       selectedCategories.length > 0 ? `${selectedCategories.length} Kategori` : null,
                       selectedSubcategories.length > 0 ? `${selectedSubcategories.length} Sub` : null,
                       selectedBrands.length > 0 ? `${selectedBrands.length} Merek` : null,
@@ -613,7 +623,7 @@ function ProductCatalogContent() {
                   <button
                     type="button"
                     onClick={handleClearAllFilters}
-                    className="text-emerald-700 hover:text-emerald-900 p-0.5 rounded-md hover:bg-emerald-200/60 transition shrink-0 ml-0.5"
+                    className="text-emerald-700 hover:text-emerald-900 p-0.5 rounded-md hover:bg-emerald-200/60 transition shrink-0 ml-0.5 cursor-pointer"
                     title="Hapus semua filter"
                   >
                     <X size={12} weight="bold" />
@@ -622,7 +632,7 @@ function ProductCatalogContent() {
               )}
             </div>
 
-            {/* Location & Sort Group */}
+            {/* Location Group */}
             <div className="flex flex-wrap items-center gap-2 self-end lg:self-auto shrink-0">
               {/* Quick Location Badge */}
               <button
@@ -635,36 +645,6 @@ function ProductCatalogContent() {
                 <span className="truncate max-w-[130px]">Kirim ke: <strong>{activeLocation.city}</strong></span>
                 <span className="text-[10px] text-sky-700 underline font-bold">Ubah</span>
               </button>
-
-              {/* Fast Filter Toko Sekota Saja */}
-              <button
-                type="button"
-                onClick={() => setFilterSameCityOnly(!filterSameCityOnly)}
-                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer border ${
-                  filterSameCityOnly
-                    ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/25"
-                    : "bg-white hover:bg-slate-50 text-slate-700 border-slate-200 shadow-2xs"
-                }`}
-                title={`Hanya tampilkan produk dari mitra toko yang berada di ${activeLocation.city}`}
-              >
-                <CheckCircle size={15} weight={filterSameCityOnly ? "fill" : "bold"} className={filterSameCityOnly ? "text-white" : "text-emerald-600"} />
-                <span>Toko Sekota Saja</span>
-              </button>
-
-              {/* Sort Dropdown */}
-              <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <ArrowsDownUp size={16} />
-                <span>Urutkan:</span>
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as ProductSortOption)}
-                  className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 cursor-pointer"
-                >
-                  <option value="POPULAR">Paling Relevan</option>
-                  <option value="PRICE_LOW">Harga Terendah</option>
-                  <option value="PRICE_HIGH">Harga Tertinggi</option>
-                </select>
-              </div>
             </div>
           </div>
 
@@ -675,6 +655,22 @@ function ProductCatalogContent() {
                 <SlidersHorizontal size={13} className="text-[#0F4C81]" />
                 Filter Aktif ({totalActiveFilterCount}):
               </span>
+
+              {/* Chip Urutan Harga jika bukan POPULAR */}
+              {sortBy !== "POPULAR" && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-700 text-white font-semibold text-xs shadow-xs">
+                  <ArrowsDownUp size={12} weight="bold" />
+                  <span>{sortBy === "PRICE_LOW" ? "Harga: Terendah" : "Harga: Tertinggi"}</span>
+                  <button
+                    type="button"
+                    onClick={() => setSortBy("POPULAR")}
+                    className="p-0.5 hover:bg-sky-600 rounded-full cursor-pointer ml-0.5 transition"
+                    title="Kembalikan urutan normal"
+                  >
+                    <X size={11} weight="bold" />
+                  </button>
+                </span>
+              )}
 
               {selectedCategories.map((catId) => {
                 const cat = categories.find((c) => c.id === catId);
@@ -921,14 +917,26 @@ function ProductCatalogContent() {
           {loading ? (
             <div className="p-20 text-center text-xs text-slate-400">Memuat katalog resmi SERVIO...</div>
           ) : sortedProducts.length === 0 ? (
-            <div className="bg-white rounded-3xl p-12 text-center border border-slate-200/80 max-w-md mx-auto space-y-3">
-              <Package size={48} className="text-slate-300 mx-auto" />
-              <h3 className="text-sm font-bold text-slate-700">Tidak ada produk ditemukan</h3>
-              <p className="text-xs text-slate-400">
-                {selectedShop
-                  ? `Toko ${selectedShop.name} belum memiliki produk aktif di kategori ini.`
-                  : "Coba ubah kata kunci pencarian atau pilih kategori lain."}
-              </p>
+            <div className="bg-white rounded-3xl p-12 text-center border border-slate-200/80 max-w-md mx-auto space-y-4">
+              <div className="w-16 h-16 rounded-3xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+                <Storefront size={32} weight="duotone" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Belum Ada Toko di {activeLocation.city}</h3>
+                <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                  {selectedShop
+                    ? `Toko ${selectedShop.name} belum memiliki produk aktif di kota ${activeLocation.city}.`
+                    : `Saat ini belum ada toko mitra yang aktif di kota ${activeLocation.city}. Silakan ganti titik lokasi pengiriman untuk menemukan suku cadang di kota terdekat.`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={openLocationModal}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0F4C81] text-white text-xs font-bold hover:bg-[#0c3c66] transition shadow-xs cursor-pointer mx-auto"
+              >
+                <MapPin size={14} weight="bold" />
+                <span>Ganti Titik Lokasi Pengiriman</span>
+              </button>
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-4 sm:gap-6">
@@ -966,16 +974,140 @@ function ProductCatalogContent() {
         )}
       </div>
 
-      {/* Pop-up Modal Filter Kategori & Merek Produk (Multi-Select) */}
+      {/* Pop-up Modal Filter (Multi-Select) */}
       <Modal
         isOpen={isFilterModalOpen}
         onClose={() => setIsFilterModalOpen(false)}
-        title="Filter Katalog Produk & Merek (Multi-Pilih)"
+        title="Filter Katalog Produk"
         maxWidth="3xl"
+        footer={
+          <div className="w-full flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => {
+                setTempCategories([]);
+                setTempSubcategories([]);
+                setTempBrands([]);
+                setTempSortBy("POPULAR");
+              }}
+              className="text-xs font-bold text-slate-500 hover:text-slate-800 transition cursor-pointer"
+            >
+              Reset Semua Filter
+            </button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsFilterModalOpen(false)}
+              >
+                Batal
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleApplyFilter}
+                className="bg-[#0F4C81] hover:bg-[#0c3c66] text-white font-bold shadow-xs"
+              >
+                Terapkan Filter
+              </Button>
+            </div>
+          </div>
+        }
       >
         <div className="space-y-5 font-body">
           {/* ========================================================================= */}
-          {/* SECTION 1: FILTER BERDASARKAN MEREK (MULTI-SELECT CHIP MEREK)            */}
+          {/* SECTION 1: FILTER HARGA & URUTAN (Harga Terendah / Tertinggi / Relevan)   */}
+          {/* ========================================================================= */}
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-sky-50/80 via-blue-50/40 to-sky-50/60 border border-sky-200/80 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-xl bg-sky-500/20 text-[#0F4C81] flex items-center justify-center shrink-0 shadow-2xs">
+                  <ArrowsDownUp size={16} weight="bold" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-bold text-slate-900">Urutkan &amp; Filter Harga</h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-100 text-[#0F4C81] font-bold border border-sky-300">
+                      Urutan Harga
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Urutkan produk berdasarkan harga terendah, harga tertinggi, atau rekomendasi platform.
+                  </p>
+                </div>
+              </div>
+              {tempSortBy !== "POPULAR" && (
+                <button
+                  type="button"
+                  onClick={() => setTempSortBy("POPULAR")}
+                  className="text-xs text-[#0F4C81] hover:underline font-bold cursor-pointer shrink-0 ml-2"
+                >
+                  Reset Urutan
+                </button>
+              )}
+            </div>
+
+            {/* Opsi Pengurutan Harga */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+              {[
+                {
+                  id: "POPULAR",
+                  label: "Paling Relevan",
+                  desc: "Rekomendasi platform & toko terdekat",
+                  icon: Sparkle,
+                },
+                {
+                  id: "PRICE_LOW",
+                  label: "Harga Terendah",
+                  desc: "Mulai dari suku cadang termurah",
+                  icon: ArrowsDownUp,
+                },
+                {
+                  id: "PRICE_HIGH",
+                  label: "Harga Tertinggi",
+                  desc: "Mulai dari suku cadang premium",
+                  icon: Tag,
+                },
+              ].map((opt) => {
+                const isSelected = tempSortBy === opt.id;
+                const IconComponent = opt.icon;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setTempSortBy(opt.id as ProductSortOption)}
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-2.5 ${
+                      isSelected
+                        ? "bg-white border-[#0F4C81] shadow-sm ring-2 ring-[#0F4C81]/25"
+                        : "bg-white/80 border-slate-200/90 hover:bg-white hover:border-slate-300"
+                    }`}
+                  >
+                    <div
+                      className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                        isSelected
+                          ? "bg-[#0F4C81] text-white"
+                          : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      <IconComponent size={14} weight="bold" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className={`text-xs font-bold ${isSelected ? "text-[#0F4C81]" : "text-slate-800"}`}>
+                          {opt.label}
+                        </span>
+                        {isSelected && <Check size={13} weight="bold" className="text-[#0F4C81]" />}
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-1">{opt.desc}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ========================================================================= */}
+          {/* SECTION 2: FILTER BERDASARKAN MEREK (MULTI-SELECT CHIP MEREK)            */}
           {/* ========================================================================= */}
           <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50/80 via-orange-50/40 to-amber-50/60 border border-amber-200/80 space-y-3">
             <div className="flex items-center justify-between">
@@ -1012,11 +1144,10 @@ function ProductCatalogContent() {
               <button
                 type="button"
                 onClick={() => setTempBrands([])}
-                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
-                  tempBrands.length === 0
-                    ? "bg-[#0F4C81] text-white shadow-xs ring-2 ring-[#0F4C81]/25"
-                    : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 hover:border-slate-300"
-                }`}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${tempBrands.length === 0
+                  ? "bg-[#0F4C81] text-white shadow-xs ring-2 ring-[#0F4C81]/25"
+                  : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 hover:border-slate-300"
+                  }`}
               >
                 <span>Semua Merek</span>
               </button>
@@ -1033,11 +1164,10 @@ function ProductCatalogContent() {
                         isSelected ? prev.filter((x) => x !== b.name) : [...prev, b.name]
                       );
                     }}
-                    className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs transition-all cursor-pointer ${
-                      isSelected
-                        ? "bg-amber-500 text-slate-950 font-bold shadow-xs ring-2 ring-amber-500/40"
-                        : "bg-white text-slate-700 border border-slate-200/90 hover:bg-slate-100 hover:border-slate-300 font-semibold"
-                    }`}
+                    className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs transition-all cursor-pointer ${isSelected
+                      ? "bg-amber-500 text-slate-950 font-bold shadow-xs ring-2 ring-amber-500/40"
+                      : "bg-white text-slate-700 border border-slate-200/90 hover:bg-slate-100 hover:border-slate-300 font-semibold"
+                      }`}
                   >
                     <div className="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
                       {b.logo_url || b.logoUrl ? (
@@ -1109,11 +1239,10 @@ function ProductCatalogContent() {
                     setTempCategories([]);
                     setTempSubcategories([]);
                   }}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
-                    tempCategories.length === 0
-                      ? "bg-[#0F4C81] text-white shadow-xs"
-                      : "text-slate-700 hover:bg-slate-100"
-                  }`}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${tempCategories.length === 0
+                    ? "bg-[#0F4C81] text-white shadow-xs"
+                    : "text-slate-700 hover:bg-slate-100"
+                    }`}
                 >
                   <div className="flex items-center gap-2.5">
                     <Package size={18} weight={tempCategories.length === 0 ? "fill" : "regular"} />
@@ -1132,11 +1261,10 @@ function ProductCatalogContent() {
                     <div
                       key={cat.id}
                       onClick={() => setActivePreviewCatId(cat.id)}
-                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all text-left cursor-pointer border ${
-                        isPreviewed
-                          ? "border-[#0F4C81]/30 bg-sky-50/60 ring-1 ring-[#0F4C81]/20"
-                          : "border-transparent hover:bg-slate-100"
-                      } ${isChecked ? "text-[#0F4C81] font-bold" : "text-slate-700"}`}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all text-left cursor-pointer border ${isPreviewed
+                        ? "border-[#0F4C81]/30 bg-sky-50/60 ring-1 ring-[#0F4C81]/20"
+                        : "border-transparent hover:bg-slate-100"
+                        } ${isChecked ? "text-[#0F4C81] font-bold" : "text-slate-700"}`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0 pr-2">
                         {/* Custom Checkbox */}
@@ -1149,11 +1277,10 @@ function ProductCatalogContent() {
                               isChecked ? prev.filter((id) => id !== cat.id) : [...prev, cat.id]
                             );
                           }}
-                          className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
-                            isChecked
-                              ? "bg-[#0F4C81] border-[#0F4C81] text-white"
-                              : "border-slate-300 bg-white hover:border-[#0F4C81]"
-                          }`}
+                          className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-colors ${isChecked
+                            ? "bg-[#0F4C81] border-[#0F4C81] text-white"
+                            : "border-slate-300 bg-white hover:border-[#0F4C81]"
+                            }`}
                         >
                           {isChecked && <Check size={11} weight="bold" />}
                         </button>
@@ -1239,19 +1366,17 @@ function ProductCatalogContent() {
                                     setTempCategories((prev) => [...prev, currentPreviewCat.id]);
                                   }
                                 }}
-                                className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs font-semibold transition text-left border cursor-pointer ${
-                                  isSubChecked
-                                    ? "bg-emerald-50 border-emerald-500 text-emerald-900 font-bold ring-1 ring-emerald-500/30"
-                                    : "border-slate-200/80 hover:bg-slate-50 text-slate-700"
-                                }`}
+                                className={`w-full flex items-center justify-between p-2.5 rounded-xl text-xs font-semibold transition text-left border cursor-pointer ${isSubChecked
+                                  ? "bg-emerald-50 border-emerald-500 text-emerald-900 font-bold ring-1 ring-emerald-500/30"
+                                  : "border-slate-200/80 hover:bg-slate-50 text-slate-700"
+                                  }`}
                               >
                                 <div className="flex items-center gap-2">
                                   <div
-                                    className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
-                                      isSubChecked
-                                        ? "bg-emerald-600 border-emerald-600 text-white"
-                                        : "border-slate-300 bg-white"
-                                    }`}
+                                    className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 transition-colors ${isSubChecked
+                                      ? "bg-emerald-600 border-emerald-600 text-white"
+                                      : "border-slate-300 bg-white"
+                                      }`}
                                   >
                                     {isSubChecked && <Check size={11} weight="bold" />}
                                   </div>
@@ -1274,37 +1399,6 @@ function ProductCatalogContent() {
             </div>
           </div>
 
-          {/* Modal Footer */}
-          <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => {
-                setTempCategories([]);
-                setTempSubcategories([]);
-                setTempBrands([]);
-              }}
-              className="text-xs font-bold text-slate-500 hover:text-slate-800 transition cursor-pointer"
-            >
-              Reset Semua Filter
-            </button>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsFilterModalOpen(false)}
-              >
-                Batal
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={handleApplyFilter}
-                className="bg-[#0F4C81] hover:bg-[#0c3c66] text-white font-bold"
-              >
-                Terapkan Filter
-              </Button>
-            </div>
-          </div>
         </div>
       </Modal>
     </div>

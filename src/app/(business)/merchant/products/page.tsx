@@ -98,6 +98,7 @@ function MerchantProductsContent() {
   const [formVariants, setFormVariants] = useState<Array<{ name: string; price: number; stock: number; variantFiles?: File[] }>>([
     { name: "Varian Standard", price: 100000, stock: 10, variantFiles: [] },
   ]);
+  const [isCreatingProduct, setIsCreatingProduct] = useState(false);
 
   // Warranty Policy Configuration State (Step 7)
   const [warrantyDuration, setWarrantyDuration] = useState(12);
@@ -240,6 +241,17 @@ function MerchantProductsContent() {
     loadData();
   }, [loadData]);
 
+  useEffect(() => {
+    if (!isAddModalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setIsAddModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isAddModalOpen]);
+
   const statusCounts = useMemo(() => {
     return {
       ALL: products.length,
@@ -277,6 +289,7 @@ function MerchantProductsContent() {
     const selectedSubcat = subcategories.find((s) => s.id === formSubcategoryId);
 
     try {
+      setIsCreatingProduct(true);
       const res = await productsApi.create({
         categoryId: formCategoryId,
         categoryName: selectedCat?.name || "Sparepart AC & Pendingin",
@@ -349,6 +362,8 @@ function MerchantProductsContent() {
     } catch (err: unknown) {
       const e = err as Error;
       setFormError(e.message || "Gagal membuat produk.");
+    } finally {
+      setIsCreatingProduct(false);
     }
   };
 
@@ -1059,66 +1074,103 @@ function MerchantProductsContent() {
 
       {/* Add Product Modal */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 space-y-6 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">Tambah Listing Produk &amp; Varian</h2>
-              <p className="text-xs text-slate-500 mt-1">
-                Daftarkan suku cadang resmi dan tentukan harga serta stok untuk masing-masing varian
-              </p>
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-hidden"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsAddModalOpen(false);
+          }}
+        >
+          <form
+            onSubmit={handleCreateProduct}
+            className="bg-white rounded-3xl max-w-4xl w-full flex flex-col max-h-[90vh] shadow-2xl border border-slate-100 overflow-hidden font-body animate-in fade-in zoom-in-95 duration-150"
+          >
+            {/* 1. Header (Sticky Top) dengan Tanda X Close */}
+            <div className="px-6 py-4 sm:px-8 sm:py-5 border-b border-slate-100 flex items-start justify-between gap-4 shrink-0 bg-white">
+              <div>
+                <h2 className="text-base sm:text-lg font-bold text-slate-900 font-display">
+                  Tambah Listing Produk &amp; Varian
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Daftarkan suku cadang resmi dan tentukan harga serta stok untuk masing-masing varian
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddModalOpen(false)}
+                className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors shrink-0 cursor-pointer"
+                title="Tutup dialog (Esc)"
+                aria-label="Tutup dialog"
+              >
+                <X size={20} weight="bold" />
+              </button>
             </div>
 
-            {formError && (
-              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-                <WarningCircle size={16} />
-                <span>{formError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleCreateProduct} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Kategori Produk *</label>
-                  <select
-                    value={formCategoryId}
-                    onChange={(e) => handleCategoryChange(e.target.value)}
-                    required
-                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
-                  >
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
+            {/* 2. Scrollable Body */}
+            <div className="p-6 sm:p-8 space-y-6 overflow-y-auto flex-1 min-h-0 text-xs">
+              {formError && (
+                <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                  <WarningCircle size={16} className="shrink-0" weight="bold" />
+                  <span>{formError}</span>
                 </div>
+              )}
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Sub Kategori Produk *</label>
-                  <select
-                    value={formSubcategoryId}
-                    onChange={(e) => setFormSubcategoryId(e.target.value)}
-                    required
-                    disabled={availableFormSubcategories.length === 0}
-                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
-                  >
-                    {availableFormSubcategories.length === 0 ? (
-                      <option value="">Tidak ada subkategori</option>
-                    ) : (
-                      availableFormSubcategories.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </div>
-              </div>
+              {/* SECTION 1: INFORMASI PRODUK & FOTO (2 KOLOM KESAMPING) */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                {/* Kolom Kiri: Kategori, Subkategori, Nama & Merek (7 Kolom) */}
+                <div className="lg:col-span-7 space-y-3.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Kategori Produk *</label>
+                      <select
+                        value={formCategoryId}
+                        onChange={(e) => handleCategoryChange(e.target.value)}
+                        required
+                        className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
+                      >
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Sub Kategori Produk *</label>
+                      <select
+                        value={formSubcategoryId}
+                        onChange={(e) => setFormSubcategoryId(e.target.value)}
+                        required
+                        disabled={availableFormSubcategories.length === 0}
+                        className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                      >
+                        {availableFormSubcategories.length === 0 ? (
+                          <option value="">Tidak ada subkategori</option>
+                        ) : (
+                          availableFormSubcategories.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </div>
+                  </div>
+
                   <div>
-                    <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Nama Produk *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Misal: Freon R32 Refrigerant Eco-Friendly"
+                      value={formName}
+                      onChange={(e) => setFormName(e.target.value)}
+                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
                       <label className="block text-xs font-bold text-slate-700">
                         Merek Produk <span className="text-slate-400 font-normal">(Opsional)</span>
                       </label>
@@ -1126,217 +1178,278 @@ function MerchantProductsContent() {
                         Opsional
                       </span>
                     </div>
-                    <p className="text-[10px] text-slate-500 mt-0.5">
-                      Pilih merek resmi atau kosongkan jika produk adalah barang tanpa merek / OEM umum.
+                    <select
+                      value={isCustomBrand ? "CUSTOM" : formBrandName}
+                      onChange={(e) => {
+                        if (e.target.value === "CUSTOM") {
+                          setIsCustomBrand(true);
+                          setFormBrandName("");
+                        } else {
+                          setIsCustomBrand(false);
+                          setFormBrandName(e.target.value);
+                        }
+                      }}
+                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
+                    >
+                      <option value="">-- Tanpa Merek / OEM / Polos --</option>
+                      {brands.length > 0 && (
+                        <optgroup label="Merek Resmi Terdaftar (Brand Registry)">
+                          {brands.map((b) => (
+                            <option key={b.id} value={b.name}>
+                              {b.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      <option value="CUSTOM">+ Tulis Merek Lainnya (Ketik Manual)...</option>
+                    </select>
+
+                    {isCustomBrand && (
+                      <input
+                        type="text"
+                        placeholder="Ketik nama merek produk..."
+                        value={formBrandName}
+                        onChange={(e) => setFormBrandName(e.target.value)}
+                        autoFocus
+                        className="w-full text-xs p-2.5 bg-white border border-sky-300 rounded-xl focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none mt-2"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {/* Kolom Kanan: Deskripsi & Foto Umum (5 Kolom) */}
+                <div className="lg:col-span-5 space-y-3.5 flex flex-col justify-between">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Deskripsi Produk</label>
+                    <textarea
+                      rows={3}
+                      placeholder="Keterangan spesifikasi teknis dan kompatibilitas unit..."
+                      value={formDescription}
+                      onChange={(e) => setFormDescription(e.target.value)}
+                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none resize-none"
+                    ></textarea>
+                  </div>
+
+                  {/* Foto Umum Produk Card */}
+                  <div className="p-3 bg-sky-50/60 border border-sky-200/80 rounded-2xl space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <ImageIcon size={15} className="text-[#0F4C81]" weight="bold" />
+                        <label className="text-xs font-bold text-slate-800">
+                          Foto Umum Produk <span className="text-slate-400 font-normal">(Bisa &gt; 1)</span>
+                        </label>
+                      </div>
+                      {formGeneralFiles.length > 0 && (
+                        <span className="text-[10px] font-bold text-[#0F4C81] bg-white px-2 py-0.5 rounded-full border border-sky-200">
+                          {formGeneralFiles.length} foto
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-500 leading-tight">
+                      Foto default produk yang muncul pertama kali di etalase katalog.
+                    </p>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={(e) => setFormGeneralFiles(Array.from(e.target.files || []))}
+                      className="w-full text-[11px] p-1.5 bg-white border border-slate-200 rounded-xl file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-[#0F4C81] file:text-white hover:file:bg-[#0B3860] cursor-pointer"
+                    />
+                    {formGeneralFiles.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap pt-1 max-h-16 overflow-y-auto">
+                        {formGeneralFiles.map((f, i) => (
+                          <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] text-slate-700 font-medium">
+                            <span className="truncate max-w-[100px]">{f.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => setFormGeneralFiles(formGeneralFiles.filter((_, idx) => idx !== i))}
+                              className="text-slate-400 hover:text-rose-600 cursor-pointer"
+                            >
+                              <X size={10} weight="bold" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: DAFTAR VARIAN, HARGA, STOK & FOTO VARIAN (TABEL LEGA) */}
+              <div className="pt-4 border-t border-slate-100 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <Stack size={16} className="text-[#0F4C81]" weight="bold" />
+                      <span>Daftar Varian, Harga, Stok &amp; Foto Varian *</span>
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      Tentukan nama spesifik varian, harga jual resmi, stok unit, dan foto opsional.
                     </p>
                   </div>
-                  <select
-                    value={isCustomBrand ? "CUSTOM" : formBrandName}
-                    onChange={(e) => {
-                      if (e.target.value === "CUSTOM") {
-                        setIsCustomBrand(true);
-                        setFormBrandName("");
-                      } else {
-                        setIsCustomBrand(false);
-                        setFormBrandName(e.target.value);
-                      }
-                    }}
-                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
-                  >
-                    <option value="">-- Tanpa Merek / OEM / Polos --</option>
-                    {brands.length > 0 && (
-                      <optgroup label="Merek Resmi Terdaftar (Brand Registry)">
-                        {brands.map((b) => (
-                          <option key={b.id} value={b.name}>
-                            {b.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                    <option value="CUSTOM">+ Tulis Merek Lainnya (Ketik Manual)...</option>
-                  </select>
-
-                  {isCustomBrand && (
-                    <input
-                      type="text"
-                      placeholder="Ketik nama merek produk..."
-                      value={formBrandName}
-                      onChange={(e) => setFormBrandName(e.target.value)}
-                      autoFocus
-                      className="w-full text-xs p-2.5 bg-white border border-sky-300 rounded-xl focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none animate-in fade-in slide-in-from-top-1"
-                    />
-                  )}
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Nama Produk *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Misal: Freon R32 Refrigerant Eco-Friendly"
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Deskripsi Produk</label>
-                <textarea
-                  rows={2}
-                  placeholder="Keterangan spesifikasi teknis dan kompatibilitas unit..."
-                  value={formDescription}
-                  onChange={(e) => setFormDescription(e.target.value)}
-                  className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                ></textarea>
-              </div>
-
-              {/* 1. OPSI TAMBAH FOTO UMUM PRODUK */}
-              <div className="p-3.5 bg-sky-50/60 border border-sky-200/80 rounded-2xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <ImageIcon size={16} className="text-[#0F4C81]" weight="bold" />
-                    <label className="text-xs font-bold text-slate-800">
-                      Foto Umum Produk <span className="text-slate-400 font-normal">(Bisa Lebih dari 1)</span>
-                    </label>
-                  </div>
-                  {formGeneralFiles.length > 0 && (
-                    <span className="text-[10px] font-bold text-[#0F4C81] bg-white px-2 py-0.5 rounded-full border border-sky-200">
-                      {formGeneralFiles.length} foto dipilih
-                    </span>
-                  )}
-                </div>
-                <p className="text-[11px] text-slate-500">
-                  Foto umum adalah foto default produk yang muncul pertama kali di katalog pembeli.
-                </p>
-                <input
-                  type="file"
-                  multiple
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={(e) => setFormGeneralFiles(Array.from(e.target.files || []))}
-                  className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl file:mr-2.5 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-[#0F4C81] file:text-white hover:file:bg-[#0B3860] cursor-pointer"
-                />
-                {formGeneralFiles.length > 0 && (
-                  <div className="flex items-center gap-1.5 flex-wrap pt-1">
-                    {formGeneralFiles.map((f, i) => (
-                      <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] text-slate-700 font-medium">
-                        <span className="truncate max-w-[130px]">{f.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => setFormGeneralFiles(formGeneralFiles.filter((_, idx) => idx !== i))}
-                          className="text-slate-400 hover:text-rose-600"
-                        >
-                          <X size={10} weight="bold" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* 2. DAFTAR VARIAN & INPUT FOTO KHUSUS VARIAN */}
-              <div className="pt-2 border-t border-slate-100">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-bold text-slate-800">Daftar Varian, Harga, Stok &amp; Foto Varian *</label>
                   <Button
                     type="button"
                     variant="secondary"
                     size="sm"
                     onClick={handleAddVariantRow}
-                    className="text-[10px] py-1 px-2 flex items-center gap-1"
+                    className="text-xs py-1.5 px-3 flex items-center gap-1 font-bold shadow-xs cursor-pointer"
                   >
-                    <Plus size={12} />
+                    <Plus size={13} weight="bold" />
                     <span>Tambah Varian</span>
                   </Button>
                 </div>
 
-                <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
-                  {formVariants.map((v, idx) => (
-                    <div key={idx} className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          required
-                          placeholder="Nama Varian (misal: 1,2 kg)"
-                          value={v.name}
-                          onChange={(e) => {
-                            const updated = [...formVariants];
-                            updated[idx].name = e.target.value;
-                            setFormVariants(updated);
-                          }}
-                          className="flex-1 text-xs p-2 bg-white border border-slate-200 rounded-lg"
-                        />
-                        <div className="w-28">
-                          <input
-                            type="number"
-                            required
-                            min={0}
-                            placeholder="Harga (Rp)"
-                            value={v.price}
-                            onChange={(e) => {
-                              const updated = [...formVariants];
-                              updated[idx].price = Number(e.target.value);
-                              setFormVariants(updated);
-                            }}
-                            className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg"
-                          />
-                        </div>
-                        <div className="w-20">
-                          <input
-                            type="number"
-                            required
-                            min={0}
-                            placeholder="Stok"
-                            value={v.stock}
-                            onChange={(e) => {
-                              const updated = [...formVariants];
-                              updated[idx].stock = Number(e.target.value);
-                              setFormVariants(updated);
-                            }}
-                            className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg"
-                          />
-                        </div>
-                        {formVariants.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveVariantRow(idx)}
-                            className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                            title="Hapus varian ini"
-                          >
-                            <Trash size={14} />
-                          </button>
-                        )}
-                      </div>
+                {/* Container Tabel Varian */}
+                <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
+                  <div className="overflow-x-auto max-h-60 overflow-y-auto">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold text-[11px] uppercase tracking-wider sticky top-0 z-10">
+                          <th className="py-2.5 px-3.5 min-w-[200px]">
+                            Nama Varian <span className="text-rose-500">*</span>
+                          </th>
+                          <th className="py-2.5 px-3 w-40 min-w-[140px]">
+                            Harga (Rp) <span className="text-rose-500">*</span>
+                          </th>
+                          <th className="py-2.5 px-3 w-28 min-w-[90px] text-center">
+                            Stok <span className="text-rose-500">*</span>
+                          </th>
+                          <th className="py-2.5 px-3 w-48 min-w-[160px]">
+                            Foto Varian
+                          </th>
+                          <th className="py-2.5 px-2 w-12 text-center">
+                            Aksi
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {formVariants.map((v, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
+                            {/* 1. Nama Varian */}
+                            <td className="p-2.5 px-3.5 align-middle">
+                              <input
+                                type="text"
+                                required
+                                placeholder="misal: 1 PK / 1,2 kg / Standard"
+                                value={v.name}
+                                onChange={(e) => {
+                                  const updated = [...formVariants];
+                                  updated[idx].name = e.target.value;
+                                  setFormVariants(updated);
+                                }}
+                                className="w-full text-xs px-3 py-1.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81] transition shadow-2xs placeholder:text-slate-400"
+                              />
+                            </td>
 
-                      {/* Input Foto Khusus Varian */}
-                      <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-200/60 text-[11px]">
-                        <span className="text-slate-600 font-semibold flex items-center gap-1 shrink-0">
-                          <ImageIcon size={13} className="text-purple-600" />
-                          <span>Foto Varian ({v.variantFiles?.length || 0}):</span>
-                        </span>
-                        <input
-                          type="file"
-                          multiple
-                          accept="image/jpeg,image/png,image/webp"
-                          onChange={(e) => {
-                            const files = Array.from(e.target.files || []);
-                            const updated = [...formVariants];
-                            updated[idx].variantFiles = files;
-                            setFormVariants(updated);
-                          }}
-                          className="text-[10px] text-slate-500 file:mr-2 file:py-0.5 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-semibold file:bg-purple-100 file:text-purple-700 hover:file:bg-purple-200 cursor-pointer"
-                        />
-                      </div>
-                    </div>
-                  ))}
+                            {/* 2. Harga (Rp) */}
+                            <td className="p-2.5 px-3 align-middle">
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-400 pointer-events-none">
+                                  Rp
+                                </span>
+                                <input
+                                  type="number"
+                                  required
+                                  min={0}
+                                  placeholder="0"
+                                  value={v.price}
+                                  onChange={(e) => {
+                                    const updated = [...formVariants];
+                                    updated[idx].price = Number(e.target.value);
+                                    setFormVariants(updated);
+                                  }}
+                                  className="w-full text-xs pl-8 pr-2.5 py-1.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81] transition shadow-2xs font-semibold"
+                                />
+                              </div>
+                            </td>
+
+                            {/* 3. Stok */}
+                            <td className="p-2.5 px-3 align-middle text-center">
+                              <input
+                                type="number"
+                                required
+                                min={0}
+                                placeholder="0"
+                                value={v.stock}
+                                onChange={(e) => {
+                                  const updated = [...formVariants];
+                                  updated[idx].stock = Number(e.target.value);
+                                  setFormVariants(updated);
+                                }}
+                                className="w-full text-xs px-2 py-1.5 bg-white border border-slate-200 rounded-xl text-center focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81] transition shadow-2xs font-semibold"
+                              />
+                            </td>
+
+                            {/* 4. Foto Varian */}
+                            <td className="p-2.5 px-3 align-middle">
+                              <label className="inline-flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[11px] font-medium cursor-pointer transition w-full shadow-2xs">
+                                <span className="flex items-center gap-1.5 truncate">
+                                  <ImageIcon size={14} className="text-purple-600 shrink-0" />
+                                  <span className="truncate">
+                                    {v.variantFiles && v.variantFiles.length > 0
+                                      ? `${v.variantFiles.length} foto`
+                                      : "Pilih Foto"}
+                                  </span>
+                                </span>
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-700 shrink-0">
+                                  {v.variantFiles && v.variantFiles.length > 0 ? "Ubah" : "Upload"}
+                                </span>
+                                <input
+                                  type="file"
+                                  multiple
+                                  accept="image/jpeg,image/png,image/webp"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const files = Array.from(e.target.files || []);
+                                    const updated = [...formVariants];
+                                    updated[idx].variantFiles = files;
+                                    setFormVariants(updated);
+                                  }}
+                                />
+                              </label>
+                            </td>
+
+                            {/* 5. Aksi (Hapus) */}
+                            <td className="p-2.5 px-2 align-middle text-center">
+                              {formVariants.length > 1 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveVariantRow(idx)}
+                                  className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                  title="Hapus baris varian ini"
+                                >
+                                  <Trash size={15} />
+                                </button>
+                              ) : (
+                                <span className="text-slate-300 text-xs font-bold">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Footer Tabel Ringkasan & Tambah Cepat */}
+                  <div className="bg-slate-50 px-3.5 py-2.5 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
+                    <span className="font-medium">Total {formVariants.length} varian terdaftar</span>
+                    <button
+                      type="button"
+                      onClick={handleAddVariantRow}
+                      className="text-[#0F4C81] hover:text-[#0c3c66] hover:underline font-bold flex items-center gap-1 cursor-pointer transition text-[11px]"
+                    >
+                      <Plus size={13} weight="bold" />
+                      <span>Tambah Baris Varian</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {/* Bagian Simulasi / UI Saja: Kebijakan Garansi */}
-              <div className="pt-4 border-t border-slate-200/80 space-y-3">
-                <div className="p-3.5 bg-amber-50/80 border border-amber-200/90 rounded-2xl space-y-1">
+              {/* SECTION 3: KETENTUAN GARANSI (PRATINJAU UI) */}
+              <div className="pt-4 border-t border-slate-100 space-y-3">
+                <div className="p-3 bg-amber-50/80 border border-amber-200/90 rounded-2xl space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <WarningCircle size={18} className="text-amber-700 shrink-0" weight="bold" />
+                    <WarningCircle size={16} className="text-amber-700 shrink-0" weight="bold" />
                     <span className="text-xs font-bold text-amber-950 font-heading">
                       Fitur Tambahan: Kebijakan Garansi &amp; Purnajual (Pratinjau UI)
                     </span>
@@ -1384,43 +1497,63 @@ function MerchantProductsContent() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                    Cakupan Perlindungan Garansi <span className="text-slate-400 font-normal">(Opsional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={warrantyCoverage}
-                    onChange={(e) => setWarrantyCoverage(e.target.value)}
-                    placeholder="Misal: Cacat manufaktur, kebocoran freon bawaan, malfungsi elektrik"
-                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                  />
-                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Cakupan Perlindungan Garansi <span className="text-slate-400 font-normal">(Opsional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={warrantyCoverage}
+                      onChange={(e) => setWarrantyCoverage(e.target.value)}
+                      placeholder="Misal: Cacat manufaktur, kebocoran freon bawaan"
+                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                    Pengecualian Garansi (Exclusions) <span className="text-slate-400 font-normal">(Opsional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={warrantyExclusions}
-                    onChange={(e) => setWarrantyExclusions(e.target.value)}
-                    placeholder="Misal: Kesalahan pasang, benturan fisik, korsleting tegangan listrik"
-                    className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                  />
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Pengecualian Garansi (Exclusions) <span className="text-slate-400 font-normal">(Opsional)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={warrantyExclusions}
+                      onChange={(e) => setWarrantyExclusions(e.target.value)}
+                      placeholder="Misal: Kesalahan pasang, benturan fisik"
+                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                    />
+                  </div>
                 </div>
               </div>
+            </div>
 
-              <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">
-                <Button variant="secondary" size="sm" type="button" onClick={() => setIsAddModalOpen(false)}>
+            {/* 3. Sticky Modal Footer di Bawah */}
+            <div className="px-6 py-4 sm:px-8 sm:py-4 border-t border-slate-100 bg-white/95 backdrop-blur-sm flex items-center justify-between shrink-0">
+              <span className="text-xs text-slate-400 hidden sm:inline-block">
+                Pastikan nama dan harga setiap varian sudah terisi dengan benar.
+              </span>
+              <div className="flex items-center gap-2.5 ml-auto">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  onClick={() => setIsAddModalOpen(false)}
+                  className="cursor-pointer"
+                >
                   Batal
                 </Button>
-                <Button variant="primary" size="sm" type="submit" className="bg-[#0F4C81] text-white">
-                  Simpan &amp; Terbitkan Produk
+                <Button
+                  variant="primary"
+                  size="sm"
+                  type="submit"
+                  disabled={isCreatingProduct}
+                  className="bg-[#0F4C81] text-white hover:bg-[#0c3c66] font-bold shadow-xs cursor-pointer"
+                >
+                  {isCreatingProduct ? "Menyimpan & Menerbitkan..." : "Simpan & Terbitkan Produk"}
                 </Button>
               </div>
-            </form>
-          </div>
+            </div>
+          </form>
         </div>
       )}
 

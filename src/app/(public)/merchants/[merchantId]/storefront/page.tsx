@@ -26,10 +26,12 @@ import {
 import { shopsApi, taxonomyApi } from "@/lib/servioApi";
 import type { ApiProduct, ApiShopProfile } from "@/types/domain";
 import { getProductMediaUrl } from "@/types/domain";
+import { useLocation } from "@/context/LocationContext";
 
 export default function MerchantStorefrontPage() {
   const params = useParams();
   const merchantId = (params?.merchantId as string) || "";
+  const { activeLocation, getStoreDistance } = useLocation();
 
   const [shop, setShop] = useState<ApiShopProfile | null>(null);
   const [products, setProducts] = useState<ApiProduct[]>([]);
@@ -218,9 +220,12 @@ export default function MerchantStorefrontPage() {
                 </div>
 
                 <div className="flex items-center gap-3 text-xs text-slate-300 flex-wrap">
-                  <span className="flex items-center gap-1 text-slate-200">
-                    <MapPin size={14} className="text-sky-300" />
+                  <span className="flex items-center gap-1.5 text-slate-200">
+                    <MapPin size={14} className="text-sky-300 shrink-0" />
                     <span>{shop.city || "Jakarta Barat (Glodok)"}</span>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                      📍 {getStoreDistance(shop)}
+                    </span>
                   </span>
                   <span>&bull;</span>
                   <span className="flex items-center gap-1.5 text-emerald-300 font-semibold">
@@ -313,20 +318,18 @@ export default function MerchantStorefrontPage() {
               <button
                 type="button"
                 onClick={() => setActiveCategoryTab("ALL")}
-                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center justify-between cursor-pointer ${
-                  activeCategoryTab === "ALL"
-                    ? "bg-[#0F4C81] text-white shadow-xs font-bold"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
+                className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center justify-between cursor-pointer ${activeCategoryTab === "ALL"
+                  ? "bg-[#0F4C81] text-white shadow-xs font-bold"
+                  : "text-slate-600 hover:bg-slate-100"
+                  }`}
               >
                 <div className="flex items-center gap-2">
                   <SquaresFour size={15} weight="bold" />
                   <span>Semua Produk</span>
                 </div>
                 <span
-                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                    activeCategoryTab === "ALL" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
-                  }`}
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${activeCategoryTab === "ALL" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                    }`}
                 >
                   {products.length}
                 </span>
@@ -339,20 +342,18 @@ export default function MerchantStorefrontPage() {
                     key={cat.id}
                     type="button"
                     onClick={() => setActiveCategoryTab(cat.id)}
-                    className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center justify-between cursor-pointer ${
-                      isActive
-                        ? "bg-[#0F4C81] text-white shadow-xs font-bold"
-                        : "text-slate-600 hover:bg-slate-100"
-                    }`}
+                    className={`w-full px-3 py-2 rounded-xl text-xs font-semibold transition flex items-center justify-between cursor-pointer ${isActive
+                      ? "bg-[#0F4C81] text-white shadow-xs font-bold"
+                      : "text-slate-600 hover:bg-slate-100"
+                      }`}
                   >
                     <div className="flex items-center gap-2 truncate">
                       <Tag size={14} weight="bold" className={isActive ? "text-white" : "text-slate-400"} />
                       <span className="truncate">{cat.name}</span>
                     </div>
                     <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${
-                        isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
-                      }`}
+                      className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                        }`}
                     >
                       {cat.count}
                     </span>
@@ -550,11 +551,10 @@ export default function MerchantStorefrontPage() {
 
                         {/* Stock Badge Top Right */}
                         <span
-                          className={`absolute top-1.5 right-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-md border shadow-2xs ${
-                            isStockAvailable
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : "bg-slate-100 text-slate-600 border-slate-200"
-                          }`}
+                          className={`absolute top-1.5 right-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-md border shadow-2xs ${isStockAvailable
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : "bg-slate-100 text-slate-600 border-slate-200"
+                            }`}
                         >
                           {isStockAvailable ? "Ready Kirim" : "Pre-Order"}
                         </span>

@@ -15,7 +15,6 @@ import {
   Phone,
   MapPin,
   Clock,
-  Compass,
   Bell,
   ShieldCheck,
   CheckCircle,
@@ -31,7 +30,7 @@ import {
   CircleNotch,
 } from "@phosphor-icons/react";
 
-type ProfileTab = "business" | "contact" | "address" | "hours" | "area" | "competency" | "documents" | "notifications";
+type ProfileTab = "business" | "contact" | "address" | "hours" | "competency" | "documents" | "notifications";
 
 export default function ProviderProfilePage() {
   const repo = useDomainRepository();
@@ -275,11 +274,6 @@ export default function ProviderProfilePage() {
       if (opHours.close_time || opHours.closeTime) setCloseTime(opHours.close_time || opHours.closeTime);
       if (opHours.work_days || opHours.workDays) setWorkDays(opHours.work_days || opHours.workDays);
     }
-    const servArea = user.activeOrganization?.service_area || (user.businessProfile as any)?.serviceArea || (user.businessProfile as any)?.service_area;
-    if (servArea) {
-      if (servArea.areas) setServiceAreas(servArea.areas);
-      if (servArea.radius_km || servArea.radiusKm) setCoverageRadiusKm(Number(servArea.radius_km || servArea.radiusKm));
-    }
   }, [user]);
 
   // Load latest registered company profile & uploaded documents from database
@@ -320,10 +314,6 @@ export default function ProviderProfilePage() {
   const [openTime, setOpenTime] = useState("08:00");
   const [closeTime, setCloseTime] = useState("18:00");
   const [workDays, setWorkDays] = useState("Senin - Sabtu");
-
-  // Area Layanan & Radius (Locked Decision Section 18, 30, 32)
-  const [serviceAreas, setServiceAreas] = useState("Jakarta Barat, Jakarta Selatan, Tangerang Kota");
-  const [coverageRadiusKm, setCoverageRadiusKm] = useState(25);
 
   // Notifications
   const [orderNotifSms, setOrderNotifSms] = useState(true);
@@ -426,10 +416,6 @@ export default function ProviderProfilePage() {
             open_time: openTime,
             close_time: closeTime,
           },
-          serviceArea: {
-            areas: serviceAreas,
-            radius_km: coverageRadiusKm,
-          },
         });
       }
       setToastMessage("Profil dan konfigurasi operasional bengkel berhasil disimpan ke database.");
@@ -451,7 +437,7 @@ export default function ProviderProfilePage() {
       {/* Header */}
       <PageHeader
         title="Profil &amp; Konfigurasi Operasional Mitra"
-        description="Satu sumber kebenaran data profil bisnis, kontak, alamat workshop, jam operasional, area layanan, dan radius coverage."
+        description="Satu sumber kebenaran data profil bisnis, kontak, alamat workshop, jam operasional, dan kompetensi keahlian."
         breadcrumbs={[
           { label: "Mitra Bengkel", href: "/provider/dashboard" },
           { label: "Pengaturan Profil", href: "/provider/profile" },
@@ -502,7 +488,6 @@ export default function ProviderProfilePage() {
             { id: "address", label: "Alamat Workshop", icon: MapPin },
             { id: "documents", label: "Dokumen & Legalitas", icon: FileText },
             { id: "hours", label: "Jam Operasional", icon: Clock },
-            { id: "area", label: "Area Layanan & Radius", icon: Compass },
             { id: "competency", label: "Kompetensi Layanan", icon: Certificate },
             { id: "notifications", label: "Notifikasi", icon: Bell },
           ].map((tab) => {
@@ -938,47 +923,7 @@ export default function ProviderProfilePage() {
             </div>
           )}
 
-          {/* TAB 5: AREA LAYANAN & RADIUS (LOCKED DECISION SECTION 18 & 32) */}
-          {activeTab === "area" && (
-            <div className="space-y-4 max-w-xl">
-              <div className="p-3.5 bg-sky-50 rounded-2xl border border-sky-200 text-sky-900 text-xs">
-                <p className="font-bold">Ketentuan Radius &amp; Cakupan Wilayah:</p>
-                <p className="text-[11px] mt-0.5">
-                  Radius coverage diatur di sini sebagai satu sumber data tunggal. Setiap layanan yang Anda buat akan otomatis mewarisi jangkauan radius ini tanpa perlu diinput ulang.
-                </p>
-              </div>
 
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Wilayah / Kecamatan Utama</label>
-                <input
-                  type="text"
-                  value={serviceAreas}
-                  onChange={(e) => setServiceAreas(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">
-                  Radius Operasional Teknisi: <span className="text-[#0F4C81]">{coverageRadiusKm} km</span>
-                </label>
-                <input
-                  type="range"
-                  min={5}
-                  max={50}
-                  step={5}
-                  value={coverageRadiusKm}
-                  onChange={(e) => setCoverageRadiusKm(Number(e.target.value))}
-                  className="w-full accent-[#0F4C81]"
-                />
-                <div className="flex justify-between text-[10px] text-slate-400 font-bold mt-1">
-                  <span>5 km (Lokal)</span>
-                  <span>25 km (Standar)</span>
-                  <span>50 km (Maksimal)</span>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* TAB: KOMPETENSI LAYANAN */}
           {activeTab === "competency" && (
