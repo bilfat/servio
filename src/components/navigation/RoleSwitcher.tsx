@@ -102,8 +102,13 @@ export function RoleSwitcher() {
   const router = useRouter();
   const { activeRole, switchRole, user, isPublicGuest, setIsPublicGuest } = useActiveRole();
   const [isOpen, setIsOpen] = useState(false);
+  const resolveRoleMeta = (role: string) => {
+    const key = (role === "MERCHANT_SELLER" ? "MERCHANT" : role) as UserRole;
+    return ROLE_METADATA[key] || ROLE_METADATA.MERCHANT;
+  };
 
-  const CurrentIcon = isPublicGuest ? Eye : ROLE_METADATA[activeRole].icon;
+  const activeMeta = resolveRoleMeta(activeRole);
+  const CurrentIcon = isPublicGuest ? Eye : activeMeta.icon;
 
   // Enforce role membership: only allow switching to roles the user actually has
   const allowedRoles = user.availableRoles || [activeRole];
@@ -234,7 +239,7 @@ export function RoleSwitcher() {
             {isPublicGuest ? "Sesi Tamu" : "Peran Aktif"}
           </p>
           <p className="text-xs font-semibold text-neutral-dark font-display max-w-[130px] truncate">
-            {isPublicGuest ? "Publik" : ROLE_METADATA[activeRole].label.split(" (")[0]}
+            {isPublicGuest ? "Publik" : activeMeta.label.split(" (")[0]}
           </p>
         </div>
         <CaretUp

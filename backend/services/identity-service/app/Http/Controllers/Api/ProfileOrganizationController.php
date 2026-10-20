@@ -157,11 +157,14 @@ class ProfileOrganizationController extends Controller
                     'businessType' => $draftData['business']['business_type'] ?? $draftData['business']['businessType'] ?? ($org ? 'PT / Badan Usaha' : null),
                     'nib' => $draftData['legal']['nib'] ?? $draftData['business']['nib'] ?? null,
                     'npwp' => $draftData['legal']['npwp'] ?? $draftData['business']['npwp'] ?? null,
-                    'address' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['address'] ?? null) : $orgProf?->address_json) ?? ($draftData['business']['address'] ?? null),
-                    'city' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['city'] ?? null) : null) ?? ($draftData['business']['city'] ?? null),
-                    'province' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['province'] ?? null) : null) ?? ($draftData['business']['province'] ?? null),
-                    'district' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['district'] ?? null) : null) ?? ($draftData['business']['district'] ?? null),
+                    'address' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['address'] ?? $orgProf->address_json['street_address'] ?? null) : $orgProf?->address_json) ?? ($draftData['business']['address'] ?? null),
+                    'city' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['city'] ?? $orgProf->address_json['city_name'] ?? null) : null) ?? ($draftData['business']['city'] ?? null),
+                    'province' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['province'] ?? $orgProf->address_json['province_name'] ?? null) : null) ?? ($draftData['business']['province'] ?? null),
+                    'district' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['district'] ?? $orgProf->address_json['district_name'] ?? null) : null) ?? ($draftData['business']['district'] ?? null),
+                    'village' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['village'] ?? $orgProf->address_json['village_name'] ?? null) : null) ?? ($draftData['business']['village'] ?? null),
                     'postalCode' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['postal_code'] ?? null) : null) ?? ($draftData['business']['postal_code'] ?? $draftData['business']['postalCode'] ?? null),
+                    'address_json' => $orgProf?->address_json ?? ($draftData['business']['address_json'] ?? $draftData['business']['addressData'] ?? null),
+                    'addressData' => $orgProf?->address_json ?? ($draftData['business']['address_json'] ?? $draftData['business']['addressData'] ?? null),
                 ],
                 'picData' => [
                     'fullName' => $draftData['pic']['full_name'] ?? $draftData['pic']['fullName'] ?? $profile?->display_name,
@@ -225,10 +228,14 @@ class ProfileOrganizationController extends Controller
                     'businessType' => 'PT / Badan Usaha',
                     'nib' => !empty($orgProf->nib_ciphertext) ? Crypt::decryptString($orgProf->nib_ciphertext) : null,
                     'npwp' => !empty($orgProf->npwp_ciphertext) ? Crypt::decryptString($orgProf->npwp_ciphertext) : null,
-                    'address' => is_array($orgProf->address_json) ? ($orgProf->address_json['address'] ?? null) : $orgProf->address_json,
-                    'city' => is_array($orgProf->address_json) ? ($orgProf->address_json['city'] ?? null) : null,
-                    'province' => is_array($orgProf->address_json) ? ($orgProf->address_json['province'] ?? null) : null,
+                    'address' => is_array($orgProf->address_json) ? ($orgProf->address_json['address'] ?? $orgProf->address_json['street_address'] ?? null) : $orgProf->address_json,
+                    'city' => is_array($orgProf->address_json) ? ($orgProf->address_json['city'] ?? $orgProf->address_json['city_name'] ?? null) : null,
+                    'province' => is_array($orgProf->address_json) ? ($orgProf->address_json['province'] ?? $orgProf->address_json['province_name'] ?? null) : null,
+                    'district' => is_array($orgProf->address_json) ? ($orgProf->address_json['district'] ?? $orgProf->address_json['district_name'] ?? null) : null,
+                    'village' => is_array($orgProf->address_json) ? ($orgProf->address_json['village'] ?? $orgProf->address_json['village_name'] ?? null) : null,
                     'postalCode' => is_array($orgProf->address_json) ? ($orgProf->address_json['postal_code'] ?? null) : null,
+                    'address_json' => $orgProf->address_json,
+                    'addressData' => $orgProf->address_json,
                 ],
                 'picData' => [
                     'fullName' => $profile?->display_name,
@@ -238,6 +245,8 @@ class ProfileOrganizationController extends Controller
                 'specializedData' => $orgProf->specialization_json,
             ];
         }
+
+        $userAddress = $profile?->address_json;
 
         return ApiResponse::success([
             'id' => $user->id,
@@ -257,12 +266,17 @@ class ProfileOrganizationController extends Controller
             'nik_raw' => $decryptedNik,
             'ktp_file_url' => $ktpDownloadUrl,
             'ktp_file_path' => $ktpDownloadUrl,
+            'address' => $userAddress,
+            'address_json' => $userAddress,
+            'addressData' => $userAddress,
             'personal_profile' => [
                 'displayName' => $profile?->display_name ?? 'Pengguna',
                 'legalName' => $profile?->legal_name ?? $profile?->display_name ?? 'Pengguna',
                 'gender' => $profile?->gender,
                 'dateOfBirth' => $birthDateStr,
                 'avatar' => $profile?->photo_path ?? '/brand/logo.png',
+                'address' => $userAddress,
+                'address_json' => $userAddress,
             ],
             'personalProfile' => [
                 'displayName' => $profile?->display_name ?? 'Pengguna',
@@ -270,6 +284,8 @@ class ProfileOrganizationController extends Controller
                 'gender' => $profile?->gender,
                 'dateOfBirth' => $birthDateStr,
                 'avatar' => $profile?->photo_path ?? '/brand/logo.png',
+                'address' => $userAddress,
+                'address_json' => $userAddress,
             ],
             'nik_format_status' => ($nikRecord || $verificationReq) ? 'FORMAT_VALID' : null,
             'nik_locked' => ($nikRecord !== null || $verificationReq !== null),
@@ -289,6 +305,8 @@ class ProfileOrganizationController extends Controller
                 'operationalStatus' => $org->operational_status ?? 'ONLINE_ACCEPTING',
                 'name' => $orgProf?->display_name ?? $orgProf?->legal_name,
                 'legalName' => $orgProf?->legal_name,
+                'address' => $orgProf?->address_json,
+                'address_json' => $orgProf?->address_json,
                 'operational_hours' => $orgProf?->operational_hours_json,
                 'service_area' => $orgProf?->service_area_json,
                 'competencies' => $orgProf?->competencies_json,
@@ -319,6 +337,9 @@ class ProfileOrganizationController extends Controller
             'date_of_birth' => 'nullable|string|max:30',
             'phone' => 'nullable|string|max:20',
             'locale' => 'nullable|string|max:12',
+            'address' => 'nullable',
+            'address_json' => 'nullable',
+            'addressData' => 'nullable',
         ]);
 
         $profile = $user->profile ?? new UserProfile(['user_id' => $user->id]);
@@ -337,6 +358,10 @@ class ProfileOrganizationController extends Controller
         }
         if (isset($validated['locale'])) {
             $profile->locale = $validated['locale'];
+        }
+        if ($request->has('address') || $request->has('address_json') || $request->has('addressData')) {
+            $addr = $request->input('address_json') ?? $request->input('addressData') ?? $request->input('address');
+            $profile->address_json = is_array($addr) ? $addr : (json_decode($addr, true) ?: ['street_address' => (string) $addr]);
         }
         $profile->save();
 
@@ -359,6 +384,9 @@ class ProfileOrganizationController extends Controller
             'email' => $user->email,
             'phone' => $user->phone_e164,
             'photo_url' => $profile->photo_path,
+            'address' => $profile->address_json,
+            'address_json' => $profile->address_json,
+            'addressData' => $profile->address_json,
             'nik_masked' => $nikRecord?->masked_nik,
             'nik_format_status' => $nikRecord ? 'FORMAT_VALID' : null,
             'nik_locked' => $nikRecord !== null,
@@ -535,6 +563,8 @@ class ProfileOrganizationController extends Controller
             'business_email' => 'nullable|email|max:191',
             'business_phone' => 'nullable|string|max:20',
             'address' => 'nullable',
+            'address_json' => 'nullable',
+            'addressData' => 'nullable',
             'operational_status' => 'nullable|string|in:ONLINE_ACCEPTING,BUSY_DELAYED,TEMPORARY_CLOSED,ONLINE,BUSY,CLOSED',
             'operationalStatus' => 'nullable|string|in:ONLINE_ACCEPTING,BUSY_DELAYED,TEMPORARY_CLOSED,ONLINE,BUSY,CLOSED',
             'operational_hours' => 'nullable',
@@ -559,8 +589,9 @@ class ProfileOrganizationController extends Controller
         if (isset($validated['business_phone'])) {
             $prof->business_phone = $validated['business_phone'];
         }
-        if (isset($validated['address'])) {
-            $prof->address_json = is_array($validated['address']) ? $validated['address'] : ['address' => (string) $validated['address']];
+        $addr = $validated['address_json'] ?? $validated['addressData'] ?? $validated['address'] ?? null;
+        if (isset($addr)) {
+            $prof->address_json = is_array($addr) ? $addr : (json_decode($addr, true) ?: ['address' => (string) $addr]);
         }
 
         $hours = $validated['operational_hours'] ?? $validated['operationalHours'] ?? null;
@@ -606,6 +637,9 @@ class ProfileOrganizationController extends Controller
             'status' => $org->status,
             'operational_status' => $org->operational_status,
             'operationalStatus' => $org->operational_status,
+            'address' => $prof->address_json,
+            'address_json' => $prof->address_json,
+            'addressData' => $prof->address_json,
             'operational_hours' => $prof->operational_hours_json,
             'service_area' => $prof->service_area_json,
             'competencies' => $prof->competencies_json,

@@ -21,6 +21,7 @@ class UserProfile extends Model
         'employee_id',
         'department',
         'locale',
+        'address_json',
         'initial_password_ciphertext',
     ];
 
@@ -28,6 +29,7 @@ class UserProfile extends Model
     {
         return [
             'birth_date' => 'date:Y-m-d',
+            'address_json' => 'array',
         ];
     }
 

@@ -23,8 +23,11 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Toast } from "@/components/feedback/Toast";
+import { SPayBalanceCard } from "@/components/features/spay/SPayBalanceCard";
+import { useSPay } from "@/features/spay/spay.frontend-provider";
 
 function SupplierDashboardContent() {
+  const { summary: spaySummary, isBalanceVisible, toggleBalanceVisibility } = useSPay();
   const {
     products,
     orders,
@@ -171,6 +174,19 @@ function SupplierDashboardContent() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
+        {/* S-PAY BALANCE CARD (B2B PRINCIPAL SUPPLIER SETTLEMENT) */}
+        <div>
+          <SPayBalanceCard
+            balance={12850000}
+            ownerType="MERCHANT"
+            organizationName="PT Indotama Distribusi HVAC (B2B Principal)"
+            subtitle="Settlement Pasokan Grosir B2B"
+            detailHref="/merchant/spay"
+            isBalanceVisible={isBalanceVisible}
+            onToggleVisibility={toggleBalanceVisibility}
+          />
+        </div>
+
         {/* KPI Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <motion.div

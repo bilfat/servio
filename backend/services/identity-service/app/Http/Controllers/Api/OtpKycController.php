@@ -619,6 +619,9 @@ class OtpKycController extends Controller
 
         $validated = $request->validate([
             'nik' => ['required', 'string', 'regex:/^[0-9]{16}$/D'],
+            'address' => ['nullable'],
+            'address_json' => ['nullable'],
+            'addressData' => ['nullable'],
         ], [
             'nik.regex' => 'NIK harus berupa 16 digit angka.',
         ]);
@@ -635,7 +638,7 @@ class OtpKycController extends Controller
             );
         }
 
-        return DB::transaction(function () use ($user, $nik) {
+        return DB::transaction(function () use ($user, $nik, $request) {
             try {
                 UserNikRecord::create([
                     'user_id' => $user->id,
@@ -652,6 +655,15 @@ class OtpKycController extends Controller
                     );
                 }
                 throw $e;
+            }
+
+            // Save address if passed during Customer onboarding
+            $rawAddress = $request->input('address_json') ?? $request->input('addressData') ?? $request->input('address');
+            if ($rawAddress) {
+                $addressData = is_array($rawAddress) ? $rawAddress : (json_decode($rawAddress, true) ?: ['street_address' => (string) $rawAddress]);
+                $profile = $user->profile ?? new UserProfile(['user_id' => $user->id]);
+                $profile->address_json = $addressData;
+                $profile->save();
             }
 
             // Check if email OTP is already verified -> transition to ACTIVE
@@ -684,6 +696,8 @@ class OtpKycController extends Controller
                 'nik_locked' => true,
                 'next_step' => $nextStep,
                 'account_status' => $refreshedUser->status,
+                'address' => $refreshedUser->profile?->address_json,
+                'address_json' => $refreshedUser->profile?->address_json,
             ], 'IDENTITY_CUSTOMER_NIK_FORMAT_VALID', 201);
         });
     }

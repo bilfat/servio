@@ -122,7 +122,7 @@ function setCookie(name: string, value: string, maxAge = 604800) {
 // ============================================================================
 // STANDALONE CANONICAL USER PROFILES FOR ALL 9 ROLES
 // ============================================================================
-const MOCK_USERS_BY_ROLE: Record<string, any> = {
+export const MOCK_USERS_BY_ROLE: Record<string, any> = {
   CEO_PRODUCT_OWNER: {
     id: "8a7fdac8-cfcb-430e-b142-e630b171879b",
     fullName: "Michael Surya",
@@ -247,19 +247,19 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
     createdAt: "2026-01-01T00:00:00Z",
   },
   MERCHANT: {
-    id: "9b91e456-594e-4d0b-b793-f69dd855ccc3",
+    id: "4bee4c28-6799-4054-87a3-321e29811921",
     fullName: "Ko Hendra",
     email: "merchant@servio.id",
     phone: "+62 817-4455-667",
     role: "MERCHANT",
     status: "ACTIVE",
-    organizationId: "2290a88d-7a24-4677-b940-5823cdd68c1d",
+    organizationId: "0c1467e7-af68-4b26-ae84-daa41d51aed0",
     organizationName: "Sinar AC & Sparepart Glodok",
     merchantId: "merch-sentra-teknik",
     businessProfile: {
       businessData: {
         legalName: "CV Sinar Sentra Abadi",
-        brandName: "Sentra Teknik Sparepart",
+        brandName: "Sinar AC & Sparepart Glodok",
         businessType: "MERCHANT",
         status: "VERIFIED",
         registrationNumber: "REG-2026-0002",
@@ -267,13 +267,13 @@ const MOCK_USERS_BY_ROLE: Record<string, any> = {
     },
     permissions: ["*"],
     activeRole: {
-      assignmentId: "1029143e-1d76-4fab-b86e-bb1709a47b2b",
+      assignmentId: "7ff605bd-1edb-4e7c-81c3-e416ba6995c7",
       code: "MERCHANT",
       scopeType: "ORGANIZATION",
-      scopeId: "2290a88d-7a24-4677-b940-5823cdd68c1d",
+      scopeId: "0c1467e7-af68-4b26-ae84-daa41d51aed0",
     },
     roles: [
-      { assignmentId: "1029143e-1d76-4fab-b86e-bb1709a47b2b", code: "MERCHANT", name: "Merchant Retailer", scopeType: "ORGANIZATION", scopeId: "2290a88d-7a24-4677-b940-5823cdd68c1d", status: "ACTIVE" },
+      { assignmentId: "7ff605bd-1edb-4e7c-81c3-e416ba6995c7", code: "MERCHANT", name: "Merchant Retailer", scopeType: "ORGANIZATION", scopeId: "0c1467e7-af68-4b26-ae84-daa41d51aed0", status: "ACTIVE" },
       { assignmentId: "031772ea-9657-49bd-82f2-f57c65b0d986", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
     ],
     avatar: "/brand/logo.png",
@@ -887,6 +887,15 @@ const CATEGORY_BASE_URL =
     ? "/api/v1"
     : (process.env.NEXT_PUBLIC_CATEGORY_API_URL || "http://127.0.0.1:8002/api/v1");
 
+const PRODUCT_SERVICE_ROOT =
+  typeof window !== "undefined"
+    ? ""
+    : (process.env.NEXT_PUBLIC_PRODUCT_SERVICE_URL || "http://127.0.0.1:8003");
+const PRODUCT_BASE_URL =
+  typeof window !== "undefined"
+    ? "/api/v1"
+    : (process.env.NEXT_PUBLIC_PRODUCT_API_URL || "http://127.0.0.1:8003/api/v1");
+
 let csrfPromise: Promise<void> | null = null;
 
 async function ensureSanctumCsrf(force = false): Promise<void> {
@@ -925,6 +934,18 @@ function isCategoryRoute(path: string): boolean {
   );
 }
 
+function isProductRoute(path: string): boolean {
+  const p = path.replace(/^\/api\/v1/, "");
+  return (
+    p.startsWith("/products") ||
+    p.startsWith("/merchant/products") ||
+    p.startsWith("/merchants") ||
+    p.startsWith("/product-media") ||
+    p.startsWith("/governance/products") ||
+    p.startsWith("/product-audit")
+  );
+}
+
 function isIdentityRoute(path: string): boolean {
   const p = path.replace(/^\/api\/v1/, "");
   return (
@@ -950,6 +971,8 @@ function isIdentityRoute(path: string): boolean {
     p.startsWith("/organizations") ||
     p.startsWith("/profiles") ||
     p.startsWith("/me/profile") ||
+    p.startsWith("/me/addresses") ||
+    p.startsWith("/addresses") ||
     p.startsWith("/roles/me") ||
     p.startsWith("/permissions/me") ||
     p.startsWith("/audit/identity")
@@ -1220,6 +1243,109 @@ export async function apiFetch<T = unknown>(
         throw err;
       }
       console.warn("Category Service network failure:", err);
+      throw err;
+    }
+  }
+
+  // =========================================================================
+  // REAL BACKEND INTEGRATION: Modul 03 Product / Catalog Service (Port 8003)
+  // =========================================================================
+  if (isProductRoute(pathname)) {
+    try {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+      };
+
+      const gatewayKey = process.env.NEXT_PUBLIC_PRODUCT_GATEWAY_KEY || "servio_local_gateway_key_2026";
+      headers["X-Gateway-Key"] = gatewayKey;
+
+      const activeRoleCookie = getCookie("servio_active_role");
+      const activeRole = activeRoleCookie || "CUSTOMER";
+
+      const currentUser = MOCK_USERS_BY_ROLE[activeRole] || MOCK_USERS_BY_ROLE["CUSTOMER"];
+      if (currentUser?.id) {
+        headers["X-Actor-User-Id"] = currentUser.id;
+        headers["X-Actor-Role"] = activeRole;
+        if (currentUser.activeRole?.assignmentId) {
+          headers["X-Actor-Role-Assignment-Id"] = currentUser.activeRole.assignmentId;
+        }
+        if (currentUser.organizationId) {
+          headers["X-Actor-Org-Id"] = currentUser.organizationId;
+        }
+        headers["X-Actor-Authz-Version"] = "1";
+      }
+
+      if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+        if (!headers["Idempotency-Key"]) {
+          headers["Idempotency-Key"] = `idemp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        }
+      }
+
+      if (options.headers) {
+        if (options.headers instanceof Headers) {
+          options.headers.forEach((val, key) => {
+            headers[key] = val;
+          });
+        } else if (Array.isArray(options.headers)) {
+          options.headers.forEach(([k, v]) => {
+            headers[k] = v;
+          });
+        } else {
+          Object.assign(headers, options.headers);
+        }
+      }
+
+      if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
+        headers["Content-Type"] = "application/json";
+      }
+
+      const cleanPath = endpoint.startsWith("/api/v1") ? endpoint.slice(7) : endpoint;
+      const targetUrl = `${PRODUCT_BASE_URL.replace(/\/+$/, "")}/${cleanPath.replace(/^\/+/, "")}`;
+
+      const res = await fetch(targetUrl, {
+        ...options,
+        headers,
+        credentials: "include",
+      });
+
+      const contentType = res.headers.get("content-type") || "";
+      let json: any = null;
+      if (contentType.includes("application/json")) {
+        json = await res.json();
+      } else {
+        const text = await res.text();
+        try {
+          json = JSON.parse(text);
+        } catch {
+          json = { message: text };
+        }
+      }
+
+      if (!res.ok) {
+        const err: any = new Error(
+          json?.message || `Request ke Product Service gagal dengan kode status ${res.status}.`
+        );
+        err.status = res.status;
+        err.code = json?.code;
+        err.errors = json?.error?.field_errors || json?.errors;
+        err.data = json?.data;
+        throw err;
+      }
+
+      return {
+        success: json?.success ?? true,
+        message: json?.message,
+        data: json?.data !== undefined ? json.data : json,
+        count: json?.count,
+        meta: json?.meta,
+        ...json,
+      };
+    } catch (err) {
+      if ((err as any)?.status) {
+        throw err;
+      }
+      console.warn("Product Service network failure:", err);
       throw err;
     }
   }
@@ -3275,6 +3401,9 @@ export interface ApiPersonalProfile {
   dateOfBirth?: string | null;
   gender?: string | null;
   preferences?: Record<string, unknown>;
+  address?: any;
+  address_json?: any;
+  addressData?: any;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -5524,15 +5653,142 @@ import type {
   ApiShopProfile,
 } from "@/types/domain";
 
+export function mapBackendProductToApi(item: any): ApiProduct {
+  if (!item) return item;
+  const productId = item.id || item.productId || item._id;
+  const minPrice = item.display_price?.min ?? item.min_price_idr ?? item.min_price ?? item.price_idr ?? item.minPrice ?? (item.price || 0);
+  const maxPrice = item.display_price?.max ?? item.max_price_idr ?? item.max_price ?? item.maxPrice ?? minPrice;
+  const merchantOrgId = item.merchant?.organization_id || item.merchant_organization_id || item.merchantOrganizationId || "";
+  const merchantStoreName = item.merchant?.store_name || item.merchant_store_name || item.merchantName || "Mitra Toko SERVIO";
+
+  let mediaList: any[] = [];
+  if (Array.isArray(item.media) && item.media.length > 0) {
+    mediaList = item.media.map((m: any) => ({
+      id: m.id,
+      url: typeof m === "string" ? m : (m.url || `/api/v1/product-media/${m.id}`),
+      isPrimary: Boolean(m.is_primary || m.isPrimary),
+      sortOrder: m.sort_order ?? m.sortOrder ?? 0,
+      scope: m.scope || (m.variant_id || m.variantId ? "VARIANT" : "GENERAL"),
+      variantId: m.variant_id ?? m.variantId ?? null,
+    }));
+  } else if (Array.isArray(item.general_media) && item.general_media.length > 0) {
+    mediaList = item.general_media.map((m: any) => ({
+      id: m.id,
+      url: typeof m === "string" ? m : (m.url || `/api/v1/product-media/${m.id}`),
+      isPrimary: Boolean(m.is_primary || m.isPrimary),
+      sortOrder: m.sort_order ?? m.sortOrder ?? 0,
+      scope: "GENERAL",
+      variantId: null,
+    }));
+  } else if (item.primary_image?.url) {
+    mediaList = [{ url: item.primary_image.url, isPrimary: true, scope: "GENERAL" }];
+  } else if (item.primary_image_url) {
+    mediaList = [{ url: item.primary_image_url, isPrimary: true, scope: "GENERAL" }];
+  }
+
+  const variants = Array.isArray(item.variants)
+    ? item.variants.map((v: any) => ({
+        _id: v.id,
+        variantId: v.id || v.variantId,
+        productId: productId,
+        name: v.display_name || (v.attributes ? Object.values(v.attributes).join(" / ") : v.name || "Varian"),
+        price: v.price_idr ?? v.price ?? minPrice,
+        stock: v.stock_qty ?? v.stock ?? 0,
+        status: v.status || "ACTIVE",
+        lockVersion: v.lock_version ?? 1,
+        attributes: v.attributes || {},
+        media: Array.isArray(v.media)
+          ? v.media.map((m: any) => ({
+              id: m.id,
+              url: typeof m === "string" ? m : (m.url || `/api/v1/product-media/${m.id}`),
+              isPrimary: Boolean(m.is_primary || m.isPrimary),
+              sortOrder: m.sort_order ?? m.sortOrder ?? 0,
+              scope: "VARIANT",
+              variantId: v.id || v.variantId,
+            }))
+          : [],
+      }))
+    : undefined;
+
+  const totalStock = item.total_stock ?? (variants ? variants.reduce((s: number, v: any) => s + (v.stock || 0), 0) : (item.stock || 0));
+
+  const priceRangeFormatted =
+    minPrice === maxPrice
+      ? `Rp${minPrice.toLocaleString("id-ID")}`
+      : `Rp${minPrice.toLocaleString("id-ID")} - Rp${maxPrice.toLocaleString("id-ID")}`;
+
+  return {
+    _id: productId,
+    productId,
+    id: productId,
+    merchantOrganizationId: merchantOrgId,
+    merchantName: merchantStoreName,
+    categoryId: item.category_id || item.categoryId || (item.category?.id ?? ""),
+    categoryName: item.category_name || item.categoryName || (item.category?.name ?? ""),
+    subcategoryId: item.subcategory_id || item.subcategoryId || (item.subcategory?.id ?? ""),
+    subcategoryName: item.subcategory_name || item.subcategoryName || (item.subcategory?.name ?? ""),
+    name: item.name || item.title || "",
+    brandName: item.brand || item.brand_name || item.brandName || "",
+    description: item.description || "",
+    media: mediaList,
+    status: item.status || "ACTIVE",
+    minPrice,
+    maxPrice,
+    priceDisplay: priceRangeFormatted,
+    priceRangeFormatted,
+    totalStock,
+    variantCount: item.variant_count ?? (variants ? variants.length : 0),
+    variants,
+    lockVersion: item.lock_version ?? 1,
+    activationRequirements: item.activation_requirements,
+    merchantCity: item.merchant?.city || item.merchant_city || item.merchantCity || "Jakarta Selatan",
+    merchantProvince: item.merchant?.province || item.merchant_province || item.merchantProvince || "DKI Jakarta",
+    merchant: {
+      id: merchantOrgId,
+      name: merchantStoreName,
+      brandName: merchantStoreName,
+      status: item.merchant?.store_profile_status || item.store_profile_status,
+      storefrontUrl: item.merchant?.storefront_url || `/merchants/${merchantOrgId}/storefront`,
+      city: item.merchant?.city || item.merchant_city || item.merchantCity || "Jakarta Selatan",
+      province: item.merchant?.province || item.merchant_province || item.merchantProvince || "DKI Jakarta",
+      district: item.merchant?.district || item.merchant_district || item.merchantDistrict || "Kebayoran Baru",
+      postalCode: item.merchant?.postal_code || item.merchant?.postalCode || "12150",
+      streetAddress: item.merchant?.street_address || item.merchant?.streetAddress,
+    },
+    relatedProducts: Array.isArray(item.related_products) ? item.related_products.map(mapBackendProductToApi) : [],
+    sameStoreProducts: Array.isArray(item.same_store_products) ? item.same_store_products.map(mapBackendProductToApi) : [],
+    createdAt: item.created_at,
+    updatedAt: item.updated_at,
+  } as any;
+}
+
 export const shopsApi = {
-  // GET /api/v1/shops/{id}
+  // GET /api/v1/merchants/{id}/storefront (Product Service canonical endpoint)
   async get(id: string) {
-    return apiFetch<{
-      shop: ApiShopProfile;
-      products: ApiProduct[];
-      count: number;
-      recommendations?: ApiProduct[];
-    }>(`/shops/${id}`);
+    const res = await apiFetch<any>(`/merchants/${id}/storefront`);
+    const rawData = res.data || {};
+    const merchant = rawData.merchant || {};
+    const shopProfile: ApiShopProfile = {
+      id: merchant.organization_id || id,
+      name: merchant.store_name || "Mitra Toko SERVIO",
+      productCount: rawData.active_product_count || 0,
+      city: "Jakarta Barat (Glodok)",
+      badge: "Mitra Toko Resmi SERVIO",
+      rating: 4.9,
+      reviewCount: 120,
+      verified: merchant.business_status === "ACTIVE",
+    };
+    const products: ApiProduct[] = Array.isArray(rawData.products)
+      ? rawData.products.map(mapBackendProductToApi)
+      : [];
+    return {
+      success: res.success,
+      data: {
+        shop: shopProfile,
+        products,
+        count: rawData.active_product_count || products.length,
+      },
+    };
   },
 };
 
@@ -5583,38 +5839,149 @@ export const productCategoriesApi = {
 };
 
 export const productsApi = {
-  // GET /api/v1/products (Canonical Resource: Public, Merchant Own, or Admin Moderation)
+  // GET /api/v1/products (Public) / /api/v1/merchant/products (Merchant) / /api/v1/governance/products (Admin)
   async list(params?: {
     scope?: "public" | "merchant" | "admin";
     categoryId?: string;
+    categories?: string[] | string;
+    subcategoryId?: string;
+    subcategories?: string[] | string;
+    brand?: string;
+    brands?: string[] | string;
     search?: string;
     status?: string;
     merchantOrganizationId?: string;
     minPrice?: number;
     maxPrice?: number;
+    priceMin?: number;
+    priceMax?: number;
     sort?: string;
+    page?: number;
+    limit?: number;
   }) {
     const query = new URLSearchParams();
-    if (params?.scope) query.set("scope", params.scope);
-    if (params?.categoryId && params.categoryId !== "ALL") query.set("categoryId", params.categoryId);
     if (params?.search) query.set("search", params.search);
-    if (params?.status && params.status !== "ALL") query.set("status", params.status);
-    if (params?.merchantOrganizationId) query.set("merchantOrganizationId", params.merchantOrganizationId);
-    if (params?.minPrice) query.set("minPrice", String(params.minPrice));
-    if (params?.maxPrice) query.set("maxPrice", String(params.maxPrice));
-    if (params?.sort) query.set("sort", params.sort);
+
+    if (params?.scope === "merchant") {
+      if (params.status && params.status !== "ALL") query.set("status", params.status);
+      if (params.categoryId && params.categoryId !== "ALL") query.set("category_id", params.categoryId);
+      if (params.limit) query.set("limit", String(params.limit));
+      const qs = query.toString() ? `?${query.toString()}` : "";
+      const res = await apiFetch<any[]>(`/merchant/products${qs}`);
+      const rawList = Array.isArray(res.data) ? res.data : [];
+      return {
+        ...res,
+        data: rawList.map(mapBackendProductToApi),
+      };
+    }
+
+    if (params?.scope === "admin") {
+      if (params.status && params.status !== "ALL") query.set("status", params.status);
+      if (params.categoryId && params.categoryId !== "ALL") query.set("category_id", params.categoryId);
+      if (params.merchantOrganizationId) query.set("merchant_id", params.merchantOrganizationId);
+      if (params.limit) query.set("limit", String(params.limit));
+      const qs = query.toString() ? `?${query.toString()}` : "";
+      const res = await apiFetch<any[]>(`/governance/products${qs}`);
+      const rawList = Array.isArray(res.data) ? res.data : [];
+      return {
+        ...res,
+        data: rawList.map(mapBackendProductToApi),
+      };
+    }
+
+    // Public Catalog
+    if (params?.categories) {
+      const cats = Array.isArray(params.categories)
+        ? params.categories.filter(Boolean).join(",")
+        : params.categories;
+      if (cats && cats !== "ALL") {
+        query.set("categories", cats);
+        query.set("category_id", cats);
+      }
+    } else if (params?.categoryId && params.categoryId !== "ALL") {
+      query.set("categories", params.categoryId);
+      query.set("category_id", params.categoryId);
+    }
+
+    if (params?.subcategories) {
+      const subs = Array.isArray(params.subcategories)
+        ? params.subcategories.filter(Boolean).join(",")
+        : params.subcategories;
+      if (subs && subs !== "ALL") {
+        query.set("subcategories", subs);
+        query.set("subcategory_id", subs);
+      }
+    } else if (params?.subcategoryId && params.subcategoryId !== "ALL") {
+      query.set("subcategories", params.subcategoryId);
+      query.set("subcategory_id", params.subcategoryId);
+    }
+
+    if (params?.brands) {
+      const brs = Array.isArray(params.brands)
+        ? params.brands.filter(Boolean).join(",")
+        : params.brands;
+      if (brs && brs !== "ALL") {
+        query.set("brands", brs);
+        query.set("brand", brs);
+      }
+    } else if (params?.brand && params.brand !== "ALL") {
+      query.set("brands", params.brand);
+      query.set("brand", params.brand);
+    }
+
+    if (params?.merchantOrganizationId) {
+      query.set("merchant_id", params.merchantOrganizationId);
+    }
+
+    const minP = params?.priceMin ?? params?.minPrice;
+    if (minP !== undefined && minP !== null) {
+      query.set("price_min", String(minP));
+      query.set("min_price", String(minP));
+    }
+
+    const maxP = params?.priceMax ?? params?.maxPrice;
+    if (maxP !== undefined && maxP !== null) {
+      query.set("price_max", String(maxP));
+      query.set("max_price", String(maxP));
+    }
+
+    if (params?.sort) {
+      query.set("sort", params.sort);
+      query.set("sort_by", params.sort);
+    }
+    if (params?.limit) {
+      query.set("limit", String(params.limit));
+    } else {
+      query.set("limit", "50");
+    }
+
     const qs = query.toString() ? `?${query.toString()}` : "";
-    return apiFetch<ApiProduct[]>(`/products${qs}`);
+    const res = await apiFetch<any[]>(`/products${qs}`);
+    const rawList = Array.isArray(res.data) ? res.data : [];
+    return {
+      ...res,
+      data: rawList.map(mapBackendProductToApi),
+    };
   },
 
-  // GET /api/v1/products/{id}
-  async get(id: string) {
-    return apiFetch<ApiProduct>(`/products/${id}`);
+  // GET /api/v1/products/{id} or /api/v1/merchant/products/{id}
+  async get(id: string, options?: { scope?: "merchant" | "admin" | "public" }) {
+    let endpoint = `/products/${id}?include=related,same_store`;
+    if (options?.scope === "merchant") {
+      endpoint = `/merchant/products/${id}`;
+    } else if (options?.scope === "admin") {
+      endpoint = `/governance/products/${id}`;
+    }
+    const res = await apiFetch<any>(endpoint);
+    return {
+      ...res,
+      data: mapBackendProductToApi(res.data),
+    };
   },
 
-  // POST /api/v1/products (Merchant)
+  // POST /api/v1/merchant/products (Merchant)
   async create(data: {
-    categoryId: string;
+    categoryId?: string;
     categoryName?: string;
     subcategoryId?: string;
     subcategoryName?: string;
@@ -5624,106 +5991,345 @@ export const productsApi = {
     variants?: Array<{ name: string; price: number; stock: number; status?: string }>;
     warrantyPolicy?: any;
   }) {
-    return apiFetch<ApiProduct>("/products", {
+    const backendVariants = (data.variants || []).map((v) => ({
+      attributes: { varian: v.name },
+      display_name: v.name,
+      price_idr: Number(v.price) || 0,
+      stock_qty: Number(v.stock) || 0,
+      status: v.status || "ACTIVE",
+    }));
+
+    const payload: any = {
+      name: data.name,
+      description: data.description || null,
+      brand: data.brandName || null,
+      category_id: data.categoryId || null,
+      subcategory_id: data.subcategoryId || null,
+      variants: backendVariants.length > 0 ? backendVariants : undefined,
+    };
+
+    const res = await apiFetch<any>("/merchant/products", {
       method: "POST",
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
+
+    return {
+      ...res,
+      data: mapBackendProductToApi(res.data),
+    };
   },
 
-  // PATCH /api/v1/products/{id} (Merchant or Admin moderation)
-  async update(id: string, data: Partial<{
-    categoryId: string;
-    categoryName: string;
-    subcategoryId: string;
-    subcategoryName: string;
-    name: string;
-    brandName: string;
-    description: string;
-    status: string;
-    warrantyPolicy: any;
-  }>) {
-    return apiFetch<ApiProduct>(`/products/${id}`, {
+  // PATCH /api/v1/merchant/products/{id}
+  async update(
+    id: string,
+    data: Partial<{
+      categoryId: string;
+      categoryName: string;
+      subcategoryId: string;
+      subcategoryName: string;
+      name: string;
+      brandName: string;
+      description: string;
+      status: string;
+      warrantyPolicy: any;
+    }>,
+    lockVersion: number = 1
+  ) {
+    const payload: any = {};
+    if (data.name !== undefined) payload.name = data.name;
+    if (data.description !== undefined) payload.description = data.description;
+    if (data.brandName !== undefined) payload.brand = data.brandName;
+    if (data.categoryId !== undefined) payload.category_id = data.categoryId;
+    if (data.subcategoryId !== undefined) payload.subcategory_id = data.subcategoryId;
+
+    const res = await apiFetch<any>(`/merchant/products/${id}`, {
       method: "PATCH",
-      body: JSON.stringify(data),
+      headers: {
+        "If-Match": String(lockVersion),
+      },
+      body: JSON.stringify(payload),
     });
+
+    return {
+      ...res,
+      data: mapBackendProductToApi(res.data),
+    };
   },
 
-  // POST /api/v1/products/{id}/activate
-  async activate(id: string) {
-    return apiFetch<ApiProduct>(`/products/${id}/activate`, {
-      method: "POST",
+  // PATCH /api/v1/merchant/products/{id}/status
+  async changeStatus(id: string, status: "ACTIVE" | "INACTIVE", lockVersion: number = 1) {
+    const res = await apiFetch<any>(`/merchant/products/${id}/status`, {
+      method: "PATCH",
+      headers: {
+        "If-Match": String(lockVersion),
+      },
+      body: JSON.stringify({ status }),
     });
+
+    return {
+      ...res,
+      data: mapBackendProductToApi(res.data),
+    };
   },
 
-  // POST /api/v1/products/{id}/deactivate
-  async deactivate(id: string) {
-    return apiFetch<ApiProduct>(`/products/${id}/deactivate`, {
-      method: "POST",
-    });
+  // POST alias to changeStatus ACTIVE
+  async activate(id: string, lockVersion: number = 1) {
+    return this.changeStatus(id, "ACTIVE", lockVersion);
   },
 
-  // POST /api/v1/products/{id}/archive
-  async archive(id: string) {
-    return apiFetch<ApiProduct>(`/products/${id}/archive`, {
-      method: "POST",
-    });
+  // POST alias to changeStatus INACTIVE
+  async deactivate(id: string, lockVersion: number = 1) {
+    return this.changeStatus(id, "INACTIVE", lockVersion);
   },
 
-  // DELETE /api/v1/products/{id}
-  async delete(id: string) {
-    return apiFetch<{ message: string }>(`/products/${id}`, {
+  // DELETE /api/v1/merchant/products/{id} (Soft delete / archive)
+  async archive(id: string, lockVersion: number = 1, reason?: string) {
+    return apiFetch<any>(`/merchant/products/${id}`, {
       method: "DELETE",
+      headers: {
+        "If-Match": String(lockVersion),
+      },
+      body: reason ? JSON.stringify({ reason }) : undefined,
     });
+  },
+
+  async delete(id: string, lockVersion: number = 1, reason?: string) {
+    return this.archive(id, lockVersion, reason);
   },
 };
 
 export const productVariantsApi = {
-  // GET /api/v1/products/{productId}/variants
+  // GET /api/v1/merchant/products/{productId} (to retrieve current variants array)
   async list(productId: string, params?: { status?: string }) {
-    const qs = params?.status ? `?status=${params.status}` : "";
-    return apiFetch<ApiProductVariant[]>(`/products/${productId}/variants${qs}`);
+    const res = await apiFetch<any>(`/merchant/products/${productId}`);
+    const rawVariants = res.data?.variants || [];
+    const rawMedia = res.data?.media || [];
+    const mapped: ApiProductVariant[] = rawVariants.map((v: any) => {
+      const vMedia = (Array.isArray(v.media) && v.media.length > 0)
+        ? v.media
+        : rawMedia.filter((m: any) => (m.variant_id === v.id || m.variantId === v.id));
+      return {
+        _id: v.id,
+        variantId: v.id,
+        productId,
+        name: v.display_name || (v.attributes ? Object.values(v.attributes).join(" / ") : "Varian"),
+        price: v.price_idr ?? v.price ?? 0,
+        stock: v.stock_qty ?? v.stock ?? 0,
+        status: v.status || "ACTIVE",
+        lockVersion: v.lock_version || 1,
+        attributes: v.attributes || {},
+        media: vMedia.map((m: any) => ({
+          id: m.id,
+          url: typeof m === "string" ? m : (m.url || `/api/v1/product-media/${m.id}`),
+          isPrimary: Boolean(m.is_primary || m.isPrimary),
+          sortOrder: m.sort_order ?? m.sortOrder ?? 0,
+          scope: "VARIANT",
+          variantId: v.id,
+        })),
+      };
+    });
+    return {
+      success: res.success,
+      data: mapped,
+    };
   },
 
   // GET /api/v1/products/{productId}/variants/{variantId}
   async get(productId: string, variantId: string) {
-    return apiFetch<ApiProductVariant>(`/products/${productId}/variants/${variantId}`);
+    const res = await this.list(productId);
+    const match = res.data?.find((v) => v.variantId === variantId);
+    return {
+      success: Boolean(match),
+      data: match as ApiProductVariant,
+    };
   },
 
-  // POST /api/v1/products/{productId}/variants
+  // POST /api/v1/merchant/products/{productId}/variants
   async create(productId: string, data: { name: string; price: number; stock: number; status?: string }) {
-    return apiFetch<ApiProductVariant>(`/products/${productId}/variants`, {
+    const payload = {
+      attributes: { varian: data.name },
+      display_name: data.name,
+      price_idr: Number(data.price),
+      stock_qty: Number(data.stock),
+      status: data.status || "ACTIVE",
+    };
+    const res = await apiFetch<any>(`/merchant/products/${productId}/variants`, {
       method: "POST",
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
+    const v = res.data || {};
+    return {
+      ...res,
+      data: {
+        _id: v.id,
+        variantId: v.id,
+        productId,
+        name: v.display_name || data.name,
+        price: v.price_idr ?? data.price,
+        stock: v.stock_qty ?? data.stock,
+        status: v.status || "ACTIVE",
+        lockVersion: v.lock_version || 1,
+      } as ApiProductVariant,
+    };
   },
 
-  // PATCH /api/v1/products/{productId}/variants/{variantId}
-  async update(productId: string, variantId: string, data: Partial<{ name: string; price: number; stock: number; status: string }>) {
-    return apiFetch<ApiProductVariant>(`/products/${productId}/variants/${variantId}`, {
+  // PATCH /api/v1/merchant/products/{productId}/variants/{variantId}
+  async update(
+    productId: string,
+    variantId: string,
+    data: Partial<{ name: string; price: number; stock: number; status: string }>,
+    lockVersion: number = 1
+  ) {
+    const payload: any = {
+      stock_change_reason: "MANUAL_ADJUSTMENT",
+      stock_change_note: "Pembaruan harga dan stok suku cadang oleh merchant",
+    };
+    if (data.name) {
+      payload.attributes = { varian: data.name };
+      payload.display_name = data.name;
+    }
+    if (data.price !== undefined) payload.price_idr = Number(data.price);
+    if (data.stock !== undefined) payload.stock_qty = Number(data.stock);
+
+    return apiFetch<any>(`/merchant/products/${productId}/variants/${variantId}`, {
       method: "PATCH",
-      body: JSON.stringify(data),
+      headers: {
+        "If-Match": String(lockVersion),
+      },
+      body: JSON.stringify(payload),
     });
   },
 
-  // POST /api/v1/products/{productId}/variants/{variantId}/activate
-  async activate(productId: string, variantId: string) {
-    return apiFetch<ApiProductVariant>(`/products/${productId}/variants/${variantId}/activate`, {
-      method: "POST",
+  // PATCH /api/v1/merchant/products/{productId}/variants/{variantId}/status
+  async changeStatus(productId: string, variantId: string, status: "ACTIVE" | "INACTIVE", lockVersion: number = 1) {
+    return apiFetch<any>(`/merchant/products/${productId}/variants/${variantId}/status`, {
+      method: "PATCH",
+      headers: {
+        "If-Match": String(lockVersion),
+      },
+      body: JSON.stringify({ status }),
     });
   },
 
-  // POST /api/v1/products/{productId}/variants/{variantId}/deactivate
-  async deactivate(productId: string, variantId: string) {
-    return apiFetch<ApiProductVariant>(`/products/${productId}/variants/${variantId}/deactivate`, {
-      method: "POST",
+  // POST alias to changeStatus ACTIVE
+  async activate(productId: string, variantId: string, lockVersion: number = 1) {
+    return this.changeStatus(productId, variantId, "ACTIVE", lockVersion);
+  },
+
+  // POST alias to changeStatus INACTIVE
+  async deactivate(productId: string, variantId: string, lockVersion: number = 1) {
+    return this.changeStatus(productId, variantId, "INACTIVE", lockVersion);
+  },
+
+  // DELETE /api/v1/merchant/products/{productId}/variants/{variantId}
+  async delete(productId: string, variantId: string, lockVersion: number = 1) {
+    return apiFetch<any>(`/merchant/products/${productId}/variants/${variantId}`, {
+      method: "DELETE",
+      headers: {
+        "If-Match": String(lockVersion),
+      },
     });
   },
 
-  // POST /api/v1/products/{productId}/variants/{variantId}/archive
-  async archive(productId: string, variantId: string) {
-    return apiFetch<ApiProductVariant>(`/products/${productId}/variants/${variantId}/archive`, {
+  async archive(productId: string, variantId: string, lockVersion: number = 1) {
+    return this.delete(productId, variantId, lockVersion);
+  },
+};
+
+export const productMediaApi = {
+  // POST /api/v1/merchant/products/{id}/media
+  async upload(productId: string, file: File, scope: "GENERAL" | "VARIANT" = "GENERAL", variantId?: string) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("scope", scope);
+    if (variantId) {
+      formData.append("variant_id", variantId);
+    }
+
+    return apiFetch<any>(`/merchant/products/${productId}/media`, {
       method: "POST",
+      body: formData,
     });
+  },
+
+  async uploadMultiple(productId: string, files: File[], scope: "GENERAL" | "VARIANT" = "GENERAL", variantId?: string) {
+    const results = [];
+    for (const file of files) {
+      const res = await this.upload(productId, file, scope, variantId);
+      results.push(res);
+    }
+    return results;
+  },
+
+  // PUT /api/v1/merchant/products/{id}/media/order
+  async reorder(
+    productId: string,
+    scope: "GENERAL" | "VARIANT",
+    orderedMediaIds: string[],
+    lockVersion: number = 1,
+    variantId?: string
+  ) {
+    const payload: any = {
+      scope,
+      ordered_media_ids: orderedMediaIds,
+    };
+    if (variantId) payload.variant_id = variantId;
+
+    return apiFetch<any>(`/merchant/products/${productId}/media/order`, {
+      method: "PUT",
+      headers: {
+        "If-Match": String(lockVersion),
+      },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  // DELETE /api/v1/merchant/products/{id}/media/{media_id}
+  async delete(productId: string, mediaId: string, lockVersion: number = 1) {
+    return apiFetch<any>(`/merchant/products/${productId}/media/${mediaId}`, {
+      method: "DELETE",
+      headers: {
+        "If-Match": String(lockVersion),
+      },
+    });
+  },
+};
+
+export const productGovernanceApi = {
+  // GET /api/v1/governance/products
+  async list(params?: { merchantId?: string; status?: string; categoryId?: string; search?: string; limit?: number }) {
+    const query = new URLSearchParams();
+    if (params?.merchantId) query.set("merchant_id", params.merchantId);
+    if (params?.status && params.status !== "ALL") query.set("status", params.status);
+    if (params?.categoryId && params.categoryId !== "ALL") query.set("category_id", params.categoryId);
+    if (params?.search) query.set("search", params.search);
+    if (params?.limit) query.set("limit", String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : "";
+    const res = await apiFetch<any[]>(`/governance/products${qs}`);
+    const rawList = Array.isArray(res.data) ? res.data : [];
+    return {
+      ...res,
+      data: rawList.map(mapBackendProductToApi),
+    };
+  },
+
+  // GET /api/v1/governance/products/{id}
+  async get(id: string) {
+    const res = await apiFetch<any>(`/governance/products/${id}`);
+    return {
+      ...res,
+      data: mapBackendProductToApi(res.data),
+    };
+  },
+
+  // GET /api/v1/product-audit
+  async listAudit(params?: { productId?: string; action?: string; limit?: number }) {
+    const query = new URLSearchParams();
+    if (params?.productId) query.set("product_id", params.productId);
+    if (params?.action) query.set("action", params.action);
+    if (params?.limit) query.set("limit", String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : "";
+    return apiFetch<any[]>(`/product-audit${qs}`);
   },
 };
 

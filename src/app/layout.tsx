@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { RoleProvider } from "@/context/RoleContext";
+import { LocationProvider } from "@/context/LocationContext";
+import { LocationPickerModal } from "@/components/features/location/LocationPickerModal";
 import { PageLoadingProvider } from "@/components/feedback/PageLoadingProvider";
 import { RoleSwitcher } from "@/components/navigation/RoleSwitcher";
+import { SPayProvider } from "@/features/spay/spay.frontend-provider";
 import "./globals.css";
 
 const sora = localFont({
@@ -102,8 +105,13 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-white text-neutral-dark selection:bg-sky selection:text-primary">
         <RoleProvider>
-          <PageLoadingProvider>{children}</PageLoadingProvider>
-          <RoleSwitcher />
+          <LocationProvider>
+            <SPayProvider>
+              <PageLoadingProvider>{children}</PageLoadingProvider>
+              <LocationPickerModal />
+              <RoleSwitcher />
+            </SPayProvider>
+          </LocationProvider>
         </RoleProvider>
       </body>
     </html>

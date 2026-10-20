@@ -29,8 +29,11 @@ import { useProviderOperations } from "@/features/provider/useProviderOperations
 import { useServiceOrder } from "@/features/orders/useServiceOrder";
 import { useDomainRepository } from "@/lib/repository/domainRepository";
 import { Toast } from "@/components/feedback/Toast";
+import { SPayBalanceCard } from "@/components/features/spay/SPayBalanceCard";
+import { useSPay } from "@/features/spay/spay.frontend-provider";
 
 export default function ProviderDashboardPage() {
+  const { summary: spaySummary, isBalanceVisible, toggleBalanceVisibility } = useSPay();
   const { storeStatus, updateStoreStatus, workers, affiliateSummary } = useProviderOperations();
   const { orders } = useServiceOrder();
   const repo = useDomainRepository();
@@ -331,6 +334,19 @@ export default function ProviderDashboardPage() {
           </button>
         </motion.div>
       )}
+
+      {/* S-PAY BALANCE CARD (PROVIDER SETTLEMENT) */}
+      <div>
+        <SPayBalanceCard
+          balance={spaySummary.withdrawableBalance}
+          ownerType="SERVICE_PROVIDER"
+          organizationName="Bengkel Sejuk Sentosa AC"
+          subtitle="Settlement Hak Pendapatan Jasa"
+          detailHref="/provider/spay"
+          isBalanceVisible={isBalanceVisible}
+          onToggleVisibility={toggleBalanceVisibility}
+        />
+      </div>
 
       {/* 6 Primary Operational Monitoring KPIs (docs/todo.md Section 56C.5) */}
       <div className="space-y-3">

@@ -2957,7 +2957,11 @@ export interface ApiProductVariant {
   price: number;
   stock: number;
   status: ProductLifecycleStatus;
-  media?: Array<{ url: string; type?: string; sortOrder?: number }>;
+  lockVersion?: number;
+  lock_version?: number;
+  attributes?: Record<string, any>;
+  sku?: string;
+  media?: Array<{ id?: string; url: string; type?: string; sortOrder?: number; isPrimary?: boolean; scope?: string; variantId?: string }>;
   createdBy?: string;
   updatedBy?: string;
   createdAt?: string;
@@ -2977,7 +2981,9 @@ export interface ApiProduct {
   name: string;
   brandName?: string;
   description?: string;
-  media?: Array<{ url: string; type?: string; sortOrder?: number } | string>;
+  media?: Array<{ id?: string; url: string; type?: string; sortOrder?: number; isPrimary?: boolean; scope?: string; variantId?: string } | string>;
+  general_media?: Array<{ id?: string; url: string; type?: string; sortOrder?: number; isPrimary?: boolean; scope?: string }>;
+  primary_image_url?: string;
   status: ProductLifecycleStatus;
   publishedAt?: string | null;
   minPrice?: number;
@@ -2987,6 +2993,20 @@ export interface ApiProduct {
   totalStock?: number;
   variantCount?: number;
   variants?: ApiProductVariant[];
+  lockVersion?: number;
+  lock_version?: number;
+  activationRequirements?: {
+    merchant_eligible?: boolean;
+    category_eligible?: boolean;
+    subcategory_eligible?: boolean;
+    has_active_variant?: boolean;
+    has_general_media?: boolean;
+    can_activate?: boolean;
+    blocking_reasons?: string[];
+  };
+  activation_requirements?: any;
+  relatedProducts?: ApiProduct[];
+  sameStoreProducts?: ApiProduct[];
   warrantyPolicy?: {
     durationMonths?: number;
     durationDays?: number;
@@ -2995,11 +3015,21 @@ export interface ApiProduct {
     exclusions?: string;
     terms?: string;
   };
-  warrantyDays?: number;
+  merchantCity?: string;
+  merchantProvince?: string;
   merchant?: {
     id: string;
     name: string;
     brandName?: string;
+    status?: string;
+    storefrontUrl?: string;
+    city?: string;
+    province?: string;
+    district?: string;
+    postalCode?: string;
+    streetAddress?: string;
+    latitude?: number;
+    longitude?: number;
   };
   createdBy?: string;
   updatedBy?: string;
@@ -3007,8 +3037,17 @@ export interface ApiProduct {
   updatedAt?: string;
 }
 
-export function getProductMediaUrl(media?: Array<{ url: string; type?: string; sortOrder?: number } | string>): string | undefined {
+export function getProductMediaUrl(media?: Array<{ url: string; type?: string; sortOrder?: number; scope?: string; variantId?: string; isPrimary?: boolean } | string>): string | undefined {
   if (!media || media.length === 0) return undefined;
+  // 1. Look for primary media
+  const primary = media.find((m) => typeof m !== "string" && m.isPrimary);
+  if (primary && typeof primary !== "string") return primary.url;
+
+  // 2. Look for general scope media (not variant-specific)
+  const general = media.find((m) => typeof m !== "string" && (m.scope === "GENERAL" || (!m.variantId && m.scope !== "VARIANT")));
+  if (general && typeof general !== "string") return general.url;
+
+  // 3. Fallback to first item
   const first = media[0];
   if (typeof first === "string") return first;
   return first?.url;

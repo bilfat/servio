@@ -12,7 +12,7 @@ import {
   ActiveRoleContext,
 } from "@/types/auth";
 import { hasPermission as evaluatePermission } from "@/lib/permissions/hasPermission";
-import { authApi } from "@/lib/servioApi";
+import { authApi, MOCK_USERS_BY_ROLE } from "@/lib/servioApi";
 
 const GUEST_USER_CONTEXT: UserContext = {
   id: "guest",
@@ -149,6 +149,9 @@ export function RoleProvider({
           createdAt: u.createdAt,
           nik: u.nik,
           ktpFilePath: u.ktpFilePath,
+          address: (u as any).address ?? (u.profile as any)?.address_json ?? (u.personalProfile as any)?.address_json ?? null,
+          address_json: (u as any).address_json ?? (u.profile as any)?.address_json ?? (u.personalProfile as any)?.address_json ?? null,
+          addressData: (u as any).addressData ?? (u.profile as any)?.address_json ?? (u.personalProfile as any)?.address_json ?? null,
           providerId: (u.providerId as string | undefined) || (u.workerProfile?.providerId as string | undefined),
           workerProfile: u.workerProfile as UserContext["workerProfile"],
           businessProfile: u.businessProfile,
@@ -277,10 +280,17 @@ export function RoleProvider({
     }
 
     setActiveRole(targetRoleCode);
+    const mockUser = MOCK_USERS_BY_ROLE[targetRoleCode];
     setUser((prev) => ({
       ...prev,
+      ...(mockUser || {}),
       activeRole: targetRoleCode,
-      activeAssignmentId: targetAssignment?.assignmentId,
+      status: prev.status || mockUser?.status || "ACTIVE",
+      staffOnboardingStatus: prev.staffOnboardingStatus || mockUser?.staffOnboardingStatus || "COMPLETED",
+      readiness: prev.readiness || mockUser?.readiness || "READY",
+      isOperationalReady: Boolean(prev.isOperationalReady || mockUser?.isOperationalReady),
+      availableRoles: prev.availableRoles?.length ? prev.availableRoles : (mockUser?.roles?.map((r: any) => r.code) || [targetRoleCode]),
+      activeAssignmentId: targetAssignment?.assignmentId || mockUser?.activeRole?.assignmentId,
     }));
 
     if (typeof window !== "undefined") {

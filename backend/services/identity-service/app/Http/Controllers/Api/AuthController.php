@@ -53,6 +53,9 @@ class AuthController extends Controller
             'phone' => 'nullable|string|max:20',
             'password' => 'required|string|min:8',
             'registration_type' => 'nullable|string|in:CUSTOMER,BUSINESS_APPLICANT',
+            'address' => 'nullable',
+            'address_json' => 'nullable',
+            'addressData' => 'nullable',
         ]);
 
         if (empty($validated['email']) && empty($validated['phone'])) {
@@ -116,7 +119,13 @@ class AuthController extends Controller
 
         $regType = $validated['registration_type'] ?? 'CUSTOMER';
 
-        $user = DB::transaction(function () use ($validated, $regType) {
+        $rawAddress = $request->input('address_json') ?? $request->input('addressData') ?? $request->input('address');
+        $addressData = null;
+        if ($rawAddress) {
+            $addressData = is_array($rawAddress) ? $rawAddress : (json_decode($rawAddress, true) ?: ['street_address' => (string) $rawAddress]);
+        }
+
+        $user = DB::transaction(function () use ($validated, $regType, $addressData) {
             $user = User::create([
                 'email' => $validated['email'] ?? null,
                 'phone_e164' => $validated['phone'] ?? null,
@@ -130,6 +139,7 @@ class AuthController extends Controller
                 'display_name' => $validated['name'],
                 'photo_path' => '/brand/logo.png',
                 'locale' => 'id_ID',
+                'address_json' => $addressData,
             ]);
 
             // If Customer, grant CUSTOMER role in restricted/pending status
@@ -738,6 +748,9 @@ class AuthController extends Controller
             'avatarUrl' => $profile?->photo_path ?? '/brand/logo.png',
             'emailVerified' => $user->email_verified_at !== null,
             'phoneVerified' => $user->phone_verified_at !== null,
+            'address' => $profile?->address_json,
+            'address_json' => $profile?->address_json,
+            'addressData' => $profile?->address_json,
             'staffOnboardingStatus' => $user->staffOnboarding?->status ?? ($user->status === 'ACTIVE' ? 'COMPLETED' : 'INVITED'),
             'staff_onboarding_status' => $user->staffOnboarding?->status ?? ($user->status === 'ACTIVE' ? 'COMPLETED' : 'INVITED'),
             'readiness' => ($user->status === 'ACTIVE' && in_array($user->staffOnboarding?->status ?? ($user->status === 'ACTIVE' ? 'COMPLETED' : 'INVITED'), ['COMPLETED', 'OPERATIONAL_READY'])) ? 'READY' : 'NOT_READY',
@@ -791,11 +804,14 @@ class AuthController extends Controller
                     'businessType' => $draftData['business']['business_type'] ?? $draftData['business']['businessType'] ?? ($org ? 'PT / Badan Usaha' : null),
                     'nib' => $draftData['legal']['nib'] ?? $draftData['business']['nib'] ?? null,
                     'npwp' => $draftData['legal']['npwp'] ?? $draftData['business']['npwp'] ?? null,
-                    'address' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['address'] ?? null) : $orgProf?->address_json) ?? ($draftData['business']['address'] ?? null),
-                    'city' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['city'] ?? null) : null) ?? ($draftData['business']['city'] ?? null),
-                    'province' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['province'] ?? null) : null) ?? ($draftData['business']['province'] ?? null),
-                    'district' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['district'] ?? null) : null) ?? ($draftData['business']['district'] ?? null),
+                    'address' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['address'] ?? $orgProf->address_json['street_address'] ?? null) : $orgProf?->address_json) ?? ($draftData['business']['address'] ?? null),
+                    'city' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['city'] ?? $orgProf->address_json['city_name'] ?? null) : null) ?? ($draftData['business']['city'] ?? null),
+                    'province' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['province'] ?? $orgProf->address_json['province_name'] ?? null) : null) ?? ($draftData['business']['province'] ?? null),
+                    'district' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['district'] ?? $orgProf->address_json['district_name'] ?? null) : null) ?? ($draftData['business']['district'] ?? null),
+                    'village' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['village'] ?? $orgProf->address_json['village_name'] ?? null) : null) ?? ($draftData['business']['village'] ?? null),
                     'postalCode' => (is_array($orgProf?->address_json) ? ($orgProf->address_json['postal_code'] ?? null) : null) ?? ($draftData['business']['postal_code'] ?? $draftData['business']['postalCode'] ?? null),
+                    'address_json' => $orgProf?->address_json ?? ($draftData['business']['address_json'] ?? $draftData['business']['addressData'] ?? null),
+                    'addressData' => $orgProf?->address_json ?? ($draftData['business']['address_json'] ?? $draftData['business']['addressData'] ?? null),
                 ],
                 'picData' => [
                     'fullName' => $draftData['pic']['full_name'] ?? $draftData['pic']['fullName'] ?? $profile?->display_name,
@@ -843,10 +859,14 @@ class AuthController extends Controller
                     'businessType' => 'PT / Badan Usaha',
                     'nib' => !empty($orgProf->nib_ciphertext) ? Crypt::decryptString($orgProf->nib_ciphertext) : null,
                     'npwp' => !empty($orgProf->npwp_ciphertext) ? Crypt::decryptString($orgProf->npwp_ciphertext) : null,
-                    'address' => is_array($orgProf->address_json) ? ($orgProf->address_json['address'] ?? null) : $orgProf->address_json,
-                    'city' => is_array($orgProf->address_json) ? ($orgProf->address_json['city'] ?? null) : null,
-                    'province' => is_array($orgProf->address_json) ? ($orgProf->address_json['province'] ?? null) : null,
+                    'address' => is_array($orgProf->address_json) ? ($orgProf->address_json['address'] ?? $orgProf->address_json['street_address'] ?? null) : $orgProf->address_json,
+                    'city' => is_array($orgProf->address_json) ? ($orgProf->address_json['city'] ?? $orgProf->address_json['city_name'] ?? null) : null,
+                    'province' => is_array($orgProf->address_json) ? ($orgProf->address_json['province'] ?? $orgProf->address_json['province_name'] ?? null) : null,
+                    'district' => is_array($orgProf->address_json) ? ($orgProf->address_json['district'] ?? $orgProf->address_json['district_name'] ?? null) : null,
+                    'village' => is_array($orgProf->address_json) ? ($orgProf->address_json['village'] ?? $orgProf->address_json['village_name'] ?? null) : null,
                     'postalCode' => is_array($orgProf->address_json) ? ($orgProf->address_json['postal_code'] ?? null) : null,
+                    'address_json' => $orgProf->address_json,
+                    'addressData' => $orgProf->address_json,
                 ],
                 'picData' => [
                     'fullName' => $profile?->display_name,
@@ -873,6 +893,9 @@ class AuthController extends Controller
             'department' => $profile?->department,
             'avatar' => $profile?->photo_path ?? '/brand/logo.png',
             'avatarUrl' => $profile?->photo_path ?? '/brand/logo.png',
+            'address' => $profile?->address_json,
+            'address_json' => $profile?->address_json,
+            'addressData' => $profile?->address_json,
             'emailVerified' => $user->email_verified_at !== null,
             'phoneVerified' => $user->phone_verified_at !== null,
             'staffOnboardingStatus' => $staffStatus,
@@ -897,6 +920,8 @@ class AuthController extends Controller
                 'operationalStatus' => $org->operational_status ?? 'ONLINE_ACCEPTING',
                 'name' => $orgProf?->display_name ?? $orgProf?->legal_name,
                 'legalName' => $orgProf?->legal_name,
+                'address' => $orgProf?->address_json,
+                'address_json' => $orgProf?->address_json,
                 'operational_hours' => $orgProf?->operational_hours_json,
                 'service_area' => $orgProf?->service_area_json,
                 'competencies' => $orgProf?->competencies_json,

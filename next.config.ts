@@ -1,12 +1,21 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
   allowedDevOrigins: ["127.0.0.1", "localhost"],
   images: {
     remotePatterns: [
       {
         protocol: "https",
         hostname: "images.unsplash.com",
+      },
+      {
+        protocol: "http",
+        hostname: "localhost",
+      },
+      {
+        protocol: "http",
+        hostname: "127.0.0.1",
       },
     ],
   },
@@ -129,6 +138,52 @@ const nextConfig: NextConfig = {
       {
         source: "/api/v1/category-audit",
         destination: "http://127.0.0.1:8002/api/v1/category-audit",
+      },
+      // Product Service (Modul 03 - Port 8003)
+      {
+        source: "/api/v1/merchant/products/:path*",
+        destination: "http://127.0.0.1:8003/api/v1/merchant/products/:path*",
+      },
+      {
+        source: "/api/v1/merchant/products",
+        destination: "http://127.0.0.1:8003/api/v1/merchant/products",
+      },
+      {
+        source: "/api/v1/governance/products/:path*",
+        destination: "http://127.0.0.1:8003/api/v1/governance/products/:path*",
+      },
+      {
+        source: "/api/v1/governance/products",
+        destination: "http://127.0.0.1:8003/api/v1/governance/products",
+      },
+      {
+        source: "/api/v1/product-audit/:path*",
+        destination: "http://127.0.0.1:8003/api/v1/product-audit/:path*",
+      },
+      {
+        source: "/api/v1/product-audit",
+        destination: "http://127.0.0.1:8003/api/v1/product-audit",
+      },
+      {
+        source: "/api/v1/product-media/:path*",
+        destination: "http://127.0.0.1:8003/api/v1/product-media/:path*",
+      },
+      {
+        source: "/api/v1/merchants/:path*",
+        destination: "http://127.0.0.1:8003/api/v1/merchants/:path*",
+      },
+      {
+        source: "/api/v1/products/:path*",
+        destination: "http://127.0.0.1:8003/api/v1/products/:path*",
+      },
+      {
+        source: "/api/v1/products",
+        destination: "http://127.0.0.1:8003/api/v1/products",
+      },
+      // Sanctum CSRF (Identity Service - Port 8001)
+      {
+        source: "/sanctum/:path*",
+        destination: "http://127.0.0.1:8001/sanctum/:path*",
       },
       // Identity Service (Modul 01 - Port 8001)
       {

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   MapPin,
   House,
@@ -25,7 +26,17 @@ import { useActiveRole } from "@/context/RoleContext";
 import { getCurrentGpsPosition, reverseGeocodeLocation } from "@/lib/geoUtils";
 
 export default function CustomerAddressesPage() {
-  const { user } = useActiveRole();
+  const router = useRouter();
+  const { user, activeRole } = useActiveRole();
+  const isBusinessOrInternal =
+    activeRole !== "CUSTOMER" ||
+    Boolean(user.businessProfile || user.activeOrganization || user.organizationId || user.employeeId);
+
+  useEffect(() => {
+    if (isBusinessOrInternal) {
+      router.replace("/profile");
+    }
+  }, [isBusinessOrInternal, router]);
   const [addresses, setAddresses] = useState<ApiAddress[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -65,8 +76,10 @@ export default function CustomerAddressesPage() {
   };
 
   useEffect(() => {
-    loadAddresses();
-  }, []);
+    if (!isBusinessOrInternal) {
+      loadAddresses();
+    }
+  }, [isBusinessOrInternal]);
 
   const openAddModal = () => {
     setEditingAddressId(null);

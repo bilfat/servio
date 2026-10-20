@@ -212,7 +212,7 @@ function resolveRedirectPath(role?: string, returnUrl?: string | null): string {
   if (role === "CEO_PRODUCT_OWNER" && (returnUrl.startsWith("/ceo") || returnUrl.startsWith("/executive"))) {
     return returnUrl;
   }
-  if (role === "ADMIN_OPERATIONS" && returnUrl.startsWith("/ops")) {
+  if (role === "ADMIN_OPERATIONS" && (returnUrl.startsWith("/ops") || returnUrl.startsWith("/admin"))) {
     return returnUrl;
   }
   if (role === "SERVICE_PROVIDER" && returnUrl.startsWith("/provider")) {
@@ -227,10 +227,10 @@ function resolveRedirectPath(role?: string, returnUrl?: string | null): string {
   if (role === "SUPPLIER" && returnUrl.startsWith("/supplier")) {
     return returnUrl;
   }
-  if (role === "CUSTOMER_SUPPORT" && returnUrl.startsWith("/support")) {
+  if (role === "CUSTOMER_SUPPORT" && (returnUrl.startsWith("/support") || returnUrl.startsWith("/ops/support"))) {
     return returnUrl;
   }
-  if (role === "FINANCE_PAYMENT_OPS" && returnUrl.startsWith("/finance")) {
+  if (role === "FINANCE_PAYMENT_OPS" && (returnUrl.startsWith("/finance") || returnUrl.startsWith("/ops/finance"))) {
     return returnUrl;
   }
   if (
@@ -240,6 +240,7 @@ function resolveRedirectPath(role?: string, returnUrl?: string | null): string {
     !returnUrl.startsWith("/merchant") &&
     !returnUrl.startsWith("/supplier") &&
     !returnUrl.startsWith("/ops") &&
+    !returnUrl.startsWith("/admin") &&
     !returnUrl.startsWith("/ceo")
   ) {
     return returnUrl;

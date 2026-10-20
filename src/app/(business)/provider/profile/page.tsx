@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/Button";
 import { useDomainRepository } from "@/lib/repository/domainRepository";
 import { useActiveRole } from "@/context/RoleContext";
 import { organizationApi, registrationApi } from "@/lib/servioApi";
+import { Modal } from "@/components/ui/Modal";
+import { AddressCascadingForm, AddressData } from "@/components/identity/AddressCascadingForm";
 import {
   Building,
   Phone,
@@ -24,6 +26,9 @@ import {
   DownloadSimple,
   ArrowSquareOut,
   Copy,
+  PencilSimple,
+  Plus,
+  CircleNotch,
 } from "@phosphor-icons/react";
 
 type ProfileTab = "business" | "contact" | "address" | "hours" | "area" | "competency" | "documents" | "notifications";
@@ -88,6 +93,155 @@ export default function ProviderProfilePage() {
   const [postalCode, setPostalCode] = useState(
     user.businessProfile?.businessData?.postalCode || "11530"
   );
+
+  // CR-04: Business Address Modal & Structured Data
+  const [showBizAddressModal, setShowBizAddressModal] = useState(false);
+  const [isSavingBizAddress, setIsSavingBizAddress] = useState(false);
+  const [editingBizAddress, setEditingBizAddress] = useState<AddressData>({
+    province_id: "",
+    province_name: "",
+    city_id: "",
+    city_name: "",
+    district_id: "",
+    district_name: "",
+    village_id: "",
+    village_name: "",
+    postal_code: "",
+    street_address: "",
+    rt_rw: "",
+    landmark: "",
+  });
+
+  const bizAddressData: AddressData | null = useMemo(() => {
+    const raw = (user.activeOrganization as any)?.address_json ||
+                (user.activeOrganization?.profile as any)?.address_json ||
+                (user.activeOrganization as any)?.address ||
+                (user.activeOrganization?.profile as any)?.address ||
+                user.businessProfile?.businessData?.address_json ||
+                user.businessProfile?.businessData?.addressData;
+    if (!raw) {
+      if (address) {
+        return {
+          street_address: address,
+          city_name: city,
+          postal_code: postalCode,
+          province_name: "DKI Jakarta",
+          district_name: "",
+        };
+      }
+      return null;
+    }
+    if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === "object" && parsed !== null) return parsed;
+      } catch {
+        return {
+          street_address: raw,
+          city_name: city,
+          postal_code: postalCode,
+          province_name: "",
+          district_name: "",
+        };
+      }
+    }
+    if (typeof raw === "object") return raw as AddressData;
+    return null;
+  }, [user, address, city, postalCode]);
+
+  const hasBizAddress = Boolean(
+    bizAddressData &&
+    (bizAddressData.street_address || bizAddressData.province_name || bizAddressData.city_name)
+  );
+
+  const handleOpenEditBizAddress = () => {
+    if (bizAddressData) {
+      setEditingBizAddress({
+        province_id: bizAddressData.province_id || "",
+        province_name: bizAddressData.province_name || "",
+        city_id: bizAddressData.city_id || "",
+        city_name: bizAddressData.city_name || city || "",
+        district_id: bizAddressData.district_id || "",
+        district_name: bizAddressData.district_name || "",
+        village_id: bizAddressData.village_id || "",
+        village_name: bizAddressData.village_name || "",
+        postal_code: bizAddressData.postal_code || postalCode || "",
+        street_address: bizAddressData.street_address || address || "",
+        rt_rw: bizAddressData.rt_rw || "",
+        landmark: bizAddressData.landmark || "",
+      });
+    } else {
+      setEditingBizAddress({
+        province_id: "",
+        province_name: "",
+        city_id: "",
+        city_name: "",
+        district_id: "",
+        district_name: "",
+        village_id: "",
+        village_name: "",
+        postal_code: "",
+        street_address: "",
+        rt_rw: "",
+        landmark: "",
+      });
+    }
+    setShowBizAddressModal(true);
+  };
+
+  const handleSaveBizAddressModal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBizAddress.province_name || !editingBizAddress.city_name || !editingBizAddress.street_address) {
+      setToastMessage("Harap lengkapi setidaknya Provinsi, Kota/Kabupaten, dan Jalan/Nomor Alamat.");
+      return;
+    }
+
+    const orgId = user.activeOrganization?.id || user.organizationId;
+    if (!orgId) {
+      setToastMessage("ID Organisasi tidak ditemukan.");
+      return;
+    }
+
+    setIsSavingBizAddress(true);
+    try {
+      const fullStreet = [
+        editingBizAddress.street_address,
+        editingBizAddress.rt_rw ? `RT/RW ${editingBizAddress.rt_rw}` : null,
+        editingBizAddress.village_name ? `Kel. ${editingBizAddress.village_name}` : null,
+        editingBizAddress.district_name ? `Kec. ${editingBizAddress.district_name}` : null,
+        editingBizAddress.city_name,
+        editingBizAddress.province_name,
+        editingBizAddress.postal_code,
+      ].filter(Boolean).join(", ");
+
+      await organizationApi.updateOrganization(orgId, {
+        address: {
+          address: fullStreet,
+          street_address: editingBizAddress.street_address,
+          city: editingBizAddress.city_name,
+          province: editingBizAddress.province_name,
+          district: editingBizAddress.district_name,
+          village: editingBizAddress.village_name,
+          postalCode: editingBizAddress.postal_code,
+          postal_code: editingBizAddress.postal_code,
+          address_json: editingBizAddress,
+          addressData: editingBizAddress,
+        },
+      });
+
+      setAddress(editingBizAddress.street_address || "");
+      setCity(editingBizAddress.city_name || "");
+      setPostalCode(editingBizAddress.postal_code || "");
+      await refreshUser();
+      setShowBizAddressModal(false);
+      setToastMessage("Alamat usaha workshop berhasil diperbarui!");
+    } catch (err: unknown) {
+      const error = err as Error & { message?: string };
+      setToastMessage(error.message || "Gagal memperbarui alamat usaha.");
+    } finally {
+      setIsSavingBizAddress(false);
+    }
+  };
 
   // Sync state if user.businessProfile loads/updates asynchronously
   useEffect(() => {
@@ -505,39 +659,103 @@ export default function ProviderProfilePage() {
             </div>
           )}
 
-          {/* TAB 3: ALAMAT WORKSHOP */}
+          {/* TAB 3: ALAMAT WORKSHOP (CR-04) */}
           {activeTab === "address" && (
-            <div className="space-y-4 max-w-xl">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Alamat Fisik Bengkel</label>
-                <input
-                  type="text"
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-                />
+            <div className="space-y-5 max-w-2xl">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div>
+                  <h4 className="font-bold text-slate-900 text-sm">Alamat Usaha &amp; Workshop Bengkel</h4>
+                  <p className="text-slate-500 text-xs">Lokasi operasional untuk penentuan radius penugasan teknisi dan penjemputan unit.</p>
+                </div>
+                <button
+                  id="btn-edit-alamat-usaha-provider"
+                  type="button"
+                  onClick={handleOpenEditBizAddress}
+                  className="px-3.5 py-1.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition flex items-center gap-1.5 shadow-servio-xs cursor-pointer"
+                >
+                  <PencilSimple size={14} weight="bold" />
+                  <span>{hasBizAddress ? "Edit Alamat Usaha" : "Lengkapi Alamat Usaha"}</span>
+                </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Kota / Kabupaten</label>
-                  <input
-                    type="text"
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-                  />
+              {hasBizAddress && bizAddressData ? (
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-50 to-sky-50/30 border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <MapPin size={18} className="text-primary" weight="fill" />
+                      <span>Alamat Usaha Terverifikasi</span>
+                    </span>
+                    <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                      <CheckCircle size={12} weight="fill" />
+                      Aktif di Sistem
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5 text-xs">
+                    <p className="text-sm font-semibold text-slate-900 leading-relaxed">
+                      {bizAddressData.street_address || address || "-"}
+                    </p>
+                    <div className="text-slate-600 leading-relaxed flex flex-wrap gap-x-2 gap-y-1">
+                      {bizAddressData.rt_rw && (
+                        <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md font-medium text-[11px]">
+                          RT/RW: {bizAddressData.rt_rw}
+                        </span>
+                      )}
+                      {bizAddressData.village_name && (
+                        <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md font-medium text-[11px]">
+                          Kel. {bizAddressData.village_name}
+                        </span>
+                      )}
+                      {bizAddressData.district_name && (
+                        <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md font-medium text-[11px]">
+                          Kec. {bizAddressData.district_name}
+                        </span>
+                      )}
+                      {(bizAddressData.city_name || city) && (
+                        <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md font-medium text-[11px]">
+                          {bizAddressData.city_name || city}
+                        </span>
+                      )}
+                      {bizAddressData.province_name && (
+                        <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md font-medium text-[11px]">
+                          {bizAddressData.province_name}
+                        </span>
+                      )}
+                      {(bizAddressData.postal_code || postalCode) && (
+                        <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md font-medium text-[11px]">
+                          Kode Pos: {bizAddressData.postal_code || postalCode}
+                        </span>
+                      )}
+                    </div>
+                    {bizAddressData.landmark && (
+                      <p className="text-slate-500 text-xs italic pt-1">
+                        <span className="font-semibold not-italic text-slate-700">Patokan / Landmark:</span> {bizAddressData.landmark}
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">Kode Pos</label>
-                  <input
-                    type="text"
-                    value={postalCode}
-                    onChange={(e) => setPostalCode(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-                  />
+              ) : (
+                <div className="py-8 text-center space-y-3 bg-slate-50/60 rounded-2xl border border-dashed border-slate-200 p-6">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
+                    <MapPin size={24} weight="duotone" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-800">Alamat usaha belum dilengkapi</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5 max-w-sm mx-auto">
+                      Silakan lengkapi alamat usaha workshop Anda melalui form wilayah resmi untuk keperluan penugasan pesanan.
+                    </p>
+                  </div>
+                  <button
+                    id="btn-lengkapi-alamat-usaha-empty-provider"
+                    type="button"
+                    onClick={handleOpenEditBizAddress}
+                    className="px-4 py-2 rounded-xl bg-primary text-white font-bold text-xs hover:bg-primary-dark transition shadow-servio-xs inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus size={15} weight="bold" />
+                    <span>Lengkapi Alamat Usaha</span>
+                  </button>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
@@ -904,6 +1122,51 @@ export default function ProviderProfilePage() {
           </div>
         </form>
       </div>
+
+      {/* CR-04: Modal Edit / Lengkapi Alamat Usaha Provider */}
+      <Modal
+        isOpen={showBizAddressModal}
+        onClose={() => setShowBizAddressModal(false)}
+        title={hasBizAddress ? "Edit Alamat Usaha Workshop" : "Lengkapi Alamat Usaha Workshop"}
+        maxWidth="lg"
+      >
+        <form onSubmit={handleSaveBizAddressModal} className="space-y-5 pt-2">
+          <AddressCascadingForm
+            value={editingBizAddress}
+            onChange={setEditingBizAddress}
+            title="Alamat Lokasi Workshop / Bengkel"
+            subtitle="Pilih provinsi, kota/kabupaten, kecamatan, dan kelurahan resmi untuk penentuan zona servis"
+            required={true}
+            idPrefix="provider-edit-addr-modal"
+          />
+
+          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setShowBizAddressModal(false)}
+              disabled={isSavingBizAddress}
+              className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-neutral-dark hover:bg-slate-50 transition cursor-pointer"
+            >
+              Batal
+            </button>
+            <button
+              id="btn-save-provider-biz-address"
+              type="submit"
+              disabled={isSavingBizAddress}
+              className="px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition flex items-center gap-2 shadow-servio-xs disabled:opacity-60 cursor-pointer"
+            >
+              {isSavingBizAddress ? (
+                <>
+                  <CircleNotch size={16} className="animate-spin" />
+                  <span>Menyimpan Alamat Usaha...</span>
+                </>
+              ) : (
+                <span>Simpan Alamat Usaha</span>
+              )}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

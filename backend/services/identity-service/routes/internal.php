@@ -15,4 +15,7 @@ Route::prefix('internal/v1')->middleware('identity.internal')->group(function ()
 
     // I04: GET /internal/v1/organizations/{id}/status
     Route::get('/organizations/{id}/status', [InternalIdentityController::class, 'getOrganizationStatus']);
+
+    // I05: GET /internal/v1/organizations/{id}/public-profile (CR-IDENTITY-004)
+    Route::get('/organizations/{id}/public-profile', [InternalIdentityController::class, 'getOrganizationPublicProfile']);
 });

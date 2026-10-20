@@ -35,6 +35,7 @@ import { ApiProduct, ApiShopProfile, ApiBrand, getProductMediaUrl } from "@/type
 import { useCart } from "@/features/cart/useCart";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
+import { useActiveLocation, isSameCity } from "@/context/LocationContext";
 
 type ProductSortOption = "POPULAR" | "PRICE_LOW" | "PRICE_HIGH";
 
@@ -71,9 +72,9 @@ function ProductCatalogContent() {
 
   const initialSearch = searchParams.get("search") || "";
   const initialMerchantId = searchParams.get("merchantId") || "";
-  const initialCategoryParam = searchParams.get("category") || searchParams.get("categoryId");
-  const initialSubcategoryParam = searchParams.get("subcategory") || searchParams.get("subcategoryId");
-  const initialBrandParam = searchParams.get("brand");
+  const initialCategoryParam = searchParams.get("category") || searchParams.get("categoryId") || searchParams.get("categories");
+  const initialSubcategoryParam = searchParams.get("subcategory") || searchParams.get("subcategoryId") || searchParams.get("subcategories");
+  const initialBrandParam = searchParams.get("brand") || searchParams.get("brands");
 
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [categories, setCategories] = useState<{ id: string; name: string; code?: string }[]>([]);
@@ -90,6 +91,8 @@ function ProductCatalogContent() {
   const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>(parseParamArray(initialSubcategoryParam));
   const [selectedBrands, setSelectedBrands] = useState<string[]>(parseParamArray(initialBrandParam));
   const [sortBy, setSortBy] = useState<ProductSortOption>("POPULAR");
+  const { location: activeLocation, openLocationModal } = useActiveLocation();
+  const [filterSameCityOnly, setFilterSameCityOnly] = useState<boolean>(false);
 
   // State untuk Pop-up Filter Kategori, Subkategori & Merek (Multi-Select)
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
@@ -106,6 +109,21 @@ function ProductCatalogContent() {
     return () => clearTimeout(handler);
   }, [searchQuery]);
 
+  // Synchronize URL with active filters
+  const updateUrlParams = useCallback(
+    (cats: string[], subs: string[], brs: string[], search: string) => {
+      const sp = new URLSearchParams();
+      if (search) sp.set("search", search);
+      if (initialMerchantId) sp.set("merchantId", initialMerchantId);
+      if (cats.length > 0) sp.set("categories", cats.join(","));
+      if (subs.length > 0) sp.set("subcategories", subs.join(","));
+      if (brs.length > 0) sp.set("brands", brs.join(","));
+      const newQuery = sp.toString() ? `?${sp.toString()}` : "";
+      router.replace(`/products${newQuery}`, { scroll: false });
+    },
+    [initialMerchantId, router]
+  );
+
   // Load shop profile if merchantId is in URL
   useEffect(() => {
     if (initialMerchantId) {
@@ -120,24 +138,15 @@ function ProductCatalogContent() {
     }
   }, [initialMerchantId]);
 
-  const loadData = useCallback(async () => {
-    try {
-      setLoading(true);
-      const [prodRes, catRes, subRes, brandRes] = await Promise.all([
-        productsApi.list({
-          scope: "public",
-          search: debouncedSearch,
-          merchantOrganizationId: selectedShop?.id,
-        }),
-        taxonomyApi.getCategories({ master: "PRODUK", status: "ACTIVE" }),
-        taxonomyApi.getSubcategories({ master: "PRODUK", status: "ACTIVE" }),
-        taxonomyApi.getBrands({ status: "ACTIVE" }),
-      ]);
-
-      setProducts(prodRes.data || []);
-      setMatchedMerchants(prodRes.matchedMerchants || []);
-      setRecommendations(prodRes.recommendations || []);
-
+  // 1. Load taxonomy master data once on mount
+  useEffect(() => {
+    let isMounted = true;
+    Promise.all([
+      taxonomyApi.getCategories({ master: "PRODUK", status: "ACTIVE" }).catch(() => null),
+      taxonomyApi.getSubcategories({ master: "PRODUK", status: "ACTIVE" }).catch(() => null),
+      taxonomyApi.getBrands({ status: "ACTIVE" }).catch(() => null),
+    ]).then(([catRes, subRes, brandRes]) => {
+      if (!isMounted) return;
       if (catRes && Array.isArray(catRes.data)) {
         setCategories(
           catRes.data.map((c: any) => ({
@@ -147,7 +156,6 @@ function ProductCatalogContent() {
           }))
         );
       }
-
       if (subRes && Array.isArray(subRes.data)) {
         setSubcategories(
           subRes.data.map((s: any) => ({
@@ -158,20 +166,42 @@ function ProductCatalogContent() {
           }))
         );
       }
-
       if (brandRes && Array.isArray(brandRes.data)) {
         setBrands(brandRes.data);
       }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // 2. Fetch products server-side whenever search, shop, or server filter changes
+  const loadProducts = useCallback(async () => {
+    try {
+      setLoading(true);
+      const prodRes = await productsApi.list({
+        scope: "public",
+        search: debouncedSearch,
+        merchantOrganizationId: selectedShop?.id,
+        categories: selectedCategories.length > 0 ? selectedCategories : undefined,
+        subcategories: selectedSubcategories.length > 0 ? selectedSubcategories : undefined,
+        brands: selectedBrands.length > 0 ? selectedBrands : undefined,
+        limit: 50,
+      });
+
+      setProducts(prodRes.data || []);
+      setMatchedMerchants(prodRes.matchedMerchants || []);
+      setRecommendations(prodRes.recommendations || []);
     } catch (err: unknown) {
       console.error("Failed to load catalog products:", err);
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, selectedShop?.id]);
+  }, [debouncedSearch, selectedShop?.id, selectedCategories, selectedSubcategories, selectedBrands]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    loadProducts();
+  }, [loadProducts]);
 
   // Available subcategories for current category selection
   const availableSubcategories = useMemo(() => {
@@ -205,6 +235,25 @@ function ProductCatalogContent() {
     setSelectedSubcategories(tempSubcategories);
     setSelectedBrands(tempBrands);
     setIsFilterModalOpen(false);
+    updateUrlParams(tempCategories, tempSubcategories, tempBrands, debouncedSearch);
+  };
+
+  const handleRemoveCategory = (catId: string) => {
+    const updated = selectedCategories.filter((id) => id !== catId);
+    setSelectedCategories(updated);
+    updateUrlParams(updated, selectedSubcategories, selectedBrands, debouncedSearch);
+  };
+
+  const handleRemoveSubcategory = (subId: string) => {
+    const updated = selectedSubcategories.filter((id) => id !== subId);
+    setSelectedSubcategories(updated);
+    updateUrlParams(selectedCategories, updated, selectedBrands, debouncedSearch);
+  };
+
+  const handleRemoveBrand = (bName: string) => {
+    const updated = selectedBrands.filter((b) => b !== bName);
+    setSelectedBrands(updated);
+    updateUrlParams(selectedCategories, selectedSubcategories, updated, debouncedSearch);
   };
 
   const handleClearAllFilters = () => {
@@ -214,6 +263,7 @@ function ProductCatalogContent() {
     setTempCategories([]);
     setTempSubcategories([]);
     setTempBrands([]);
+    updateUrlParams([], [], [], debouncedSearch);
   };
 
   const sortedProducts = useMemo(() => {
@@ -259,6 +309,14 @@ function ProductCatalogContent() {
       });
     }
 
+    // Filter by Same City Only
+    if (filterSameCityOnly) {
+      list = list.filter((p) => {
+        const mCity = p.merchant?.city || p.merchantCity || "Jakarta Selatan";
+        return isSameCity(mCity, activeLocation.city);
+      });
+    }
+
     if (sortBy === "PRICE_LOW") {
       return list.sort((a, b) => (a.minPrice || 0) - (b.minPrice || 0));
     }
@@ -266,7 +324,7 @@ function ProductCatalogContent() {
       return list.sort((a, b) => (b.maxPrice || b.minPrice || 0) - (a.maxPrice || a.minPrice || 0));
     }
     return list;
-  }, [products, selectedCategories, selectedSubcategories, selectedBrands, categories, subcategories, sortBy]);
+  }, [products, selectedCategories, selectedSubcategories, selectedBrands, categories, subcategories, sortBy, filterSameCityOnly, activeLocation.city]);
 
   const sortedRecommendations = useMemo(() => {
     const list = [...recommendations];
@@ -303,7 +361,7 @@ function ProductCatalogContent() {
         <Link href={`/products/${p.productId}`} className="relative h-40 bg-slate-50 p-3 flex flex-col justify-between border-b border-slate-100 block">
           <div className="flex items-center justify-between z-10 gap-1.5">
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white text-slate-700 border border-slate-200 truncate">
-              {p.categoryName || p.categoryId}
+              {categories.find((c) => c.id === p.categoryId)?.name || p.categoryName || p.categoryId}
             </span>
             <div className="flex items-center gap-1">
               {p.warrantyPolicy?.durationMonths ? (
@@ -349,30 +407,54 @@ function ProductCatalogContent() {
 
         <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
           <div className="space-y-1.5">
-            {/* Merchant / Store Tag */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (p.merchantOrganizationId) {
-                    handleSelectShop({
-                      id: p.merchantOrganizationId,
-                      name: p.merchantName || "Toko Mitra",
-                      productCount: 1,
-                      city: "Jakarta Barat (Glodok)",
-                      badge: "Mitra Toko Resmi SERVIO",
-                    });
-                  }
-                }}
-                className="inline-flex items-center gap-1 text-[11px] font-bold text-[#0F4C81] hover:text-sky-800 bg-sky-50/80 hover:bg-sky-100 px-2 py-0.5 rounded-md border border-sky-100 transition-colors"
-                title="Lihat semua produk dari toko ini"
-              >
-                <Storefront size={12} weight="bold" />
-                <span className="truncate max-w-[150px]">{p.merchantName || "Toko Mitra Resmi"}</span>
-              </button>
-            </div>
+            {/* Merchant / Store Tag & City Origin */}
+            {(() => {
+              const pMerchantCity = p.merchant?.city || p.merchantCity || "Jakarta Selatan";
+              const isProdSameCity = isSameCity(pMerchantCity, activeLocation.city);
+              return (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (p.merchantOrganizationId) {
+                        handleSelectShop({
+                          id: p.merchantOrganizationId,
+                          name: p.merchantName || "Toko Mitra",
+                          productCount: 1,
+                          city: pMerchantCity,
+                          badge: "Mitra Toko Resmi SERVIO",
+                        });
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-[#0F4C81] hover:text-sky-800 bg-sky-50/80 hover:bg-sky-100 px-2 py-0.5 rounded-md border border-sky-100 transition-colors"
+                    title={`Lihat toko: ${p.merchantName || "Toko Mitra"} (${pMerchantCity})`}
+                  >
+                    <Storefront size={12} weight="bold" />
+                    <span className="truncate max-w-[120px]">{p.merchantName || "Toko Mitra Resmi"}</span>
+                  </button>
+
+                  {/* In-City vs Out-of-City Delivery Pill */}
+                  {isProdSameCity ? (
+                    <span
+                      className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200"
+                      title={`Toko ini berada di ${pMerchantCity} (Sekota dengan lokasi Anda)`}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      Sekota
+                    </span>
+                  ) : (
+                    <span
+                      className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200"
+                      title={`Toko di ${pMerchantCity}. Tidak dapat dikirim ke ${activeLocation.city}`}
+                    >
+                      Luar Kota
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
 
             <Link href={`/products/${p.productId}`}>
               <h2 className="text-xs font-bold text-slate-900 group-hover:text-[#0F4C81] transition-colors line-clamp-2 leading-snug">
@@ -540,8 +622,36 @@ function ProductCatalogContent() {
               )}
             </div>
 
-            {/* Sort Dropdown */}
-            <div className="flex items-center gap-2 self-end lg:self-auto shrink-0">
+            {/* Location & Sort Group */}
+            <div className="flex flex-wrap items-center gap-2 self-end lg:self-auto shrink-0">
+              {/* Quick Location Badge */}
+              <button
+                type="button"
+                onClick={openLocationModal}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-sky-50 hover:bg-sky-100 text-[#0F4C81] border border-sky-200 text-xs font-semibold transition cursor-pointer shadow-2xs"
+                title="Klik untuk memilih kota atau alamat tujuan Anda"
+              >
+                <MapPin size={14} weight="fill" className={activeLocation.isGps ? "text-emerald-600" : "text-[#0F4C81]"} />
+                <span className="truncate max-w-[130px]">Kirim ke: <strong>{activeLocation.city}</strong></span>
+                <span className="text-[10px] text-sky-700 underline font-bold">Ubah</span>
+              </button>
+
+              {/* Fast Filter Toko Sekota Saja */}
+              <button
+                type="button"
+                onClick={() => setFilterSameCityOnly(!filterSameCityOnly)}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer border ${
+                  filterSameCityOnly
+                    ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/25"
+                    : "bg-white hover:bg-slate-50 text-slate-700 border-slate-200 shadow-2xs"
+                }`}
+                title={`Hanya tampilkan produk dari mitra toko yang berada di ${activeLocation.city}`}
+              >
+                <CheckCircle size={15} weight={filterSameCityOnly ? "fill" : "bold"} className={filterSameCityOnly ? "text-white" : "text-emerald-600"} />
+                <span>Toko Sekota Saja</span>
+              </button>
+
+              {/* Sort Dropdown */}
               <div className="flex items-center gap-1.5 text-xs text-slate-500">
                 <ArrowsDownUp size={16} />
                 <span>Urutkan:</span>
@@ -575,7 +685,7 @@ function ProductCatalogContent() {
                     <span>{cat.name}</span>
                     <button
                       type="button"
-                      onClick={() => setSelectedCategories((prev) => prev.filter((id) => id !== catId))}
+                      onClick={() => handleRemoveCategory(catId)}
                       className="p-0.5 hover:bg-white/20 rounded-full transition ml-0.5 cursor-pointer"
                       title={`Hapus filter ${cat.name}`}
                     >
@@ -594,7 +704,7 @@ function ProductCatalogContent() {
                     <span>{sub.name}</span>
                     <button
                       type="button"
-                      onClick={() => setSelectedSubcategories((prev) => prev.filter((id) => id !== subId))}
+                      onClick={() => handleRemoveSubcategory(subId)}
                       className="p-0.5 hover:bg-emerald-200 rounded-full transition ml-0.5 cursor-pointer"
                       title={`Hapus filter ${sub.name}`}
                     >
@@ -610,7 +720,7 @@ function ProductCatalogContent() {
                   <span>{bName}</span>
                   <button
                     type="button"
-                    onClick={() => setSelectedBrands((prev) => prev.filter((b) => b !== bName))}
+                    onClick={() => handleRemoveBrand(bName)}
                     className="p-0.5 hover:bg-amber-200 rounded-full transition ml-0.5 cursor-pointer"
                     title={`Hapus filter ${bName}`}
                   >
@@ -628,59 +738,6 @@ function ProductCatalogContent() {
               </button>
             </div>
           )}
-
-          {/* Quick Brand Filter Bar (Pilihan Merek Cepat di Halaman Utama - Multi-Select) */}
-          <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none text-xs">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1 shrink-0">
-              <Tag size={13} className="text-[#0F4C81]" />
-              Merek:
-            </span>
-            <button
-              type="button"
-              onClick={() => setSelectedBrands([])}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                selectedBrands.length === 0
-                  ? "bg-[#0F4C81] text-white shadow-xs"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
-            >
-              Semua ({products.length})
-            </button>
-            {brands.map((b) => {
-              const isSelected = selectedBrands.includes(b.name);
-              const count = b.product_count ?? b.productCount ?? 0;
-              return (
-                <button
-                  key={b.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedBrands((prev) =>
-                      isSelected ? prev.filter((x) => x !== b.name) : [...prev, b.name]
-                    );
-                  }}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs transition-all shrink-0 cursor-pointer ${
-                    isSelected
-                      ? "bg-amber-500 text-slate-950 font-bold shadow-xs ring-2 ring-amber-500/30"
-                      : "bg-white border border-slate-200/90 text-slate-700 hover:bg-slate-50 font-medium"
-                  }`}
-                >
-                  <div className="w-3.5 h-3.5 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden shrink-0">
-                    {b.logo_url || b.logoUrl ? (
-                      <img src={b.logo_url || b.logoUrl} alt={b.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <Tag size={9} weight="bold" className="text-slate-400" />
-                    )}
-                  </div>
-                  <span>{b.name}</span>
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                    isSelected ? "bg-slate-950/15 text-slate-950" : "bg-sky-50 text-[#0F4C81]"
-                  }`}>
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
         </div>
       </div>
 
@@ -944,7 +1001,7 @@ function ProductCatalogContent() {
                   onClick={() => setTempBrands([])}
                   className="text-xs text-amber-900 hover:text-amber-950 font-bold underline cursor-pointer shrink-0 ml-2"
                 >
-                  Reset Merek ({tempBrands.length})
+                  Reset Merek
                 </button>
               )}
             </div>
@@ -962,17 +1019,11 @@ function ProductCatalogContent() {
                 }`}
               >
                 <span>Semua Merek</span>
-                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                  tempBrands.length === 0 ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
-                }`}>
-                  {products.length}
-                </span>
               </button>
 
               {/* List Chips Merek Resmi Multi-Select */}
               {brands.map((b) => {
                 const isSelected = tempBrands.includes(b.name);
-                const count = b.product_count ?? b.productCount ?? 0;
                 return (
                   <button
                     key={b.id}
@@ -996,13 +1047,6 @@ function ProductCatalogContent() {
                       )}
                     </div>
                     <span>{b.name}</span>
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                      isSelected
-                        ? "bg-slate-950/15 text-slate-950"
-                        : "bg-sky-50 text-[#0F4C81]"
-                    }`}>
-                      {count} Produk
-                    </span>
                     {isSelected && <Check size={12} weight="bold" className="text-slate-950 shrink-0" />}
                   </button>
                 );
@@ -1050,7 +1094,7 @@ function ProductCatalogContent() {
               {/* Kolom Kiri: Kategori Utama dengan Checkbox Multi-Pilih */}
               <div className="md:col-span-5 bg-white border-r border-slate-200/80 p-3 space-y-1.5 overflow-y-auto max-h-[320px]">
                 <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2.5 py-1">
-                  <span>Kategori Utama ({categories.length})</span>
+                  <span>Kategori Utama</span>
                   {tempCategories.length > 0 && (
                     <span className="text-[#0F4C81] font-bold lowercase tracking-normal">
                       {tempCategories.length} dipilih
@@ -1083,9 +1127,6 @@ function ProductCatalogContent() {
                   const Icon = getCategoryIcon(cat.name);
                   const isChecked = tempCategories.includes(cat.id);
                   const isPreviewed = (activePreviewCatId || categories[0]?.id) === cat.id;
-                  const catSubIds = subcategories.filter((s) => s.category_id === cat.id).map((s) => s.id);
-                  const selectedSubInCatCount = tempSubcategories.filter((sId) => catSubIds.includes(sId)).length;
-                  const totalSubInCat = catSubIds.length;
 
                   return (
                     <div
@@ -1121,16 +1162,8 @@ function ProductCatalogContent() {
                         <span className="truncate">{cat.name}</span>
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {selectedSubInCatCount > 0 && (
-                          <span className="text-[10px] px-1.5 py-0.2 rounded-full font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            {selectedSubInCatCount} sub
-                          </span>
-                        )}
-                        <span className="text-[10px] px-1.5 py-0.2 rounded-full font-bold bg-slate-100 text-slate-500">
-                          {totalSubInCat}
-                        </span>
-                        <CaretRight size={12} weight="bold" className={isPreviewed ? "text-[#0F4C81]" : "text-slate-400"} />
+                      <div className="flex items-center gap-1 shrink-0">
+                        <CaretRight size={13} weight="bold" className={isPreviewed ? "text-[#0F4C81]" : "text-slate-400"} />
                       </div>
                     </div>
                   );
@@ -1268,7 +1301,7 @@ function ProductCatalogContent() {
                 onClick={handleApplyFilter}
                 className="bg-[#0F4C81] hover:bg-[#0c3c66] text-white font-bold"
               >
-                Terapkan Filter ({tempCategories.length + tempSubcategories.length + tempBrands.length})
+                Terapkan Filter
               </Button>
             </div>
           </div>

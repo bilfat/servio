@@ -24,7 +24,7 @@ class InternalIdentityController extends Controller
 
         $session = AuthSession::where('session_id', $validated['session_reference'])
             ->whereNull('revoked_at')
-            ->with('user')
+            ->with(['user', 'activeRoleAssignment.role'])
             ->first();
 
         if (!$session || !$session->user || $session->user->status === 'SUSPENDED' || $session->user->status === 'DEACTIVATED') {
@@ -37,12 +37,15 @@ class InternalIdentityController extends Controller
             ]);
         }
 
+        $roleCode = $session->activeRoleAssignment?->role?->code ?? 'CUSTOMER';
+
         return response()->json([
             'success' => true,
             'code' => 'IDENTITY_SESSION_ACTIVE',
             'data' => [
                 'active' => true,
                 'user_id' => $session->user_id,
+                'role_code' => $roleCode,
                 'role_assignment_id' => $session->active_role_assignment_id,
                 'organization_id' => $session->active_organization_id,
                 'authz_version' => $session->user->authz_version,
@@ -180,6 +183,61 @@ class InternalIdentityController extends Controller
                 'authorization_version' => 1,
             ],
         ]);
+    }
+
+    /**
+     * I05: Get Organization Public Profile (CR-IDENTITY-004)
+     * Internal read-only endpoint returning public-facing merchant profile.
+     * Strictly excludes all sensitive fields (NIK, NIB, NPWP, KYC, contacts, credentials).
+     */
+    public function getOrganizationPublicProfile(Request $request, string $id)
+    {
+        $org = Organization::with('profile')->find($id);
+        if (!$org) {
+            return ApiResponse::error(
+                'IDENTITY_ORGANIZATION_NOT_FOUND',
+                'Organisasi tidak ditemukan.',
+                404
+            );
+        }
+
+        if ($org->type !== 'MERCHANT') {
+            return ApiResponse::error(
+                'IDENTITY_ORGANIZATION_NOT_MERCHANT',
+                'Organisasi bukan bertipe MERCHANT.',
+                422
+            );
+        }
+
+        $profile = $org->profile;
+        $storeName = $profile?->display_name ?: $profile?->legal_name;
+
+        $addr = $profile?->address_json;
+        $city = is_array($addr) ? ($addr['city_name'] ?? $addr['city'] ?? null) : null;
+        $province = is_array($addr) ? ($addr['province_name'] ?? $addr['province'] ?? null) : null;
+        $district = is_array($addr) ? ($addr['district_name'] ?? $addr['district'] ?? null) : null;
+        $postalCode = is_array($addr) ? ($addr['postal_code'] ?? $addr['postalCode'] ?? null) : null;
+        $streetAddress = is_array($addr) ? ($addr['street_address'] ?? $addr['address'] ?? null) : (is_string($addr) ? $addr : null);
+
+        $data = [
+            'organization_id' => (string) $org->id,
+            'type' => (string) $org->type,
+            'store_name' => $storeName ?: null,
+            'city' => $city,
+            'province' => $province,
+            'district' => $district,
+            'postal_code' => $postalCode,
+            'street_address' => $streetAddress,
+            'address' => $addr,
+            'logo_url' => null,
+            'public_description' => null,
+            'status' => (string) $org->status,
+            'operational_status' => $org->operational_status,
+            'is_verified' => null,
+            'profile_version' => 1,
+        ];
+
+        return ApiResponse::success($data, 'IDENTITY_PUBLIC_PROFILE_LOADED', 200);
     }
 
     /**

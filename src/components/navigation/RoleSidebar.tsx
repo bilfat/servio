@@ -65,7 +65,7 @@ export function RoleSidebar({
     if (path.startsWith("/worker") || path.startsWith("/business/worker")) return "WORKER_TECHNICIAN";
     if (path.startsWith("/ceo") || path.startsWith("/executive") || path.startsWith("/ops/executive")) return "CEO_PRODUCT_OWNER";
     if (path.startsWith("/ops") || path.startsWith("/admin") || path.startsWith("/staff")) return "ADMIN_OPERATIONS";
-    if (path.startsWith("/merchant") || path.startsWith("/business/merchant")) return "MERCHANT";
+    if (path.startsWith("/merchant/") || path === "/merchant" || path.startsWith("/business/merchant")) return "MERCHANT";
     if (path.startsWith("/supplier") || path.startsWith("/business/supplier")) return "SUPPLIER";
     if (path.startsWith("/support")) return "CUSTOMER_SUPPORT";
     if (path.startsWith("/finance")) return "FINANCE_PAYMENT_OPS";

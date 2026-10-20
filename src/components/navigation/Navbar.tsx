@@ -62,26 +62,38 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
 
   function resolveRouteRole(path?: string): UserRole | null {
     if (!path) return null;
-    if (path.startsWith("/provider") || path.startsWith("/business/provider")) return "SERVICE_PROVIDER";
-    if (path.startsWith("/worker") || path.startsWith("/business/worker")) return "WORKER_TECHNICIAN";
-    if (path.startsWith("/ceo") || path.startsWith("/executive") || path.startsWith("/ops/executive")) return "CEO_PRODUCT_OWNER";
-    if (path.startsWith("/ops")) return "ADMIN_OPERATIONS";
-    if (path.startsWith("/merchant") || path.startsWith("/business/merchant")) return "MERCHANT";
-    if (path.startsWith("/supplier") || path.startsWith("/business/supplier")) return "SUPPLIER";
-    if (path.startsWith("/support")) return "CUSTOMER_SUPPORT";
-    if (path.startsWith("/finance")) return "FINANCE_PAYMENT_OPS";
+    if (path.startsWith("/provider/") || path === "/provider" || path.startsWith("/business/provider")) return "SERVICE_PROVIDER";
+    if (path.startsWith("/worker/") || path === "/worker" || path.startsWith("/business/worker")) return "WORKER_TECHNICIAN";
+    if (path.startsWith("/ceo/") || path === "/ceo" || path.startsWith("/executive/") || path === "/executive" || path.startsWith("/ops/executive")) return "CEO_PRODUCT_OWNER";
+    if (path.startsWith("/ops/") || path === "/ops" || path.startsWith("/admin/") || path === "/admin") return "ADMIN_OPERATIONS";
+    if (path.startsWith("/merchant/") || path === "/merchant" || path.startsWith("/business/merchant")) return "MERCHANT";
+    if (path.startsWith("/supplier/") || path === "/supplier" || path.startsWith("/business/supplier")) return "SUPPLIER";
+    if (path.startsWith("/support/dashboard") || path.startsWith("/support/cases") || path.startsWith("/support/chat") || path.startsWith("/support/disputes")) return "CUSTOMER_SUPPORT";
+    if (path.startsWith("/finance/") || path === "/finance") return "FINANCE_PAYMENT_OPS";
     return null;
   }
 
   const isOperationalRoute = Boolean(
-    pathname?.startsWith("/provider") ||
-    pathname?.startsWith("/worker") ||
-    pathname?.startsWith("/ceo") ||
-    pathname?.startsWith("/executive") ||
-    pathname?.startsWith("/ops") ||
-    pathname?.startsWith("/merchant") ||
-    pathname?.startsWith("/supplier") ||
-    pathname?.startsWith("/finance") ||
+    pathname?.startsWith("/provider/") ||
+    pathname === "/provider" ||
+    pathname?.startsWith("/worker/") ||
+    pathname === "/worker" ||
+    pathname?.startsWith("/ceo/") ||
+    pathname === "/ceo" ||
+    pathname?.startsWith("/executive/") ||
+    pathname === "/executive" ||
+    pathname?.startsWith("/ops/") ||
+    pathname === "/ops" ||
+    pathname?.startsWith("/admin/") ||
+    pathname === "/admin" ||
+    pathname?.startsWith("/staff/") ||
+    pathname === "/staff" ||
+    pathname?.startsWith("/merchant/") ||
+    pathname === "/merchant" ||
+    pathname?.startsWith("/supplier/") ||
+    pathname === "/supplier" ||
+    pathname?.startsWith("/finance/") ||
+    pathname === "/finance" ||
     pathname?.startsWith("/support/dashboard") ||
     pathname?.startsWith("/support/cases") ||
     pathname?.startsWith("/support/chat") ||
@@ -95,8 +107,8 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
 
   // On operational dashboard routes, never treat as public guest
   const isPublicGuest = isOperationalRoute ? false : rawIsPublicGuest;
-  const isCustomer = activeRole === "CUSTOMER" && !isPublicGuest;
-  const isDashboardRole = isOperationalRoute || (!isPublicGuest && activeRole !== "CUSTOMER");
+  const isCustomer = (activeRole === "CUSTOMER" || !isOperationalRoute) && !isPublicGuest;
+  const isDashboardRole = isOperationalRoute;
 
   // Filter service categories dynamically from canonical taxonomy API
   const repo = useDomainRepository();
@@ -213,7 +225,7 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
       aria-label="Navigasi Utama SERVIO"
       className="sticky top-0 z-40 glass-panel border-b border-slate-200/70 transition-all bg-white/85 backdrop-blur-md"
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 gap-4">
           {/* LEFT: Logo & Role Toggle */}
           <div className="flex items-center gap-3">
@@ -827,7 +839,17 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
                         </div>
                       </div>
                       <Link
-                        href="/profile"
+                        href={
+                          activeRole === "SERVICE_PROVIDER"
+                            ? "/provider/profile"
+                            : activeRole === "MERCHANT"
+                            ? "/merchant/profile"
+                            : activeRole === "SUPPLIER"
+                            ? "/supplier/profile"
+                            : activeRole === "WORKER_TECHNICIAN"
+                            ? "/worker/profile"
+                            : "/profile"
+                        }
                         onClick={() => setActiveDropdown(null)}
                         className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-slate-100 transition-colors text-xs text-neutral-dark"
                       >

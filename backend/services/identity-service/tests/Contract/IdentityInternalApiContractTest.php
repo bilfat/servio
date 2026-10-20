@@ -135,4 +135,24 @@ class IdentityInternalApiContractTest extends TestCase
                 ],
             ]);
     }
+
+    public function test_get_organization_public_profile_returns_valid_contract(): void
+    {
+        $org = Organization::where('type', 'MERCHANT')->firstOrFail();
+
+        $response = $this->withHeaders(['X-Internal-Service-Key' => $this->internalKey])
+            ->getJson("/api/internal/v1/organizations/{$org->id}/public-profile");
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'code' => 'IDENTITY_PUBLIC_PROFILE_LOADED',
+                'data' => [
+                    'organization_id' => $org->id,
+                    'type' => 'MERCHANT',
+                    'status' => 'ACTIVE',
+                    'profile_version' => 1,
+                ],
+            ]);
+    }
 }

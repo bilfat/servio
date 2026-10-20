@@ -15,10 +15,14 @@ import {
   Coins,
   Stack,
   Trash,
+  Image as ImageIcon,
+  UploadSimple,
+  X,
 } from "@phosphor-icons/react";
 import { useUrlQueryState } from "@/hooks/useUrlQueryState";
-import { productsApi, taxonomyApi, productVariantsApi } from "@/lib/servioApi";
+import { productsApi, taxonomyApi, productVariantsApi, productMediaApi } from "@/lib/servioApi";
 import type { ApiProduct, ApiProductVariant, ApiBrand } from "@/types/domain";
+import { getProductMediaUrl } from "@/types/domain";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
@@ -46,12 +50,42 @@ function MerchantProductsContent() {
 
   const [searchQuery, setSearchQuery] = useUrlQueryState<string>("q", "");
   const [categoryFilter, setCategoryFilter] = useUrlQueryState<string>("cat", "ALL");
-  const [statusFilter, setStatusFilter] = useUrlQueryState<string>("status", "ALL");
+  const [statusFilter, setStatusFilterState] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search).get("status");
+      if (p && ["ALL", "ACTIVE", "DRAFT", "INACTIVE"].includes(p)) return p;
+    }
+    return "ALL";
+  });
+
+  const setStatusFilter = useCallback((val: string) => {
+    setStatusFilterState(val);
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href);
+      if (!val || val === "ALL") {
+        url.searchParams.delete("status");
+      } else {
+        url.searchParams.set("status", val);
+      }
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedProductForVariants, setSelectedProductForVariants] = useState<ApiProduct | null>(null);
   const [variantList, setVariantList] = useState<ApiProductVariant[]>([]);
   const [loadingVariants, setLoadingVariants] = useState(false);
+
+  // Media Management State
+  const [selectedProductForMedia, setSelectedProductForMedia] = useState<ApiProduct | null>(null);
+  const [mediaList, setMediaList] = useState<any[]>([]);
+  const [loadingMedia, setLoadingMedia] = useState(false);
+  const [mediaActiveTab, setMediaActiveTab] = useState<"GENERAL" | "VARIANT">("GENERAL");
+  const [selectedVariantIdForMedia, setSelectedVariantIdForMedia] = useState<string>("");
+  const [generalMediaFiles, setGeneralMediaFiles] = useState<File[]>([]);
+  const [variantMediaFiles, setVariantMediaFiles] = useState<File[]>([]);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [mediaError, setMediaError] = useState<string | null>(null);
 
   // Form State for Adding Product
   const [formCategoryId, setFormCategoryId] = useState("");
@@ -60,8 +94,9 @@ function MerchantProductsContent() {
   const [formBrandName, setFormBrandName] = useState("");
   const [isCustomBrand, setIsCustomBrand] = useState(false);
   const [formDescription, setFormDescription] = useState("");
-  const [formVariants, setFormVariants] = useState<Array<{ name: string; price: number; stock: number }>>([
-    { name: "Varian Standard", price: 100000, stock: 10 },
+  const [formGeneralFiles, setFormGeneralFiles] = useState<File[]>([]);
+  const [formVariants, setFormVariants] = useState<Array<{ name: string; price: number; stock: number; variantFiles?: File[] }>>([
+    { name: "Varian Standard", price: 100000, stock: 10, variantFiles: [] },
   ]);
 
   // Warranty Policy Configuration State (Step 7)
@@ -88,6 +123,22 @@ function MerchantProductsContent() {
   const [newVarName, setNewVarName] = useState("");
   const [newVarPrice, setNewVarPrice] = useState(100000);
   const [newVarStock, setNewVarStock] = useState(10);
+  const [newVarPhotos, setNewVarPhotos] = useState<File[]>([]);
+  const [creatingVariantWithPhotos, setCreatingVariantWithPhotos] = useState(false);
+
+  // Existing Variant Editing & Direct Photo Upload State
+  const [editingVariantId, setEditingVariantId] = useState<string | null>(null);
+  const [editVarName, setEditVarName] = useState("");
+  const [editVarPrice, setEditVarPrice] = useState(0);
+  const [editVarStock, setEditVarStock] = useState(0);
+  const [updatingVariant, setUpdatingVariant] = useState(false);
+  const [uploadingVariantId, setUploadingVariantId] = useState<string | null>(null);
+
+  // Delete / Archive Modal State
+  const [productToDelete, setProductToDelete] = useState<ApiProduct | null>(null);
+  const [deleteReasonOption, setDeleteReasonOption] = useState<string>("Diskontinu / Stok Habis Permanen");
+  const [customDeleteReason, setCustomDeleteReason] = useState<string>("");
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -123,50 +174,88 @@ function MerchantProductsContent() {
     }
   };
 
+  // 1. Load taxonomy once on mount
+  useEffect(() => {
+    let mounted = true;
+    async function loadTaxonomy() {
+      try {
+        const [catRes, subcatRes, brandRes] = await Promise.all([
+          taxonomyApi.getCategories({ master: "PRODUK", status: "ACTIVE" }),
+          taxonomyApi.getSubcategories({ master: "PRODUK", status: "ACTIVE" }),
+          taxonomyApi.getBrands({ status: "ACTIVE" }),
+        ]);
+        if (!mounted) return;
+        setBrands(brandRes?.data || []);
+
+        const cats: CategoryOption[] = (catRes?.data || []).map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          code: c.code,
+        }));
+        const subs: SubcategoryOption[] = (subcatRes?.data || []).map((s: any) => ({
+          id: s.id,
+          category_id: s.category_id,
+          name: s.name,
+          code: s.code,
+        }));
+
+        setCategories(cats);
+        setSubcategories(subs);
+
+        if (cats.length > 0) {
+          setFormCategoryId((prev) => prev || cats[0].id);
+          const matchingSubs = subs.filter((s) => s.category_id === cats[0].id);
+          if (matchingSubs.length > 0) {
+            setFormSubcategoryId((prev) => prev || matchingSubs[0].id);
+          }
+        }
+      } catch (err: unknown) {
+        console.error("Failed to load taxonomy:", err);
+      }
+    }
+    loadTaxonomy();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // 2. Load merchant products
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [prodRes, catRes, subcatRes, brandRes] = await Promise.all([
-        productsApi.list({ scope: "merchant", search: searchQuery, categoryId: categoryFilter, status: statusFilter }),
-        taxonomyApi.getCategories({ master: "PRODUK", status: "ACTIVE" }),
-        taxonomyApi.getSubcategories({ master: "PRODUK", status: "ACTIVE" }),
-        taxonomyApi.getBrands({ status: "ACTIVE" }),
-      ]);
+      const prodRes = await productsApi.list({
+        scope: "merchant",
+        search: searchQuery || undefined,
+        categoryId: categoryFilter !== "ALL" ? categoryFilter : undefined,
+      });
       setProducts(prodRes.data || []);
-      setBrands(brandRes?.data || []);
-
-      const cats: CategoryOption[] = (catRes?.data || []).map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        code: c.code,
-      }));
-      const subs: SubcategoryOption[] = (subcatRes?.data || []).map((s: any) => ({
-        id: s.id,
-        category_id: s.category_id,
-        name: s.name,
-        code: s.code,
-      }));
-
-      setCategories(cats);
-      setSubcategories(subs);
-
-      if (!formCategoryId && cats.length > 0) {
-        setFormCategoryId(cats[0].id);
-        const matchingSubs = subs.filter((s) => s.category_id === cats[0].id);
-        if (matchingSubs.length > 0) {
-          setFormSubcategoryId(matchingSubs[0].id);
-        }
-      }
     } catch (err: unknown) {
-      console.error("Failed to load merchant data:", err);
+      console.error("Failed to load merchant products:", err);
     } finally {
       setLoading(false);
     }
-  }, [searchQuery, categoryFilter, statusFilter, formCategoryId]);
+  }, [searchQuery, categoryFilter]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const statusCounts = useMemo(() => {
+    return {
+      ALL: products.length,
+      ACTIVE: products.filter((p) => p.status === "ACTIVE").length,
+      DRAFT: products.filter((p) => p.status === "DRAFT").length,
+      INACTIVE: products.filter((p) => p.status === "INACTIVE" || p.status === "ARCHIVED").length,
+    };
+  }, [products]);
+
+  const filteredProducts = useMemo(() => {
+    if (!statusFilter || statusFilter === "ALL") return products;
+    if (statusFilter === "INACTIVE") {
+      return products.filter((p) => p.status === "INACTIVE" || p.status === "ARCHIVED");
+    }
+    return products.filter((p) => p.status === statusFilter);
+  }, [products, statusFilter]);
 
   const handleAddVariantRow = () => {
     setFormVariants([...formVariants, { name: "", price: 50000, stock: 5 }]);
@@ -196,7 +285,11 @@ function MerchantProductsContent() {
         name: formName.trim(),
         brandName: formBrandName.trim() || undefined,
         description: formDescription.trim() || undefined,
-        variants: formVariants.filter((v) => v.name.trim() !== ""),
+        variants: formVariants.filter((v) => v.name.trim() !== "").map((v) => ({
+          name: v.name,
+          price: v.price,
+          stock: v.stock,
+        })),
         warrantyPolicy: Number(warrantyDuration) > 0 ? {
           durationMonths: Number(warrantyDuration),
           type: warrantyType,
@@ -206,9 +299,41 @@ function MerchantProductsContent() {
         } : null,
       });
 
-      // Activate product
-      if (res.data?.productId) {
-        await productsApi.activate(res.data.productId);
+      const newProductId = res.data?.productId;
+      if (newProductId) {
+        // 1. Upload general photos if chosen
+        if (formGeneralFiles.length > 0) {
+          try {
+            await productMediaApi.uploadMultiple(newProductId, formGeneralFiles, "GENERAL");
+          } catch (mErr) {
+            console.warn("Could not upload general photos immediately:", mErr);
+          }
+        }
+
+        // 2. Upload variant-specific photos if chosen
+        const hasVariantPhotos = formVariants.some((v) => v.variantFiles && v.variantFiles.length > 0);
+        if (hasVariantPhotos) {
+          try {
+            const detailRes = await productsApi.get(newProductId, { scope: "merchant" });
+            const createdVariants = detailRes.data?.variants || [];
+            for (let i = 0; i < formVariants.length; i++) {
+              const vFiles = formVariants[i].variantFiles;
+              const matchedCreated = createdVariants[i];
+              if (vFiles && vFiles.length > 0 && matchedCreated?.variantId) {
+                await productMediaApi.uploadMultiple(newProductId, vFiles, "VARIANT", matchedCreated.variantId);
+              }
+            }
+          } catch (vErr) {
+            console.warn("Could not upload variant photos immediately:", vErr);
+          }
+        }
+
+        // Activate product
+        try {
+          await productsApi.activate(newProductId);
+        } catch {
+          // If activation fails due to missing requirements, it stays DRAFT
+        }
       }
 
       setIsAddModalOpen(false);
@@ -216,7 +341,8 @@ function MerchantProductsContent() {
       setFormBrandName("");
       setIsCustomBrand(false);
       setFormDescription("");
-      setFormVariants([{ name: "Varian Standard", price: 100000, stock: 10 }]);
+      setFormGeneralFiles([]);
+      setFormVariants([{ name: "Varian Standard", price: 100000, stock: 10, variantFiles: [] }]);
       setFormError(null);
       setToastMessage(`Produk "${formName}" berhasil ditambahkan ke katalog toko Anda!`);
       loadData();
@@ -226,21 +352,31 @@ function MerchantProductsContent() {
     }
   };
 
-  const handleOpenEditModal = (p: ApiProduct) => {
-    setEditingProduct(p);
-    setEditCategoryId(p.categoryId || "");
-    setEditSubcategoryId(p.subcategoryId || "");
-    setEditName(p.name || "");
-    const currentBrand = (p.brandName || "").trim();
-    setEditBrandName(currentBrand);
-    const isRegistered = brands.some((b) => b.name.toLowerCase() === currentBrand.toLowerCase());
-    setIsEditCustomBrand(!isRegistered && Boolean(currentBrand));
-    setEditDescription(p.description || "");
-    setEditWarrantyDuration(p.warrantyPolicy?.durationMonths ?? 0);
-    setEditWarrantyType(p.warrantyPolicy?.type || "MANUFACTURER_AND_STORE");
-    setEditWarrantyCoverage(p.warrantyPolicy?.coverage || "Cacat manufaktur, kegagalan fungsi kelistrikan suku cadang");
-    setEditWarrantyExclusions(p.warrantyPolicy?.exclusions || "Kerusakan fisik akibat benturan, kesalahan instalasi non-resmi, atau korsleting");
-    setEditFormError(null);
+  const handleOpenEditModal = async (p: ApiProduct) => {
+    try {
+      const res = await productsApi.get(p.productId, { scope: "merchant" });
+      const full = res.data || p;
+      setEditingProduct(full);
+      setEditCategoryId(full.categoryId || "");
+      setEditSubcategoryId(full.subcategoryId || "");
+      setEditName(full.name || "");
+      const currentBrand = (full.brandName || "").trim();
+      setEditBrandName(currentBrand);
+      const isRegistered = brands.some((b) => b.name.toLowerCase() === currentBrand.toLowerCase());
+      setIsEditCustomBrand(!isRegistered && Boolean(currentBrand));
+      setEditDescription(full.description || "");
+      setEditWarrantyDuration(full.warrantyPolicy?.durationMonths ?? 0);
+      setEditWarrantyType(full.warrantyPolicy?.type || "MANUFACTURER_AND_STORE");
+      setEditWarrantyCoverage(full.warrantyPolicy?.coverage || "Cacat manufaktur, kegagalan fungsi kelistrikan suku cadang");
+      setEditWarrantyExclusions(full.warrantyPolicy?.exclusions || "Kerusakan fisik akibat benturan, kesalahan instalasi non-resmi, atau korsleting");
+      setEditFormError(null);
+    } catch {
+      setEditingProduct(p);
+      setEditCategoryId(p.categoryId || "");
+      setEditSubcategoryId(p.subcategoryId || "");
+      setEditName(p.name || "");
+      setEditFormError(null);
+    }
   };
 
   const handleUpdateProduct = async (e: React.FormEvent) => {
@@ -250,33 +386,42 @@ function MerchantProductsContent() {
       return;
     }
 
-    const selectedCat = categories.find((c) => c.id === editCategoryId);
-    const selectedSubcat = subcategories.find((s) => s.id === editSubcategoryId);
-
     try {
-      await productsApi.update(editingProduct.productId, {
-        categoryId: editCategoryId,
-        categoryName: selectedCat?.name || "Sparepart AC & Pendingin",
-        subcategoryId: editSubcategoryId || undefined,
-        subcategoryName: selectedSubcat?.name || undefined,
-        name: editName.trim(),
-        brandName: editBrandName.trim() || undefined,
-        description: editDescription.trim() || undefined,
-        warrantyPolicy: Number(editWarrantyDuration) > 0 ? {
-          durationMonths: Number(editWarrantyDuration),
-          type: editWarrantyType,
-          coverage: editWarrantyCoverage.trim(),
-          exclusions: editWarrantyExclusions.trim(),
-          terms: "Wajib menyertakan bukti invoice transaksi resmi dan segel unit tidak rusak.",
-        } : null,
-      });
+      await productsApi.update(
+        editingProduct.productId,
+        {
+          categoryId: editCategoryId,
+          subcategoryId: editSubcategoryId || undefined,
+          name: editName.trim(),
+          brandName: editBrandName.trim() || undefined,
+          description: editDescription.trim() || undefined,
+        },
+        editingProduct.lockVersion || 1
+      );
 
       setEditingProduct(null);
-      setToastMessage(`Produk "${editName}" dan kebijakan garansi berhasil diperbarui!`);
+      setToastMessage(`Produk "${editName}" berhasil diperbarui!`);
       loadData();
     } catch (err: unknown) {
-      const e = err as Error;
+      const e = err as any;
       setEditFormError(e.message || "Gagal memperbarui produk.");
+    }
+  };
+
+  const handleToggleStatus = async (p: ApiProduct) => {
+    const targetStatus = p.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+    try {
+      setToastMessage(`Mengubah status "${p.name}" ke ${targetStatus}...`);
+      await productsApi.changeStatus(p.productId, targetStatus, p.lockVersion || 1);
+      setToastMessage(`Status "${p.name}" berhasil diubah menjadi ${targetStatus}!`);
+      loadData();
+    } catch (err: unknown) {
+      const e = err as any;
+      let msg = e.message || "Gagal mengubah status produk.";
+      if (e.data?.blocking_reasons && Array.isArray(e.data.blocking_reasons) && e.data.blocking_reasons.length > 0) {
+        msg += " Alasan: " + e.data.blocking_reasons.join(", ");
+      }
+      setToastMessage(msg);
     }
   };
 
@@ -293,89 +438,369 @@ function MerchantProductsContent() {
     }
   };
 
+  const handleStartEditVariant = (v: ApiProductVariant) => {
+    setEditingVariantId(v.variantId);
+    setEditVarName(v.name);
+    setEditVarPrice(v.price);
+    setEditVarStock(v.stock);
+  };
+
+  const handleCancelEditVariant = () => {
+    setEditingVariantId(null);
+  };
+
+  const handleSaveEditVariant = async (v: ApiProductVariant) => {
+    if (!selectedProductForVariants) return;
+    try {
+      setUpdatingVariant(true);
+      await productVariantsApi.update(
+        selectedProductForVariants.productId,
+        v.variantId,
+        {
+          name: editVarName.trim() || v.name,
+          price: Number(editVarPrice),
+          stock: Number(editVarStock),
+        },
+        v.lockVersion || 1
+      );
+      setToastMessage(`Varian "${editVarName || v.name}" berhasil diperbarui!`);
+      setEditingVariantId(null);
+      const res = await productVariantsApi.list(selectedProductForVariants.productId);
+      setVariantList(res.data || []);
+      loadData();
+    } catch (err: unknown) {
+      const e = err as Error;
+      setToastMessage(e.message || "Gagal memperbarui data varian.");
+    } finally {
+      setUpdatingVariant(false);
+    }
+  };
+
+  const handleUploadPhotosToExistingVariant = async (variantId: string, files: FileList | null) => {
+    if (!selectedProductForVariants || !files || files.length === 0) return;
+    const fileArray = Array.from(files);
+    try {
+      setUploadingVariantId(variantId);
+      await productMediaApi.uploadMultiple(
+        selectedProductForVariants.productId,
+        fileArray,
+        "VARIANT",
+        variantId
+      );
+      setToastMessage(`${fileArray.length} Foto varian berhasil diunggah!`);
+      const res = await productVariantsApi.list(selectedProductForVariants.productId);
+      setVariantList(res.data || []);
+      loadData();
+    } catch (err: unknown) {
+      const e = err as Error;
+      setToastMessage(e.message || "Gagal mengunggah foto varian.");
+    } finally {
+      setUploadingVariantId(null);
+    }
+  };
+
+  const handleDeleteVariantPhoto = async (mediaId: string) => {
+    if (!selectedProductForVariants) return;
+    if (!confirm("Hapus foto varian ini?")) return;
+    try {
+      await productMediaApi.delete(selectedProductForVariants.productId, mediaId, selectedProductForVariants.lockVersion || 1);
+      setToastMessage("Foto varian berhasil dihapus.");
+      const res = await productVariantsApi.list(selectedProductForVariants.productId);
+      setVariantList(res.data || []);
+      loadData();
+    } catch (err: unknown) {
+      const e = err as Error;
+      setToastMessage(e.message || "Gagal menghapus foto varian.");
+    }
+  };
+
   const handleAddNewVariantToProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProductForVariants || !newVarName.trim()) return;
 
     try {
-      await productVariantsApi.create(selectedProductForVariants.productId, {
+      setCreatingVariantWithPhotos(true);
+      const createdRes = await productVariantsApi.create(selectedProductForVariants.productId, {
         name: newVarName.trim(),
         price: Number(newVarPrice),
         stock: Number(newVarStock),
         status: "ACTIVE",
       });
+
+      const createdVariantId = createdRes.data?.variantId || (createdRes.data as any)?._id;
+
+      if (createdVariantId && newVarPhotos.length > 0) {
+        await productMediaApi.uploadMultiple(
+          selectedProductForVariants.productId,
+          newVarPhotos,
+          "VARIANT",
+          createdVariantId
+        );
+      }
+
       setNewVarName("");
       setNewVarPrice(100000);
       setNewVarStock(10);
-      setToastMessage("Varian baru berhasil ditambahkan!");
+      setNewVarPhotos([]);
+      setToastMessage("Varian baru beserta foto khusus berhasil ditambahkan!");
       const res = await productVariantsApi.list(selectedProductForVariants.productId);
       setVariantList(res.data || []);
       loadData();
     } catch (err: unknown) {
       const e = err as Error;
       setToastMessage(e.message || "Gagal menambahkan varian.");
+    } finally {
+      setCreatingVariantWithPhotos(false);
     }
   };
 
-  const handleDeleteProduct = async (product: ApiProduct) => {
-    if (!confirm(`Apakah Anda yakin ingin menghapus produk "${product.name}" secara permanen dari database? Seluruh varian terkait juga akan terhapus.`)) {
+  const handleToggleVariantStatus = async (v: ApiProductVariant) => {
+    if (!selectedProductForVariants) return;
+    const target = v.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+    try {
+      await productVariantsApi.changeStatus(
+        selectedProductForVariants.productId,
+        v.variantId,
+        target,
+        v.lockVersion || 1
+      );
+      setToastMessage(`Status varian "${v.name}" diubah ke ${target}.`);
+      const res = await productVariantsApi.list(selectedProductForVariants.productId);
+      setVariantList(res.data || []);
+      loadData();
+    } catch (err: unknown) {
+      const e = err as Error;
+      setToastMessage(e.message || "Gagal mengubah status varian.");
+    }
+  };
+
+  const handleDeleteVariant = async (v: ApiProductVariant) => {
+    if (!selectedProductForVariants) return;
+    if (!confirm(`Hapus varian "${v.name}" dari produk ini?`)) return;
+    try {
+      await productVariantsApi.delete(
+        selectedProductForVariants.productId,
+        v.variantId,
+        v.lockVersion || 1
+      );
+      setToastMessage(`Varian "${v.name}" berhasil dihapus.`);
+      const res = await productVariantsApi.list(selectedProductForVariants.productId);
+      setVariantList(res.data || []);
+      loadData();
+    } catch (err: unknown) {
+      const e = err as Error;
+      setToastMessage(e.message || "Gagal menghapus varian.");
+    }
+  };
+
+  const handleOpenMediaModal = async (p: ApiProduct) => {
+    setSelectedProductForMedia(p);
+    setLoadingMedia(true);
+    setMediaError(null);
+    setGeneralMediaFiles([]);
+    setVariantMediaFiles([]);
+    setMediaActiveTab("GENERAL");
+    if (p.variants && p.variants.length > 0) {
+      setSelectedVariantIdForMedia(p.variants[0].variantId);
+    }
+    try {
+      const res = await productsApi.get(p.productId, { scope: "merchant" });
+      const fullProd = res.data || p;
+      setSelectedProductForMedia(fullProd);
+      setMediaList(fullProd.media || []);
+      if (fullProd.variants && fullProd.variants.length > 0) {
+        setSelectedVariantIdForMedia(fullProd.variants[0].variantId);
+      }
+    } catch {
+      setMediaList(p.media || []);
+    } finally {
+      setLoadingMedia(false);
+    }
+  };
+
+  const handleUploadGeneralMedia = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProductForMedia || generalMediaFiles.length === 0) {
+      setMediaError("Pilih minimal satu file gambar umum terlebih dahulu.");
       return;
     }
 
     try {
-      await productsApi.delete(product.productId);
-      setToastMessage(`Produk "${product.name}" berhasil dihapus secara permanen dari database.`);
+      setUploadingMedia(true);
+      setMediaError(null);
+      await productMediaApi.uploadMultiple(
+        selectedProductForMedia.productId,
+        generalMediaFiles,
+        "GENERAL"
+      );
+      setToastMessage(`${generalMediaFiles.length} Foto umum berhasil diunggah!`);
+      setGeneralMediaFiles([]);
+      const res = await productsApi.get(selectedProductForMedia.productId, { scope: "merchant" });
+      setSelectedProductForMedia(res.data);
+      setMediaList(res.data?.media || []);
+      loadData();
+    } catch (err: unknown) {
+      const e = err as Error;
+      setMediaError(e.message || "Gagal mengunggah foto umum.");
+    } finally {
+      setUploadingMedia(false);
+    }
+  };
+
+  const handleUploadVariantMedia = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProductForMedia || variantMediaFiles.length === 0) {
+      setMediaError("Pilih minimal satu file gambar khusus varian.");
+      return;
+    }
+    const targetVarId = selectedVariantIdForMedia || selectedProductForMedia.variants?.[0]?.variantId;
+    if (!targetVarId) {
+      setMediaError("Pilih varian produk tujuan terlebih dahulu.");
+      return;
+    }
+
+    try {
+      setUploadingMedia(true);
+      setMediaError(null);
+      await productMediaApi.uploadMultiple(
+        selectedProductForMedia.productId,
+        variantMediaFiles,
+        "VARIANT",
+        targetVarId
+      );
+      setToastMessage(`${variantMediaFiles.length} Foto khusus varian berhasil diunggah!`);
+      setVariantMediaFiles([]);
+      const res = await productsApi.get(selectedProductForMedia.productId, { scope: "merchant" });
+      setSelectedProductForMedia(res.data);
+      setMediaList(res.data?.media || []);
+      loadData();
+    } catch (err: unknown) {
+      const e = err as Error;
+      setMediaError(e.message || "Gagal mengunggah foto varian.");
+    } finally {
+      setUploadingMedia(false);
+    }
+  };
+
+  const handleDeleteMediaItem = async (mediaId: string) => {
+    if (!selectedProductForMedia) return;
+    if (!confirm("Hapus foto ini dari listing produk?")) return;
+    try {
+      await productMediaApi.delete(selectedProductForMedia.productId, mediaId, selectedProductForMedia.lockVersion || 1);
+      setToastMessage("Foto berhasil dihapus.");
+      const res = await productsApi.get(selectedProductForMedia.productId, { scope: "merchant" });
+      setSelectedProductForMedia(res.data);
+      setMediaList(res.data?.media || []);
+      loadData();
+    } catch (err: unknown) {
+      const e = err as Error;
+      setMediaError(e.message || "Gagal menghapus foto.");
+    }
+  };
+
+  const handlePromptDelete = (product: ApiProduct) => {
+    setProductToDelete(product);
+    setDeleteReasonOption("Diskontinu / Stok Habis Permanen");
+    setCustomDeleteReason("");
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!productToDelete) return;
+    const finalReason = deleteReasonOption === "Lainnya"
+      ? (customDeleteReason.trim() || "Ditarik oleh toko mitra")
+      : deleteReasonOption;
+
+    try {
+      setIsDeleting(true);
+      await productsApi.delete(productToDelete.productId, productToDelete.lockVersion || 1, finalReason);
+      setToastMessage(`Produk "${productToDelete.name}" berhasil ditarik dari etalase.`);
+      setProductToDelete(null);
       loadData();
     } catch (err: unknown) {
       const e = err as Error;
       setToastMessage(e.message || "Gagal menghapus produk.");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/50 pb-16">
+    <div className="w-full space-y-6 pb-16 font-sans">
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-20 right-6 z-50 p-4 rounded-xl bg-slate-900 text-white shadow-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
-          <CheckCircle size={20} className="text-emerald-400" />
+        <div className="fixed top-20 right-6 z-50 p-4 rounded-2xl bg-white text-slate-900 border border-slate-200 shadow-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+          <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <CheckCircle size={20} weight="fill" />
+          </div>
           <span className="text-xs font-semibold">{toastMessage}</span>
         </div>
       )}
 
       {/* Header */}
-      <div className="bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="p-2 rounded-xl bg-primary/10 text-primary">
-                  <Package size={22} weight="bold" />
-                </span>
-                <h1 className="text-xl font-bold text-slate-900 font-heading">
-                  Katalog Suku Cadang &amp; Komponen Toko
-                </h1>
-              </div>
-              <p className="text-xs text-slate-500 mt-1">
-                Kelola listing produk, varian spesifikasi, harga jual langsung, dan kuantitas stok inventaris toko Anda
-              </p>
+      <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-2xs">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="p-2 rounded-xl bg-primary/10 text-primary">
+                <Package size={22} weight="bold" />
+              </span>
+              <h1 className="text-xl font-bold text-slate-900 font-heading">
+                Katalog Suku Cadang &amp; Komponen Toko
+              </h1>
             </div>
-
-            <Button
-              variant="primary"
-              size="md"
-              onClick={() => setIsAddModalOpen(true)}
-              className="flex items-center gap-2"
-            >
-              <Plus size={18} weight="bold" />
-              <span>Tambah Produk Baru</span>
-            </Button>
+            <p className="text-xs text-slate-500 mt-1">
+              Kelola listing produk, varian spesifikasi, harga jual langsung, dan kuantitas stok inventaris toko Anda
+            </p>
           </div>
+
+          <Button
+            variant="primary"
+            size="md"
+            onClick={() => setIsAddModalOpen(true)}
+            className="flex items-center gap-2 bg-[#0F4C81] text-white"
+          >
+            <Plus size={18} weight="bold" />
+            <span>Tambah Produk Baru</span>
+          </Button>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
+      <div className="space-y-4">
+        {/* Status Tab Navigation */}
+        <div className="flex items-center gap-2 border-b border-slate-200/90 pb-3 overflow-x-auto">
+          {[
+            { id: "ALL", label: "Semua Produk", count: statusCounts.ALL, badgeClass: "bg-slate-100 text-slate-700" },
+            { id: "ACTIVE", label: "Aktif (Tayang Publik)", count: statusCounts.ACTIVE, badgeClass: "bg-emerald-100 text-emerald-800" },
+            { id: "DRAFT", label: "Draf (Belum Tayang)", count: statusCounts.DRAFT, badgeClass: "bg-amber-100 text-amber-800" },
+            { id: "INACTIVE", label: "Nonaktif / Arsip", count: statusCounts.INACTIVE, badgeClass: "bg-slate-200 text-slate-800" },
+          ].map((tab) => {
+            const isActive = statusFilter === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setStatusFilter(tab.id)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                  isActive
+                    ? "bg-[#0F4C81] text-white shadow-xs"
+                    : "bg-white text-slate-600 border border-slate-200/90 hover:bg-slate-50 hover:text-slate-900"
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${
+                    isActive ? "bg-white/20 text-white" : tab.badgeClass
+                  }`}
+                >
+                  {tab.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* Search & Filters */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex-1 relative">
             <MagnifyingGlass
               size={18}
@@ -386,7 +811,7 @@ function MerchantProductsContent() {
               placeholder="Cari berdasarkan nama produk atau merek..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+              className="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
             />
           </div>
 
@@ -398,7 +823,7 @@ function MerchantProductsContent() {
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="text-xs py-2 px-3 rounded-xl border border-slate-200 bg-white font-medium text-slate-700"
+              className="text-xs py-2 px-3 rounded-xl border border-slate-200 bg-white font-medium text-slate-700 cursor-pointer"
             >
               <option value="ALL">Semua Kategori</option>
               {categories.map((c) => (
@@ -407,138 +832,227 @@ function MerchantProductsContent() {
                 </option>
               ))}
             </select>
-
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="text-xs py-2 px-3 rounded-xl border border-slate-200 bg-white font-medium text-slate-700"
-            >
-              <option value="ALL">Semua Status</option>
-              <option value="ACTIVE">Aktif (Tayang)</option>
-              <option value="DRAFT">Draft</option>
-              <option value="INACTIVE">Nonaktif</option>
-            </select>
           </div>
         </div>
 
         {/* Product Table */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-sm">
+        <div className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden shadow-2xs">
           {loading ? (
             <div className="p-16 text-center text-xs text-slate-400">Memuat katalog produk toko...</div>
-          ) : products.length === 0 ? (
+          ) : filteredProducts.length === 0 ? (
             <div className="p-16 text-center text-xs text-slate-400">
-              Belum ada produk terdaftar. Klik &quot;Tambah Produk Baru&quot; untuk memulai.
+              {statusFilter === "ALL"
+                ? 'Belum ada produk terdaftar. Klik "Tambah Produk Baru" untuk memulai.'
+                : statusFilter === "ACTIVE"
+                ? "Tidak ada produk aktif saat ini. Aktifkan produk dari tab Draf setelah mengunggah foto."
+                : statusFilter === "DRAFT"
+                ? "Tidak ada produk berstatus draf saat ini."
+                : "Tidak ada produk nonaktif atau diarsipkan."}
             </div>
           ) : (
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
-                  <th className="p-4 pl-6">Produk &amp; Merek</th>
-                  <th className="p-4">Kategori</th>
-                  <th className="p-4">Varian &amp; Rentang Harga</th>
-                  <th className="p-4">Total Stok</th>
-                  <th className="p-4">Garansi Diberikan</th>
-                  <th className="p-4">Status</th>
-                  <th className="p-4 pr-6 text-right">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {products.map((p) => (
-                  <tr key={p.productId} className="hover:bg-slate-50/60 transition">
-                    <td className="p-4 pl-6">
-                      <div className="font-bold text-slate-900">{p.name}</div>
-                      <div className="text-[11px] text-slate-400">
-                        {p.brandName ? `Merek: ${p.brandName}` : "Merek: Universal / Aftermarket"} &bull; ID: {p.productId}
-                      </div>
-                    </td>
-                    <td className="p-4">
-                      <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-semibold text-[10px] inline-block">
-                        {p.categoryName || p.categoryId}
-                      </span>
-                      {p.subcategoryName && (
-                        <div className="text-[10px] text-slate-500 font-medium mt-1 flex items-center gap-1">
-                          <Tag size={11} className="text-slate-400 shrink-0" />
-                          <span>{p.subcategoryName}</span>
-                        </div>
-                      )}
-                    </td>
-                    <td className="p-4">
-                      <div className="font-bold text-[#0F4C81]">
-                        {p.priceRangeFormatted ||
-                          p.priceDisplay ||
-                          (p.minPrice !== undefined && p.maxPrice !== undefined && p.minPrice !== p.maxPrice
-                            ? `Rp${p.minPrice.toLocaleString("id-ID")} - Rp${p.maxPrice.toLocaleString("id-ID")}`
-                            : p.minPrice
-                            ? `Rp${p.minPrice.toLocaleString("id-ID")}`
-                            : "Rp0")}
-                      </div>
-                      <div className="text-[11px] text-slate-400">
-                        {p.variantCount || (p.variants ? p.variants.length : 0)} Varian Dikonfigurasi
-                      </div>
-                    </td>
-                    <td className="p-4 font-bold text-slate-700">
-                      {p.totalStock ?? p.variants?.reduce((acc, v) => acc + (v.stock || 0), 0) ?? 0} Unit
-                    </td>
-                    <td className="p-4">
-                      {p.warrantyPolicy && p.warrantyPolicy.durationMonths ? (
-                        <>
-                          <div className="flex items-center gap-1.5 font-bold text-slate-800">
-                            <ShieldCheck size={16} weight="fill" className="text-emerald-600 shrink-0" />
-                            <span>
-                              {p.warrantyDays || p.warrantyPolicy.durationDays || (p.warrantyPolicy.durationMonths === 12 ? 365 : p.warrantyPolicy.durationMonths === 24 ? 730 : p.warrantyPolicy.durationMonths * 30)} Hari
-                            </span>
-                          </div>
-                          <div className="text-[10px] text-slate-500 font-medium mt-0.5">
-                            ({p.warrantyPolicy.durationMonths} Bulan) &bull; {p.warrantyPolicy.type === "STORE_ONLY"
-                              ? "Garansi Toko"
-                              : p.warrantyPolicy.type === "OFFICIAL_BRAND"
-                              ? "Distributor Resmi"
-                              : "Toko & Pabrik Resmi"}
-                          </div>
-                        </>
-                      ) : (
-                        <div className="text-slate-400 text-xs">Non-Garansi</div>
-                      )}
-                    </td>
-                    <td className="p-4">
-                      <Badge variant={p.status === "ACTIVE" ? "success" : "neutral"} size="sm">
-                        {p.status}
-                      </Badge>
-                    </td>
-                    <td className="p-4 pr-6 text-right flex items-center justify-end gap-2">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        id={`edit-product-${p.productId}`}
-                        onClick={() => handleOpenEditModal(p)}
-                        className="flex items-center gap-1 text-[11px]"
-                      >
-                        <PencilSimple size={14} />
-                        <span>Edit &amp; Garansi</span>
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleOpenVariantModal(p)}
-                        className="flex items-center gap-1 text-[11px]"
-                      >
-                        <Stack size={14} />
-                        <span>Kelola Varian &amp; Stok</span>
-                      </Button>
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={() => handleDeleteProduct(p)}
-                        className="flex items-center gap-1 text-[11px]"
-                      >
-                        <Trash size={14} />
-                        <span>Hapus</span>
-                      </Button>
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
+                    <th className="py-3.5 px-4 pl-6">Produk &amp; Merek</th>
+                    <th className="py-3.5 px-4">Kategori &amp; Subkategori</th>
+                    <th className="py-3.5 px-4">Varian &amp; Rentang Harga</th>
+                    <th className="py-3.5 px-4">Total Stok</th>
+                    <th className="py-3.5 px-4">Status</th>
+                    <th className="py-3.5 px-4 pr-6 text-right">Aksi</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredProducts.map((p) => {
+                    const resolvedCategoryName =
+                      p.categoryName ||
+                      categories.find((c) => c.id === p.categoryId)?.name ||
+                      p.categoryId ||
+                      "Kategori Produk";
+                    const resolvedSubcategoryName =
+                      p.subcategoryName ||
+                      subcategories.find((s) => s.id === p.subcategoryId)?.name;
+                    const thumbUrl = p.primary_image_url || getProductMediaUrl(p.media);
+                    const brandDisplay = p.brandName || (p as any).brand;
+
+                    const generalCount = Array.isArray(p.media)
+                      ? p.media.filter((m: any) => typeof m !== "string" && (m.scope === "GENERAL" || (!m.variantId && !m.variant_id && m.scope !== "VARIANT"))).length
+                      : p.primary_image_url ? 1 : 0;
+
+                    const variantCount = Array.isArray(p.media)
+                      ? p.media.filter((m: any) => typeof m !== "string" && (m.scope === "VARIANT" || m.variantId || m.variant_id)).length
+                      : (p.variants ? p.variants.reduce((acc, v) => acc + (v.media?.length || 0), 0) : 0);
+
+                    return (
+                      <tr key={p.productId} className="hover:bg-slate-50/60 transition group">
+                        <td className="py-3.5 px-4 pl-6">
+                          <div className="flex items-center gap-3">
+                            <div className="relative w-12 h-12 rounded-2xl bg-slate-100 border border-slate-200/90 overflow-hidden flex items-center justify-center shrink-0 shadow-2xs group-hover:border-[#0F4C81]/30 transition">
+                              {thumbUrl ? (
+                                <img
+                                  src={thumbUrl}
+                                  alt={p.name}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                />
+                              ) : (
+                                <Package size={22} className="text-slate-400" />
+                              )}
+                            </div>
+                            <div className="space-y-1 min-w-0">
+                              <div className="font-bold text-slate-900 leading-snug line-clamp-1">{p.name}</div>
+                              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                {brandDisplay ? (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-sky-50 text-[#0F4C81] border border-sky-100">
+                                    Merek: {brandDisplay}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 italic">
+                                    OEM
+                                  </span>
+                                )}
+                                {/* Media Count Badges */}
+                                {generalCount > 0 ? (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    <ImageIcon size={10} weight="fill" /> {generalCount} Umum
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                    <WarningCircle size={10} weight="fill" /> Butuh Foto Umum
+                                  </span>
+                                )}
+                                {variantCount > 0 && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[9px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                                    {variantCount} Varian
+                                  </span>
+                                )}
+                                <span className="text-[10px] font-mono text-slate-400">
+                                  ID: {p.productId.slice(0, 8)}...
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-semibold text-[10px] inline-block border border-slate-200/80">
+                            {resolvedCategoryName}
+                          </span>
+                          {resolvedSubcategoryName && (
+                            <div className="text-[10px] text-slate-500 font-medium mt-1 flex items-center gap-1">
+                              <Tag size={11} className="text-slate-400 shrink-0" />
+                              <span>{resolvedSubcategoryName}</span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-[#0F4C81]">
+                            {p.priceRangeFormatted ||
+                              p.priceDisplay ||
+                              (p.minPrice !== undefined && p.maxPrice !== undefined && p.minPrice > 0
+                                ? p.minPrice !== p.maxPrice
+                                  ? `Rp${p.minPrice.toLocaleString("id-ID")} - Rp${p.maxPrice.toLocaleString("id-ID")}`
+                                  : `Rp${p.minPrice.toLocaleString("id-ID")}`
+                                : "Belum diatur")}
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            {p.variantCount || (p.variants ? p.variants.length : 0)} Varian Dikonfigurasi
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span
+                            className={`font-bold text-xs ${
+                              (p.totalStock ?? 0) > 0 ? "text-emerald-700" : "text-rose-600"
+                            }`}
+                          >
+                            {p.totalStock ?? p.variants?.reduce((acc, v) => acc + (v.stock || 0), 0) ?? 0} Unit
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <Badge
+                            variant={
+                              p.status === "ACTIVE"
+                                ? "success"
+                                : p.status === "DRAFT"
+                                ? "warning"
+                                : "neutral"
+                            }
+                            size="sm"
+                          >
+                            {p.status === "ARCHIVED" ? "DIARSIPKAN" : p.status}
+                          </Badge>
+                        </td>
+                        <td className="py-3.5 px-4 pr-6 text-right whitespace-nowrap">
+                          <div className="inline-flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleStatus(p)}
+                              className={`h-7 px-2.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition border cursor-pointer ${
+                                p.status === "ACTIVE"
+                                  ? "border-slate-200 text-slate-600 hover:text-rose-600 hover:bg-rose-50"
+                                  : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                              }`}
+                              title={
+                                p.status === "ACTIVE"
+                                  ? "Nonaktifkan tayang"
+                                  : p.status === "ARCHIVED"
+                                  ? "Aktifkan kembali produk dari arsip"
+                                  : "Aktifkan produk"
+                              }
+                            >
+                              <Power size={13} weight="bold" />
+                              <span>
+                                {p.status === "ACTIVE"
+                                  ? "Nonaktifkan"
+                                  : p.status === "ARCHIVED"
+                                  ? "Pulihkan"
+                                  : "Aktifkan"}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenMediaModal(p)}
+                              className="h-7 px-2 rounded-lg text-xs font-semibold border border-slate-200 text-slate-700 bg-white hover:bg-sky-50 hover:border-sky-300 hover:text-[#0F4C81] flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                              title="Kelola foto umum dan foto varian"
+                            >
+                              <ImageIcon size={13} weight="bold" />
+                              <span>Foto ({generalCount + variantCount})</span>
+                            </button>
+                            <button
+                              type="button"
+                              id={`edit-product-${p.productId}`}
+                              onClick={() => handleOpenEditModal(p)}
+                              className="h-7 px-2 rounded-lg text-xs font-semibold border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 hover:text-[#0F4C81] flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                              title="Ubah data produk"
+                            >
+                              <PencilSimple size={13} weight="bold" />
+                              <span>Edit</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenVariantModal(p)}
+                              className="h-7 px-2 rounded-lg text-xs font-semibold border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 hover:text-[#0F4C81] flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                              title="Kelola varian produk"
+                            >
+                              <Stack size={13} weight="bold" />
+                              <span>Varian</span>
+                            </button>
+                            {p.status !== "ARCHIVED" && (
+                              <button
+                                type="button"
+                                onClick={() => handlePromptDelete(p)}
+                                className="h-7 px-2 rounded-lg text-xs font-semibold border border-slate-200 text-slate-400 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 flex items-center justify-center transition cursor-pointer"
+                                title="Hapus produk dari etalase"
+                              >
+                                <Trash size={13} weight="bold" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       </div>
@@ -677,10 +1191,53 @@ function MerchantProductsContent() {
                 ></textarea>
               </div>
 
-              {/* Multi-Variant Section */}
+              {/* 1. OPSI TAMBAH FOTO UMUM PRODUK */}
+              <div className="p-3.5 bg-sky-50/60 border border-sky-200/80 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <ImageIcon size={16} className="text-[#0F4C81]" weight="bold" />
+                    <label className="text-xs font-bold text-slate-800">
+                      Foto Umum Produk <span className="text-slate-400 font-normal">(Bisa Lebih dari 1)</span>
+                    </label>
+                  </div>
+                  {formGeneralFiles.length > 0 && (
+                    <span className="text-[10px] font-bold text-[#0F4C81] bg-white px-2 py-0.5 rounded-full border border-sky-200">
+                      {formGeneralFiles.length} foto dipilih
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Foto umum adalah foto default produk yang muncul pertama kali di katalog pembeli.
+                </p>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e) => setFormGeneralFiles(Array.from(e.target.files || []))}
+                  className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl file:mr-2.5 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-[#0F4C81] file:text-white hover:file:bg-[#0B3860] cursor-pointer"
+                />
+                {formGeneralFiles.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                    {formGeneralFiles.map((f, i) => (
+                      <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] text-slate-700 font-medium">
+                        <span className="truncate max-w-[130px]">{f.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => setFormGeneralFiles(formGeneralFiles.filter((_, idx) => idx !== i))}
+                          className="text-slate-400 hover:text-rose-600"
+                        >
+                          <X size={10} weight="bold" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 2. DAFTAR VARIAN & INPUT FOTO KHUSUS VARIAN */}
               <div className="pt-2 border-t border-slate-100">
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-bold text-slate-800">Daftar Varian, Harga &amp; Stok *</label>
+                  <label className="text-xs font-bold text-slate-800">Daftar Varian, Harga, Stok &amp; Foto Varian *</label>
                   <Button
                     type="button"
                     variant="secondary"
@@ -693,88 +1250,114 @@ function MerchantProductsContent() {
                   </Button>
                 </div>
 
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
                   {formVariants.map((v, idx) => (
-                    <div key={idx} className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200/80">
-                      <input
-                        type="text"
-                        required
-                        placeholder="Nama Varian (misal: 1,2 kg)"
-                        value={v.name}
-                        onChange={(e) => {
-                          const updated = [...formVariants];
-                          updated[idx].name = e.target.value;
-                          setFormVariants(updated);
-                        }}
-                        className="flex-1 text-xs p-2 bg-white border border-slate-200 rounded-lg"
-                      />
-                      <div className="w-28">
+                    <div key={idx} className="bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 space-y-2">
+                      <div className="flex items-center gap-2">
                         <input
-                          type="number"
+                          type="text"
                           required
-                          min={0}
-                          placeholder="Harga (Rp)"
-                          value={v.price}
+                          placeholder="Nama Varian (misal: 1,2 kg)"
+                          value={v.name}
                           onChange={(e) => {
                             const updated = [...formVariants];
-                            updated[idx].price = Number(e.target.value);
+                            updated[idx].name = e.target.value;
                             setFormVariants(updated);
                           }}
-                          className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg"
+                          className="flex-1 text-xs p-2 bg-white border border-slate-200 rounded-lg"
                         />
+                        <div className="w-28">
+                          <input
+                            type="number"
+                            required
+                            min={0}
+                            placeholder="Harga (Rp)"
+                            value={v.price}
+                            onChange={(e) => {
+                              const updated = [...formVariants];
+                              updated[idx].price = Number(e.target.value);
+                              setFormVariants(updated);
+                            }}
+                            className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg"
+                          />
+                        </div>
+                        <div className="w-20">
+                          <input
+                            type="number"
+                            required
+                            min={0}
+                            placeholder="Stok"
+                            value={v.stock}
+                            onChange={(e) => {
+                              const updated = [...formVariants];
+                              updated[idx].stock = Number(e.target.value);
+                              setFormVariants(updated);
+                            }}
+                            className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg"
+                          />
+                        </div>
+                        {formVariants.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveVariantRow(idx)}
+                            className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                            title="Hapus varian ini"
+                          >
+                            <Trash size={14} />
+                          </button>
+                        )}
                       </div>
-                      <div className="w-20">
+
+                      {/* Input Foto Khusus Varian */}
+                      <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-200/60 text-[11px]">
+                        <span className="text-slate-600 font-semibold flex items-center gap-1 shrink-0">
+                          <ImageIcon size={13} className="text-purple-600" />
+                          <span>Foto Varian ({v.variantFiles?.length || 0}):</span>
+                        </span>
                         <input
-                          type="number"
-                          required
-                          min={0}
-                          placeholder="Stok"
-                          value={v.stock}
+                          type="file"
+                          multiple
+                          accept="image/jpeg,image/png,image/webp"
                           onChange={(e) => {
+                            const files = Array.from(e.target.files || []);
                             const updated = [...formVariants];
-                            updated[idx].stock = Number(e.target.value);
+                            updated[idx].variantFiles = files;
                             setFormVariants(updated);
                           }}
-                          className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg"
+                          className="text-[10px] text-slate-500 file:mr-2 file:py-0.5 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-semibold file:bg-purple-100 file:text-purple-700 hover:file:bg-purple-200 cursor-pointer"
                         />
                       </div>
-                      {formVariants.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveVariantRow(idx)}
-                          className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition"
-                        >
-                          <Trash size={14} />
-                        </button>
-                      )}
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Step 7: Warranty Policy Configuration (Mandatory Catalog Step) */}
-              <div className="pt-3 border-t border-slate-100 space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="p-1 rounded-lg bg-emerald-50 text-emerald-700">
-                    <ShieldCheck size={16} weight="bold" />
-                  </span>
-                  <div>
-                    <h3 className="text-xs font-bold text-slate-800">
-                      Kebijakan Garansi Resmi Produk (Step 7)
-                    </h3>
-                    <p className="text-[10px] text-slate-500">
-                      Konfigurasikan durasi, perlindungan, dan pengecualian garansi sebelum dipublikasikan ke katalog
-                    </p>
+              {/* Bagian Simulasi / UI Saja: Kebijakan Garansi */}
+              <div className="pt-4 border-t border-slate-200/80 space-y-3">
+                <div className="p-3.5 bg-amber-50/80 border border-amber-200/90 rounded-2xl space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <WarningCircle size={18} className="text-amber-700 shrink-0" weight="bold" />
+                    <span className="text-xs font-bold text-amber-950 font-heading">
+                      Fitur Tambahan: Kebijakan Garansi &amp; Purnajual (Pratinjau UI)
+                    </span>
+                    <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-200/70 text-amber-900 border border-amber-300">
+                      Belum Tersimpan ke Database
+                    </span>
                   </div>
+                  <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                    Formulir garansi di bawah ini saat ini disiapkan sebagai pratinjau tampilan antarmuka (UI). Data garansi belum disimpan secara permanen ke basis data produk.
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Durasi Garansi *</label>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Durasi Garansi <span className="text-slate-400 font-normal">(Opsional)</span>
+                    </label>
                     <select
                       value={warrantyDuration}
                       onChange={(e) => setWarrantyDuration(Number(e.target.value))}
-                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20"
                     >
                       <option value={0}>0 Bulan (Tanpa Garansi / Non-Garansi)</option>
                       <option value={1}>1 Bulan Garansi Toko</option>
@@ -786,11 +1369,13 @@ function MerchantProductsContent() {
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Tipe Penjamin Garansi *</label>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Tipe Penjamin Garansi <span className="text-slate-400 font-normal">(Opsional)</span>
+                    </label>
                     <select
                       value={warrantyType}
                       onChange={(e) => setWarrantyType(e.target.value)}
-                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
+                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20"
                     >
                       <option value="MANUFACTURER_AND_STORE">Toko &amp; Pabrik Manufaktur Resmi</option>
                       <option value="STORE_ONLY">Garansi Toko (Tukar Baru / Perbaikan)</option>
@@ -800,7 +1385,9 @@ function MerchantProductsContent() {
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Cakupan Perlindungan Garansi</label>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Cakupan Perlindungan Garansi <span className="text-slate-400 font-normal">(Opsional)</span>
+                  </label>
                   <input
                     type="text"
                     value={warrantyCoverage}
@@ -811,7 +1398,9 @@ function MerchantProductsContent() {
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Pengecualian Garansi (Exclusions)</label>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Pengecualian Garansi (Exclusions) <span className="text-slate-400 font-normal">(Opsional)</span>
+                  </label>
                   <input
                     type="text"
                     value={warrantyExclusions}
@@ -969,21 +1558,28 @@ function MerchantProductsContent() {
                 ></textarea>
               </div>
 
-              {/* Warranty Policy Edit Section */}
-              <div className="pt-3 border-t border-slate-100 space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="p-1 rounded-lg bg-emerald-50 text-emerald-700">
-                    <ShieldCheck size={16} weight="bold" />
-                  </span>
-                  <div>
-                    <h3 className="text-xs font-bold text-slate-800">Kebijakan Garansi Produk (Step 8)</h3>
-                    <p className="text-[10px] text-slate-500">Tentukan masa berlaku dan jaminan resmi garansi purnajual</p>
+              {/* Warranty Policy Edit Section (UI-only preview) */}
+              <div className="pt-4 border-t border-slate-200/80 space-y-3">
+                <div className="p-3.5 bg-amber-50/80 border border-amber-200/90 rounded-2xl space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <WarningCircle size={18} className="text-amber-700 shrink-0" weight="bold" />
+                    <span className="text-xs font-bold text-amber-950 font-heading">
+                      Kebijakan Garansi Produk (Pratinjau UI)
+                    </span>
+                    <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-200/70 text-amber-900 border border-amber-300">
+                      Belum Tersimpan ke Database
+                    </span>
                   </div>
+                  <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                    Pengaturan garansi berikut disiapkan sebagai simulasi antarmuka purnajual dan saat ini belum disimpan secara permanen ke basis data.
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Masa Garansi *</label>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Masa Garansi <span className="text-slate-400 font-normal">(Opsional)</span>
+                    </label>
                     <select
                       id="edit-warranty-duration"
                       value={editWarrantyDuration}
@@ -1057,16 +1653,27 @@ function MerchantProductsContent() {
       {/* Variant Manager Modal */}
       {selectedProductForVariants && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-6 space-y-6 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-start justify-between">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-6 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
               <div>
-                <h2 className="text-base font-bold text-slate-900">Kelola Varian, Harga &amp; Stok</h2>
-                <p className="text-xs text-slate-500 mt-0.5">{selectedProductForVariants.name}</p>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-bold text-slate-900 font-heading">
+                    Kelola Varian, Harga, Stok &amp; Foto Khusus
+                  </h2>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-[#0F4C81] border border-sky-200">
+                    {variantList.length} Varian
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5 font-medium">{selectedProductForVariants.name}</p>
               </div>
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => setSelectedProductForVariants(null)}
+                onClick={() => {
+                  setSelectedProductForVariants(null);
+                  setEditingVariantId(null);
+                  setNewVarPhotos([]);
+                }}
               >
                 Tutup
               </Button>
@@ -1074,65 +1681,697 @@ function MerchantProductsContent() {
 
             {/* List Existing Variants */}
             <div className="space-y-3">
-              <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Varian Terdaftar</h3>
+              <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5 font-heading">
+                <Stack size={14} className="text-[#0F4C81]" />
+                <span>Varian Terdaftar ({variantList.length})</span>
+              </h3>
               {loadingVariants ? (
-                <div className="p-6 text-center text-xs text-slate-400">Memuat varian...</div>
+                <div className="p-8 text-center text-xs text-slate-400 flex flex-col items-center justify-center">
+                  <Package size={28} className="animate-pulse text-[#0F4C81] mb-2" />
+                  <span>Memuat varian suku cadang...</span>
+                </div>
               ) : variantList.length === 0 ? (
-                <div className="p-6 text-center text-xs text-slate-400">Belum ada varian terdaftar.</div>
+                <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-2xl border border-slate-200/80">
+                  Belum ada varian terdaftar. Tambahkan varian pertama melalui form di bawah.
+                </div>
               ) : (
-                <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden">
+                <div className="space-y-3">
                   {variantList.map((v) => (
-                    <div key={v.variantId} className="p-3.5 flex items-center justify-between bg-white hover:bg-slate-50">
-                      <div>
-                        <div className="font-bold text-slate-900 text-xs">{v.name}</div>
-                        <div className="text-[11px] text-[#0F4C81] font-semibold mt-0.5">
-                          Rp{v.price.toLocaleString("id-ID")} &bull; Stok: {v.stock} unit
+                    <div
+                      key={v.variantId}
+                      className="p-4 rounded-2xl border border-slate-200 bg-white hover:border-slate-300 transition space-y-3 shadow-2xs"
+                    >
+                      {/* Top Variant Info & Actions */}
+                      <div className="flex items-start justify-between gap-2 flex-wrap sm:flex-nowrap">
+                        <div>
+                          <div className="font-bold text-slate-900 text-xs sm:text-sm flex items-center gap-2">
+                            <span>{v.name}</span>
+                            <Badge variant={v.status === "ACTIVE" ? "success" : "neutral"} size="sm">
+                              {v.status}
+                            </Badge>
+                          </div>
+                          <div className="text-[11px] text-[#0F4C81] font-semibold mt-0.5">
+                            Rp{v.price.toLocaleString("id-ID")} &bull; Stok: {v.stock} unit
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (editingVariantId === v.variantId) {
+                                handleCancelEditVariant();
+                              } else {
+                                handleStartEditVariant(v);
+                              }
+                            }}
+                            className={`p-1.5 rounded-lg border transition text-xs font-semibold flex items-center gap-1 cursor-pointer ${
+                              editingVariantId === v.variantId
+                                ? "bg-sky-100 text-[#0F4C81] border-[#0F4C81]"
+                                : "bg-white text-slate-600 border-slate-200 hover:text-[#0F4C81] hover:bg-slate-50"
+                            }`}
+                            title="Edit nama, harga & stok varian"
+                          >
+                            <PencilSimple size={13} weight="bold" />
+                            <span className="text-[10px]">Edit</span>
+                          </button>
+
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleToggleVariantStatus(v)}
+                            className="text-[10px] py-1 px-2.5"
+                          >
+                            {v.status === "ACTIVE" ? "Nonaktifkan" : "Aktifkan"}
+                          </Button>
+
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            onClick={() => handleDeleteVariant(v)}
+                            className="text-[10px] py-1 px-2 text-rose-600"
+                            title="Hapus varian"
+                          >
+                            <Trash size={13} />
+                          </Button>
                         </div>
                       </div>
-                      <Badge variant={v.status === "ACTIVE" ? "success" : "neutral"} size="sm">
-                        {v.status}
-                      </Badge>
+
+                      {/* Inline Edit Form for this variant */}
+                      {editingVariantId === v.variantId && (
+                        <div className="p-3 rounded-xl bg-sky-50/70 border border-sky-200/80 space-y-2.5 animate-in fade-in duration-200">
+                          <div className="text-[11px] font-bold text-[#0F4C81]">Edit Data Varian:</div>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Nama Varian</label>
+                              <input
+                                type="text"
+                                value={editVarName}
+                                onChange={(e) => setEditVarName(e.target.value)}
+                                className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg"
+                                placeholder="Nama Varian"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Harga (Rp)</label>
+                              <input
+                                type="number"
+                                min={0}
+                                value={editVarPrice}
+                                onChange={(e) => setEditVarPrice(Number(e.target.value))}
+                                className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg"
+                                placeholder="Harga (Rp)"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Stok Unit</label>
+                              <input
+                                type="number"
+                                min={0}
+                                value={editVarStock}
+                                onChange={(e) => setEditVarStock(Number(e.target.value))}
+                                className="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg"
+                                placeholder="Stok Unit"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-end gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={handleCancelEditVariant}
+                              className="px-2.5 py-1 text-xs text-slate-600 hover:text-slate-900 cursor-pointer"
+                            >
+                              Batal
+                            </button>
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              disabled={updatingVariant}
+                              onClick={() => handleSaveEditVariant(v)}
+                              className="text-xs bg-[#0F4C81] text-white px-3 py-1"
+                            >
+                              {updatingVariant ? "Menyimpan..." : "Simpan Perubahan"}
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Variant-Specific Photos Section */}
+                      <div className="pt-2 border-t border-slate-100 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                            <ImageIcon size={14} className="text-[#0F4C81]" />
+                            <span>Foto Khusus Varian ({v.media?.length || 0})</span>
+                          </span>
+
+                          <label className="inline-flex items-center gap-1 text-[11px] font-bold text-[#0F4C81] hover:text-[#0B3860] bg-sky-50 hover:bg-sky-100 px-2.5 py-1 rounded-lg border border-sky-200 cursor-pointer transition">
+                            <Plus size={12} weight="bold" />
+                            <span>+ Tambah Foto Varian</span>
+                            <input
+                              type="file"
+                              multiple
+                              accept="image/*"
+                              className="hidden"
+                              disabled={uploadingVariantId === v.variantId}
+                              onChange={(e) => {
+                                handleUploadPhotosToExistingVariant(v.variantId, e.target.files);
+                                e.target.value = "";
+                              }}
+                            />
+                          </label>
+                        </div>
+
+                        {uploadingVariantId === v.variantId && (
+                          <div className="text-[11px] text-[#0F4C81] font-semibold flex items-center gap-2 p-2 bg-sky-50 rounded-xl">
+                            <Package size={14} className="animate-spin" />
+                            <span>Mengunggah foto khusus varian...</span>
+                          </div>
+                        )}
+
+                        {v.media && v.media.length > 0 ? (
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {v.media.map((m: any, mIdx: number) => (
+                              <div
+                                key={m.id || mIdx}
+                                className="relative w-16 h-16 rounded-xl border border-slate-200 overflow-hidden group shadow-2xs bg-slate-50 shrink-0"
+                              >
+                                <img
+                                  src={m.url}
+                                  alt={`${v.name} foto ${mIdx + 1}`}
+                                  className="w-full h-full object-cover"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteVariantPhoto(m.id)}
+                                  className="absolute top-1 right-1 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow-xs hover:bg-rose-700 cursor-pointer"
+                                  title="Hapus foto varian"
+                                >
+                                  <X size={10} weight="bold" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-slate-400 italic bg-slate-50/70 p-2.5 rounded-xl border border-dashed border-slate-200">
+                            Belum ada foto khusus varian ini. (Pelanggan akan melihat foto umum bila memilih varian ini)
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Form Add New Variant */}
+            {/* Form Add New Variant with Photo Picker */}
             <form onSubmit={handleAddNewVariantToProduct} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-              <h3 className="text-xs font-bold text-slate-800">Tambah Varian Baru</h3>
+              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 font-heading">
+                <Plus size={14} className="text-[#0F4C81]" />
+                <span>Tambah Varian Baru</span>
+              </h3>
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <input
-                  type="text"
-                  required
-                  placeholder="Nama Varian (misal: 4 kg)"
-                  value={newVarName}
-                  onChange={(e) => setNewVarName(e.target.value)}
-                  className="text-xs p-2 bg-white border border-slate-200 rounded-xl"
-                />
-                <input
-                  type="number"
-                  required
-                  min={0}
-                  placeholder="Harga (Rp)"
-                  value={newVarPrice}
-                  onChange={(e) => setNewVarPrice(Number(e.target.value))}
-                  className="text-xs p-2 bg-white border border-slate-200 rounded-xl"
-                />
-                <input
-                  type="number"
-                  required
-                  min={0}
-                  placeholder="Stok Unit"
-                  value={newVarStock}
-                  onChange={(e) => setNewVarStock(Number(e.target.value))}
-                  className="text-xs p-2 bg-white border border-slate-200 rounded-xl"
-                />
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Nama Varian</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Nama Varian (misal: 4 kg)"
+                    value={newVarName}
+                    onChange={(e) => setNewVarName(e.target.value)}
+                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Harga (Rp)</label>
+                  <input
+                    type="number"
+                    required
+                    min={0}
+                    placeholder="Harga (Rp)"
+                    value={newVarPrice}
+                    onChange={(e) => setNewVarPrice(Number(e.target.value))}
+                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Stok Unit</label>
+                  <input
+                    type="number"
+                    required
+                    min={0}
+                    placeholder="Stok Unit"
+                    value={newVarStock}
+                    onChange={(e) => setNewVarStock(Number(e.target.value))}
+                    className="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl"
+                  />
+                </div>
               </div>
-              <Button type="submit" variant="primary" size="sm" className="w-full bg-[#0F4C81] text-white">
-                Tambahkan Varian ke Produk Ini
+
+              {/* Photo uploader for new variant */}
+              <div className="space-y-1.5 pt-1 border-t border-slate-200/80">
+                <label className="block text-[11px] font-bold text-slate-700">
+                  Foto Khusus Varian Baru (Bisa lebih dari 1 foto):
+                </label>
+                <div className="flex items-center gap-2">
+                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-dashed border-sky-300 bg-sky-50/70 hover:bg-sky-100 text-[#0F4C81] text-xs font-semibold cursor-pointer transition">
+                    <UploadSimple size={14} weight="bold" />
+                    <span>+ Pilih Foto Varian ({newVarPhotos.length} dipilih)</span>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files) {
+                          const chosen = Array.from(e.target.files);
+                          setNewVarPhotos((prev) => [...prev, ...chosen]);
+                          e.target.value = "";
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+
+                {newVarPhotos.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {newVarPhotos.map((file, fIdx) => (
+                      <div
+                        key={fIdx}
+                        className="relative w-14 h-14 rounded-xl border border-slate-200 bg-white overflow-hidden group shadow-2xs"
+                      >
+                        <img
+                          src={URL.createObjectURL(file)}
+                          alt={file.name}
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setNewVarPhotos((prev) => prev.filter((_, i) => i !== fIdx))}
+                          className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-rose-600 text-white flex items-center justify-center hover:bg-rose-700 cursor-pointer"
+                        >
+                          <X size={9} weight="bold" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={creatingVariantWithPhotos}
+                className="w-full bg-[#0F4C81] text-white py-2 font-bold cursor-pointer"
+              >
+                {creatingVariantWithPhotos ? "Menyimpan Varian & Mengunggah Foto..." : "Tambahkan Varian ke Produk Ini"}
               </Button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Media Manager Modal: Foto Umum vs Foto Khusus Varian */}
+      {selectedProductForMedia && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-5 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-bold text-slate-900 font-heading">
+                    Kelola Foto Katalog Produk
+                  </h2>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-[#0F4C81] border border-sky-200">
+                    Sistem 2-Scope: Umum &amp; Varian
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5 font-medium">{selectedProductForMedia.name}</p>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setSelectedProductForMedia(null)}
+              >
+                Tutup
+              </Button>
+            </div>
+
+            {mediaError && (
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                <WarningCircle size={16} />
+                <span>{mediaError}</span>
+              </div>
+            )}
+
+            {/* Scope Navigation Tabs */}
+            <div className="flex items-center gap-2 p-1.5 bg-slate-100 rounded-2xl border border-slate-200 text-xs">
+              <button
+                type="button"
+                onClick={() => setMediaActiveTab("GENERAL")}
+                className={`flex-1 py-2 px-3 rounded-xl font-bold flex items-center justify-center gap-2 transition cursor-pointer ${
+                  mediaActiveTab === "GENERAL"
+                    ? "bg-white text-[#0F4C81] shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Package size={16} weight={mediaActiveTab === "GENERAL" ? "fill" : "regular"} />
+                <span>Foto Umum Produk</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-sky-100 text-[#0F4C81]">
+                  {mediaList.filter((m: any) => m.scope === "GENERAL" || (!m.variantId && !m.variant_id && m.scope !== "VARIANT")).length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMediaActiveTab("VARIANT");
+                  if (!selectedVariantIdForMedia && selectedProductForMedia.variants && selectedProductForMedia.variants.length > 0) {
+                    setSelectedVariantIdForMedia(selectedProductForMedia.variants[0].variantId);
+                  }
+                }}
+                className={`flex-1 py-2 px-3 rounded-xl font-bold flex items-center justify-center gap-2 transition cursor-pointer ${
+                  mediaActiveTab === "VARIANT"
+                    ? "bg-white text-[#0F4C81] shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Stack size={16} weight={mediaActiveTab === "VARIANT" ? "fill" : "regular"} />
+                <span>Foto Khusus Varian</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-purple-100 text-purple-700">
+                  {mediaList.filter((m: any) => m.scope === "VARIANT" || m.variantId || m.variant_id).length}
+                </span>
+              </button>
+            </div>
+
+            {/* TAB CONTENT: 1. FOTO UMUM */}
+            {mediaActiveTab === "GENERAL" && (
+              <div className="space-y-4 animate-in fade-in">
+                <div className="p-3 bg-sky-50/70 border border-sky-100 rounded-2xl text-xs text-slate-600 flex items-start gap-2.5">
+                  <Package size={18} className="text-[#0F4C81] shrink-0 mt-0.5" weight="duotone" />
+                  <p className="leading-relaxed">
+                    <b>Foto Umum</b> adalah foto default produk. Foto ini muncul pertama kali saat pelanggan atau pengunjung melihat katalog. Bisa diunggah lebih dari 1 foto.
+                  </p>
+                </div>
+
+                {/* Upload Multi General Photos Form */}
+                <form onSubmit={handleUploadGeneralMedia} className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800">Unggah Foto Umum Baru (Bisa Lebih dari 1)</span>
+                    {generalMediaFiles.length > 0 && (
+                      <span className="text-[10px] font-bold text-sky-700 bg-sky-100 px-2 py-0.5 rounded-full">
+                        {generalMediaFiles.length} file dipilih
+                      </span>
+                    )}
+                  </div>
+
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(e) => setGeneralMediaFiles(Array.from(e.target.files || []))}
+                    className="w-full text-xs p-2.5 bg-white border border-slate-200 rounded-xl file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-[#0F4C81] file:text-white hover:file:bg-[#0B3860] cursor-pointer"
+                  />
+
+                  {generalMediaFiles.length > 0 && (
+                    <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-600">
+                      {generalMediaFiles.map((f, i) => (
+                        <span key={i} className="px-2 py-0.5 rounded-md bg-white border border-slate-200 truncate max-w-[180px]">
+                          {f.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="sm"
+                    disabled={uploadingMedia || generalMediaFiles.length === 0}
+                    className="w-full bg-[#0F4C81] hover:bg-[#0B3860] text-white flex items-center justify-center gap-2 font-bold"
+                  >
+                    <UploadSimple size={16} weight="bold" />
+                    <span>{uploadingMedia ? "Mengunggah..." : `Unggah ${generalMediaFiles.length > 0 ? generalMediaFiles.length : ""} Foto Umum`}</span>
+                  </Button>
+                </form>
+
+                {/* Existing General Media List */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      Daftar Foto Umum Terunggah
+                    </h3>
+                    <span className="text-xs text-slate-400">
+                      Total: {mediaList.filter((m: any) => m.scope === "GENERAL" || (!m.variantId && !m.variant_id && m.scope !== "VARIANT")).length} Foto
+                    </span>
+                  </div>
+
+                  {(() => {
+                    const generalPhotos = mediaList.filter((m: any) => m.scope === "GENERAL" || (!m.variantId && !m.variant_id && m.scope !== "VARIANT"));
+                    if (generalPhotos.length === 0) {
+                      return (
+                        <div className="p-8 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-2xl bg-slate-50">
+                          Belum ada foto umum. Produk membutuhkan minimal 1 foto umum untuk dapat diaktifkan ke etalase publik.
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {generalPhotos.map((m: any, idx: number) => (
+                          <div
+                            key={m.id || idx}
+                            className="group relative rounded-2xl border border-slate-200 overflow-hidden bg-slate-50 aspect-square flex flex-col justify-between"
+                          >
+                            <img src={m.url} alt="Foto Umum" className="w-full h-full object-cover" />
+                            <div className="absolute top-2 left-2 flex flex-col gap-1">
+                              {m.isPrimary && (
+                                <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[9px] font-bold shadow-xs">
+                                  UTAMA
+                                </span>
+                              )}
+                              <span className="px-2 py-0.5 rounded-full bg-slate-900/80 text-white text-[9px] font-medium backdrop-blur-xs">
+                                UMUM
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMediaItem(m.id)}
+                              className="absolute bottom-2 right-2 p-1.5 rounded-lg bg-rose-600 text-white shadow-xs opacity-90 hover:opacity-100 hover:scale-105 transition cursor-pointer"
+                              title="Hapus foto ini"
+                            >
+                              <Trash size={14} weight="bold" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* TAB CONTENT: 2. FOTO KHUSUS VARIAN */}
+            {mediaActiveTab === "VARIANT" && (
+              <div className="space-y-4 animate-in fade-in">
+                <div className="p-3 bg-purple-50/70 border border-purple-100 rounded-2xl text-xs text-slate-600 flex items-start gap-2.5">
+                  <Stack size={18} className="text-purple-700 shrink-0 mt-0.5" weight="duotone" />
+                  <p className="leading-relaxed">
+                    <b>Foto Khusus Varian</b> akan muncul saat pembeli memilih varian tersebut. Ketika pembeli menggeser slider galeri hingga foto ini, varian ini otomatis tersorot berwarna biru. Bisa lebih dari 1 foto per varian.
+                  </p>
+                </div>
+
+                {/* Variant Selector */}
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Pilih Varian untuk Dikelola Fotonya:
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedProductForMedia.variants?.map((v) => {
+                      const isSelected = (selectedVariantIdForMedia || selectedProductForMedia.variants?.[0]?.variantId) === v.variantId;
+                      const photoCount = mediaList.filter((m: any) => (m.variantId === v.variantId || m.variant_id === v.variantId)).length;
+                      return (
+                        <button
+                          key={v.variantId}
+                          type="button"
+                          onClick={() => setSelectedVariantIdForMedia(v.variantId)}
+                          className={`px-3 py-2 rounded-xl text-xs font-semibold border transition text-left cursor-pointer flex items-center gap-2 ${
+                            isSelected
+                              ? "bg-[#0F4C81] text-white border-[#0F4C81] shadow-xs font-bold"
+                              : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                          }`}
+                        >
+                          <span>{v.name}</span>
+                          <span
+                            className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                              isSelected ? "bg-white/25 text-white" : "bg-slate-200 text-slate-700"
+                            }`}
+                          >
+                            {photoCount} Foto
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Upload Form for Selected Variant */}
+                {selectedVariantIdForMedia && (
+                  <form onSubmit={handleUploadVariantMedia} className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800">
+                        Unggah Foto untuk: &quot;{selectedProductForMedia.variants?.find((v) => v.variantId === selectedVariantIdForMedia)?.name}&quot;
+                      </span>
+                      {variantMediaFiles.length > 0 && (
+                        <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full">
+                          {variantMediaFiles.length} file dipilih
+                        </span>
+                      )}
+                    </div>
+
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={(e) => setVariantMediaFiles(Array.from(e.target.files || []))}
+                      className="w-full text-xs p-2.5 bg-white border border-slate-200 rounded-xl file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-[#0F4C81] file:text-white hover:file:bg-[#0B3860] cursor-pointer"
+                    />
+
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      size="sm"
+                      disabled={uploadingMedia || variantMediaFiles.length === 0}
+                      className="w-full bg-[#0F4C81] hover:bg-[#0B3860] text-white flex items-center justify-center gap-2 font-bold"
+                    >
+                      <UploadSimple size={16} weight="bold" />
+                      <span>{uploadingMedia ? "Mengunggah..." : `Unggah Foto ke Varian Ini`}</span>
+                    </Button>
+                  </form>
+                )}
+
+                {/* Existing Variant Photos List */}
+                <div className="space-y-2">
+                  <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Foto Terunggah untuk Varian Ini
+                  </h3>
+
+                  {(() => {
+                    const currentVId = selectedVariantIdForMedia || selectedProductForMedia.variants?.[0]?.variantId;
+                    const variantPhotos = mediaList.filter((m: any) => (m.variantId === currentVId || m.variant_id === currentVId));
+                    if (variantPhotos.length === 0) {
+                      return (
+                        <div className="p-8 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-2xl bg-slate-50">
+                          Varian ini belum memiliki foto khusus. Sistem akan otomatis menampilkan foto umum produk saat varian ini dipilih.
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {variantPhotos.map((m: any, idx: number) => (
+                          <div
+                            key={m.id || idx}
+                            className="group relative rounded-2xl border border-purple-200 overflow-hidden bg-slate-50 aspect-square flex flex-col justify-between"
+                          >
+                            <img src={m.url} alt="Foto Varian" className="w-full h-full object-cover" />
+                            <div className="absolute top-2 left-2 flex flex-col gap-1">
+                              <span className="px-2 py-0.5 rounded-full bg-purple-700 text-white text-[9px] font-bold shadow-xs">
+                                VARIAN
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMediaItem(m.id)}
+                              className="absolute bottom-2 right-2 p-1.5 rounded-lg bg-rose-600 text-white shadow-xs opacity-90 hover:opacity-100 hover:scale-105 transition cursor-pointer"
+                              title="Hapus foto ini"
+                            >
+                              <Trash size={14} weight="bold" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Delete / Archive Product Confirmation Modal */}
+      {productToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-slate-100">
+            <div className="flex items-start gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <Trash size={24} weight="duotone" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-slate-900 font-heading">
+                  Hapus Produk dari Etalase?
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Produk <b className="text-slate-800">&quot;{productToDelete.name}&quot;</b> akan ditarik dan tidak akan lagi muncul di pencarian pembeli maupun etalase publik toko Anda.
+                </p>
+              </div>
+            </div>
+
+            {/* Info note */}
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-600 text-xs flex items-start gap-2.5 leading-relaxed">
+              <ShieldCheck size={18} weight="duotone" className="text-emerald-600 shrink-0 mt-0.5" />
+              <span>
+                <b>Aman:</b> Riwayat pesanan dan kartu garansi pelanggan yang sudah pernah membeli produk ini tetap tersimpan rapi di sistem.
+              </span>
+            </div>
+
+            {/* Reason selector */}
+            <div className="space-y-2">
+              <label className="block text-xs font-bold text-slate-700">
+                Alasan Penarikan / Penghapusan *
+              </label>
+              <select
+                value={deleteReasonOption}
+                onChange={(e) => setDeleteReasonOption(e.target.value)}
+                className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-rose-500/20 focus:outline-none cursor-pointer"
+              >
+                <option value="Diskontinu / Stok Habis Permanen">Diskontinu / Stok Habis Permanen</option>
+                <option value="Ganti Model / Seri Pembaruan">Ganti Model / Seri Pembaruan</option>
+                <option value="Kesalahan Input / Duplikat Data">Kesalahan Input / Duplikat Data</option>
+                <option value="Lainnya">Lainnya (Tulis alasan sendiri)...</option>
+              </select>
+
+              {deleteReasonOption === "Lainnya" && (
+                <input
+                  type="text"
+                  autoFocus
+                  placeholder="Ketik alasan penarikan produk..."
+                  value={customDeleteReason}
+                  onChange={(e) => setCustomDeleteReason(e.target.value)}
+                  className="w-full text-xs p-2.5 bg-white border border-rose-300 rounded-xl focus:ring-2 focus:ring-rose-500/20 focus:outline-none animate-in fade-in slide-in-from-top-1"
+                />
+              )}
+            </div>
+
+            {/* Modal Action Buttons */}
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setProductToDelete(null)}
+                className="px-4 py-2 text-xs font-semibold rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition cursor-pointer disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+                className="inline-flex flex-row items-center justify-center gap-2 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-50 whitespace-nowrap min-h-[36px]"
+              >
+                <Trash size={15} weight="bold" className="shrink-0" />
+                <span className="whitespace-nowrap">{isDeleting ? "Menghapus..." : "Hapus Produk"}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

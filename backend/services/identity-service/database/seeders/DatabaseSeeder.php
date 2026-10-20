@@ -155,7 +155,7 @@ class DatabaseSeeder extends Seeder
                         $permIds[] = $permissions[$pCode]->id;
                     }
                 }
-                $roleModel->permissions()->sync($permIds);
+                $roleModel->permissions()->syncWithoutDetaching($permIds);
             }
         }
 
@@ -395,6 +395,50 @@ class DatabaseSeeder extends Seeder
             RoleAssignment::where('user_id', $workerUser->id)
                 ->where('role_id', $roles['WORKER_TECHNICIAN']->id)
                 ->update(['membership_id' => $workerMembership->id]);
+        }
+
+        // Seed default addresses for Customer
+        $customerUser = $createdUsers['CUSTOMER'] ?? User::where('email', 'customer@servio.id')->first();
+        if ($customerUser) {
+            \App\Models\UserAddress::updateOrCreate(
+                [
+                    'user_id' => $customerUser->id,
+                    'label' => 'Rumah Utama',
+                ],
+                [
+                    'recipient_name' => 'Ahmad Fauzi',
+                    'phone' => '+628163344556',
+                    'address_line' => 'Jl. Sudirman No. 45',
+                    'district' => 'Kebayoran Baru',
+                    'city' => 'Jakarta Selatan',
+                    'province' => 'DKI Jakarta',
+                    'postal_code' => '12190',
+                    'latitude' => -6.2297,
+                    'longitude' => 106.8075,
+                    'is_default' => true,
+                    'status' => 'ACTIVE',
+                ]
+            );
+
+            \App\Models\UserAddress::updateOrCreate(
+                [
+                    'user_id' => $customerUser->id,
+                    'label' => 'Kantor',
+                ],
+                [
+                    'recipient_name' => 'Ahmad Fauzi',
+                    'phone' => '+628163344556',
+                    'address_line' => 'Gedung BEI Tower 2 Lt. 14, SCBD',
+                    'district' => 'Kebayoran Baru',
+                    'city' => 'Jakarta Selatan',
+                    'province' => 'DKI Jakarta',
+                    'postal_code' => '12190',
+                    'latitude' => -6.2235,
+                    'longitude' => 106.8088,
+                    'is_default' => false,
+                    'status' => 'ACTIVE',
+                ]
+            );
         }
     }
 }

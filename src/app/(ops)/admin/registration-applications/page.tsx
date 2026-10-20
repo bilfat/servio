@@ -845,11 +845,69 @@ export default function AdminRegistrationApplicationsPage() {
                       {detailModalApp.businessData?.city || "-"}, {detailModalApp.businessData?.province || "-"}
                     </span>
                   </div>
-                  <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-1 sm:col-span-3">
-                    <span className="text-[11px] text-neutral-slate block font-medium">Alamat Lengkap Operasional</span>
-                    <span className="font-medium text-neutral-dark block text-sm leading-relaxed">
-                      {detailModalApp.businessData?.address || "-"}
-                    </span>
+                  <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2 sm:col-span-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-neutral-slate block font-medium">Alamat Lengkap Operasional Usaha</span>
+                      {Boolean((detailModalApp.businessData as any)?.address_json || (detailModalApp.businessData as any)?.addressData) && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-sky-100 text-sky-800 border border-sky-200">
+                          Data Wilayah Terstruktur (Emsifa API)
+                        </span>
+                      )}
+                    </div>
+                    {(() => {
+                      const addrObj = (detailModalApp.businessData as any)?.address_json || (detailModalApp.businessData as any)?.addressData;
+                      if (addrObj && typeof addrObj === "object") {
+                        return (
+                          <div className="space-y-1.5 text-xs">
+                            <p className="font-semibold text-neutral-dark text-sm leading-relaxed">
+                              {addrObj.street_address || detailModalApp.businessData?.address || "-"}
+                            </p>
+                            <div className="flex flex-wrap gap-1.5 text-[11px]">
+                              {addrObj.rt_rw && (
+                                <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md text-slate-700">
+                                  RT/RW: {addrObj.rt_rw}
+                                </span>
+                              )}
+                              {addrObj.village_name && (
+                                <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md text-slate-700">
+                                  Kel. {addrObj.village_name}
+                                </span>
+                              )}
+                              {addrObj.district_name && (
+                                <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md text-slate-700">
+                                  Kec. {addrObj.district_name}
+                                </span>
+                              )}
+                              {addrObj.city_name && (
+                                <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md text-slate-700 font-medium">
+                                  {addrObj.city_name}
+                                </span>
+                              )}
+                              {addrObj.province_name && (
+                                <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md text-slate-700 font-medium">
+                                  {addrObj.province_name}
+                                </span>
+                              )}
+                              {addrObj.postal_code && (
+                                <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md text-slate-700">
+                                  Kode Pos: {addrObj.postal_code}
+                                </span>
+                              )}
+                            </div>
+                            {addrObj.landmark && (
+                              <p className="text-slate-600 text-xs italic pt-0.5">
+                                <span className="font-semibold not-italic text-slate-700">Patokan / Landmark:</span> {addrObj.landmark}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      }
+                      return (
+                        <span className="font-medium text-neutral-dark block text-sm leading-relaxed">
+                          {detailModalApp.businessData?.address || "-"}
+                        </span>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>

@@ -203,6 +203,12 @@ Route::prefix('v1')->group(function () {
         Route::get('/permissions/me', [ProfileOrganizationController::class, 'myPermissions']);
         Route::post('/profiles/me/avatar', [ProfileOrganizationController::class, 'uploadAvatar']);
 
+        // Customer Addresses (Buku Alamat Pengerjaan)
+        Route::get('/me/addresses', [\App\Http\Controllers\Api\UserAddressController::class, 'index']);
+        Route::post('/me/addresses', [\App\Http\Controllers\Api\UserAddressController::class, 'store']);
+        Route::match(['patch', 'put'], '/me/addresses/{id}', [\App\Http\Controllers\Api\UserAddressController::class, 'update']);
+        Route::delete('/me/addresses/{id}', [\App\Http\Controllers\Api\UserAddressController::class, 'destroy']);
+
         // Internal Accounts & Team Endpoints
         Route::get('/internal/team', [StaffGovernanceController::class, 'listStaff']);
         Route::get('/internal/accounts', [StaffGovernanceController::class, 'listAccounts']);
@@ -297,4 +303,5 @@ Route::prefix('internal/v1')->middleware('identity.internal')->group(function ()
     Route::post('/authorization/evaluate', [InternalIdentityController::class, 'evaluateAuthorization']);
     Route::get('/users/{id}/access-context', [InternalIdentityController::class, 'getUserAccessContext']);
     Route::get('/organizations/{id}/status', [InternalIdentityController::class, 'getOrganizationStatus']);
+    Route::get('/organizations/{id}/public-profile', [InternalIdentityController::class, 'getOrganizationPublicProfile']);
 });

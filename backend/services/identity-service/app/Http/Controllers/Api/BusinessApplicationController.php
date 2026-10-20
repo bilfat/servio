@@ -638,6 +638,21 @@ class BusinessApplicationController extends Controller
                 ]);
                 $createdOrgId = $org->id;
 
+                $bizAddress = $draftData['business']['address_json'] 
+                    ?? $draftData['business']['addressData'] 
+                    ?? $draftData['business']['address'] 
+                    ?? null;
+                if (!is_array($bizAddress) && !empty($draftData['business']['address'])) {
+                    $bizAddress = [
+                        'street_address' => $draftData['business']['address'],
+                        'province_name' => $draftData['business']['province'] ?? null,
+                        'city_name' => $draftData['business']['city'] ?? null,
+                        'district_name' => $draftData['business']['district'] ?? null,
+                        'village_name' => $draftData['business']['village'] ?? null,
+                        'postal_code' => $draftData['business']['postal_code'] ?? $draftData['business']['postalCode'] ?? null,
+                    ];
+                }
+
                 // 2. Create Organization Profile
                 OrganizationProfile::create([
                     'organization_id' => $org->id,
@@ -645,7 +660,7 @@ class BusinessApplicationController extends Controller
                     'display_name' => $displayName,
                     'business_email' => $applicant?->email,
                     'business_phone' => $applicant?->phone_e164,
-                    'address_json' => $draftData['business']['address'] ?? null,
+                    'address_json' => $bizAddress,
                     'nib_ciphertext' => Crypt::encryptString($nib),
                     'nib_lookup_hash' => hash('sha256', $nib),
                     'npwp_ciphertext' => !empty($draftData['legal']['npwp']) ? Crypt::encryptString($draftData['legal']['npwp']) : null,

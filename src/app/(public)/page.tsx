@@ -31,71 +31,26 @@ import {
   NavigationArrow,
   CircleNotch,
 } from "@phosphor-icons/react";
-import { getCurrentGpsPosition, reverseGeocodeLocation } from "@/lib/geoUtils";
+import { useActiveLocation } from "@/context/LocationContext";
+import { SPayBalanceCard } from "@/components/features/spay/SPayBalanceCard";
+import { useSPay } from "@/features/spay/spay.frontend-provider";
 
 export default function HomePage() {
   const router = useRouter();
   const { isPublicGuest } = useActiveRole();
+  const { summary: spaySummary, isBalanceVisible, toggleBalanceVisibility } = useSPay();
   const { services, isLoading: loadingServices } = useServices();
   const { plans } = useMaintenancePlans();
   const { order: activeOrder } = useServiceOrder("ord-normal-progress");
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [userLocation, setUserLocation] = useState<string>("Jakarta Selatan (Kebayoran Baru)");
-  const [isGpsActive, setIsGpsActive] = useState<boolean>(false);
-  const [isDetectingGps, setIsDetectingGps] = useState<boolean>(false);
-  const [locationFeedback, setLocationFeedback] = useState<string | null>(null);
-
-  // Restore saved GPS location if available
-  React.useEffect(() => {
-    try {
-      const saved = localStorage.getItem("servio_user_location");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.name) {
-          setUserLocation(parsed.name);
-          setIsGpsActive(Boolean(parsed.isGps));
-        }
-      }
-    } catch {
-      // ignore parse error
-    }
-  }, []);
-
-  const handleActivateGps = async () => {
-    setIsDetectingGps(true);
-    setLocationFeedback(null);
-    try {
-      const pos = await getCurrentGpsPosition();
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      const geo = await reverseGeocodeLocation(lat, lng);
-
-      setUserLocation(geo.displayName);
-      setIsGpsActive(true);
-      localStorage.setItem(
-        "servio_user_location",
-        JSON.stringify({
-          name: geo.displayName,
-          city: geo.city,
-          district: geo.district,
-          province: geo.province,
-          postalCode: geo.postalCode,
-          latitude: lat,
-          longitude: lng,
-          isGps: true,
-          updatedAt: new Date().toISOString(),
-        })
-      );
-      setLocationFeedback(`GPS Aktif: Wilayah otomatis terdeteksi di ${geo.displayName}`);
-      setTimeout(() => setLocationFeedback(null), 4000);
-    } catch (err: any) {
-      setLocationFeedback(err?.message || "Izin lokasi GPS ditolak atau tidak tersedia.");
-      setTimeout(() => setLocationFeedback(null), 5000);
-    } finally {
-      setIsDetectingGps(false);
-    }
-  };
+  const {
+    location: activeLoc,
+    isDetectingGps,
+    locationFeedback,
+    detectGps,
+    openLocationModal,
+  } = useActiveLocation();
 
   const [liveServiceCategories, setLiveServiceCategories] = useState<any[]>([]);
   const [isLoadingCategories, setIsLoadingCategories] = useState(true);
@@ -230,22 +185,28 @@ export default function HomePage() {
 
               {/* Location Badge & Aktifkan GPS Button */}
               <div className="flex items-center gap-2 flex-wrap">
-                <div className="flex items-center gap-1.5 text-sky-light text-[11px] font-medium bg-white/10 px-2.5 py-1 rounded-full border border-white/15 backdrop-blur-xs">
-                  <MapPin size={14} weight="fill" className={isGpsActive ? "text-emerald-300" : "text-rose-300"} />
-                  <span>Lokasi: {userLocation}</span>
-                  {isGpsActive && (
+                <button
+                  type="button"
+                  onClick={openLocationModal}
+                  className="flex items-center gap-1.5 text-sky-light text-[11px] font-medium bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-full border border-white/15 backdrop-blur-xs transition cursor-pointer"
+                  title="Klik untuk memilih kota atau alamat pengiriman Anda"
+                >
+                  <MapPin size={14} weight="fill" className={activeLoc.isGps ? "text-emerald-300" : "text-sky-300"} />
+                  <span>Lokasi: {activeLoc.displayName}</span>
+                  {activeLoc.isGps && (
                     <span className="inline-flex items-center gap-1 text-[10px] text-emerald-300 font-bold bg-emerald-500/20 px-1.5 py-0.5 rounded-full border border-emerald-400/30">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                       GPS Aktif
                     </span>
                   )}
-                </div>
+                  <span className="text-[10px] text-sky-200 underline font-semibold ml-0.5">Ubah</span>
+                </button>
 
                 <button
                   type="button"
-                  onClick={handleActivateGps}
+                  onClick={() => detectGps()}
                   disabled={isDetectingGps}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary hover:bg-secondary-dark text-white text-[11px] font-bold shadow-xs active:scale-95 transition-all disabled:opacity-70"
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-secondary hover:bg-secondary-dark text-white text-[11px] font-bold shadow-xs active:scale-95 transition-all disabled:opacity-70 cursor-pointer"
                   title="Deteksi wilayah Anda secara otomatis menggunakan GPS perangkat"
                 >
                   {isDetectingGps ? (
@@ -253,10 +214,10 @@ export default function HomePage() {
                       <CircleNotch size={13} weight="bold" className="animate-spin text-white" />
                       <span>Mendeteksi GPS...</span>
                     </>
-                  ) : isGpsActive ? (
+                  ) : activeLoc.isGps ? (
                     <>
-                      <NavigationArrow size={13} weight="fill" className="text-white" />
-                      <span>Perbarui GPS</span>
+                      <CheckCircle size={13} weight="fill" className="text-emerald-300" />
+                      <span>GPS Terhubung</span>
                     </>
                   ) : (
                     <>
@@ -271,10 +232,13 @@ export default function HomePage() {
             {/* Location Feedback Message */}
             {locationFeedback && (
               <div className="mt-2 text-left">
-                <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg backdrop-blur-md ${isGpsActive
-                    ? "bg-emerald-500/20 text-emerald-200 border border-emerald-400/30"
-                    : "bg-rose-500/20 text-rose-200 border border-rose-400/30"
-                  }`}>
+                <span
+                  className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg backdrop-blur-md ${
+                    activeLoc.isGps
+                      ? "bg-emerald-500/20 text-emerald-200 border border-emerald-400/30"
+                      : "bg-sky-500/20 text-sky-200 border border-sky-400/30"
+                  }`}
+                >
                   <CheckCircle size={13} weight="fill" />
                   <span>{locationFeedback}</span>
                 </span>
@@ -284,9 +248,22 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* 2. ACTIVE ORDER TRACKER & MAINTENANCE DUE ALERT (FOR CUSTOMERS) */}
+      {/* 2. S-PAY BALANCE CARD & ACTIVE ORDER TRACKER (KHUSUS PELANGGAN TERDAFTAR, BUKAN GUEST) */}
       {!isPublicGuest && (
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <>
+          {/* S-PAY BALANCE CARD (CUSTOMER ONLY) */}
+          <section className="w-full">
+            <SPayBalanceCard
+              balance={spaySummary.withdrawableBalance}
+              ownerType="CUSTOMER"
+              subtitle="Saldo Refund Tersedia"
+              detailHref="/spay"
+              isBalanceVisible={isBalanceVisible}
+              onToggleVisibility={toggleBalanceVisibility}
+            />
+          </section>
+
+          <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Active Order Widget */}
           {activeOrder && (
             <motion.div
@@ -373,6 +350,7 @@ export default function HomePage() {
             </motion.div>
           )}
         </section>
+        </>
       )}
 
       {/* 3. 6 SERVICE DOMAINS HIERARCHY */}

@@ -170,6 +170,7 @@ export const CANONICAL_NAVIGATION_SECTIONS: Partial<Record<UserRole, NavigationS
       items: [
         { id: "cust-profile", label: "Profil Akun", href: "/profile", icon: User, roles: ["CUSTOMER"] },
         { id: "cust-returns", label: "Retur Produk", href: "/returns", icon: ClockCounterClockwise, roles: ["CUSTOMER"] },
+        { id: "cust-spay", label: "Saldo S-Pay", href: "/spay", icon: Bank, roles: ["CUSTOMER"] },
       ],
     },
   ],
@@ -225,6 +226,7 @@ export const CANONICAL_NAVIGATION_SECTIONS: Partial<Record<UserRole, NavigationS
         { id: "prov-rev", label: "Pendapatan", href: "/provider/revenue", icon: CurrencyCircleDollar, roles: ["SERVICE_PROVIDER"] },
         { id: "prov-payout", label: "Payout", href: "/provider/payouts", icon: Bank, roles: ["SERVICE_PROVIDER"] },
         { id: "prov-trx", label: "Transaksi", href: "/provider/transactions", icon: Receipt, roles: ["SERVICE_PROVIDER"] },
+        { id: "prov-spay", label: "Dompet S-Pay", href: "/provider/spay", icon: Bank, roles: ["SERVICE_PROVIDER"] },
       ],
     },
     {
@@ -350,6 +352,7 @@ export const CANONICAL_NAVIGATION_SECTIONS: Partial<Record<UserRole, NavigationS
       title: "Keuangan",
       items: [
         { id: "merch-settle", label: "Settlement & Saldo", href: "/merchant/settlement", icon: Bank, roles: ["MERCHANT"] },
+        { id: "merch-spay", label: "Dompet S-Pay", href: "/merchant/spay", icon: Bank, roles: ["MERCHANT"] },
       ],
     },
     {

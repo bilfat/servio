@@ -63,6 +63,11 @@ class User extends Authenticatable
         return $this->hasOne(UserProfile::class, 'user_id', 'id');
     }
 
+    public function addresses()
+    {
+        return $this->hasMany(UserAddress::class, 'user_id', 'id');
+    }
+
     public function nikRecord()
     {
         return $this->hasOne(UserNikRecord::class, 'user_id', 'id');

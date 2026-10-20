@@ -112,6 +112,9 @@ export interface UserContext {
   createdAt?: string;
   nik?: string;
   ktpFilePath?: string;
+  address?: any;
+  address_json?: any;
+  addressData?: any;
   providerId?: string;
   workerProfile?: {
     workerCode?: string;
@@ -159,6 +162,8 @@ export interface UserContext {
       city?: string;
       district?: string;
       postalCode?: string;
+      address_json?: any;
+      addressData?: any;
     };
     specializedData?: Record<string, unknown>;
   };
@@ -181,6 +186,9 @@ export interface UserContext {
     dateOfBirth?: string | null;
     gender?: string | null;
     preferences?: Record<string, unknown>;
+    address?: any;
+    address_json?: any;
+    addressData?: any;
   };
   activeOrganization?: {
     id: string;
@@ -188,6 +196,9 @@ export interface UserContext {
     name: string;
     type: string;
     status: string;
+    address?: any;
+    address_json?: any;
+    addressData?: any;
     operational_status?: string;
     operationalStatus?: string;
     operational_hours?: any;
@@ -204,6 +215,9 @@ export interface UserContext {
       taxInformation?: Record<string, unknown>;
       website?: string;
       logo?: string;
+      address?: any;
+      address_json?: any;
+      addressData?: any;
       operationalHours?: any;
       serviceArea?: any;
     } | null;

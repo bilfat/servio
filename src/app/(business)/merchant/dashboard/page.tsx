@@ -24,8 +24,11 @@ import { useDomainRepository } from "@/lib/repository/domainRepository";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Toast } from "@/components/feedback/Toast";
+import { SPayBalanceCard } from "@/components/features/spay/SPayBalanceCard";
+import { useSPay } from "@/features/spay/spay.frontend-provider";
 
 export default function MerchantDashboardPage() {
+  const { summary: spaySummary, isBalanceVisible, toggleBalanceVisibility } = useSPay();
   const {
     storeStatus,
     updateStoreStatus,
@@ -185,6 +188,19 @@ export default function MerchantDashboardPage() {
             </div>
           </motion.div>
         )}
+
+        {/* S-PAY BALANCE CARD (MERCHANT SETTLEMENT) */}
+        <div>
+          <SPayBalanceCard
+            balance={spaySummary.withdrawableBalance}
+            ownerType="MERCHANT"
+            organizationName="Toko Suku Cadang Sejuk Abadi"
+            subtitle="Settlement Penjualan Suku Cadang"
+            detailHref="/merchant/spay"
+            isBalanceVisible={isBalanceVisible}
+            onToggleVisibility={toggleBalanceVisibility}
+          />
+        </div>
 
         {/* KPI Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

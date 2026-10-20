@@ -36,7 +36,8 @@ export function AppShell({ children }: AppShellProps) {
     pathname?.startsWith("/ops") ||
     pathname?.startsWith("/admin") ||
     pathname?.startsWith("/staff") ||
-    pathname?.startsWith("/merchant") ||
+    pathname?.startsWith("/merchant/") ||
+    pathname === "/merchant" ||
     pathname?.startsWith("/supplier") ||
     pathname?.startsWith("/finance") ||
     pathname?.startsWith("/support")
@@ -49,7 +50,8 @@ export function AppShell({ children }: AppShellProps) {
 
   const isCustomer = !isOperationalRoute && !isPublicGuest && activeRole === "CUSTOMER" && !isAuthPage;
   const isWorker = (pathname?.startsWith("/worker") || (!isPublicGuest && activeRole === "WORKER_TECHNICIAN")) && !isAuthPage;
-  const isDashboardRole = (isOperationalRoute || (!isPublicGuest && activeRole !== "CUSTOMER")) && !isAuthPage;
+  // Dashboard sidebar only rendered on operational management routes
+  const isDashboardRole = isOperationalRoute && !isAuthPage;
 
   const handleToggleSidebar = () => {
     if (typeof window !== "undefined" && window.innerWidth < 768) {
@@ -59,12 +61,14 @@ export function AppShell({ children }: AppShellProps) {
     }
   };
 
-  // Transactional pages that have their own sticky top headers and manage their own bleed
+  // Transactional, catalog, and storefront pages that have their own sticky top headers and manage their own bleed
   const isFullBleed =
     pathname?.startsWith("/completion") ||
     pathname?.startsWith("/proof") ||
     pathname?.startsWith("/checkout") ||
     pathname?.startsWith("/returns/new") ||
+    pathname?.startsWith("/products") ||
+    pathname?.startsWith("/merchants") ||
     (pathname?.startsWith("/warranties/") && pathname !== "/warranties");
 
   return (
@@ -73,7 +77,7 @@ export function AppShell({ children }: AppShellProps) {
       <Navbar
         onToggleSidebar={handleToggleSidebar}
         isMobileSidebarOpen={mobileSidebarOpen}
-        hideSidebarToggle={isProviderClosed}
+        hideSidebarToggle={isProviderClosed || !isDashboardRole}
       />
 
       {/* Main Layout Body */}
@@ -93,6 +97,8 @@ export function AppShell({ children }: AppShellProps) {
           className={`flex-1 flex flex-col min-w-0 transition-all ${
             isProviderClosed
               ? "p-0 overflow-hidden"
+              : isFullBleed
+              ? "p-0"
               : isCustomer
               ? "pb-20 md:pb-8"
               : isWorker

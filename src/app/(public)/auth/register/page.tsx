@@ -4,6 +4,7 @@ import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { authApi, registrationApi, DocumentRequirement } from "@/lib/servioApi";
+import { AddressCascadingForm, AddressData } from "@/components/identity/AddressCascadingForm";
 import {
   UserCircle,
   Briefcase,
@@ -46,6 +47,20 @@ function RegisterContent() {
     nik: "",
   });
   const [custKtpFile, setCustKtpFile] = useState<File | null>(null);
+  const [custAddress, setCustAddress] = useState<AddressData>({
+    province_id: "",
+    province_name: "",
+    city_id: "",
+    city_name: "",
+    district_id: "",
+    district_name: "",
+    village_id: "",
+    village_name: "",
+    postal_code: "",
+    street_address: "",
+    rt_rw: "",
+    landmark: "",
+  });
   const [custOtp, setCustOtp] = useState("");
   const [custVerificationInfo, setCustVerificationInfo] = useState<{ id?: string; debugOtp?: string } | null>(null);
   const [resendCountdown, setResendCountdown] = useState(30);
@@ -74,6 +89,20 @@ function RegisterContent() {
     phone: "",
     email: "",
   });
+  const [bizAddress, setBizAddress] = useState<AddressData>({
+    province_id: "",
+    province_name: "",
+    city_id: "",
+    city_name: "",
+    district_id: "",
+    district_name: "",
+    village_id: "",
+    village_name: "",
+    postal_code: "",
+    street_address: "",
+    rt_rw: "",
+    landmark: "",
+  });
   const [bizLegal, setBizLegal] = useState({
     legalName: "",
     brandName: "",
@@ -83,10 +112,10 @@ function RegisterContent() {
     email: "",
     phone: "",
     address: "",
-    province: "DKI Jakarta",
-    city: "Jakarta Barat",
-    district: "Kebon Jeruk",
-    postalCode: "11530",
+    province: "",
+    city: "",
+    district: "",
+    postalCode: "",
   });
   const [bizSpecialized, setBizSpecialized] = useState<Record<string, string>>({});
   const [bizAppId, setBizAppId] = useState<string | null>(null);
@@ -137,6 +166,9 @@ function RegisterContent() {
             password: parsed.password || prev.password,
             nik: parsed.nik || prev.nik,
           }));
+          if (parsed.address) {
+            setCustAddress(parsed.address);
+          }
           if (parsed.verificationInfo) {
             setCustVerificationInfo(parsed.verificationInfo);
           }
@@ -158,6 +190,9 @@ function RegisterContent() {
           setBizStep(1);
           setBizOtpSent(true);
           setBizAccount(parsedBiz.bizAccount);
+          if (parsedBiz.bizAddress) {
+            setBizAddress(parsedBiz.bizAddress);
+          }
         } else {
           sessionStorage.removeItem("servio_pending_biz_verification");
         }
@@ -246,6 +281,10 @@ function RegisterContent() {
       formData.append("password_confirmation", custData.password_confirmation);
       if (custData.nik) formData.append("nik", custData.nik);
       if (custKtpFile) formData.append("ktpFile", custKtpFile);
+      if (custAddress && (custAddress.street_address || custAddress.province_name)) {
+        formData.append("address_json", JSON.stringify(custAddress));
+        formData.append("address", JSON.stringify(custAddress));
+      }
 
       const res = await authApi.registerCustomer(formData);
       if (res.data?.verification) {
@@ -262,6 +301,7 @@ function RegisterContent() {
             fullName: custData.fullName,
             password: custData.password,
             nik: custData.nik,
+            address: custAddress,
             verificationInfo: res.data?.verification,
             timestamp: Date.now(),
           })
@@ -509,6 +549,10 @@ function RegisterContent() {
       setErrorMsg("Nama legal usaha, nama brand, dan NIB wajib diisi.");
       return;
     }
+    if (!bizAddress.province_name || !bizAddress.city_name || !bizAddress.district_name || !bizAddress.street_address) {
+      setErrorMsg("Mohon lengkapi Alamat Lengkap Usaha (Provinsi, Kota/Kabupaten, Kecamatan, dan Nama Jalan/Nomor Bangunan).");
+      return;
+    }
     setErrorMsg(null);
     setBizStep(4);
   };
@@ -519,6 +563,28 @@ function RegisterContent() {
     setLoading(true);
     setErrorMsg(null);
 
+    const fullFormattedAddress = [
+      bizAddress.street_address,
+      bizAddress.rt_rw ? `RT/RW ${bizAddress.rt_rw}` : null,
+      bizAddress.village_name ? `Kel. ${bizAddress.village_name}` : null,
+      bizAddress.district_name ? `Kec. ${bizAddress.district_name}` : null,
+      bizAddress.city_name,
+      bizAddress.province_name,
+      bizAddress.postal_code ? `Kode Pos ${bizAddress.postal_code}` : null,
+    ].filter(Boolean).join(", ");
+
+    const payloadBusinessData = {
+      ...bizLegal,
+      address: fullFormattedAddress || bizLegal.address,
+      province: bizAddress.province_name || bizLegal.province,
+      city: bizAddress.city_name || bizLegal.city,
+      district: bizAddress.district_name || bizLegal.district,
+      postalCode: bizAddress.postal_code || bizLegal.postalCode,
+      postal_code: bizAddress.postal_code || bizLegal.postalCode,
+      address_json: bizAddress,
+      addressData: bizAddress,
+    };
+
     try {
       if (!bizAppId) {
         // Create application draft in Laravel backend
@@ -526,7 +592,7 @@ function RegisterContent() {
           applicantType: businessType,
           account: bizAccount,
           picData: bizPic,
-          businessData: bizLegal,
+          businessData: payloadBusinessData,
           specializedData: bizSpecialized,
         });
         if (res.data?.application) {
@@ -537,7 +603,7 @@ function RegisterContent() {
         // Update draft
         await registrationApi.updateApplication(bizAppId, {
           picData: bizPic,
-          businessData: bizLegal,
+          businessData: payloadBusinessData,
           specializedData: bizSpecialized,
         });
       }
@@ -1042,6 +1108,18 @@ function RegisterContent() {
                       className="hidden"
                     />
                   </label>
+                </div>
+
+                {/* Form Alamat Lengkap Customer (CR-04 via Emsifa v2) */}
+                <div className="pt-1">
+                  <AddressCascadingForm
+                    value={custAddress}
+                    onChange={setCustAddress}
+                    title="Alamat Lengkap Customer"
+                    subtitle="Alamat domisili tempat tinggal untuk verifikasi pesanan dan profil Customer"
+                    required={false}
+                    idPrefix="cust-reg"
+                  />
                 </div>
 
                 <div className="flex items-center gap-3 pt-2">
@@ -1643,58 +1721,27 @@ function RegisterContent() {
                     />
                   </div>
                 </div>
-
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-neutral-dark">
-                    Alamat Lengkap Usaha / Kantor <span className="text-rose-500">*</span>
-                  </label>
-                  <textarea
-                    rows={2}
-                    required
-                    value={bizLegal.address}
-                    onChange={(e) => setBizLegal({ ...bizLegal, address: e.target.value })}
-                    placeholder="Nama jalan, nomor ruko/gedung, RT/RW"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-neutral-dark focus:outline-none focus:border-primary focus:bg-white"
+                
+                {/* Form Alamat Lengkap Usaha (CR-04 Emsifa API v2) */}
+                <div className="pt-1">
+                  <AddressCascadingForm
+                    value={bizAddress}
+                    onChange={(newAddr) => {
+                      setBizAddress(newAddr);
+                      setBizLegal((prev) => ({
+                        ...prev,
+                        province: newAddr.province_name || "",
+                        city: newAddr.city_name || "",
+                        district: newAddr.district_name || "",
+                        postalCode: newAddr.postal_code || "",
+                        address: newAddr.street_address || "",
+                      }));
+                    }}
+                    title="Alamat Lengkap Usaha"
+                    subtitle="Lokasi kantor operasional, toko fisik, atau gudang utama untuk penugasan order dan verifikasi legalitas"
+                    required={true}
+                    idPrefix="biz-reg"
                   />
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-neutral-dark">Provinsi</label>
-                    <input
-                      type="text"
-                      value={bizLegal.province}
-                      onChange={(e) => setBizLegal({ ...bizLegal, province: e.target.value })}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-neutral-dark">Kota/Kabupaten</label>
-                    <input
-                      type="text"
-                      value={bizLegal.city}
-                      onChange={(e) => setBizLegal({ ...bizLegal, city: e.target.value })}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-neutral-dark">Kecamatan</label>
-                    <input
-                      type="text"
-                      value={bizLegal.district}
-                      onChange={(e) => setBizLegal({ ...bizLegal, district: e.target.value })}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold text-neutral-dark">Kode Pos</label>
-                    <input
-                      type="text"
-                      value={bizLegal.postalCode}
-                      onChange={(e) => setBizLegal({ ...bizLegal, postalCode: e.target.value })}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
-                    />
-                  </div>
                 </div>
 
                 <div className="flex items-center gap-3 pt-2">
@@ -2058,11 +2105,30 @@ function RegisterContent() {
                   </div>
 
                   {/* Bisnis */}
-                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
                     <span className="font-bold text-neutral-dark block text-xs">Informasi Usaha</span>
                     <p className="text-neutral-slate">Legal: {bizLegal.legalName} ({bizLegal.businessType})</p>
                     <p className="text-neutral-slate">Brand: {bizLegal.brandName} | NIB: {bizLegal.nib}</p>
-                    <p className="text-neutral-slate">Alamat: {bizLegal.address}, {bizLegal.city}</p>
+                    {bizLegal.npwp && <p className="text-neutral-slate">NPWP: {bizLegal.npwp}</p>}
+                    <div className="pt-2 border-t border-slate-200 mt-2 space-y-1">
+                      <span className="font-semibold text-neutral-dark block text-[11px]">Alamat Lengkap Usaha:</span>
+                      <p className="text-neutral-dark font-medium leading-relaxed">
+                        {bizAddress.street_address || bizLegal.address || "-"}
+                      </p>
+                      <p className="text-neutral-slate text-[11px] leading-relaxed">
+                        {[
+                          bizAddress.rt_rw ? `RT/RW ${bizAddress.rt_rw}` : null,
+                          bizAddress.village_name ? `Kel. ${bizAddress.village_name}` : null,
+                          bizAddress.district_name ? `Kec. ${bizAddress.district_name}` : null,
+                          bizAddress.city_name,
+                          bizAddress.province_name,
+                          bizAddress.postal_code ? `Kode Pos ${bizAddress.postal_code}` : null,
+                        ].filter(Boolean).join(", ")}
+                      </p>
+                      {bizAddress.landmark && (
+                        <p className="text-slate-500 text-[11px] italic">Patokan: {bizAddress.landmark}</p>
+                      )}
+                    </div>
                   </div>
 
                   {/* Dokumen Terunggah */}
