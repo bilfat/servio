@@ -1,9 +1,7 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Receipt,
   MagnifyingGlass,
@@ -20,143 +18,73 @@ import {
   User,
   Bank,
   FileText,
+  ArrowsClockwise,
+  Eye,
+  HandCoins,
 } from "@phosphor-icons/react";
-import { useFinanceOperations, RefundRequest } from "@/features/finance/useFinanceOperations";
+import { financeApi } from "@/lib/servioApi";
+import { BackendRefundTransaction } from "@/types/finance";
 import { Toast } from "@/components/feedback/Toast";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { EmptyState } from "@/components/feedback/EmptyState";
-import { useUrlQueryState } from "@/hooks/useUrlQueryState";
-import { refundAuditSchema, RefundAuditFormValues } from "@/lib/validation/schemas";
-import { refundsApi } from "@/lib/servioApi";
 
 export default function RefundOperationsQueuePage() {
-  const { refunds, approveRefund, rejectRefund } = useFinanceOperations();
-  const { getParam, setParam } = useUrlQueryState();
-
-  const searchQuery = getParam("q", "");
-  const statusFilter = getParam("status", "ALL");
-
-  const [selectedRefund, setSelectedRefund] = useState<RefundRequest | null>(null);
-  const [modalAction, setModalAction] = useState<"APPROVE" | "REJECT" | null>(null);
+  const [refunds, setRefunds] = useState<BackendRefundTransaction[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [lastPage, setLastPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [serverRefunds, setServerRefunds] = useState<any[]>([]);
+
+  // Filters
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+
+  // Inspection Modal
+  const [selectedRefund, setSelectedRefund] = useState<BackendRefundTransaction | null>(null);
 
   const fetchRefunds = async () => {
     try {
-      const res = await refundsApi.list();
+      setLoading(true);
+      setError(null);
+      const res = await financeApi.ops.refunds({
+        status: statusFilter !== "ALL" ? statusFilter : undefined,
+        page: currentPage,
+        per_page: 15,
+      });
+
       if (res && res.data) {
-        setServerRefunds(res.data);
+        setRefunds(res.data.data || []);
+        setTotalCount(res.data.total || 0);
+        setCurrentPage(res.data.current_page || 1);
+        setLastPage(res.data.last_page || 1);
       }
-    } catch (err) {
-      console.warn("Could not load backend refunds:", err);
+    } catch (err: unknown) {
+      console.error("Gagal memuat log refund:", err);
+      setError(err instanceof Error ? err.message : "Gagal memuat daftar pengembalian dana.");
+    } finally {
+      setLoading(false);
     }
   };
 
-  React.useEffect(() => {
+  useEffect(() => {
     fetchRefunds();
-  }, []);
-
-  const combinedRefunds: RefundRequest[] = useMemo(() => {
-    if (serverRefunds && serverRefunds.length > 0) {
-      return serverRefunds.map((sr): RefundRequest => ({
-        id: sr.refundId || sr.id,
-        orderId: sr.orderId,
-        disputeCaseId: sr.disputeCaseId || undefined,
-        customerName: sr.customerName || (sr.customerId ? `Customer (${sr.customerId.slice(-6)})` : "Pelanggan"),
-        customerBank: sr.refundDestination || "ORIGINAL_PAYMENT_CHANNEL",
-        customerAccountNo: sr.providerRefundReference || sr.originalTransactionId || "Gateway Settlement",
-        refundAmount: (sr.amount !== undefined ? sr.amount : sr.refundAmount) || 0,
-        escrowTotal: (sr.amount !== undefined ? sr.amount : sr.refundAmount) || 0,
-        reason: sr.reason || "Pengembalian dana resmi Finance",
-        source: sr.returnId ? "RETURN_PARTS" : (sr.warrantyId ? "CS_MEDIATION" : "AUTO_CANCELLATION"),
-        status: sr.status === "COMPLETED" ? "APPROVED" : (sr.status === "PENDING" ? "PENDING_APPROVAL" : sr.status),
-        requestedAt: sr.createdAt ? new Date(sr.createdAt).toLocaleDateString("id-ID") : "Hari ini",
-        auditNotes: sr.status === "COMPLETED" ? "Telah dieksekusi resmi oleh Finance Payment Ops" : undefined,
-      }));
-    }
-    return refunds;
-  }, [serverRefunds, refunds]);
-
-  // RHF + Zod for Refund Audit (ROOT-04)
-  const {
-    register,
-    handleSubmit,
-    setValue,
-    reset,
-    formState: { errors, isSubmitting },
-  } = useForm<RefundAuditFormValues>({
-    resolver: zodResolver(refundAuditSchema),
-    defaultValues: {
-      decision: "APPROVE",
-      auditNotes: "",
-      confirmDisbursement: false,
-    },
-  });
-
-  const handleOpenModal = (r: RefundRequest, action: "APPROVE" | "REJECT") => {
-    setSelectedRefund(r);
-    setModalAction(action);
-    setValue("decision", action);
-    setValue(
-      "auditNotes",
-      action === "APPROVE"
-        ? "Audit rekening dan verifikasi CS mediasi valid. Disetujui untuk transfer dana."
-        : "Alasan penahanan audit / ketidaksesuaian rekening nasabah."
-    );
-    setValue("confirmDisbursement", false);
-  };
-
-  const onAuditSubmit = async (data: RefundAuditFormValues) => {
-    if (!selectedRefund || !modalAction) return;
-
-    if (modalAction === "APPROVE") {
-      try {
-        await refundsApi.execute({
-          orderId: selectedRefund.orderId,
-          amount: selectedRefund.refundAmount,
-          reason: data.auditNotes,
-          refundId: selectedRefund.id,
-        });
-        setToastMessage(
-          `Refund ${selectedRefund.id} sebesar Rp ${selectedRefund.refundAmount.toLocaleString(
-            "id-ID"
-          )} telah DISETUJUI dan mutasi resmi dicatat oleh Finance.`
-        );
-        fetchRefunds();
-      } catch (err: any) {
-        approveRefund(selectedRefund.id, data.auditNotes);
-        setToastMessage(
-          `Refund ${selectedRefund.id} sebesar Rp ${selectedRefund.refundAmount.toLocaleString(
-            "id-ID"
-          )} telah DISETUJUI dan mutasi dicatat.`
-        );
-      }
-    } else {
-      rejectRefund(selectedRefund.id, data.auditNotes);
-      setToastMessage(`Refund ${selectedRefund.id} telah DITOLAK dengan catatan audit.`);
-    }
-
-    setSelectedRefund(null);
-    setModalAction(null);
-    reset();
-  };
+  }, [statusFilter, currentPage]);
 
   const filteredRefunds = useMemo(() => {
-    return combinedRefunds.filter((r) => {
-      const matchesSearch =
-        r.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.orderId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.customerBank.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.reason.toLowerCase().includes(searchQuery.toLowerCase());
-
-      if (!matchesSearch) return false;
-      if (statusFilter !== "ALL" && r.status !== statusFilter) return false;
-
-      return true;
-    });
-  }, [combinedRefunds, searchQuery, statusFilter]);
+    if (!searchQuery.trim()) return refunds;
+    const q = searchQuery.toLowerCase();
+    return refunds.filter(
+      (r) =>
+        r.id.toLowerCase().includes(q) ||
+        r.payment_allocation_id.toLowerCase().includes(q) ||
+        r.payment_intent_id.toLowerCase().includes(q) ||
+        r.customer_spay_account_id.toLowerCase().includes(q) ||
+        (r.order_cancellation_event_id && r.order_cancellation_event_id.toLowerCase().includes(q))
+    );
+  }, [refunds, searchQuery]);
 
   return (
     <div className="space-y-6 pb-16 font-body text-left">
@@ -172,259 +100,272 @@ export default function RefundOperationsQueuePage() {
       {/* Header */}
       <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <span className="text-xs font-bold uppercase tracking-wider text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
-            Escrow Reversal & Refund Queue
+          <span className="text-xs font-bold uppercase tracking-wider text-purple-800 bg-purple-50 px-2.5 py-0.5 rounded-full border border-purple-200">
+            Customer Refund & S-Pay Credit Queue
           </span>
-          <h1 className="text-2xl sm:text-3xl font-bold font-display text-slate-900 mt-1">
-            Antrean Persetujuan Pengembalian Dana (Refund)
+          <h1 className="text-2xl sm:text-3xl font-black font-display text-slate-900 mt-1">
+            Monitoring Pengembalian Dana (Refund)
           </h1>
           <p className="text-xs text-slate-500 mt-1 max-w-xl">
-            Tinjau pengajuan pencairan balik dana penampung hasil putusan mediasi sengketa CS atau retur suku cadang sebelum ditransfer ke rekening pelanggan.
+            Audit eksekusi pendanaan refund 100% alokasi dana pesanan yang dibatalkan sah oleh 05A, pengkreditan ke saldo S-Pay Customer, dan riwayat status pendanaan.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <span className="text-xs font-bold px-3 py-2 rounded-2xl bg-slate-100 text-slate-700">
-            Total {refunds.length} Pengajuan Refund
+            Total {totalCount} Refund Tercatat
           </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchRefunds}
+            disabled={loading}
+            className="rounded-2xl border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold"
+          >
+            <ArrowsClockwise className={`w-4 h-4 mr-1.5 ${loading ? "animate-spin text-[#0F4C81]" : "text-slate-500"}`} />
+            Segarkan
+          </Button>
         </div>
       </div>
 
-      {/* Filter & Search Bar (Sync with URL ROOT-06) */}
-      <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row items-center gap-3">
-          <div className="relative flex-1 w-full">
-            <MagnifyingGlass
-              size={18}
-              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-            />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setParam("q", e.target.value)}
-              placeholder="Cari ID refund (REF-...), order, nama customer, atau bank..."
-              className="w-full pl-10 pr-4 py-2.5 rounded-2xl border border-slate-200 bg-slate-50 text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F4C81]"
+      {/* Notice Banner: Boundary Clarification */}
+      <div className="p-4 rounded-2xl bg-sky-50/70 border border-sky-200/80 text-sky-950 flex items-start gap-3 text-xs leading-relaxed">
+        <ShieldCheck size={20} className="text-[#0F4C81] shrink-0 mt-0.5" weight="fill" />
+        <div>
+          <strong className="font-bold">Ketentuan Batas Domain Modul 06 (Finance V3):</strong>
+          <p className="mt-0.5 text-sky-900">
+            Keputusan pembatalan pesanan dan persetujuan klaim retur adalah hak prerogatif Modul 05A Order / After-Sales. Finance bertugas memvalidasi pembayaran awal `PAID`, menghitung 100% alokasi dana pesanan, memproses pendanaan, dan mengkreditkan tepat satu kali ke S-Pay Customer.
+          </p>
+        </div>
+      </div>
+
+      {/* Filter and Search Bar */}
+      <div className="p-4 rounded-3xl bg-white border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+        <div className="flex-1 relative">
+          <MagnifyingGlass className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Cari ID Refund, Alokasi Pembayaran, atau S-Pay Account..."
+            className="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 font-mono"
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <select
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white font-semibold text-slate-700 focus:outline-none"
+          >
+            <option value="ALL">Semua Status</option>
+            <option value="PENDING">PENDING</option>
+            <option value="PROCESSING">PROCESSING</option>
+            <option value="SUCCEEDED">SUCCEEDED</option>
+            <option value="FAILED">FAILED</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Main Table */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="p-16 flex flex-col items-center justify-center gap-3 text-slate-400">
+            <ArrowsClockwise className="w-8 h-8 animate-spin text-[#0F4C81]" />
+            <p className="text-xs font-medium text-slate-500">Memuat log transaksi refund...</p>
+          </div>
+        ) : filteredRefunds.length === 0 ? (
+          <div className="p-16 text-center">
+            <EmptyState
+              title="Tidak Ada Riwayat Refund"
+              description="Belum ada transaksi refund atau pembatalan pesanan yang diproses oleh Finance Service."
             />
           </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                  <th className="py-3.5 px-5">ID Refund</th>
+                  <th className="py-3.5 px-4">Alokasi & Event Batal</th>
+                  <th className="py-3.5 px-4">Nominal Diminta</th>
+                  <th className="py-3.5 px-4">Nominal Didanai</th>
+                  <th className="py-3.5 px-4">Kredit S-Pay</th>
+                  <th className="py-3.5 px-4">Status & Waktu</th>
+                  <th className="py-3.5 px-5 text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs">
+                {filteredRefunds.map((refund) => (
+                  <tr key={refund.id} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="py-4 px-5">
+                      <div className="font-mono font-bold text-slate-900">{refund.id}</div>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        Payment: {refund.payment_intent_id}
+                      </span>
+                    </td>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-            {[
-              { id: "ALL", label: "Semua Status" },
-              { id: "PENDING_APPROVAL", label: "Perlu Persetujuan" },
-              { id: "APPROVED", label: "Disetujui" },
-              { id: "REJECTED_AUDIT", label: "Ditolak" },
-            ].map((st) => (
-              <button
-                key={st.id}
-                onClick={() => setParam("status", st.id === "ALL" ? null : st.id)}
-                className={`px-3 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
-                  statusFilter === st.id
-                    ? "bg-[#0F4C81] text-white shadow-xs"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
+                    <td className="py-4 px-4 font-mono text-[11px] text-slate-700">
+                      <div>Alokasi: {refund.payment_allocation_id}</div>
+                      <span className="text-[10px] text-slate-400">
+                        Event: {refund.order_cancellation_event_id || "-"}
+                      </span>
+                    </td>
+
+                    <td className="py-4 px-4 font-bold text-slate-900">
+                      Rp {refund.requested_amount_idr.toLocaleString("id-ID")}
+                    </td>
+
+                    <td className="py-4 px-4 font-bold text-slate-800">
+                      Rp {refund.funded_amount_idr.toLocaleString("id-ID")}
+                    </td>
+
+                    <td className="py-4 px-4">
+                      <span className="font-black text-purple-900">
+                        Rp {refund.credited_amount_idr.toLocaleString("id-ID")}
+                      </span>
+                    </td>
+
+                    <td className="py-4 px-4">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-black inline-block mb-1 ${
+                          refund.status === "SUCCEEDED"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : refund.status === "PENDING"
+                            ? "bg-amber-100 text-amber-800"
+                            : refund.status === "PROCESSING"
+                            ? "bg-sky-100 text-sky-800"
+                            : "bg-rose-100 text-rose-800"
+                        }`}
+                      >
+                        {refund.status}
+                      </span>
+                      <div className="text-[10px] text-slate-400">
+                        {refund.credited_at
+                          ? new Date(refund.credited_at).toLocaleString("id-ID")
+                          : "Menunggu pendanaan"}
+                      </div>
+                    </td>
+
+                    <td className="py-4 px-5 text-right whitespace-nowrap">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedRefund(refund)}
+                        className="text-xs text-slate-700 hover:bg-slate-100 rounded-xl"
+                      >
+                        <Eye className="w-3.5 h-3.5 mr-1" />
+                        Rincian
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {lastPage > 1 && (
+          <div className="p-4 border-t border-slate-200 bg-slate-50/50 flex items-center justify-between text-xs text-slate-600">
+            <span>
+              Halaman <strong>{currentPage}</strong> dari <strong>{lastPage}</strong>
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage <= 1 || loading}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                className="text-xs rounded-xl"
               >
-                {st.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Refund Items List */}
-      {filteredRefunds.length === 0 ? (
-        <EmptyState
-          icon={Receipt}
-          title={searchQuery || statusFilter !== "ALL" ? "Tidak Ada Refund yang Cocok" : "Antrean Refund Kosong"}
-          description={
-            searchQuery || statusFilter !== "ALL"
-              ? "Tidak ditemukan pengajuan refund yang sesuai dengan filter pencarian Anda."
-              : "Saat ini tidak ada permohonan pengembalian dana yang menunggu proses audit."
-          }
-          action={
-            searchQuery || statusFilter !== "ALL" ? (
-              <Button size="sm" variant="outline" onClick={() => { setParam("q", null); setParam("status", null); }}>
-                Reset Filter
+                Sebelumnya
               </Button>
-            ) : undefined
-          }
-        />
-      ) : (
-        <div className="space-y-3">
-          {filteredRefunds.map((r) => {
-            const isPending = r.status === "PENDING_APPROVAL";
-            const isApproved = r.status === "APPROVED" || r.status === "COMPLETED";
-
-            return (
-              <div
-                key={r.id}
-                className="bg-white rounded-3xl border border-slate-200/80 p-5 sm:p-6 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-5 transition hover:border-slate-300"
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage >= lastPage || loading}
+                onClick={() => setCurrentPage((p) => Math.min(lastPage, p + 1))}
+                className="text-xs rounded-xl"
               >
-                <div className="space-y-3 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono font-bold text-xs bg-slate-100 text-slate-800 px-2 py-0.5 rounded-lg border border-slate-200">
-                      {r.id}
-                    </span>
-                    <span className="font-mono text-xs text-slate-400">Order #{r.orderId}</span>
-                    {r.disputeCaseId && (
-                      <span className="text-[11px] font-semibold text-sky-800 bg-sky-50 px-2 py-0.5 rounded-lg border border-sky-200 flex items-center gap-1">
-                        <Scales size={12} />
-                        Mediasi #{r.disputeCaseId}
-                      </span>
-                    )}
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        isPending
-                          ? "bg-amber-50 text-amber-700 border border-amber-200"
-                          : isApproved
-                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                          : "bg-rose-50 text-rose-700 border border-rose-200"
-                      }`}
-                    >
-                      {isPending ? "Menunggu Audit" : isApproved ? "Disetujui" : "Ditolak"}
-                    </span>
-                  </div>
+                Berikutnya
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
 
-                  <div>
-                    <h3 className="font-bold text-sm text-slate-900">{r.reason}</h3>
-                    <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 mt-1">
-                      <span className="flex items-center gap-1">
-                        <User size={14} className="text-slate-400" />
-                        {r.customerName}
-                      </span>
-                      <span className="flex items-center gap-1 font-mono text-slate-700 font-semibold">
-                        <Bank size={14} className="text-slate-400" />
-                        {r.customerBank} ({r.customerAccountNo})
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Clock size={14} className="text-slate-400" />
-                        Diajukan: {r.requestedAt}
-                      </span>
-                    </div>
-                  </div>
-
-                  {r.auditNotes && (
-                    <p className="text-[11px] text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100 italic">
-                      Catatan Audit: &quot;{r.auditNotes}&quot;
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex lg:flex-col items-center lg:items-end justify-between gap-3 shrink-0 pt-3 lg:pt-0 border-t lg:border-t-0 border-slate-100">
-                  <div className="text-left lg:text-right">
-                    <p className="text-[10px] text-slate-400 font-bold uppercase">Nilai Refund</p>
-                    <p className="text-base font-bold font-mono text-rose-600">
-                      Rp {r.refundAmount.toLocaleString("id-ID")}
-                    </p>
-                    <p className="text-[10px] text-slate-400">
-                      dari Escrow: Rp {r.escrowTotal.toLocaleString("id-ID")}
-                    </p>
-                  </div>
-
-                  {isPending && (
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleOpenModal(r, "REJECT")}
-                        className="border-rose-200 text-rose-600 hover:bg-rose-50"
-                      >
-                        Tolak
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        onClick={() => handleOpenModal(r, "APPROVE")}
-                      >
-                        Setujui Refund
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ACCESSIBLE AUDIT MODAL (ROOT-08, ROOT-04) */}
+      {/* =========================================================================
+          MODAL: Rincian Refund
+         ========================================================================= */}
       <Modal
-        isOpen={!!selectedRefund && !!modalAction}
-        onClose={() => { setSelectedRefund(null); setModalAction(null); }}
-        title={modalAction === "APPROVE" ? "Persetujuan Pengembalian Dana" : "Tolak / Tahan Pengembalian Dana"}
-        description={`Tiket Refund: ${selectedRefund?.id || ""} (Order ${selectedRefund?.orderId || ""})`}
-        maxWidth="md"
+        isOpen={!!selectedRefund}
+        onClose={() => setSelectedRefund(null)}
+        title="Rincian Transaksi Refund"
+        size="md"
       >
         {selectedRefund && (
-          <form onSubmit={handleSubmit(onAuditSubmit)} className="space-y-4">
-            <input type="hidden" {...register("decision")} value={modalAction || "APPROVE"} />
-
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-1.5">
+          <div className="space-y-4 text-left font-body text-xs">
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
               <div className="flex justify-between">
-                <span className="text-slate-500">Penerima Dana:</span>
-                <span className="font-bold text-slate-900">{selectedRefund.customerName}</span>
+                <span className="text-slate-400">Refund ID:</span>
+                <strong className="font-mono text-slate-900">{selectedRefund.id}</strong>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Bank & Rekening:</span>
-                <span className="font-mono text-slate-800">
-                  {selectedRefund.customerBank} - {selectedRefund.customerAccountNo}
-                </span>
+                <span className="text-slate-400">Payment Allocation:</span>
+                <strong className="font-mono text-slate-900">{selectedRefund.payment_allocation_id}</strong>
               </div>
               <div className="flex justify-between">
-                <span className="text-slate-500">Jumlah Transfer:</span>
-                <span className="font-mono font-bold text-rose-600 text-sm">
-                  Rp {selectedRefund.refundAmount.toLocaleString("id-ID")}
-                </span>
+                <span className="text-slate-400">Akun S-Pay Customer:</span>
+                <strong className="font-mono text-slate-900">{selectedRefund.customer_spay_account_id}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Alasan / Scope:</span>
+                <span className="text-slate-800">{selectedRefund.refund_reason_scope || "Pembatalan Order"}</span>
+              </div>
+              <div className="flex justify-between border-t border-slate-200 pt-2">
+                <span className="text-slate-400">Nominal Dikreditkan:</span>
+                <strong className="text-sm font-black text-purple-900">
+                  Rp {selectedRefund.credited_amount_idr.toLocaleString("id-ID")}
+                </strong>
               </div>
             </div>
 
-            <div>
-              <label className="text-xs font-bold text-slate-700 block mb-1">
-                {modalAction === "APPROVE"
-                  ? "Catatan Kliring Finance (Wajib minimal 10 karakter):"
-                  : "Alasan Audit Penolakan / Penahanan Refund (Wajib):"}
-              </label>
-              <textarea
-                {...register("auditNotes")}
-                rows={3}
-                className="w-full p-3 rounded-2xl border border-slate-200 bg-slate-50 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F4C81]"
-              />
-              {errors.auditNotes && (
-                <p className="text-[11px] text-rose-500 mt-1">{errors.auditNotes.message}</p>
+            <div className="p-3.5 rounded-2xl bg-slate-50/50 border border-slate-200/60 space-y-1.5 text-[11px] text-slate-600">
+              <div className="flex justify-between">
+                <span>Status Refund:</span>
+                <span className="font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-800 text-[10px]">
+                  {selectedRefund.status}
+                </span>
+              </div>
+              {selectedRefund.funded_at && (
+                <div className="flex justify-between">
+                  <span>Waktu Didanai:</span>
+                  <span className="font-mono">{new Date(selectedRefund.funded_at).toLocaleString("id-ID")}</span>
+                </div>
+              )}
+              {selectedRefund.credited_at && (
+                <div className="flex justify-between text-emerald-800 font-bold">
+                  <span>Waktu Dikreditkan ke S-Pay:</span>
+                  <span className="font-mono">{new Date(selectedRefund.credited_at).toLocaleString("id-ID")}</span>
+                </div>
               )}
             </div>
 
-            <label className="flex items-center gap-2 pt-1 cursor-pointer">
-              <input
-                type="checkbox"
-                {...register("confirmDisbursement")}
-                className="w-4 h-4 rounded text-primary accent-primary"
-              />
-              <span className="text-[11px] text-slate-700 font-medium">
-                Saya mengonfirmasi bahwa data nasabah dan putusan telah diverifikasi.
-              </span>
-            </label>
-            {errors.confirmDisbursement && (
-              <p className="text-[11px] text-rose-500">{errors.confirmDisbursement.message}</p>
-            )}
-
-            <div className="flex items-center justify-end gap-2 pt-3">
+            <div className="flex justify-end pt-2">
               <Button
-                type="button"
-                variant="ghost"
-                onClick={() => { setSelectedRefund(null); setModalAction(null); }}
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedRefund(null)}
+                className="rounded-xl text-xs font-bold"
               >
-                Batal
-              </Button>
-              <Button
-                type="submit"
-                variant={modalAction === "APPROVE" ? "primary" : "outline"}
-                isLoading={isSubmitting}
-                className={modalAction === "REJECT" ? "border-rose-200 text-rose-600 hover:bg-rose-50" : ""}
-              >
-                {modalAction === "APPROVE" ? "Konfirmasi Setujui Refund" : "Simpan Putusan Tolak"}
+                Tutup
               </Button>
             </div>
-          </form>
+          </div>
         )}
       </Modal>
     </div>

@@ -24,13 +24,13 @@ export interface PriceBreakdownProps {
   taxLabel?: string;
 }
 
-export function formatRupiah(amount: number): string {
+export function formatRupiah(amount: number = 0): string {
   return new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  }).format(amount);
+  }).format(Number(amount || 0));
 }
 
 export function PriceBreakdown({

@@ -414,6 +414,20 @@ export const MOCK_USERS_BY_ROLE: Record<string, any> = {
   },
 };
 
+export function resolveActorRole(role?: string): string {
+  const norm = (role || "").toUpperCase().trim();
+  if (norm === "PROVIDER" || norm === "SERVICE_PROVIDER") return "SERVICE_PROVIDER";
+  if (norm === "ADMIN" || norm === "ADMIN_OPERATIONS") return "ADMIN_OPERATIONS";
+  if (norm === "CEO" || norm === "CEO_PRODUCT_OWNER") return "CEO_PRODUCT_OWNER";
+  if (norm === "WORKER" || norm === "WORKER_TECHNICIAN") return "WORKER_TECHNICIAN";
+  return norm || "CUSTOMER";
+}
+
+MOCK_USERS_BY_ROLE.PROVIDER = MOCK_USERS_BY_ROLE.SERVICE_PROVIDER;
+MOCK_USERS_BY_ROLE.ADMIN = MOCK_USERS_BY_ROLE.ADMIN_OPERATIONS;
+MOCK_USERS_BY_ROLE.CEO = MOCK_USERS_BY_ROLE.CEO_PRODUCT_OWNER;
+MOCK_USERS_BY_ROLE.WORKER = MOCK_USERS_BY_ROLE.WORKER_TECHNICIAN;
+
 function resolveUserByEmail(email: string) {
   const norm = (email || "").toLowerCase().trim();
   if (norm.includes("ceo")) return MOCK_USERS_BY_ROLE.CEO_PRODUCT_OWNER;
@@ -782,30 +796,49 @@ const MOCK_SUPPLIER_PRODUCTS: any[] = [
   },
 ];
 
-function mapServiceToCatalog(s: any): any {
+export function mapServiceToCatalog(s: any): any {
+  const catName = s.categoryName || (s.domainId === "repair" ? "Perbaikan & Servis AC" : "Elektronik & Perawatan");
+  const subName = s.subcategoryName || (s.subcategoryId === "ac-cooling" ? "Perawatan AC & Chiller" : "Elektronik Rumah");
+  const basePrice = Number(s.basePrice || s.priceMin || 75000);
+
   return {
     id: s.id,
-    name: s.title,
-    title: s.title,
-    description: s.fullDescription || s.shortDescription || "",
-    shortDescription: s.shortDescription || "",
-    providerId: s.providerId,
-    providerName: s.providerName,
+    name: s.display_name || s.name || s.title || "Layanan Jasa",
+    title: s.display_name || s.name || s.title || "Layanan Jasa",
+    display_name: s.display_name || s.name || s.title || "Layanan Jasa",
+    description: s.fullDescription || s.shortDescription || s.description || "Layanan service teknisi profesional bergaransi resmi.",
+    shortDescription: s.shortDescription || s.description || "",
+    providerId: s.providerId || s.provider_organization_id || "usr-prov-001",
+    providerName: s.providerName || s.provider_name || "PT Servio Mandiri Teknik",
     isVerifiedProvider: s.isVerifiedProvider ?? true,
-    categoryId: s.domainId || "repair",
-    categoryName: (s.domainId || "repair").toUpperCase(),
-    categoryCode: (s.domainId || "repair").toUpperCase(),
-    subcategoryId: s.subcategoryId || "general",
-    subcategoryName: (s.subcategoryId || "Umum").replace("-", " "),
-    subcategoryCode: (s.subcategoryId || "general").toUpperCase(),
-    priceMin: s.basePrice || 50000,
-    priceMax: s.basePrice || 100000,
-    basePrice: s.basePrice || 50000,
-    pricingModel: s.pricingModel || "ESTIMATED_RANGE",
-    surveyFee: 0,
+    categoryId: s.categoryId || s.domainId || "080142ee-0a66-434a-988e-8bc29a8f05fd",
+    categoryName: catName,
+    categoryCode: (s.domainId || "REPAIR").toUpperCase(),
+    subcategoryId: s.subcategoryId || "850cb3fa-56ba-42e5-9812-f9d5ae42dfb3",
+    subcategoryName: subName,
+    subcategoryCode: (s.subcategoryId || "AC-COOLING").toUpperCase(),
+    priceMin: Number(s.priceMin ?? basePrice),
+    priceMax: Number(s.priceMax ?? (basePrice > 0 ? basePrice * 2 : 150000)),
+    basePrice: basePrice,
+    priceModel: s.pricingModel || s.priceModel || "RANGE",
+    surveyFee: Number(s.surveyFee ?? 50000),
+    durationMin: s.durationMin || 1,
+    durationMax: s.durationMax || 2,
+    durationUnit: s.durationUnit || "HOUR",
+    coverageCityCodes: Array.isArray(s.coverageCityCodes) && s.coverageCityCodes.length > 0
+      ? s.coverageCityCodes
+      : Array.isArray(s.coverage_city_codes) && s.coverage_city_codes.length > 0
+      ? s.coverage_city_codes
+      : ["JKT-BARAT", "JKT-SEL", "TNG-KOTA"],
+    media: Array.isArray(s.media) && s.media.length > 0
+      ? s.media
+      : [
+          { id: "med-1", url: "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=800&auto=format&fit=crop&q=80", is_primary: true },
+          { id: "med-2", url: "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=800&auto=format&fit=crop&q=80", is_primary: false },
+        ],
     serviceMethods: ["HOME_SERVICE"],
     serviceModes: s.serviceModes || ["HOME_SERVICE"],
-    status: "ACTIVE",
+    status: s.status || "ACTIVE",
     warrantyConfig: {
       warrantyEnabled: true,
       durationDays: s.warrantyDays || 30,
@@ -813,9 +846,14 @@ function mapServiceToCatalog(s: any): any {
     warrantyDays: s.warrantyDays || 30,
     rating: s.rating || 4.9,
     reviewCount: s.reviewCount || 40,
-    thumbnailUrl: "/brand/logo.png",
-    createdAt: "2026-01-01T00:00:00Z",
+    thumbnailUrl: s.thumbnailUrl || (Array.isArray(s.media) && s.media[0]?.url) || "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=800&auto=format&fit=crop&q=80",
+    createdAt: s.createdAt || "2026-01-01T00:00:00Z",
+    lockVersion: s.lock_version || s.lockVersion || 1,
   };
+}
+
+export function getMockCatalogServices(): any[] {
+  return MOCK_SERVICES.map(mapServiceToCatalog);
 }
 
 function mapProductToApi(p: any): any {
@@ -896,6 +934,24 @@ const PRODUCT_BASE_URL =
     ? "/api/v1"
     : (process.env.NEXT_PUBLIC_PRODUCT_API_URL || "http://127.0.0.1:8003/api/v1");
 
+const SERVICE_SERVICE_ROOT =
+  typeof window !== "undefined"
+    ? ""
+    : (process.env.NEXT_PUBLIC_SERVICE_SERVICE_URL || "http://127.0.0.1:8004");
+const SERVICE_BASE_URL =
+  typeof window !== "undefined"
+    ? "/api/v1"
+    : (process.env.NEXT_PUBLIC_SERVICE_API_URL || "http://127.0.0.1:8004/api/v1");
+
+const FINANCE_SERVICE_ROOT =
+  typeof window !== "undefined"
+    ? ""
+    : (process.env.NEXT_PUBLIC_FINANCE_SERVICE_URL || "http://127.0.0.1:8006");
+const FINANCE_BASE_URL =
+  typeof window !== "undefined"
+    ? "/api/v1/finance"
+    : (process.env.NEXT_PUBLIC_FINANCE_API_URL || "http://127.0.0.1:8006/api/v1/finance");
+
 let csrfPromise: Promise<void> | null = null;
 
 async function ensureSanctumCsrf(force = false): Promise<void> {
@@ -943,6 +999,42 @@ function isProductRoute(path: string): boolean {
     p.startsWith("/product-media") ||
     p.startsWith("/governance/products") ||
     p.startsWith("/product-audit")
+  );
+}
+
+function isServiceRoute(path: string): boolean {
+  const p = path.replace(/^\/api\/v1/, "");
+  return (
+    p.startsWith("/services") ||
+    p.startsWith("/provider/services") ||
+    p.startsWith("/provider/service-definition-requests") ||
+    p.startsWith("/provider/worker-capabilities") ||
+    p.startsWith("/providers") ||
+    p.startsWith("/governance/service-offerings") ||
+    p.startsWith("/admin/service-definitions") ||
+    p.startsWith("/admin/service-definition-requests") ||
+    p.startsWith("/admin/capabilities") ||
+    p.startsWith("/service-definitions") ||
+    p.startsWith("/capabilities") ||
+    p.startsWith("/service-media") ||
+    p.startsWith("/service-audit")
+  );
+}
+
+function isFinanceRoute(path: string): boolean {
+  const p = path.replace(/^\/api\/v1/, "");
+  return (
+    p.startsWith("/finance") ||
+    p.startsWith("/policies") ||
+    p.startsWith("/revenue") ||
+    p.startsWith("/ops") ||
+    p.startsWith("/demo") ||
+    p.startsWith("/bank-destinations") ||
+    p.startsWith("/withdrawals") ||
+    p.startsWith("/held-funds") ||
+    p.startsWith("/spay") ||
+    p.startsWith("/tax-references") ||
+    p.startsWith("/platform-policy")
   );
 }
 
@@ -1093,9 +1185,12 @@ export async function apiFetch<T = unknown>(
       }
 
       if (!res.ok) {
-        const err: any = new Error(
-          json?.message || `Request ke Identity Service gagal dengan kode status ${res.status}.`
-        );
+        const errorMsg =
+          json?.error?.message ||
+          json?.message ||
+          (typeof json?.error === "string" ? json.error : null) ||
+          `Request ke Identity Service gagal dengan kode status ${res.status}.`;
+        const err: any = new Error(errorMsg);
         err.status = res.status;
         err.code = json?.code;
         err.errors = json?.error?.field_errors || json?.errors;
@@ -1160,7 +1255,7 @@ export async function apiFetch<T = unknown>(
       headers["X-Gateway-Key"] = gatewayKey;
 
       const activeRoleCookie = getCookie("servio_active_role");
-      const activeRole = activeRoleCookie || "CUSTOMER";
+      const activeRole = resolveActorRole(activeRoleCookie || "CUSTOMER");
 
       const currentUser = MOCK_USERS_BY_ROLE[activeRole] || MOCK_USERS_BY_ROLE["CUSTOMER"];
       if (currentUser?.id) {
@@ -1221,9 +1316,12 @@ export async function apiFetch<T = unknown>(
       }
 
       if (!res.ok) {
-        const err: any = new Error(
-          json?.message || `Request ke Category Service gagal dengan kode status ${res.status}.`
-        );
+        const errorMsg =
+          json?.error?.message ||
+          json?.message ||
+          (typeof json?.error === "string" ? json.error : null) ||
+          `Request ke Category Service gagal dengan kode status ${res.status}.`;
+        const err: any = new Error(errorMsg);
         err.status = res.status;
         err.code = json?.code;
         err.errors = json?.error?.field_errors || json?.errors;
@@ -1261,7 +1359,7 @@ export async function apiFetch<T = unknown>(
       headers["X-Gateway-Key"] = gatewayKey;
 
       const activeRoleCookie = getCookie("servio_active_role");
-      const activeRole = activeRoleCookie || "CUSTOMER";
+      const activeRole = resolveActorRole(activeRoleCookie || "CUSTOMER");
 
       const currentUser = MOCK_USERS_BY_ROLE[activeRole] || MOCK_USERS_BY_ROLE["CUSTOMER"];
       if (currentUser?.id) {
@@ -1323,9 +1421,12 @@ export async function apiFetch<T = unknown>(
       }
 
       if (!res.ok) {
-        const err: any = new Error(
-          json?.message || `Request ke Product Service gagal dengan kode status ${res.status}.`
-        );
+        const errorMsg =
+          json?.error?.message ||
+          json?.message ||
+          (typeof json?.error === "string" ? json.error : null) ||
+          `Request ke Product Service gagal dengan kode status ${res.status}.`;
+        const err: any = new Error(errorMsg);
         err.status = res.status;
         err.code = json?.code;
         err.errors = json?.error?.field_errors || json?.errors;
@@ -1346,6 +1447,238 @@ export async function apiFetch<T = unknown>(
         throw err;
       }
       console.warn("Product Service network failure:", err);
+      throw err;
+    }
+  }
+
+  // =========================================================================
+  // REAL BACKEND INTEGRATION: Modul 04 Service Offering Service (Port 8004)
+  // =========================================================================
+  if (isServiceRoute(pathname)) {
+    try {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+      };
+
+      const gatewayKey = process.env.NEXT_PUBLIC_SERVICE_GATEWAY_KEY || "servio_local_gateway_key_2026";
+      headers["X-Gateway-Key"] = gatewayKey;
+
+      const activeRoleCookie = getCookie("servio_active_role");
+      let activeRole = resolveActorRole(activeRoleCookie || "");
+      if (!activeRole || activeRole === "CUSTOMER") {
+        if (pathname.startsWith("/provider/")) {
+          activeRole = "SERVICE_PROVIDER";
+        } else if (
+          pathname.startsWith("/admin/") ||
+          pathname.startsWith("/governance/") ||
+          pathname.startsWith("/service-audit")
+        ) {
+          activeRole = "ADMIN_OPERATIONS";
+        } else {
+          activeRole = "CUSTOMER";
+        }
+      }
+
+      const currentUser = MOCK_USERS_BY_ROLE[activeRole] || MOCK_USERS_BY_ROLE["CUSTOMER"];
+      if (currentUser?.id) {
+        headers["X-Actor-User-Id"] = currentUser.id;
+        headers["X-Actor-Role"] = activeRole;
+        if (currentUser.activeRole?.assignmentId) {
+          headers["X-Actor-Role-Assignment-Id"] = currentUser.activeRole.assignmentId;
+        }
+        if (currentUser.organizationId) {
+          headers["X-Actor-Org-Id"] = currentUser.organizationId;
+        }
+        headers["X-Actor-Authz-Version"] = "1";
+      }
+
+      if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+        if (!headers["Idempotency-Key"]) {
+          headers["Idempotency-Key"] = `idemp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        }
+      }
+
+      if (options.headers) {
+        if (options.headers instanceof Headers) {
+          options.headers.forEach((val, key) => {
+            headers[key] = val;
+          });
+        } else if (Array.isArray(options.headers)) {
+          options.headers.forEach(([k, v]) => {
+            headers[k] = v;
+          });
+        } else {
+          Object.assign(headers, options.headers);
+        }
+      }
+
+      if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
+        headers["Content-Type"] = "application/json";
+      }
+
+      const cleanPath = endpoint.startsWith("/api/v1") ? endpoint.slice(7) : endpoint;
+      const targetUrl = `${SERVICE_BASE_URL.replace(/\/+$/, "")}/${cleanPath.replace(/^\/+/, "")}`;
+
+      const res = await fetch(targetUrl, {
+        ...options,
+        headers,
+        credentials: "include",
+      });
+
+      const contentType = res.headers.get("content-type") || "";
+      let json: any = null;
+      if (contentType.includes("application/json")) {
+        json = await res.json();
+      } else {
+        const text = await res.text();
+        try {
+          json = JSON.parse(text);
+        } catch {
+          json = { message: text };
+        }
+      }
+
+      if (!res.ok) {
+        const errorMsg =
+          json?.error?.message ||
+          json?.message ||
+          (typeof json?.error === "string" ? json.error : null) ||
+          `Request ke Service Offering Service gagal dengan kode status ${res.status}.`;
+        const err: any = new Error(errorMsg);
+        err.status = res.status;
+        err.code = json?.code;
+        err.errors = json?.error?.field_errors || json?.error?.fields || json?.errors;
+        err.data = json?.data;
+        throw err;
+      }
+
+      return {
+        success: json?.success ?? true,
+        message: json?.message,
+        data: json?.data !== undefined ? json.data : json,
+        count: json?.count,
+        meta: json?.meta,
+        ...json,
+      };
+    } catch (err) {
+      if ((err as any)?.status) {
+        throw err;
+      }
+      console.warn("Service Offering Service network failure, fallback to mock provider:", err);
+    }
+  }
+
+  // =========================================================================
+  // REAL BACKEND INTEGRATION: Modul 06 Finance Service (Port 8006)
+  // =========================================================================
+  if (isFinanceRoute(pathname)) {
+    try {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+      };
+
+      const gatewayKey = process.env.NEXT_PUBLIC_FINANCE_GATEWAY_KEY || "servio_local_gateway_key_2026";
+      headers["X-Gateway-Key"] = gatewayKey;
+
+      const activeRoleCookie = getCookie("servio_active_role");
+      const activeRole = resolveActorRole(activeRoleCookie || "CEO_PRODUCT_OWNER");
+
+      const currentUser = MOCK_USERS_BY_ROLE[activeRole] || MOCK_USERS_BY_ROLE["CEO_PRODUCT_OWNER"];
+      if (currentUser?.id) {
+        headers["X-Actor-User-Id"] = currentUser.id;
+        headers["X-Actor-Role"] = activeRole;
+        if (currentUser.activeRole?.assignmentId) {
+          headers["X-Actor-Role-Assignment-Id"] = currentUser.activeRole.assignmentId;
+        }
+        if (currentUser.organizationId) {
+          headers["X-Actor-Org-Id"] = currentUser.organizationId;
+        }
+        headers["X-Actor-Authz-Version"] = "1";
+        headers["X-Actor-Permissions"] =
+          activeRole === "CEO_PRODUCT_OWNER"
+            ? "finance.policy.manage,finance.policy.read,finance.ops.read"
+            : "finance.policy.read,finance.ops.read,finance.mock.simulate";
+      }
+
+      if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+        if (!headers["Idempotency-Key"]) {
+          headers["Idempotency-Key"] = `idemp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        }
+      }
+
+      if (options.headers) {
+        if (options.headers instanceof Headers) {
+          options.headers.forEach((val, key) => {
+            headers[key] = val;
+          });
+        } else if (Array.isArray(options.headers)) {
+          options.headers.forEach(([k, v]) => {
+            headers[k] = v;
+          });
+        } else {
+          Object.assign(headers, options.headers);
+        }
+      }
+
+      if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
+        headers["Content-Type"] = "application/json";
+      }
+
+      const cleanSub = pathname.replace(/^\/api\/v1/, "").replace(/^\/+/, "");
+      let subWithoutFinance = cleanSub.replace(/^finance\/?/, "");
+      if (subWithoutFinance.startsWith("platform-policy")) {
+        subWithoutFinance = "policies";
+      }
+
+      const targetUrl = `${FINANCE_BASE_URL.replace(/\/+$/, "")}/${subWithoutFinance.replace(/^\/+/, "")}${queryString ? `?${queryString}` : ""}`;
+
+      const res = await fetch(targetUrl, {
+        ...options,
+        headers,
+        credentials: "include",
+      });
+
+      const contentType = res.headers.get("content-type") || "";
+      let json: any = null;
+      if (contentType.includes("application/json")) {
+        json = await res.json();
+      } else {
+        const text = await res.text();
+        try {
+          json = JSON.parse(text);
+        } catch {
+          json = { message: text };
+        }
+      }
+
+      if (!res.ok) {
+        const errorMsg =
+          json?.error?.message ||
+          json?.message ||
+          (typeof json?.error === "string" ? json.error : null) ||
+          `Request ke Finance Service gagal dengan kode status ${res.status}.`;
+        const err: any = new Error(errorMsg);
+        err.status = res.status;
+        err.code = json?.code;
+        err.errors = json?.error?.field_errors || json?.errors;
+        throw err;
+      }
+
+      return {
+        success: json?.success ?? true,
+        message: json?.message,
+        data: json?.data !== undefined ? json.data : json,
+        count: json?.count,
+        meta: json?.meta,
+        ...json,
+      };
+    } catch (err) {
+      if ((err as any)?.status) {
+        throw err;
+      }
+      console.warn("Finance Service network failure:", err);
       throw err;
     }
   }
@@ -1469,8 +1802,38 @@ export async function apiFetch<T = unknown>(
     };
   }
 
-  if (pathname.startsWith("/provider/services")) {
+  if (pathname.startsWith("/provider/services") || pathname.startsWith("/governance/service-offerings")) {
     const parts = pathname.split("/").filter(Boolean);
+    // POST /provider/services/{id}/media
+    if (parts.length >= 4 && parts[3] === "media" && method === "POST") {
+      const srvId = parts[2];
+      const srv = MOCK_SERVICES.find((s) => s.id === srvId);
+      const mediaId = "med-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6);
+      let previewUrl = "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=800&auto=format&fit=crop&q=80";
+      if (options.body instanceof FormData) {
+        const file = options.body.get("file") as File;
+        if (file && typeof URL !== "undefined" && URL.createObjectURL) {
+          previewUrl = URL.createObjectURL(file);
+        }
+      }
+      const mediaItem = {
+        id: mediaId,
+        offering_id: srvId,
+        url: previewUrl,
+        is_primary: true,
+        sort_order: (srv as any)?.media?.length || 0,
+      };
+      if (srv) {
+        if (!(srv as any).media) (srv as any).media = [];
+        (srv as any).media.push(mediaItem);
+        (srv as any).thumbnailUrl = (srv as any).media[0]?.url || previewUrl;
+      }
+      return {
+        message: "Media berhasil diunggah ke database",
+        data: mediaItem as any,
+      };
+    }
+
     if (method === "POST") {
       const newService = {
         id: "srv-" + Date.now(),
@@ -1480,20 +1843,30 @@ export async function apiFetch<T = unknown>(
         categoryName: bodyData.categoryName,
         subcategoryId: bodyData.subcategoryId,
         subcategoryName: bodyData.subcategoryName,
-        name: bodyData.name,
-        title: bodyData.name,
+        name: bodyData.display_name || bodyData.name,
+        title: bodyData.display_name || bodyData.name,
         description: bodyData.description || "",
         shortDescription: bodyData.description || "",
         fullDescription: bodyData.description || "",
-        priceMin: Number(bodyData.priceMin) || 75000,
-        priceMax: Number(bodyData.priceMax) || 150000,
-        basePrice: Number(bodyData.priceMin) || 75000,
-        surveyFee: Number(bodyData.surveyFee) || 0,
-        serviceMethods: bodyData.serviceMethods || ["HOME_SERVICE"],
+        priceMin: Number(bodyData.pricing?.min_price_idr ?? bodyData.priceMin) || 75000,
+        priceMax: Number(bodyData.pricing?.max_price_idr ?? bodyData.priceMax) || 150000,
+        surveyFee: bodyData.survey?.fee_model === "FREE" ? 0 : (Number(bodyData.survey?.fee_idr ?? bodyData.surveyFee) || 0),
+        surveyFeeModel: bodyData.survey?.fee_model || (Number(bodyData.survey?.fee_idr ?? bodyData.surveyFee) > 0 ? "PAID" : "FREE"),
+        surveyAvailability: bodyData.survey?.availability || "AVAILABLE",
+        surveyRequirement: bodyData.survey?.requirement || "OPTIONAL",
+        survey: bodyData.survey || {
+          availability: "AVAILABLE",
+          requirement: "OPTIONAL",
+          fee_model: (Number(bodyData.surveyFee) > 0) ? "PAID" : "FREE",
+          fee_idr: Number(bodyData.surveyFee) || 0,
+        },
         status: bodyData.status || "ACTIVE",
         availability: bodyData.availability || "AVAILABLE",
         warrantyConfig: bodyData.warrantyConfig || { warrantyEnabled: true, durationDays: 30 },
         warrantyDays: bodyData.warrantyConfig?.durationDays || 30,
+        coverage_city_codes: bodyData.coverage_city_codes || ["JKT-BARAT"],
+        media: bodyData.media || [],
+        thumbnailUrl: bodyData.thumbnailUrl || (bodyData.media?.[0]?.url) || "",
         rating: 5.0,
         reviewCount: 0,
         isVerifiedProvider: true,
@@ -1502,6 +1875,98 @@ export async function apiFetch<T = unknown>(
       MOCK_SERVICES.unshift(newService as any);
       return { message: "Layanan berhasil ditambahkan", data: newService as any };
     }
+    // PATCH /provider/services/{id}/status or /governance/service-offerings/{id}/status
+    if (parts.length >= 4 && parts[3] === "status" && method === "PATCH") {
+      const srvId = parts[2];
+      const srv = MOCK_SERVICES.find((s) => s.id === srvId);
+      if (srv) {
+        (srv as any).status = bodyData.status;
+        (srv as any).lock_version = ((srv as any).lock_version || 1) + 1;
+      }
+      return {
+        message: `Status layanan berhasil diubah menjadi ${bodyData.status}`,
+        data: srv ? (mapServiceToCatalog(srv) as any) : null,
+      };
+    }
+
+    // PUT /provider/services/{id}/coverage-cities
+    if (parts.length >= 4 && parts[3] === "coverage-cities" && method === "PUT") {
+      const srvId = parts[2];
+      const srv = MOCK_SERVICES.find((s) => s.id === srvId);
+      if (srv) {
+        (srv as any).coverage_city_codes = bodyData.coverage_city_codes || [];
+        (srv as any).lock_version = ((srv as any).lock_version || 1) + 1;
+      }
+      return {
+        message: "Wilayah cakupan kota berhasil diperbarui",
+        data: srv ? (mapServiceToCatalog(srv) as any) : null,
+      };
+    }
+
+    // DELETE /provider/services/{id}/media/{media_id}
+    if (parts.length >= 5 && parts[3] === "media" && method === "DELETE") {
+      const srvId = parts[2];
+      const mediaId = parts[4];
+      const srv = MOCK_SERVICES.find((s) => s.id === srvId);
+      if (srv && Array.isArray((srv as any).media)) {
+        (srv as any).media = (srv as any).media.filter((m: any) => m.id !== mediaId);
+      }
+      return { message: "Media foto berhasil dihapus", data: null as any };
+    }
+
+    // DELETE /provider/services/{id} (Archive)
+    if (parts.length === 3 && method === "DELETE") {
+      const srvId = parts[2];
+      const srv = MOCK_SERVICES.find((s) => s.id === srvId);
+      if (srv) {
+        (srv as any).status = "ARCHIVED";
+        (srv as any).deleted_at = new Date().toISOString();
+        (srv as any).lock_version = ((srv as any).lock_version || 1) + 1;
+      }
+      return { message: "Layanan berhasil diarsipkan", data: { id: srvId, archived: true } as any };
+    }
+
+    // PATCH /provider/services/{id} (Full update)
+    if (parts.length === 3 && method === "PATCH") {
+      const srvId = parts[2];
+      const srv = MOCK_SERVICES.find((s) => s.id === srvId);
+      if (srv) {
+        if (bodyData.display_name || bodyData.name) {
+          srv.title = bodyData.display_name || bodyData.name;
+          (srv as any).name = bodyData.display_name || bodyData.name;
+          (srv as any).display_name = bodyData.display_name || bodyData.name;
+        }
+        if (bodyData.description !== undefined) {
+          srv.shortDescription = bodyData.description;
+          srv.fullDescription = bodyData.description;
+          (srv as any).description = bodyData.description;
+        }
+        if (bodyData.pricing) {
+          srv.basePrice = bodyData.pricing.min_price_idr || srv.basePrice;
+          (srv as any).priceMin = bodyData.pricing.min_price_idr;
+          (srv as any).priceMax = bodyData.pricing.max_price_idr;
+        }
+        if (bodyData.survey) {
+          (srv as any).surveyFee = bodyData.survey.fee_model === "FREE" ? 0 : (bodyData.survey.fee_idr || 0);
+          (srv as any).surveyFeeModel = bodyData.survey.fee_model || "FREE";
+          (srv as any).surveyAvailability = bodyData.survey.availability || "AVAILABLE";
+          (srv as any).surveyRequirement = bodyData.survey.requirement || "OPTIONAL";
+          (srv as any).survey = bodyData.survey;
+        }
+        if (bodyData.duration) {
+          (srv as any).duration = bodyData.duration;
+        }
+        if (bodyData.coverage_city_codes) {
+          (srv as any).coverage_city_codes = bodyData.coverage_city_codes;
+        }
+        (srv as any).lock_version = ((srv as any).lock_version || 1) + 1;
+      }
+      return {
+        message: "Data katalog layanan berhasil diperbarui",
+        data: srv ? (mapServiceToCatalog(srv) as any) : null,
+      };
+    }
+
     if (parts.length >= 3 && method === "GET") {
       const id = parts[2];
       const match = MOCK_SERVICES.find((s) => s.id === id) || MOCK_SERVICES[0];
@@ -1511,6 +1976,61 @@ export async function apiFetch<T = unknown>(
       data: MOCK_SERVICES.map(mapServiceToCatalog) as any,
       count: MOCK_SERVICES.length,
     };
+  }
+
+  // 2B. SERVICE AUDIT HANDLER
+  if (pathname.startsWith("/service-audit")) {
+    const mockServiceAudit = [
+      {
+        id: "srv-aud-01",
+        action: "SERVICE_STATUS_CHANGED",
+        entity_type: "SERVICE_OFFERING",
+        entity_id: "srv-01",
+        actor_id: "usr-admin-001",
+        actor_role: "ADMIN_OPERATIONS",
+        service_id: "srv-01",
+        service_name: "Cuci & Maintenance AC Inverter",
+        occurred_at: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
+        after_safe: { status: "ACTIVE", lock_version: 2, reason: "Verifikasi standar operasional bengkel mitra lulus" }
+      },
+      {
+        id: "srv-aud-02",
+        action: "SERVICE_OFFERING_CREATED",
+        entity_type: "SERVICE_OFFERING",
+        entity_id: "srv-02",
+        actor_id: "usr-prov-001",
+        actor_role: "SERVICE_PROVIDER",
+        service_id: "srv-02",
+        service_name: "Perbaikan Kelistrikan & Panel Rumah",
+        occurred_at: new Date(Date.now() - 1000 * 60 * 110).toISOString(),
+        after_safe: { status: "ACTIVE", lock_version: 1, publication_rule: "DEC04-01 Direct" }
+      },
+      {
+        id: "srv-aud-03",
+        action: "SERVICE_COVERAGE_UPDATED",
+        entity_type: "SERVICE_OFFERING",
+        entity_id: "srv-03",
+        actor_id: "usr-prov-002",
+        actor_role: "SERVICE_PROVIDER",
+        service_id: "srv-03",
+        service_name: "Servis Mesin Cuci Front Loading",
+        occurred_at: new Date(Date.now() - 1000 * 60 * 320).toISOString(),
+        after_safe: { coverage_city_codes: ["JKT-BARAT", "JKT-SEL", "TNG-KOTA"] }
+      },
+      {
+        id: "srv-aud-04",
+        action: "SERVICE_OFFERING_ARCHIVED",
+        entity_type: "SERVICE_OFFERING",
+        entity_id: "srv-04",
+        actor_id: "usr-admin-001",
+        actor_role: "ADMIN_OPERATIONS",
+        service_id: "srv-04",
+        service_name: "Pembersihan Saluran Air Tekanan Tinggi",
+        occurred_at: new Date(Date.now() - 1000 * 60 * 650).toISOString(),
+        after_safe: { status: "ARCHIVED", reason: "Layanan musiman tidak aktif lagi" }
+      }
+    ];
+    return { data: mockServiceAudit as any, count: mockServiceAudit.length };
   }
 
   // 3. PRODUCTS & SHOPS HANDLERS
@@ -3092,35 +3612,182 @@ export const providerApi = {
 };
 
 /* =========================================================================
-   CANONICAL PROVIDER MASTER SERVICE API (Level 05 Section 25 & 28)
+   CANONICAL SERVICE OFFERING & CATALOG API (Modul 04)
    ========================================================================= */
+
+export const OFFICIAL_CITIES = [
+  { code: "JKT-PUSAT", name: "Kota Jakarta Pusat", province: "DKI Jakarta" },
+  { code: "JKT-UTARA", name: "Kota Jakarta Utara", province: "DKI Jakarta" },
+  { code: "JKT-BARAT", name: "Kota Jakarta Barat", province: "DKI Jakarta" },
+  { code: "JKT-SEL", name: "Kota Jakarta Selatan", province: "DKI Jakarta" },
+  { code: "JKT-TIMUR", name: "Kota Jakarta Timur", province: "DKI Jakarta" },
+  { code: "KPL-SERIBU", name: "Kab. Kepulauan Seribu", province: "DKI Jakarta" },
+  { code: "BGR-KOTA", name: "Kota Bogor", province: "Jawa Barat" },
+  { code: "BGR-KAB", name: "Kab. Bogor", province: "Jawa Barat" },
+  { code: "DPK-KOTA", name: "Kota Depok", province: "Jawa Barat" },
+  { code: "TNG-KOTA", name: "Kota Tangerang", province: "Banten" },
+  { code: "TNG-SEL", name: "Kota Tangerang Selatan", province: "Banten" },
+  { code: "TNG-KAB", name: "Kab. Tangerang", province: "Banten" },
+  { code: "BKS-KOTA", name: "Kota Bekasi", province: "Jawa Barat" },
+  { code: "BKS-KAB", name: "Kab. Bekasi", province: "Jawa Barat" },
+  { code: "BDG-KOTA", name: "Kota Bandung", province: "Jawa Barat" },
+  { code: "BDG-KAB", name: "Kab. Bandung", province: "Jawa Barat" },
+  { code: "BDG-BARAT", name: "Kab. Bandung Barat", province: "Jawa Barat" },
+  { code: "CMA-KOTA", name: "Kota Cimahi", province: "Jawa Barat" },
+  { code: "SMG-KOTA", name: "Kota Semarang", province: "Jawa Tengah" },
+  { code: "SBY-KOTA", name: "Kota Surabaya", province: "Jawa Timur" },
+  { code: "MLG-KOTA", name: "Kota Malang", province: "Jawa Timur" },
+  { code: "YOG-KOTA", name: "Kota Yogyakarta", province: "DI Yogyakarta" },
+  { code: "SLM-KAB", name: "Kab. Sleman", province: "DI Yogyakarta" },
+  { code: "BTL-KAB", name: "Kab. Bantul", province: "DI Yogyakarta" },
+  { code: "SOLO-KOTA", name: "Kota Surakarta", province: "Jawa Tengah" },
+  { code: "DPS-KOTA", name: "Kota Denpasar", province: "Bali" },
+  { code: "MDN-KOTA", name: "Kota Medan", province: "Sumatera Utara" },
+  { code: "MKS-KOTA", name: "Kota Makassar", province: "Sulawesi Selatan" },
+  { code: "PLB-KOTA", name: "Kota Palembang", province: "Sumatera Selatan" },
+  { code: "BTM-KOTA", name: "Kota Batam", province: "Kepulauan Riau" },
+];
+
+export function resolveLocationToCityCode(city?: string | null): string {
+  if (!city) return "JKT-SEL";
+  const c = city.toLowerCase().replace(/^(kota|kabupaten|kab\.|adm\.)\s+/i, "").trim();
+
+  if (c.includes("selatan") && c.includes("jakarta")) return "JKT-SEL";
+  if (c.includes("barat") && c.includes("jakarta")) return "JKT-BARAT";
+  if (c.includes("pusat") && c.includes("jakarta")) return "JKT-PUSAT";
+  if (c.includes("utara") && c.includes("jakarta")) return "JKT-UTARA";
+  if (c.includes("timur") && c.includes("jakarta")) return "JKT-TIMUR";
+  if (c.includes("seribu")) return "KPL-SERIBU";
+  if (c.includes("tangerang selatan") || c.includes("tangsel")) return "TNG-SEL";
+  if (c.includes("tangerang") && c.includes("kab")) return "TNG-KAB";
+  if (c.includes("tangerang")) return "TNG-KOTA";
+  if (c.includes("depok")) return "DPK-KOTA";
+  if (c.includes("bekasi") && c.includes("kab")) return "BKS-KAB";
+  if (c.includes("bekasi")) return "BKS-KOTA";
+  if (c.includes("bogor") && c.includes("kab")) return "BGR-KAB";
+  if (c.includes("bogor")) return "BGR-KOTA";
+  if (c.includes("bandung barat")) return "BDG-BARAT";
+  if (c.includes("bandung") && c.includes("kab")) return "BDG-KAB";
+  if (c.includes("bandung")) return "BDG-KOTA";
+  if (c.includes("cimahi")) return "CMA-KOTA";
+  if (c.includes("surabaya")) return "SBY-KOTA";
+  if (c.includes("semarang")) return "SMG-KOTA";
+  if (c.includes("sleman")) return "SLM-KAB";
+  if (c.includes("bantul")) return "BTL-KAB";
+  if (c.includes("yogyakarta") || c.includes("jogja")) return "YOG-KOTA";
+  if (c.includes("solo") || c.includes("surakarta")) return "SOLO-KOTA";
+  if (c.includes("malang")) return "MLG-KOTA";
+  if (c.includes("denpasar") || c.includes("bali")) return "DPS-KOTA";
+  if (c.includes("medan")) return "MDN-KOTA";
+  if (c.includes("makassar")) return "MKS-KOTA";
+  if (c.includes("palembang")) return "PLB-KOTA";
+  if (c.includes("batam")) return "BTM-KOTA";
+
+  const found = OFFICIAL_CITIES.find(
+    (item) => item.name.toLowerCase().includes(c) || c.includes(item.name.toLowerCase().replace(/^(kota|kabupaten|kab\.)\s+/i, ""))
+  );
+  return found ? found.code : "JKT-SEL";
+}
+
+export function getCityNameByCode(cityCode?: string | null): string {
+  if (!cityCode) return "Jakarta Selatan";
+  const found = OFFICIAL_CITIES.find((c) => c.code === cityCode);
+  return found ? found.name : cityCode;
+}
 
 export interface ApiProviderMasterService {
   id: string;
   _id?: string;
-  providerId: string;
-  providerName: string;
-  categoryId: string;
-  categoryName: string;
-  categoryCode: string;
-  subcategoryId: string;
-  subcategoryName: string;
-  subcategoryCode: string;
-  name: string;
+  service_definition_id?: string;
+  serviceDefinitionId?: string;
+  provider_organization_id?: string;
+  providerId?: string;
+  providerName?: string;
+  categoryId?: string;
+  categoryName?: string;
+  categoryCode?: string;
+  subcategoryId?: string;
+  subcategoryName?: string;
+  subcategoryCode?: string;
+  display_name?: string;
+  name?: string;
   normalizedName?: string;
   description?: string;
-  priceMin: number;
-  priceMax: number;
+  included_items?: string[];
+  excluded_items?: string[];
+  customer_requirements?: string[];
+  pricing?: {
+    model: "FREE" | "RANGE" | "AFTER_SURVEY";
+    min_price_idr?: number | null;
+    max_price_idr?: number | null;
+    currency?: string;
+  };
+  price_model?: "FREE" | "RANGE" | "AFTER_SURVEY";
+  pricingModel?: string;
+  priceMin?: number;
+  priceMax?: number;
+  basePrice?: number;
+  min_price_idr?: number | null;
+  max_price_idr?: number | null;
+  survey?: {
+    availability: "NOT_AVAILABLE" | "AVAILABLE";
+    requirement: "OPTIONAL" | "REQUIRED";
+    fee_model: "FREE" | "PAID";
+    fee_idr?: number | null;
+  };
+  survey_availability?: string;
+  survey_requirement?: string;
+  survey_fee_model?: string;
+  survey_fee_idr?: number | null;
   surveyFee?: number;
-  serviceMethods: string[];
+  surveyFeeModel?: "FREE" | "PAID" | string;
+  surveyAvailability?: string;
+  surveyRequirement?: string;
+  duration?: {
+    min?: number | null;
+    max?: number | null;
+    unit?: "MINUTE" | "HOUR" | "DAY";
+  };
+  duration_min?: number | null;
+  duration_max?: number | null;
+  duration_unit?: string | null;
+  coverage_cities?: Array<{ city_code: string; label?: string }>;
+  coverage_city_codes?: string[];
+  media?: Array<{
+    id: string;
+    url: string;
+    is_primary: boolean;
+    sort_order: number;
+    storage_state?: string;
+  }>;
+  primary_media?: {
+    id: string;
+    url: string;
+  } | null;
+  capabilities?: Array<{ id: string; name: string }>;
+  serviceMethods?: string[];
   status: "ACTIVE" | "INACTIVE" | "DRAFT";
+  lock_version?: number;
   availability?: "AVAILABLE" | "UNAVAILABLE";
   warrantyConfig?: {
     warrantyEnabled: boolean;
     durationDays: number;
   };
+  warrantyDays?: number;
+  rating?: number;
+  reviewCount?: number;
+  thumbnailUrl?: string | null;
+  definition?: {
+    id: string;
+    name: string;
+    category_id: string;
+    subcategory_id: string;
+    status: string;
+  };
   createdAt?: string;
   updatedAt?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export const providerServiceApi = {
@@ -3138,106 +3805,498 @@ export const providerServiceApi = {
           : [];
     return {
       ...res,
-      data: items as ApiProviderMasterService[],
+      data: items.map((item: any) => {
+        const feeModel = item.survey?.fee_model ?? item.survey_fee_model ?? item.surveyFeeModel ?? ((item.survey?.fee_idr ?? item.survey_fee_idr ?? item.surveyFee ?? 0) > 0 ? "PAID" : "FREE");
+        const feeAmount = feeModel === "FREE" ? 0 : (item.survey?.fee_idr ?? item.survey_fee_idr ?? item.surveyFee ?? 0);
+        return {
+          ...item,
+          name: item.display_name || item.name,
+          priceMin: item.pricing?.min_price_idr ?? item.min_price_idr ?? item.priceMin ?? 0,
+          priceMax: item.pricing?.max_price_idr ?? item.max_price_idr ?? item.priceMax ?? 0,
+          surveyFee: feeAmount,
+          surveyFeeModel: feeModel,
+          surveyAvailability: item.survey?.availability ?? item.survey_availability ?? item.surveyAvailability ?? "AVAILABLE",
+          surveyRequirement: item.survey?.requirement ?? item.survey_requirement ?? "OPTIONAL",
+          pricingModel: item.pricing?.model ?? item.price_model ?? "RANGE",
+          categoryId: item.service_definition?.category_id ?? item.definition?.category_id ?? item.categoryId,
+          subcategoryId: item.service_definition?.subcategory_id ?? item.definition?.subcategory_id ?? item.subcategoryId,
+          subcategoryName: item.service_definition?.name ?? item.definition?.name ?? item.subcategoryName,
+        };
+      }) as ApiProviderMasterService[],
     };
   },
 
   // GET /api/v1/provider/services/{id}
   async get(id: string) {
-    return apiFetch<ApiProviderMasterService>(`/provider/services/${id}`);
+    const res = await apiFetch<any>(`/provider/services/${id}`);
+    const item = res.data;
+    if (!item) return res;
+    const feeModel = item.survey?.fee_model ?? item.survey_fee_model ?? item.surveyFeeModel ?? ((item.survey?.fee_idr ?? item.survey_fee_idr ?? item.surveyFee ?? 0) > 0 ? "PAID" : "FREE");
+    const feeAmount = feeModel === "FREE" ? 0 : (item.survey?.fee_idr ?? item.survey_fee_idr ?? item.surveyFee ?? 0);
+    return {
+      ...res,
+      data: {
+        ...item,
+        name: item.display_name || item.name,
+        priceMin: item.pricing?.min_price_idr ?? item.min_price_idr ?? 0,
+        priceMax: item.pricing?.max_price_idr ?? item.max_price_idr ?? 0,
+        surveyFee: feeAmount,
+        surveyFeeModel: feeModel,
+        surveyAvailability: item.survey?.availability ?? item.survey_availability ?? item.surveyAvailability ?? "AVAILABLE",
+        surveyRequirement: item.survey?.requirement ?? item.survey_requirement ?? "OPTIONAL",
+        pricingModel: item.pricing?.model ?? item.price_model ?? "RANGE",
+      } as ApiProviderMasterService,
+    };
   },
 
   // POST /api/v1/provider/services
   async create(data: {
-    categoryId: string;
-    categoryName?: string;
-    subcategoryId: string;
-    subcategoryName?: string;
-    name: string;
+    service_definition_id?: string;
+    serviceDefinitionId?: string;
+    name?: string;
+    display_name?: string;
     description?: string;
-    priceMin: number;
-    priceMax: number;
+    included_items?: string[];
+    excluded_items?: string[];
+    customer_requirements?: string[];
+    pricing?: {
+      model: "FREE" | "RANGE" | "AFTER_SURVEY";
+      min_price_idr?: number | null;
+      max_price_idr?: number | null;
+    };
+    pricingModel?: string;
+    priceMin?: number;
+    priceMax?: number;
+    survey?: {
+      availability: "NOT_AVAILABLE" | "AVAILABLE";
+      requirement: "OPTIONAL" | "REQUIRED";
+      fee_model: "FREE" | "PAID";
+      fee_idr?: number | null;
+    };
     surveyFee?: number;
-    serviceMethods?: string[];
-    status?: "ACTIVE" | "INACTIVE" | "DRAFT";
-    availability?: "AVAILABLE" | "UNAVAILABLE";
-    warrantyConfig?: { warrantyEnabled: boolean; durationDays: number };
+    surveyFeeModel?: "FREE" | "PAID" | string;
+    surveyAvailability?: "NOT_AVAILABLE" | "AVAILABLE" | string;
+    surveyRequirement?: "OPTIONAL" | "REQUIRED" | string;
+    surveyRequired?: boolean;
+    duration?: {
+      min?: number | null;
+      max?: number | null;
+      unit?: "MINUTE" | "HOUR" | "DAY";
+    };
+    durationMin?: number;
+    durationMax?: number;
+    durationUnit?: "MINUTE" | "HOUR" | "DAY";
+    coverage_city_codes?: string[];
+    coverageCities?: string[];
+    capability_ids?: string[];
+    capabilities?: string[];
   }) {
+    const isFeeFree = data.survey?.fee_model === "FREE" || data.surveyFeeModel === "FREE" || (!data.survey?.fee_model && !data.surveyFeeModel && (!data.surveyFee || Number(data.surveyFee) === 0));
+    const finalFee = isFeeFree ? 0 : Number(data.survey?.fee_idr ?? data.surveyFee ?? 0);
+
+    const payload = {
+      service_definition_id: data.service_definition_id || data.serviceDefinitionId,
+      display_name: data.display_name || data.name,
+      description: data.description || "",
+      included_items: data.included_items || [],
+      excluded_items: data.excluded_items || [],
+      customer_requirements: data.customer_requirements || [],
+      pricing: data.pricing || {
+        model: data.pricingModel || (data.priceMin === 0 && data.priceMax === 0 ? "FREE" : "RANGE"),
+        min_price_idr: data.priceMin !== undefined ? Number(data.priceMin) : null,
+        max_price_idr: data.priceMax !== undefined ? Number(data.priceMax) : null,
+      },
+      survey: data.survey || {
+        availability: data.surveyAvailability || "AVAILABLE",
+        requirement: data.surveyRequirement || (data.surveyRequired ? "REQUIRED" : "OPTIONAL"),
+        fee_model: isFeeFree ? "FREE" : "PAID",
+        fee_idr: finalFee,
+      },
+      duration: data.duration || {
+        min: data.durationMin ? Number(data.durationMin) : null,
+        max: data.durationMax ? Number(data.durationMax) : null,
+        unit: data.durationUnit || "HOUR",
+      },
+      coverage_city_codes: data.coverage_city_codes || data.coverageCities || ["JKT-BARAT"],
+      capability_ids: data.capability_ids || data.capabilities || [],
+    };
+
     return apiFetch<{ message: string; data: ApiProviderMasterService }>("/provider/services", {
       method: "POST",
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
     });
   },
 
   // PATCH /api/v1/provider/services/{id}
-  async update(
-    id: string,
-    data: Partial<{
-      categoryId: string;
-      subcategoryId: string;
-      name: string;
-      description: string;
-      priceMin: number;
-      priceMax: number;
-      surveyFee: number;
-      serviceMethods: string[];
-      status: "ACTIVE" | "INACTIVE" | "DRAFT";
-      availability: "AVAILABLE" | "UNAVAILABLE";
-      warrantyConfig: { warrantyEnabled: boolean; durationDays: number };
-    }>
-  ) {
+  async update(id: string, data: any, lockVersion = 1) {
+    const payload: any = {};
+    if (data.display_name || data.name) payload.display_name = data.display_name || data.name;
+    if (data.description !== undefined) payload.description = data.description;
+    if (data.included_items) payload.included_items = data.included_items;
+    if (data.excluded_items) payload.excluded_items = data.excluded_items;
+    if (data.customer_requirements) payload.customer_requirements = data.customer_requirements;
+    if (data.pricing) {
+      payload.pricing = data.pricing;
+    } else if (data.priceMin !== undefined || data.priceMax !== undefined || data.pricingModel) {
+      payload.pricing = {
+        model: data.pricingModel || "RANGE",
+        min_price_idr: data.priceMin !== undefined ? Number(data.priceMin) : null,
+        max_price_idr: data.priceMax !== undefined ? Number(data.priceMax) : null,
+      };
+    }
+    if (data.survey) {
+      payload.survey = data.survey;
+    } else if (data.surveyFee !== undefined || data.surveyFeeModel !== undefined || data.surveyAvailability !== undefined) {
+      const isFree = data.surveyFeeModel === "FREE" || (!data.surveyFeeModel && Number(data.surveyFee) === 0);
+      payload.survey = {
+        availability: data.surveyAvailability || "AVAILABLE",
+        requirement: data.surveyRequirement || (data.surveyRequired ? "REQUIRED" : "OPTIONAL"),
+        fee_model: isFree ? "FREE" : "PAID",
+        fee_idr: isFree ? 0 : Number(data.surveyFee || 0),
+      };
+    }
+    if (data.duration) payload.duration = data.duration;
+
     return apiFetch<{ message: string; data: ApiProviderMasterService }>(`/provider/services/${id}`, {
       method: "PATCH",
-      body: JSON.stringify(data),
+      headers: {
+        "If-Match": `"${lockVersion}"`,
+      },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  // PATCH /api/v1/provider/services/{id}/status (DEC04-01 Direct Publication)
+  async changeStatus(id: string, status: "ACTIVE" | "INACTIVE" | "ARCHIVED" | "DRAFT", lockVersion = 1) {
+    return apiFetch<{ message: string; data: ApiProviderMasterService }>(`/provider/services/${id}/status`, {
+      method: "PATCH",
+      headers: {
+        "If-Match": `"${lockVersion}"`,
+      },
+      body: JSON.stringify({ status }),
+    });
+  },
+
+  // PUT /api/v1/provider/services/{id}/coverage-cities
+  async updateCoverageCities(id: string, cityCodes: string[], lockVersion = 1) {
+    return apiFetch<{ message: string; data: ApiProviderMasterService }>(`/provider/services/${id}/coverage-cities`, {
+      method: "PUT",
+      headers: {
+        "If-Match": `"${lockVersion}"`,
+      },
+      body: JSON.stringify({ coverage_city_codes: cityCodes }),
+    });
+  },
+
+  // POST /api/v1/provider/services/{id}/media
+  async uploadMedia(id: string, file: File, isPrimary = true, sortOrder = 0) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("is_primary", isPrimary ? "1" : "0");
+    formData.append("sort_order", String(sortOrder));
+
+    return apiFetch<{ message: string; data: any }>(`/provider/services/${id}/media`, {
+      method: "POST",
+      body: formData,
+    });
+  },
+
+  // POST /api/v1/provider/services/{id}/media (Batch upload multiple photos)
+  async uploadMultipleMedia(id: string, files: File[]) {
+    const results = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const isPrimary = i === 0;
+      const res = await this.uploadMedia(id, file, isPrimary, i);
+      results.push(res);
+    }
+    return results;
+  },
+
+  // DELETE /api/v1/provider/services/{id}/media/{media_id}
+  async deleteMedia(id: string, mediaId: string) {
+    return apiFetch<{ message: string; data: any }>(`/provider/services/${id}/media/${mediaId}`, {
+      method: "DELETE",
+    });
+  },
+
+  // DELETE /api/v1/provider/services/{id}
+  async destroy(id: string, lockVersion = 1) {
+    return apiFetch<{ message: string }>(`/provider/services/${id}`, {
+      method: "DELETE",
+      headers: {
+        "If-Match": `"${lockVersion}"`,
+      },
     });
   },
 };
 
 export interface ApiCatalogService {
   id: string;
-  name: string;
+  name?: string;
+  display_name?: string;
   title: string;
-  description: string;
-  shortDescription: string;
-  providerId: string;
-  providerName: string;
-  isVerifiedProvider: boolean;
-  categoryId: string;
-  categoryName: string;
-  categoryCode: string;
-  subcategoryId: string;
-  subcategoryName: string;
-  subcategoryCode: string;
-  priceMin: number;
-  priceMax: number;
-  basePrice: number;
-  pricingModel: string;
-  surveyFee: number;
-  serviceMethods: string[];
-  serviceModes: string[];
+  description?: string;
+  shortDescription?: string;
+  providerId?: string;
+  provider_organization_id?: string;
+  providerName?: string;
+  isVerifiedProvider?: boolean;
+  categoryId?: string;
+  categoryName?: string;
+  categoryCode?: string;
+  category?: {
+    id: string;
+    name: string;
+  };
+  subcategory?: {
+    id: string;
+    name: string;
+  };
+  subcategoryId?: string;
+  subcategoryName?: string;
+  subcategoryCode?: string;
+  priceMin?: number;
+  priceMax?: number;
+  basePrice?: number;
+  pricingModel?: string;
+  pricing?: {
+    model: string;
+    min_price_idr: number | null;
+    max_price_idr: number | null;
+    currency?: string;
+  };
+  survey_summary?: {
+    available: boolean;
+    required: boolean;
+    fee_model: string;
+    fee_idr: number | null;
+  };
+  surveyFee?: number;
+  serviceMethods?: string[];
+  serviceModes?: string[];
   status: string;
   availability?: "AVAILABLE" | "UNAVAILABLE";
-  warrantyConfig: {
+  warrantyConfig?: {
     warrantyEnabled: boolean;
     durationDays: number;
   };
-  warrantyDays: number;
-  rating: number;
-  reviewCount: number;
+  warrantyDays?: number;
+  duration?: {
+    min: number;
+    max: number;
+    unit: string;
+  };
+  duration_min?: number;
+  duration_max?: number;
+  duration_unit?: string;
+  rating?: number;
+  reviewCount?: number;
   thumbnailUrl?: string | null;
+  primary_media?: {
+    id: string;
+    url: string;
+  } | null;
+  service_area?: {
+    selected_city_code?: string;
+    serviceable?: boolean;
+  };
+  provider?: {
+    organization_id: string;
+    display_name: string;
+    logo_url?: string | null;
+    office_city?: string | null;
+  };
   createdAt?: string | null;
 }
 
 export const publicCatalogApi = {
-  // GET /api/v1/services/catalog
+  // GET /api/v1/services
   async getCatalog(params?: Record<string, string>) {
     const qs = params ? "?" + new URLSearchParams(params).toString() : "";
-    return apiFetch<ApiCatalogService[]>(`/services/catalog${qs}`);
+    const res = await apiFetch<any>(`/services${qs}`);
+    const catalogData = res.data;
+    const rawItems = Array.isArray(catalogData?.items) ? catalogData.items : Array.isArray(catalogData) ? catalogData : [];
+    const normalizedItems = rawItems.map((item: any) => ({
+      id: item.id,
+      title: item.display_name || item.name || item.title || "Layanan Jasa",
+      name: item.display_name || item.name,
+      display_name: item.display_name,
+      description: item.description || "",
+      shortDescription: item.description ? item.description.slice(0, 120) : "",
+      providerId: item.provider?.organization_id || item.provider_organization_id,
+      providerName: item.provider?.store_name || item.provider?.display_name || item.providerName || "Penyedia Jasa",
+      isVerifiedProvider: true,
+      categoryId: item.category?.id || item.categoryId,
+      categoryName: item.category?.name || "Kategori Jasa",
+      subcategoryId: item.subcategory?.id || item.subcategoryId,
+      subcategoryName: item.subcategory?.name || "Subkategori Jasa",
+      priceMin: item.pricing?.min_price_idr ?? item.min_price_idr ?? 0,
+      priceMax: item.pricing?.max_price_idr ?? item.max_price_idr ?? 0,
+      basePrice: item.pricing?.min_price_idr ?? item.min_price_idr ?? 0,
+      pricingModel: item.pricing?.model ?? "RANGE",
+      pricing: item.pricing,
+      survey_summary: item.survey_summary,
+      surveyFee: item.survey_summary?.fee_idr ?? 0,
+      surveyFeeModel: item.survey_summary?.fee_model ?? ((item.survey_summary?.fee_idr !== undefined && item.survey_summary?.fee_idr > 0) ? "PAID" : "FREE"),
+      duration: item.duration || {
+        min: item.duration_min ?? item.service_duration_min ?? 1,
+        max: item.duration_max ?? item.service_duration_max ?? 2,
+        unit: item.duration_unit ?? item.service_duration_unit ?? "HOUR",
+      },
+      duration_min: item.duration?.min ?? item.duration_min ?? item.service_duration_min ?? 1,
+      duration_max: item.duration?.max ?? item.duration_max ?? item.service_duration_max ?? 2,
+      duration_unit: item.duration?.unit ?? item.duration_unit ?? item.service_duration_unit ?? "HOUR",
+      thumbnailUrl: item.primary_media?.url || null,
+      primary_media: item.primary_media,
+      service_area: item.service_area,
+      status: item.status || "ACTIVE",
+      rating: item.rating ?? 0,
+      reviewCount: item.reviewCount ?? 0,
+      warrantyDays: item.warrantyDays ?? 0,
+    }));
+
+    return {
+      ...res,
+      data: {
+        ...catalogData,
+        items: normalizedItems,
+      },
+    };
   },
 
-  // GET /api/v1/services/catalog/{id}
-  async getDetail(id: string) {
-    return apiFetch<ApiCatalogService>(`/services/catalog/${id}`);
+  // GET /api/v1/services/{id}
+  async getDetail(id: string, cityCode?: string) {
+    const qs = cityCode ? `?city_code=${encodeURIComponent(cityCode)}` : "";
+    const res = await apiFetch<any>(`/services/${id}${qs}`);
+    return res;
+  },
+
+  // GET /api/v1/providers/{provider_org_id}/services
+  async getStorefront(providerOrgId: string, cityCode?: string) {
+    const qs = cityCode ? `?city_code=${encodeURIComponent(cityCode)}` : "";
+    const res = await apiFetch<any>(`/providers/${providerOrgId}/services${qs}`);
+    return res;
+  },
+};
+
+export const serviceDefinitionApi = {
+  // GET /api/v1/service-definitions
+  async list(params?: Record<string, string>) {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return apiFetch<any[]>(`/service-definitions${qs}`);
+  },
+
+  // GET /api/v1/admin/service-definitions
+  async adminList(params?: Record<string, string>) {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return apiFetch<any[]>(`/admin/service-definitions${qs}`);
+  },
+
+  // POST /api/v1/admin/service-definitions
+  async adminCreate(data: {
+    name: string;
+    category_id: string;
+    subcategory_id: string;
+    description?: string;
+  }) {
+    return apiFetch<any>("/admin/service-definitions", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  // PATCH /api/v1/admin/service-definitions/{id}
+  async adminUpdate(id: string, data: any, lockVersion = 1) {
+    return apiFetch<any>(`/admin/service-definitions/${id}`, {
+      method: "PATCH",
+      headers: { "If-Match": `"${lockVersion}"` },
+      body: JSON.stringify(data),
+    });
+  },
+
+  // PATCH /api/v1/admin/service-definitions/{id}/status
+  async adminChangeStatus(id: string, status: "ACTIVE" | "INACTIVE", lockVersion = 1) {
+    return apiFetch<any>(`/admin/service-definitions/${id}/status`, {
+      method: "PATCH",
+      headers: { "If-Match": `"${lockVersion}"` },
+      body: JSON.stringify({ status }),
+    });
+  },
+
+  // POST /api/v1/provider/service-definition-requests
+  async requestDefinition(data: {
+    category_id: string;
+    subcategory_id: string;
+    requested_name: string;
+    reason?: string;
+  }) {
+    return apiFetch<any>("/provider/service-definition-requests", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  // GET /api/v1/provider/service-definition-requests
+  async listRequests(params?: Record<string, string>) {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return apiFetch<any[]>(`/provider/service-definition-requests${qs}`);
+  },
+
+  // PATCH /api/v1/admin/service-definition-requests/{id}/review
+  async reviewRequest(id: string, status: "APPROVED" | "REJECTED", reviewNotes?: string, lockVersion = 1) {
+    return apiFetch<any>(`/admin/service-definition-requests/${id}/review`, {
+      method: "PATCH",
+      headers: { "If-Match": `"${lockVersion}"` },
+      body: JSON.stringify({ status, review_notes: reviewNotes }),
+    });
+  },
+};
+
+export const capabilityApi = {
+  // GET /api/v1/capabilities
+  async list() {
+    return apiFetch<any[]>("/capabilities");
+  },
+
+  // GET /api/v1/admin/capabilities
+  async adminList() {
+    return apiFetch<any[]>("/admin/capabilities");
+  },
+
+  // POST /api/v1/admin/capabilities
+  async adminCreate(data: { code: string; name: string; description?: string }) {
+    return apiFetch<any>("/admin/capabilities", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+};
+
+export const serviceGovernanceApi = {
+  // GET /api/v1/governance/service-offerings
+  async listOfferings(params?: Record<string, string>) {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return apiFetch<any>(`/governance/service-offerings${qs}`);
+  },
+
+  // GET /api/v1/governance/service-offerings/{id}
+  async getOffering(id: string) {
+    return apiFetch<any>(`/governance/service-offerings/${id}`);
+  },
+
+  // PATCH /api/v1/governance/service-offerings/{id}/status
+  async changeStatus(id: string, status: "ACTIVE" | "INACTIVE" | "ARCHIVED" | "DRAFT", reason?: string) {
+    return apiFetch<any>(`/provider/services/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status, reason }),
+    });
+  },
+
+  // GET /api/v1/service-audit
+  async audit(params?: Record<string, string>) {
+    const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+    return apiFetch<any[]>(`/service-audit${qs}`);
   },
 };
 
@@ -7184,6 +8243,243 @@ export const refundsApi = {
   // GET /api/v1/finance/refunds/{id}
   async get(id: string) {
     return apiFetch<any>(`/finance/refunds/${id}`);
+  },
+};
+
+/**
+ * ============================================================================
+ * FINANCE API (MODUL 06 - FINANCE SERVICE V3 CANONICAL INTEGRATION)
+ * Strictly connected to Laravel Finance Service (Port 8006).
+ * ============================================================================
+ */
+export const financeApi = {
+  // CEO Policies
+  policies: {
+    async list(params?: { status?: string; scope?: string; search?: string; page?: number; per_page?: number }) {
+      const q = new URLSearchParams();
+      if (params?.status && params.status !== "ALL") q.append("status", params.status);
+      if (params?.scope) q.append("scope", params.scope);
+      if (params?.search) q.append("search", params.search);
+      if (params?.page) q.append("page", String(params.page));
+      if (params?.per_page) q.append("per_page", String(params.per_page));
+      const qs = q.toString();
+      return apiFetch<{
+        items: any[];
+        total: number;
+        page: number;
+        per_page: number;
+        total_pages?: number;
+      }>(`/finance/policies${qs ? `?${qs}` : ""}`);
+    },
+    async get(groupId: string) {
+      return apiFetch<any>(`/finance/policies/${groupId}`);
+    },
+    async create(data: {
+      name: string;
+      slug: string;
+      description?: string;
+      change_reason?: string;
+      targets: Array<{
+        policy_code: "CUSTOMER_PRODUCT_APP_FEE" | "MERCHANT_PRODUCT_COMMISSION";
+        scope: "PRODUCT";
+        payer_type: "CUSTOMER" | "MERCHANT";
+        fee_type: "FIXED" | "PERCENTAGE";
+        fixed_amount_idr?: number | null;
+        percentage_rate?: number | null;
+        charge_scope: "CHECKOUT" | "MERCHANT_ORDER";
+        calculation_base: "CHECKOUT_ELIGIBLE_SUBTOTAL" | "MERCHANT_PRODUCT_SUBTOTAL";
+      }>;
+    }) {
+      return apiFetch<{
+        group_id: string;
+        version_id: string;
+        version_no: number;
+        status: string;
+        targets_count: number;
+      }>("/finance/policies", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    async publish(groupId: string, data?: { version_id?: string; effective_from?: string | null }) {
+      return apiFetch<{
+        group_id: string;
+        version_id: string;
+        version_no: number;
+        status: string;
+        effective_from?: string | null;
+      }>(`/finance/policies/${groupId}/publish`, {
+        method: "POST",
+        body: JSON.stringify(data || {}),
+      });
+    },
+    async createRevision(groupId: string, data: {
+      change_reason: string;
+      targets: Array<{
+        policy_code: "CUSTOMER_PRODUCT_APP_FEE" | "MERCHANT_PRODUCT_COMMISSION";
+        scope: "PRODUCT";
+        payer_type: "CUSTOMER" | "MERCHANT";
+        fee_type: "FIXED" | "PERCENTAGE";
+        fixed_amount_idr?: number | null;
+        percentage_rate?: number | null;
+        charge_scope: "CHECKOUT" | "MERCHANT_ORDER";
+        calculation_base: "CHECKOUT_ELIGIBLE_SUBTOTAL" | "MERCHANT_PRODUCT_SUBTOTAL";
+      }>;
+    }) {
+      return apiFetch<{
+        group_id: string;
+        version_id: string;
+        version_no: number;
+        status: string;
+        targets_count: number;
+      }>(`/finance/policies/${groupId}/revisions`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+  },
+
+  // CEO / Ops Revenue Overview
+  revenue: {
+    async overview() {
+      return apiFetch<{
+        customer_product_app_fee_idr: number;
+        merchant_product_commission_idr: number;
+        total_collected_fee_idr: number;
+        mock_payment_volume_idr: number;
+        held_liability_idr: number;
+        merchant_payable_idr: number;
+        customer_refund_liability_idr: number;
+        provider_service_fee: string;
+        accounting_status: string;
+        note: string;
+      }>("/finance/revenue/overview");
+    },
+  },
+
+  // Tax References
+  async taxReferences() {
+    return apiFetch<any[]>("/finance/tax-references");
+  },
+
+  // Operations
+  ops: {
+    async payments(params?: { status?: string; method?: string; per_page?: number; page?: number }) {
+      const q = new URLSearchParams();
+      if (params?.status && params.status !== "ALL") q.append("status", params.status);
+      if (params?.method && params.method !== "ALL") q.append("method", params.method);
+      if (params?.per_page) q.append("per_page", String(params.per_page));
+      if (params?.page) q.append("page", String(params.page));
+      const qs = q.toString();
+      return apiFetch<{
+        data: any[];
+        current_page: number;
+        last_page: number;
+        total: number;
+        per_page: number;
+      }>(`/finance/ops/payments${qs ? `?${qs}` : ""}`);
+    },
+    async paymentAllocations(params?: { merchant_org_id?: string; status?: string; per_page?: number; page?: number }) {
+      const q = new URLSearchParams();
+      if (params?.merchant_org_id) q.append("merchant_org_id", params.merchant_org_id);
+      if (params?.status && params.status !== "ALL") q.append("status", params.status);
+      if (params?.per_page) q.append("per_page", String(params.per_page));
+      if (params?.page) q.append("page", String(params.page));
+      const qs = q.toString();
+      return apiFetch<any>(`/finance/ops/payment-allocations${qs ? `?${qs}` : ""}`);
+    },
+    async refunds(params?: { status?: string; customer_id?: string; per_page?: number; page?: number }) {
+      const q = new URLSearchParams();
+      if (params?.status && params.status !== "ALL") q.append("status", params.status);
+      if (params?.customer_id) q.append("customer_id", params.customer_id);
+      if (params?.per_page) q.append("per_page", String(params.per_page));
+      if (params?.page) q.append("page", String(params.page));
+      const qs = q.toString();
+      return apiFetch<{
+        data: any[];
+        current_page: number;
+        last_page: number;
+        total: number;
+        per_page: number;
+      }>(`/finance/ops/refunds${qs ? `?${qs}` : ""}`);
+    },
+    async withdrawals(params?: { status?: string; per_page?: number; page?: number }) {
+      const q = new URLSearchParams();
+      if (params?.status && params.status !== "ALL") q.append("status", params.status);
+      if (params?.per_page) q.append("per_page", String(params.per_page));
+      if (params?.page) q.append("page", String(params.page));
+      const qs = q.toString();
+      return apiFetch<{
+        data: any[];
+        current_page: number;
+        last_page: number;
+        total: number;
+        per_page: number;
+      }>(`/finance/ops/withdrawals${qs ? `?${qs}` : ""}`);
+    },
+    async reconciliation() {
+      return apiFetch<{
+        is_double_entry_balanced: boolean;
+        total_debit_idr: number;
+        total_credit_idr: number;
+        discrepancy_idr: number;
+        metrics: {
+          total_paid_payments_idr: number;
+          total_matured_held_released_idr: number;
+          total_refunds_succeeded_idr: number;
+          total_withdrawals_completed_idr: number;
+        };
+        audit_status: string;
+      }>("/finance/ops/reconciliation");
+    },
+    async auditLogs(params?: { event?: string; entity_type?: string; per_page?: number; page?: number }) {
+      const q = new URLSearchParams();
+      if (params?.event) q.append("event", params.event);
+      if (params?.entity_type) q.append("entity_type", params.entity_type);
+      if (params?.per_page) q.append("per_page", String(params.per_page));
+      if (params?.page) q.append("page", String(params.page));
+      const qs = q.toString();
+      return apiFetch<{
+        data: any[];
+        current_page: number;
+        last_page: number;
+        total: number;
+        per_page: number;
+      }>(`/finance/ops/audit-logs${qs ? `?${qs}` : ""}`);
+    },
+  },
+
+  // Demo Simulation (Authorized Finance Ops in Demo Mode only)
+  demo: {
+    async simulatePayment(paymentId: string, data: { outcome: "PAID" | "FAILED"; provider_event_id: string; reported_amount_idr: number }) {
+      return apiFetch<{
+        payment_id: string;
+        checkout_group_id: string;
+        status: string;
+        amount_idr: number;
+        paid_at?: string;
+        is_real_payment: boolean;
+        mode: string;
+      }>(`/finance/demo/payments/${paymentId}/simulate`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    async simulateWithdrawal(withdrawalId: string, data: { outcome: "SUCCEEDED" | "FAILED"; provider_event_id: string }) {
+      return apiFetch<{
+        withdrawal_id: string;
+        status: string;
+        requested_amount_idr: number;
+        net_to_bank_idr: number;
+        completed_at?: string;
+        failure_code?: string;
+        is_real_transfer: boolean;
+        mode: string;
+      }>(`/finance/demo/withdrawals/${withdrawalId}/simulate`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
   },
 };
 

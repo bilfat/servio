@@ -1696,7 +1696,7 @@ export default function WorkerWarrantyPage() {
                   className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 font-semibold hover:bg-slate-50"
                 >
                   Simpan Draft
-                </button>
+                </button> 
                 <button
                   type="submit"
                   className="px-4 py-2 rounded-xl bg-purple-700 text-white font-bold hover:bg-purple-800 shadow-sm"

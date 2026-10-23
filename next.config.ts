@@ -98,6 +98,11 @@ const nextConfig: NextConfig = {
         source: "/storage/:path*",
         destination: "http://127.0.0.1:8001/storage/:path*",
       },
+      // Finance Service (Modul 06 - Port 8006)
+      {
+        source: "/api/v1/finance/:path*",
+        destination: "http://127.0.0.1:8006/api/v1/finance/:path*",
+      },
       // Category Service (Modul 02 - Port 8002)
       {
         source: "/api/v1/category-masters/:path*",
@@ -179,6 +184,112 @@ const nextConfig: NextConfig = {
       {
         source: "/api/v1/products",
         destination: "http://127.0.0.1:8003/api/v1/products",
+      },
+      // Service Offering Service (Modul 04 - Port 8004)
+      {
+        source: "/api/v1/provider/services/:path*",
+        destination: "http://127.0.0.1:8004/api/v1/provider/services/:path*",
+      },
+      {
+        source: "/api/v1/provider/services",
+        destination: "http://127.0.0.1:8004/api/v1/provider/services",
+      },
+      {
+        source: "/api/v1/provider/service-definition-requests/:path*",
+        destination: "http://127.0.0.1:8004/api/v1/provider/service-definition-requests/:path*",
+      },
+      {
+        source: "/api/v1/provider/service-definition-requests",
+        destination: "http://127.0.0.1:8004/api/v1/provider/service-definition-requests",
+      },
+      {
+        source: "/api/v1/provider/worker-capabilities/:path*",
+        destination: "http://127.0.0.1:8004/api/v1/provider/worker-capabilities/:path*",
+      },
+      {
+        source: "/api/v1/provider/worker-capabilities",
+        destination: "http://127.0.0.1:8004/api/v1/provider/worker-capabilities",
+      },
+      {
+        source: "/api/v1/governance/service-offerings/:path*",
+        destination: "http://127.0.0.1:8004/api/v1/governance/service-offerings/:path*",
+      },
+      {
+        source: "/api/v1/governance/service-offerings",
+        destination: "http://127.0.0.1:8004/api/v1/governance/service-offerings",
+      },
+      {
+        source: "/api/v1/admin/service-definitions/:path*",
+        destination: "http://127.0.0.1:8004/api/v1/admin/service-definitions/:path*",
+      },
+      {
+        source: "/api/v1/admin/service-definitions",
+        destination: "http://127.0.0.1:8004/api/v1/admin/service-definitions",
+      },
+      {
+        source: "/api/v1/admin/service-definition-requests/:path*",
+        destination: "http://127.0.0.1:8004/api/v1/admin/service-definition-requests/:path*",
+      },
+      {
+        source: "/api/v1/admin/service-definition-requests",
+        destination: "http://127.0.0.1:8004/api/v1/admin/service-definition-requests",
+      },
+      {
+        source: "/api/v1/admin/capabilities/:path*",
+        destination: "http://127.0.0.1:8004/api/v1/admin/capabilities/:path*",
+      },
+      {
+        source: "/api/v1/admin/capabilities",
+        destination: "http://127.0.0.1:8004/api/v1/admin/capabilities",
+      },
+      {
+        source: "/api/v1/service-definitions/:path*",
+        destination: "http://127.0.0.1:8004/api/v1/service-definitions/:path*",
+      },
+      {
+        source: "/api/v1/service-definitions",
+        destination: "http://127.0.0.1:8004/api/v1/service-definitions",
+      },
+      {
+        source: "/api/v1/capabilities/:path*",
+        destination: "http://127.0.0.1:8004/api/v1/capabilities/:path*",
+      },
+      {
+        source: "/api/v1/capabilities",
+        destination: "http://127.0.0.1:8004/api/v1/capabilities",
+      },
+      {
+        source: "/api/v1/service-media/:path*",
+        destination: "http://127.0.0.1:8004/api/v1/service-media/:path*",
+      },
+      {
+        source: "/api/v1/service-audit/:path*",
+        destination: "http://127.0.0.1:8004/api/v1/service-audit/:path*",
+      },
+      {
+        source: "/api/v1/service-audit",
+        destination: "http://127.0.0.1:8004/api/v1/service-audit",
+      },
+      {
+        source: "/api/v1/providers/:path*",
+        destination: "http://127.0.0.1:8004/api/v1/providers/:path*",
+      },
+      {
+        source: "/api/v1/services/:path*",
+        destination: "http://127.0.0.1:8004/api/v1/services/:path*",
+      },
+      {
+        source: "/api/v1/services",
+        destination: "http://127.0.0.1:8004/api/v1/services",
+      },
+      // Finance & Payment Service (Modul 06 - Port 8006)
+      {
+        source: "/api/v1/finance/:path*",
+        destination: "http://127.0.0.1:8006/api/v1/finance/:path*",
+      },
+      {
+        source: "/api/v1/finance",
+        destination: "http://127.0.0.1:8006/api/v1/finance",
       },
       // Sanctum CSRF (Identity Service - Port 8001)
       {

@@ -24,6 +24,7 @@ import {
   WarningCircle,
   WarningOctagon,
   ArrowLeft,
+  ArrowRight,
   Wrench,
   Package,
   UserCheck,
@@ -39,6 +40,8 @@ import {
   FileText,
   Storefront,
 } from "@phosphor-icons/react";
+import { useAfterSales } from "@/features/afterSales/useAfterSales";
+import { WarrantyClaimModal } from "@/components/features/afterSales/WarrantyClaimModal";
 
 export default function CustomerServiceOrderDetailPage() {
   const params = useParams();
@@ -83,6 +86,23 @@ export default function CustomerServiceOrderDetailPage() {
 
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+
+  // After-Sales Phase 07 Integration
+  const { cases, warranties } = useAfterSales();
+  const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
+
+  const associatedServiceCase = cases.find(
+    (c) =>
+      c.sourceOrderId === rawParamId ||
+      (order?.id && c.sourceOrderId === order.id) ||
+      (order?.orderNumber && c.sourceOrderNumber === order.orderNumber)
+  );
+  const associatedServiceWarranty = warranties.find(
+    (w) =>
+      w.orderId === rawParamId ||
+      (order?.id && w.orderId === order.id) ||
+      (order?.orderNumber && w.orderNumber === order.orderNumber)
+  );
 
   if (!order) {
     return (
@@ -1165,46 +1185,132 @@ export default function CustomerServiceOrderDetailPage() {
                 Purna Jual & Penilaian Layanan
               </h3>
             </div>
-            {warrantyRecord ? (
+            {associatedServiceCase ? (
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 font-bold border border-purple-200">
+                Pengajuan Aktif: #{associatedServiceCase.caseNumber}
+              </span>
+            ) : associatedServiceWarranty ? (
               <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold border border-emerald-200">
-                Garansi Aktif s/d {(warrantyRecord.validUntil || warrantyRecord.endDate || "").slice(0, 10)}
+                Garansi Aktif s/d {associatedServiceWarranty.endDate}
               </span>
             ) : order.status === "COMPLETED" ? (
-              <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 font-bold border border-amber-200">
-                Garansi Belum Diterbitkan
+              <span className="text-xs px-2.5 py-0.5 rounded-full bg-sky/40 text-primary font-bold border border-sky">
+                Perlindungan Konsumen Aktif
               </span>
             ) : null}
           </div>
 
-          {/* Warranty Certificate Highlight */}
-          {warrantyRecord ? (
+          {/* Contextual Phase 07 After-Sales Case / Warranty Block */}
+          {associatedServiceCase ? (
+            <div className="p-5 rounded-2xl bg-purple-50/70 border border-purple-200 space-y-3 text-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full bg-purple-600 text-white font-bold text-[10px]">
+                      KLAIM GARANSI JASA
+                    </span>
+                    <strong className="text-slate-900 font-display">
+                      #{associatedServiceCase.caseNumber} — {associatedServiceCase.itemTitle}
+                    </strong>
+                  </div>
+                  <p className="text-slate-500 text-[11px] mt-1">
+                    Status: <strong className="text-purple-700">{associatedServiceCase.mainStatus}</strong> • Masalah: {associatedServiceCase.issueReason}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link
+                    href={`/warranties?tab=submissions&caseId=${associatedServiceCase.id}`}
+                    className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition flex items-center gap-1 shadow-sm"
+                  >
+                    Lihat Detail Klaim
+                    <ArrowRight size={13} weight="bold" />
+                  </Link>
+                </div>
+              </div>
+
+              {associatedServiceCase.warrantyJob && (
+                <div className="p-3.5 bg-white rounded-xl border border-purple-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">
+                      GARANSI
+                    </span>
+                    <span className="font-bold text-slate-800 text-xs">
+                      {associatedServiceCase.warrantyJob.jobTitle}
+                    </span>
+                    <span className="text-emerald-700 font-extrabold text-[11px]">
+                      ({associatedServiceCase.warrantyJob.coveredAmountText})
+                    </span>
+                  </div>
+
+                  <Link
+                    href={`/warranties?tab=submissions&caseId=${associatedServiceCase.id}`}
+                    className="px-3 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold rounded-lg border border-purple-200 transition shrink-0"
+                  >
+                    Pantau Pekerjaan Garansi
+                  </Link>
+                </div>
+              )}
+
+              {associatedServiceCase.refundDetail && (
+                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex items-center justify-between">
+                  <span className="text-emerald-900 font-medium">
+                    Keputusan Refund: Rp{associatedServiceCase.refundDetail.totalRefund.toLocaleString("id-ID")} ({associatedServiceCase.refundDetail.status})
+                  </span>
+                  <Link
+                    href={`/warranties?tab=submissions&caseId=${associatedServiceCase.id}`}
+                    className="text-emerald-700 font-bold hover:underline"
+                  >
+                    Lihat Status Refund
+                  </Link>
+                </div>
+              )}
+            </div>
+          ) : associatedServiceWarranty ? (
             <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="space-y-1">
-                <strong className="text-emerald-900 block font-display">
-                  Sertifikat Garansi Servio Shield #{warrantyRecord.id}
-                </strong>
+                <div className="flex items-center gap-2">
+                  <ShieldCheck size={16} weight="fill" className="text-emerald-600" />
+                  <strong className="text-emerald-900 block font-display">
+                    {associatedServiceWarranty.presetName} ({associatedServiceWarranty.durationDays} Hari)
+                  </strong>
+                </div>
                 <p className="text-emerald-800 text-[11px]">
-                  {warrantyRecord.terms}
+                  Berlaku sampai {associatedServiceWarranty.endDate} • {associatedServiceWarranty.coverage}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setActionSuccessMsg("Klaim garansi dapat dilakukan melalui tombol Pusat Bantuan CS.")}
-                className="px-3.5 py-1.5 rounded-xl bg-white border border-emerald-300 text-emerald-800 text-xs font-bold hover:bg-emerald-50 transition shrink-0"
-              >
-                Klaim Garansi
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <Link
+                  href={`/warranties/${associatedServiceWarranty.id}`}
+                  className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition"
+                >
+                  Detail Garansi
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setIsClaimModalOpen(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-[#0F4C81] text-white text-xs font-bold hover:bg-[#0c3c66] transition shadow-sm"
+                >
+                  Ajukan Klaim
+                </button>
+              </div>
             </div>
           ) : order.status === "COMPLETED" ? (
-            <div className="p-4 rounded-2xl bg-amber-50/70 border border-amber-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="p-4 rounded-2xl bg-sky/20 border border-sky text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="space-y-0.5">
-                <strong className="text-amber-900 block font-display">
-                  Garansi Belum Diterbitkan Mitra
+                <strong className="text-primary block font-display">
+                  Pusat Garansi & Pengajuan Terpadu
                 </strong>
-                <p className="text-amber-800 text-[11px]">
-                  Pekerjaan telah selesai. Sertifikat garansi purna jual sedang menunggu proses penerbitan durasi oleh mitra penyedia jasa.
+                <p className="text-neutral-slate text-[11px]">
+                  Pekerjaan telah selesai. Anda dapat memantau atau mengajukan klaim garansi layanan langsung dari pusat purnajual.
                 </p>
               </div>
+              <Link
+                href="/warranties"
+                className="px-3.5 py-1.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition shrink-0"
+              >
+                Lihat Garansi & Pengajuan
+              </Link>
             </div>
           ) : null}
 
@@ -1690,6 +1796,18 @@ export default function CustomerServiceOrderDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Interactive Phase 07 Warranty Claim Modal for Service */}
+      {isClaimModalOpen && associatedServiceWarranty && (
+        <WarrantyClaimModal
+          isOpen={isClaimModalOpen}
+          onClose={() => setIsClaimModalOpen(false)}
+          warranty={associatedServiceWarranty}
+          onSuccess={(caseId) => {
+            router.push(`/warranties?tab=submissions&caseId=${caseId}`);
+          }}
+        />
+      )}
     </div>
   );
 }

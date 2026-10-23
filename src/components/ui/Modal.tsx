@@ -49,7 +49,7 @@ export function Modal({
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 overflow-y-auto">
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -89,7 +89,8 @@ export function Modal({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="p-1.5 rounded-lg text-neutral-slate hover:text-neutral-dark hover:bg-slate-100 transition-colors shrink-0"
+                  id="modal-close-button"
+                  className="p-2 rounded-xl text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-200/80 transition-all shrink-0 cursor-pointer shadow-2xs"
                   title="Tutup dialog"
                   aria-label="Tutup dialog"
                 >

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { CartStoreGroup } from "@/types/domain";
 import { cartApi, productOrdersApi, profileApi, ApiAddress } from "@/lib/servioApi";
+import { orderBarangStore } from "@/features/order-barang/orderBarangStore";
 
 export interface CourierOption {
   id: string;
@@ -146,25 +147,65 @@ export function useProductCheckout(initialGroups: CartStoreGroup[] = []) {
 
     setIsSubmitting(true);
     try {
-      const res = await productOrdersApi.create({
-        courierCode: selectedCourier.id,
-        deliveryAddress,
-        paymentMethodCode: "VIRTUAL_ACCOUNT",
-        channelCode: "BCA_VA",
+      // Phase 05A Frontend-Only Mock Store Creation
+      const mockCheckoutItems = (initialGroups.length > 0 ? initialGroups : []).map((g) => ({
+        merchantId: g.merchantId,
+        merchantName: g.merchantName,
+        items: g.items.map((it) => ({
+          productId: it.productId,
+          variantId: it.variantId,
+          variantName: (it as any).variantName,
+          title: it.productTitle,
+          thumbnailUrl: it.thumbnailUrl,
+          unitPrice: it.unitPrice,
+          quantity: it.quantity,
+          subtotal: it.unitPrice * it.quantity,
+        })),
+        shippingFee: (g as any).shippingFee || 12000,
+        distanceKm: (g as any).distanceKm || 3.5,
+      }));
+
+      const { checkoutGroup, orders } = orderBarangStore.createCheckoutGroup({
+        cartGroups: (mockCheckoutItems.length > 0
+          ? mockCheckoutItems
+          : [
+              {
+                merchantId: "merch-sinar-ac",
+                merchantName: "Toko Sinar AC Glodok",
+                items: [
+                  {
+                    productId: "prod-cap-01",
+                    title: "Kapasitor AC Split 25 uF",
+                    variantName: "25 uF",
+                    price: 45000,
+                    quantity: 2,
+                  },
+                ],
+                shippingFee: 12000,
+                distanceKm: 3.5,
+              },
+            ]) as any,
+        recipientAddress: {
+          id: "ADDR-CUST-ACTIVE",
+          recipientName: deliveryAddress.recipientName,
+          phone: deliveryAddress.phone,
+          fullAddress: deliveryAddress.street,
+          street: deliveryAddress.street,
+          city: deliveryAddress.city || "Kota Jakarta Selatan",
+          postalCode: deliveryAddress.postalCode || "12190",
+          notes: "Dekat pos satpam",
+        },
+        paymentMethod: "VIRTUAL_ACCOUNT",
+        selectedBank: "BCA",
       });
 
-      if (res.data) {
-        const orderId = res.data.orders?.[0]?.orderId || res.data.orderGroup?.orderGroupId;
-        const paymentIntentId = res.data.paymentIntent?.paymentIntentId || orderId;
-        setIsSubmitting(false);
-        return {
-          orderId,
-          paymentIntentId,
-          totalPaid: res.data.paymentIntent?.amount || grandTotal,
-          courier: selectedCourier.name,
-        };
-      }
-      throw new Error(res.message || "Gagal membuat pesanan resmi.");
+      setIsSubmitting(false);
+      return {
+        orderId: orders[0]?.id || checkoutGroup.orderIds[0],
+        paymentIntentId: checkoutGroup.id,
+        totalPaid: checkoutGroup.grandTotal,
+        courier: selectedCourier.name,
+      };
     } catch (err: any) {
       setIsSubmitting(false);
       throw err;

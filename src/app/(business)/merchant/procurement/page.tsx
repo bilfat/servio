@@ -338,10 +338,10 @@ function MerchantProcurementContent() {
             </div>
 
             <div className="flex items-center gap-2">
-              <Link href="/business/merchant/inventory">
+              <Link href="/merchant/products">
                 <Button variant="outline" size="sm" className="flex items-center gap-1.5 text-xs">
-                  <Storefront size={16} />
-                  <span>Lihat Stok Gudang</span>
+                  <Package size={16} />
+                  <span>Katalog Produk</span>
                 </Button>
               </Link>
             </div>
@@ -766,13 +766,9 @@ function MerchantProcurementContent() {
                     </div>
                   </div>
                 </div>
-                <Link
-                  href={`/business/merchant/inventory?wh=${lastConfirmedReceiving.warehouseId}&q=${encodeURIComponent(
-                    lastConfirmedReceiving.sku
-                  )}`}
-                >
+                <Link href="/merchant/products">
                   <Button variant="primary" size="sm" className="whitespace-nowrap flex items-center gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 text-white">
-                    <span>Lihat Saldo Stok Terupdate di Gudang</span>
+                    <span>Lihat di Katalog Produk</span>
                     <ArrowRight size={14} weight="bold" />
                   </Button>
                 </Link>

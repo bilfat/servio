@@ -434,11 +434,11 @@ function WorkerCompetencySelector({
                               </p>
                               <div className="flex items-center gap-2 mt-1.5 text-[10px]">
                                 <span className="font-semibold text-slate-700">
-                                  Rp {service.priceMin.toLocaleString("id-ID")} - {service.priceMax.toLocaleString("id-ID")}
+                                  Rp {Number(service.priceMin || 0).toLocaleString("id-ID")} - {Number(service.priceMax || 0).toLocaleString("id-ID")}
                                 </span>
-                                {service.surveyFee > 0 && (
+                                {Number(service.surveyFee || 0) > 0 && (
                                   <span className="text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                                    Survei: Rp {service.surveyFee.toLocaleString("id-ID")}
+                                    Survei: Rp {Number(service.surveyFee || 0).toLocaleString("id-ID")}
                                   </span>
                                 )}
                               </div>
@@ -511,9 +511,9 @@ export default function ProviderWorkersPage() {
         subcategoryName: s.subcategoryName,
         name: s.name,
         description: s.description || "",
-        priceMin: s.priceMin,
-        priceMax: s.priceMax,
-        surveyFee: s.surveyFee || 0,
+        priceMin: Number(s.pricing?.min_price_idr ?? s.min_price_idr ?? s.priceMin ?? 0),
+        priceMax: Number(s.pricing?.max_price_idr ?? s.max_price_idr ?? s.priceMax ?? s.pricing?.min_price_idr ?? s.min_price_idr ?? s.priceMin ?? 0),
+        surveyFee: Number(s.survey?.fee_idr ?? s.survey_fee_idr ?? s.surveyFee ?? 0),
         serviceMethods: s.serviceMethods || ["HOME_SERVICE"],
         status: s.status,
         warrantyConfig: s.warrantyConfig,

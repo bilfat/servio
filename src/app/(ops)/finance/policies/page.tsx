@@ -1,453 +1,583 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   ShieldCheck,
-  Percent,
-  Receipt,
   ArrowsClockwise,
-  Clock,
-  Handshake,
-  UserCheck,
-  Sparkle,
   Eye,
   CalendarBlank,
   WarningCircle,
   FileText,
+  LockKey,
+  MagnifyingGlass,
 } from "@phosphor-icons/react";
+import { financeApi } from "@/lib/servioApi";
 import {
-  platformPolicyApi,
-  PlatformPolicyVersion,
-  PlatformPolicyConfiguration,
-} from "@/lib/servioApi";
+  FeePolicyGroupModel,
+  FeePolicyVersionModel,
+  FeePolicyTargetModel,
+} from "@/types/finance";
 import { PageHeader } from "@/components/layout/PageHeader";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
+import { EmptyState } from "@/components/feedback/EmptyState";
 
 type FinanceTab = "active" | "scheduled" | "history";
+
+interface FlatVersionItem {
+  group: FeePolicyGroupModel;
+  version: FeePolicyVersionModel;
+}
 
 export default function FinancePlatformPoliciesPage() {
   const [activeTab, setActiveTab] = useState<FinanceTab>("active");
 
-  const [activePolicy, setActivePolicy] = useState<PlatformPolicyVersion | null>(null);
-  const [scheduledPolicy, setScheduledPolicy] = useState<PlatformPolicyVersion | null>(null);
-  const [history, setHistory] = useState<PlatformPolicyVersion[]>([]);
+  const [policyGroups, setPolicyGroups] = useState<FeePolicyGroupModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Snapshot Inspection Modal
-  const [inspectingVersion, setInspectingVersion] = useState<PlatformPolicyVersion | null>(null);
+  const [inspectingItem, setInspectingItem] = useState<FlatVersionItem | null>(null);
 
-  const loadAllPolicyData = async () => {
+  const loadAllPolicies = async () => {
     try {
       setLoading(true);
-      const [activeRes, schedRes, histRes] = await Promise.all([
-        platformPolicyApi.getPlatformPolicy(),
-        platformPolicyApi.getScheduledPlatformPolicy().catch(() => ({ data: null })),
-        platformPolicyApi.getPlatformPolicyHistory().catch(() => ({ data: [] })),
-      ]);
-
-      if (activeRes.data) {
-        setActivePolicy(activeRes.data as any);
-      }
-      setScheduledPolicy(schedRes.data as any);
-      setHistory((histRes.data || []) as any);
       setError(null);
+      const res = await financeApi.policies.list({ per_page: 50 });
+      if (res && res.data && Array.isArray(res.data.items)) {
+        setPolicyGroups(res.data.items);
+      } else if (res && Array.isArray((res as any).items)) {
+        setPolicyGroups((res as any).items);
+      } else {
+        setPolicyGroups([]);
+      }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Gagal memuat data kebijakan platform.");
+      console.error("Gagal memuat kebijakan:", err);
+      setError(err instanceof Error ? err.message : "Gagal memuat data kebijakan platform dari Finance Service.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadAllPolicyData();
+    loadAllPolicies();
   }, []);
 
-  const currentConfig: PlatformPolicyConfiguration = activePolicy?.configuration || {
-    applicationFee: { calculationType: "FIXED_AMOUNT", value: 5000, currency: "IDR" },
-    affiliateFee: { calculationType: "PERCENTAGE", value: 5, basis: "ELIGIBLE_PRODUCT_SUBTOTAL" },
-    providerReward: { calculationType: "PERCENTAGE", value: 60 },
-    workerReward: { calculationType: "PERCENTAGE", value: 40 },
-    tax: { enabled: false, status: "NOT_USED", taxType: "PPN", calculationType: "PERCENTAGE", rate: null, taxBasis: "SERVICE_PRICE" },
-  };
+  // Flatten versions
+  const allFlattenedVersions: FlatVersionItem[] = useMemo(() => {
+    const list: FlatVersionItem[] = [];
+    policyGroups.forEach((group) => {
+      if (Array.isArray(group.versions)) {
+        group.versions.forEach((ver) => {
+          list.push({ group, version: ver });
+        });
+      }
+    });
+    return list;
+  }, [policyGroups]);
+
+  // Tab counts
+  const tabCounts = useMemo(() => {
+    const counts = { active: 0, scheduled: 0, history: 0 };
+    allFlattenedVersions.forEach((item) => {
+      const s = item.version.status;
+      if (s === "ACTIVE") counts.active++;
+      else if (s === "SCHEDULED") counts.scheduled++;
+      else if (s === "HISTORICAL" || s === "SUPERSEDED" || s === "INACTIVE") counts.history++;
+    });
+    return counts;
+  }, [allFlattenedVersions]);
+
+  // Filter flattened versions by activeTab
+  const filteredVersions = useMemo(() => {
+    return allFlattenedVersions.filter((item) => {
+      const status = item.version.status;
+      let matchesTab = false;
+
+      if (activeTab === "active") {
+        matchesTab = status === "ACTIVE";
+      } else if (activeTab === "scheduled") {
+        matchesTab = status === "SCHEDULED";
+      } else if (activeTab === "history") {
+        matchesTab = status === "HISTORICAL" || status === "SUPERSEDED" || status === "INACTIVE";
+      }
+
+      if (!matchesTab) return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return (
+          item.group.display_name.toLowerCase().includes(q) ||
+          item.group.slug.toLowerCase().includes(q) ||
+          `v${item.version.version_no}`.toLowerCase().includes(q)
+        );
+      }
+
+      return true;
+    });
+  }, [allFlattenedVersions, activeTab, searchQuery]);
 
   return (
-    <div className="space-y-8 pb-16">
+    <div className="space-y-6 pb-20 font-body text-left">
       {/* Header */}
       <PageHeader
-        title="Kebijakan Platform (Read-Only)"
-        description="Portal operasional Finance untuk memantau kebijakan platform aktif, jadwal penerapan mendatang, dan riwayat audit kebijakan yang ditetapkan oleh CEO."
+        title="Audit Kebijakan Platform (Read-Only)"
+        description="Pemantauan audit tarif resmi platform yang ditetapkan oleh CEO. Finance Operations hanya berwenang membaca dan menerapkan kebijakan ini secara authoritative tanpa hak modifikasi."
         breadcrumbs={[
-          { label: "Finance Ops", href: "/finance/dashboard" },
+          { label: "Dashboard", href: "/finance/dashboard" },
           { label: "Kebijakan Platform" },
         ]}
       />
 
-      {error && (
-        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <WarningCircle className="w-5 h-5 text-rose-400 shrink-0" />
-            <span className="font-medium text-sm">{error}</span>
-          </div>
-          <button
-            onClick={() => setError(null)}
-            className="text-xs text-rose-400/80 hover:text-rose-300 font-semibold"
-          >
-            Tutup
-          </button>
+      {/* Read-Only Scope Warning Banner */}
+      <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-950 flex items-start gap-3 text-xs leading-relaxed">
+        <LockKey size={20} className="text-amber-700 shrink-0 mt-0.5" weight="fill" />
+        <div>
+          <strong className="font-bold">Akses Read-Only Terproteksi:</strong>
+          <p className="mt-0.5 text-amber-900">
+            Penetapan, revisi, dan publikasi aturan tarif biaya aplikasi serta komisi toko merupakan wewenang eksklusif role <strong>CEO_PRODUCT_OWNER</strong>. Petugas Finance Operations dilarang mengubah besaran tarif secara sepihak.
+          </p>
         </div>
-      )}
-
-      {/* Tabs Navigation */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-1">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setActiveTab("active")}
-            className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 ${
-              activeTab === "active"
-                ? "bg-[#0F4C81] text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-            }`}
-          >
-            <ShieldCheck className="w-4 h-4 text-white" />
-            <span>Kebijakan Aktif</span>
-            <Badge variant={activeTab === "active" ? "neutral" : "success"} className="text-[10px] ml-1">
-              {activePolicy?.version || "v1"}
-            </Badge>
-          </button>
-
-          <button
-            onClick={() => setActiveTab("scheduled")}
-            className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 ${
-              activeTab === "scheduled"
-                ? "bg-[#0F4C81] text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-            }`}
-          >
-            <CalendarBlank className="w-4 h-4 text-white" />
-            <span>Akan Berlaku</span>
-            {scheduledPolicy && (
-              <Badge variant="primary" className="text-[10px] ml-1">
-                1
-              </Badge>
-            )}
-          </button>
-
-          <button
-            onClick={() => setActiveTab("history")}
-            className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center gap-2 ${
-              activeTab === "history"
-                ? "bg-[#0F4C81] text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-            }`}
-          >
-            <Clock className="w-4 h-4 text-white" />
-            <span>Riwayat Penerapan</span>
-            <Badge variant="neutral" className="text-[10px] ml-1">
-              {history.length}
-            </Badge>
-          </button>
-        </div>
-
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={loadAllPolicyData}
-          disabled={loading}
-          className="border-slate-200 text-slate-700 hover:bg-slate-50"
-        >
-          <ArrowsClockwise className={`w-3.5 h-3.5 mr-1.5 text-slate-500 ${loading ? "animate-spin" : ""}`} />
-          Segarkan
-        </Button>
       </div>
 
-      {/* =========================================================================
-          TAB 1: KEBIJAKAN AKTIF (READ-ONLY)
-          ========================================================================= */}
-      {activeTab === "active" && (
-        <div className="space-y-6">
-          <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-              <div>
-                <div className="flex items-center gap-2.5">
-                  <h3 className="text-base font-bold text-slate-900 font-heading">Kebijakan Platform Aktif</h3>
-                  <Badge variant="success" className="text-xs">
-                    {activePolicy?.version || "v1"} • AKTIF
-                  </Badge>
-                </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Berlaku sejak:{" "}
-                  <span className="text-slate-700 font-medium">
-                    {activePolicy?.effectiveFrom
-                      ? new Date(activePolicy.effectiveFrom).toLocaleDateString("id-ID", {
-                          day: "numeric",
-                          month: "long",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
-                      : "—"}
-                  </span>{" "}
-                  • Ditetapkan oleh CEO:{" "}
-                  <span className="text-slate-700 font-medium">{activePolicy?.appliedBy || "Michael Surya (CEO)"}</span>
-                </p>
+      {/* Governance & Policy Life-Cycle Metrics Cards (Option B) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Card 1: Active Enforced Policies */}
+        <div
+          onClick={() => setActiveTab("active")}
+          className={`p-5 rounded-3xl bg-white border transition-all cursor-pointer shadow-xs relative overflow-hidden flex flex-col justify-between ${
+            activeTab === "active" ? "border-emerald-500 ring-2 ring-emerald-500/20" : "border-slate-200/80 hover:border-slate-300"
+          }`}
+        >
+          <div className="flex items-start justify-between">
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Kebijakan Aktif (Enforced)
+              </span>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-3xl font-black text-slate-900">
+                  {tabCounts.active}
+                </span>
+                <span className="text-xs font-bold text-slate-500">Aturan</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Authoritative
+                </span>
               </div>
             </div>
-
-            {/* 5 Core Policy Fields */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mt-6">
-              {/* 1. Application Fee */}
-              <div className="p-4 rounded-xl bg-slate-50/80 border border-slate-200/70">
-                <div className="flex items-center justify-between text-xs text-slate-500 font-medium mb-1.5">
-                  <span>Biaya Aplikasi</span>
-                  <Receipt className="w-4 h-4 text-[#0F4C81]" />
-                </div>
-                <div className="text-xl font-bold text-slate-900 font-heading">
-                  {currentConfig.applicationFee.calculationType === "FIXED_AMOUNT"
-                    ? `Rp ${currentConfig.applicationFee.value.toLocaleString("id-ID")}`
-                    : `${currentConfig.applicationFee.value}%`}
-                </div>
-                <div className="text-[11px] text-slate-400 mt-1">Per transaksi pemesanan</div>
-              </div>
-
-              {/* 2. Affiliate Fee */}
-              <div className="p-4 rounded-xl bg-slate-50/80 border border-slate-200/70">
-                <div className="flex items-center justify-between text-xs text-slate-500 font-medium mb-1.5">
-                  <span>Komisi Afiliasi</span>
-                  <Percent className="w-4 h-4 text-emerald-600" />
-                </div>
-                <div className="text-xl font-bold text-slate-900 font-heading">{currentConfig.affiliateFee.value}%</div>
-                <div className="text-[11px] text-slate-400 mt-1">Basis: Subtotal suku cadang</div>
-              </div>
-
-              {/* 3. Provider Reward */}
-              <div className="p-4 rounded-xl bg-slate-50/80 border border-slate-200/70">
-                <div className="flex items-center justify-between text-xs text-slate-500 font-medium mb-1.5">
-                  <span>Reward Mitra</span>
-                  <Handshake className="w-4 h-4 text-indigo-600" />
-                </div>
-                <div className="text-xl font-bold text-slate-900 font-heading">{currentConfig.providerReward.value}%</div>
-                <div className="text-[11px] text-slate-400 mt-1">Bagi hasil komisi afiliasi</div>
-              </div>
-
-              {/* 4. Worker Reward */}
-              <div className="p-4 rounded-xl bg-slate-50/80 border border-slate-200/70">
-                <div className="flex items-center justify-between text-xs text-slate-500 font-medium mb-1.5">
-                  <span>Reward Teknisi</span>
-                  <UserCheck className="w-4 h-4 text-amber-600" />
-                </div>
-                <div className="text-xl font-bold text-slate-900 font-heading">{currentConfig.workerReward.value}%</div>
-                <div className="text-[11px] text-slate-400 mt-1">Bagi hasil komisi afiliasi</div>
-              </div>
-
-              {/* 5. Tax */}
-              <div className="p-4 rounded-xl bg-slate-50/80 border border-slate-200/70">
-                <div className="flex items-center justify-between text-xs text-slate-500 font-medium mb-1.5">
-                  <span>Pajak (PPN)</span>
-                  <Sparkle className="w-4 h-4 text-purple-600" />
-                </div>
-                <div className="text-xl font-bold text-slate-900 font-heading">
-                  {currentConfig.tax.status === "USED" && currentConfig.tax.rate !== null ? (
-                    `${currentConfig.tax.rate}%`
-                  ) : (
-                    <span className="text-slate-400 text-base font-medium">NOT_USED (—)</span>
-                  )}
-                </div>
-                <div className="text-[11px] text-slate-400 mt-1">
-                  {currentConfig.tax.status === "USED" ? "PPN Aktif • Basis: Layanan" : "Belum diaktifkan"}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-5 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs text-slate-500 gap-2">
-              <div>
-                <span className="text-slate-400">Alasan Kebijakan:</span>{" "}
-                <span className="text-slate-700 font-medium">{activePolicy?.changeReason || "—"}</span>
-              </div>
-              {activePolicy?.notes && (
-                <div>
-                  <span className="text-slate-400">Catatan:</span>{" "}
-                  <span className="text-slate-700 font-medium">{activePolicy.notes}</span>
-                </div>
-              )}
+            <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center border border-emerald-100">
+              <ShieldCheck size={22} weight="duotone" />
             </div>
           </div>
+          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+            <span>Dasar acuan tagihan checkout & order aktif</span>
+            <span className="font-bold text-emerald-700">Lihat Aktif →</span>
+          </div>
+        </div>
+
+        {/* Card 2: Scheduled Policies */}
+        <div
+          onClick={() => setActiveTab("scheduled")}
+          className={`p-5 rounded-3xl bg-white border transition-all cursor-pointer shadow-xs relative overflow-hidden flex flex-col justify-between ${
+            activeTab === "scheduled" ? "border-sky-500 ring-2 ring-sky-500/20" : "border-slate-200/80 hover:border-slate-300"
+          }`}
+        >
+          <div className="flex items-start justify-between">
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Terjadwal Mendatang
+              </span>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-3xl font-black text-slate-900">
+                  {tabCounts.scheduled}
+                </span>
+                <span className="text-xs font-bold text-slate-500">Versi</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200">
+                  Antrean Jadwal
+                </span>
+              </div>
+            </div>
+            <div className="w-10 h-10 rounded-2xl bg-sky-50 text-sky-700 flex items-center justify-center border border-sky-100">
+              <CalendarBlank size={22} weight="duotone" />
+            </div>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+            <span>Kebijakan dengan tanggal efektif mendatang</span>
+            <span className="font-bold text-sky-700">Lihat Terjadwal →</span>
+          </div>
+        </div>
+
+        {/* Card 3: Historical Policies */}
+        <div
+          onClick={() => setActiveTab("history")}
+          className={`p-5 rounded-3xl bg-white border transition-all cursor-pointer shadow-xs relative overflow-hidden flex flex-col justify-between ${
+            activeTab === "history" ? "border-slate-500 ring-2 ring-slate-500/20" : "border-slate-200/80 hover:border-slate-300"
+          }`}
+        >
+          <div className="flex items-start justify-between">
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                Riwayat & Arsip Audit
+              </span>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-3xl font-black text-slate-900">
+                  {tabCounts.history}
+                </span>
+                <span className="text-xs font-bold text-slate-500">Versi Lampau</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                  Superseded
+                </span>
+              </div>
+            </div>
+            <div className="w-10 h-10 rounded-2xl bg-slate-100 text-slate-700 flex items-center justify-center border border-slate-200">
+              <FileText size={22} weight="duotone" />
+            </div>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+            <span>Arsip versi sebelumnya untuk audit finansial</span>
+            <span className="font-bold text-slate-700">Lihat Riwayat →</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Error alert */}
+      {error && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 flex items-start gap-3 text-sm">
+          <WarningCircle size={20} className="text-rose-600 shrink-0 mt-0.5" weight="fill" />
+          <div className="flex-1">
+            <h4 className="font-bold">Kendala Koneksi</h4>
+            <p className="text-xs text-rose-800 mt-0.5">{error}</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={loadAllPolicies}
+            className="text-xs border-rose-300 text-rose-900 hover:bg-rose-100"
+          >
+            Coba Lagi
+          </Button>
         </div>
       )}
 
-      {/* =========================================================================
-          TAB 2: AKAN BERLAKU (SCHEDULED - READ-ONLY)
-          ========================================================================= */}
-      {activeTab === "scheduled" && (
-        <div className="space-y-6">
-          {scheduledPolicy ? (
-            <div className="bg-white border border-sky-200 rounded-2xl p-6 shadow-xs space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                <div>
-                  <div className="flex items-center gap-2.5">
-                    <Badge variant="primary" className="text-xs">
-                      {scheduledPolicy.version} • TERJADWAL
-                    </Badge>
-                    <span className="text-base font-bold text-slate-900">
-                      Akan Berlaku: {new Date(scheduledPolicy.effectiveFrom).toLocaleString("id-ID")}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Diterapkan oleh CEO:{" "}
-                    <span className="text-slate-700 font-medium">
-                      {scheduledPolicy.appliedBy || "Michael Surya (CEO)"}
-                    </span>
-                  </p>
-                </div>
-              </div>
+      {/* Control Bar: Tabs & Search */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
+            <button
+              onClick={() => setActiveTab("active")}
+              className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+                activeTab === "active"
+                  ? "bg-[#0F4C81] text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4" weight={activeTab === "active" ? "fill" : "regular"} />
+              <span>Kebijakan Aktif</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                  activeTab === "active" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
+                }`}
+              >
+                {tabCounts.active}
+              </span>
+            </button>
 
-              {/* Grid Values */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-2">
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                  <span className="text-slate-400 block text-[11px]">Biaya Aplikasi</span>
-                  <span className="font-bold text-slate-900">
-                    {scheduledPolicy.configuration.applicationFee.calculationType === "FIXED_AMOUNT"
-                      ? `Rp ${scheduledPolicy.configuration.applicationFee.value.toLocaleString("id-ID")}`
-                      : `${scheduledPolicy.configuration.applicationFee.value}%`}
-                  </span>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                  <span className="text-slate-400 block text-[11px]">Komisi Afiliasi</span>
-                  <span className="font-bold text-slate-900">
-                    {scheduledPolicy.configuration.affiliateFee.value}%
-                  </span>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                  <span className="text-slate-400 block text-[11px]">Reward Mitra</span>
-                  <span className="font-bold text-slate-900">
-                    {scheduledPolicy.configuration.providerReward.value}%
-                  </span>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                  <span className="text-slate-400 block text-[11px]">Reward Teknisi</span>
-                  <span className="font-bold text-slate-900">
-                    {scheduledPolicy.configuration.workerReward.value}%
-                  </span>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                  <span className="text-slate-400 block text-[11px]">Pajak (PPN)</span>
-                  <span className="font-bold text-slate-900">
-                    {scheduledPolicy.configuration.tax.status === "USED"
-                      ? `${scheduledPolicy.configuration.tax.rate}%`
-                      : "NOT_USED (—)"}
-                  </span>
-                </div>
-              </div>
+            <button
+              onClick={() => setActiveTab("scheduled")}
+              className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+                activeTab === "scheduled"
+                  ? "bg-[#0F4C81] text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+              }`}
+            >
+              <CalendarBlank className="w-4 h-4" weight={activeTab === "scheduled" ? "fill" : "regular"} />
+              <span>Terjadwal</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                  activeTab === "scheduled" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
+                }`}
+              >
+                {tabCounts.scheduled}
+              </span>
+            </button>
 
-              <div className="text-xs text-slate-600 border-t border-slate-100 pt-3">
-                <span className="text-slate-400">Alasan Perubahan:</span>{" "}
-                <span className="text-slate-800 font-medium">{scheduledPolicy.changeReason}</span>
-                {scheduledPolicy.notes && (
-                  <span className="ml-3">
-                    • <span className="text-slate-400">Catatan:</span>{" "}
-                    <span className="text-slate-800">{scheduledPolicy.notes}</span>
-                  </span>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="p-12 text-center rounded-2xl bg-slate-50/60 border border-dashed border-slate-200 text-slate-500 text-xs">
-              <CalendarBlank className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-              Tidak ada perubahan kebijakan yang sedang dijadwalkan oleh CEO saat ini.
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* =========================================================================
-          TAB 3: RIWAYAT PENERAPAN (HISTORY - READ-ONLY)
-          ========================================================================= */}
-      {activeTab === "history" && (
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs space-y-4">
-          <div className="border-b border-slate-100 pb-3">
-            <h3 className="text-base font-bold text-slate-900 font-heading">Riwayat Penerapan Kebijakan Platform</h3>
-            <p className="text-xs text-slate-500">
-              Log audit kronologis seluruh versi kebijakan platform lengkap dengan rincian parameter tarif, jadwal, alasan, dan pelaksana.
-            </p>
+            <button
+              onClick={() => setActiveTab("history")}
+              className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+                activeTab === "history"
+                  ? "bg-[#0F4C81] text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+              }`}
+            >
+              <FileText className="w-4 h-4" weight={activeTab === "history" ? "fill" : "regular"} />
+              <span>Riwayat</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                  activeTab === "history" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
+                }`}
+              >
+                {tabCounts.history}
+              </span>
+            </button>
           </div>
 
-          <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-xs">
-            <table className="w-full text-xs text-left min-w-[900px]">
-              <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                <tr>
-                  <th className="p-3">Versi</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3">Tanggal Efektif</th>
-                  <th className="p-3">Biaya Aplikasi</th>
-                  <th className="p-3">Komisi Afiliasi</th>
-                  <th className="p-3">Split Reward</th>
-                  <th className="p-3">Pajak PPN</th>
-                  <th className="p-3">Alasan & Catatan Perubahan</th>
-                  <th className="p-3">Diterapkan Oleh</th>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={loadAllPolicies}
+            disabled={loading}
+            className="rounded-2xl border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold"
+          >
+            <ArrowsClockwise className={`w-4 h-4 mr-1.5 text-slate-500 ${loading ? "animate-spin" : ""}`} />
+            Segarkan
+          </Button>
+        </div>
+
+        {/* Search Bar */}
+        <div className="relative">
+          <MagnifyingGlass className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Cari kebijakan berdasarkan nama atau slug..."
+            className="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 font-mono"
+          />
+        </div>
+      </div>
+
+      {/* Main Table Content */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="p-16 flex flex-col items-center justify-center gap-3 text-slate-400">
+            <ArrowsClockwise className="w-8 h-8 animate-spin text-[#0F4C81]" />
+            <p className="text-xs font-medium text-slate-500">Memuat data kebijakan dari Finance Service...</p>
+          </div>
+        ) : filteredVersions.length === 0 ? (
+          <div className="p-16 text-center">
+            <EmptyState
+              title={`Tidak Ada Kebijakan di Tab ${activeTab.toUpperCase()}`}
+              description="Belum ada versi kebijakan platform yang sesuai dengan filter ini."
+            />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                  <th className="py-3.5 px-5">Nama Aturan & Versi</th>
+                  <th className="py-3.5 px-4">Biaya Aplikasi Customer</th>
+                  <th className="py-3.5 px-4">Komisi Toko Merchant</th>
+                  <th className="py-3.5 px-4">Status & Efektif</th>
+                  <th className="py-3.5 px-4">Alasan Pembaruan</th>
+                  <th className="py-3.5 px-5 text-right">Rincian</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 bg-white text-slate-700">
-                {history.map((item) => {
-                  const cfg = item.configuration;
+              <tbody className="divide-y divide-slate-100 text-xs">
+                {filteredVersions.map(({ group, version }) => {
+                  const targets = version.targets || [];
+                  const customerTarget = targets.find(
+                    (t) => t.policy_code === "CUSTOMER_PRODUCT_APP_FEE"
+                  );
+                  const merchantTarget = targets.find(
+                    (t) => t.policy_code === "MERCHANT_PRODUCT_COMMISSION"
+                  );
+
                   return (
-                    <tr key={item.id || item.version} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-3 font-bold text-slate-900">{item.version}</td>
-                      <td className="p-3">
-                        <Badge
-                          variant={
-                            item.status === "ACTIVE"
-                              ? "success"
-                              : item.status === "SCHEDULED"
-                              ? "primary"
-                              : item.status === "SUPERSEDED"
-                              ? "neutral"
-                              : "danger"
-                          }
-                          className="text-[10px]"
+                    <tr key={version.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="py-4 px-5">
+                        <div className="font-bold text-slate-900">{group.display_name}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="font-mono text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                            {group.slug}
+                          </span>
+                          <span className="font-bold text-[10px] text-sky-800 bg-sky-50 px-2 py-0.5 rounded-full border border-sky-200">
+                            v{version.version_no}
+                          </span>
+                        </div>
+                      </td>
+
+                      <td className="py-4 px-4">
+                        {customerTarget ? (
+                          <div>
+                            <div className="font-extrabold text-slate-800 flex items-center gap-1.5">
+                              <span>
+                                {customerTarget.fee_type === "FIXED"
+                                  ? `Rp ${(customerTarget.fixed_amount_idr || 0).toLocaleString("id-ID")}`
+                                  : `${customerTarget.percentage_rate || 0}%`}
+                              </span>
+                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-sky-50 text-sky-700 border border-sky-100">
+                                {customerTarget.fee_type === "FIXED" ? "Rp" : "%"}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-500">
+                              Sekali / Checkout
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 text-[10px] font-semibold">
+                            — Bebas Biaya
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="py-4 px-4">
+                        {merchantTarget ? (
+                          <div>
+                            <div className="font-extrabold text-slate-800 flex items-center gap-1.5">
+                              <span>
+                                {merchantTarget.fee_type === "PERCENTAGE"
+                                  ? `${merchantTarget.percentage_rate || 0}%`
+                                  : `Rp ${(merchantTarget.fixed_amount_idr || 0).toLocaleString("id-ID")}`}
+                              </span>
+                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                {merchantTarget.fee_type === "PERCENTAGE" ? "%" : "Rp"}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-500">
+                              Per Pesanan Toko
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 text-[10px] font-semibold">
+                            — Bebas Komisi
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="py-4 px-4">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              version.status === "ACTIVE"
+                                ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                                : version.status === "SCHEDULED"
+                                ? "bg-sky-50 text-sky-800 border border-sky-200"
+                                : "bg-slate-100 text-slate-700 border border-slate-200"
+                            }`}
+                          >
+                            {version.status}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-500">
+                          {version.effective_from
+                            ? new Date(version.effective_from).toLocaleDateString("id-ID", {
+                                day: "numeric",
+                                month: "short",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "Langsung saat terbit"}
+                        </div>
+                      </td>
+
+                      <td className="py-4 px-4 max-w-xs">
+                        <p className="text-slate-600 line-clamp-2 text-xs">
+                          {version.change_reason || "-"}
+                        </p>
+                      </td>
+
+                      <td className="py-4 px-5 text-right whitespace-nowrap">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setInspectingItem({ group, version })}
+                          className="text-xs text-slate-700 hover:bg-slate-100 rounded-xl"
                         >
-                          {item.status}
-                        </Badge>
+                          <Eye className="w-3.5 h-3.5 mr-1" />
+                          Rincian
+                        </Button>
                       </td>
-                      <td className="p-3 text-slate-600 whitespace-nowrap">
-                        {item.effectiveFrom
-                          ? new Date(item.effectiveFrom).toLocaleDateString("id-ID", {
-                              day: "numeric",
-                              month: "short",
-                              year: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : "—"}
-                      </td>
-                      <td className="p-3 font-medium text-slate-900 whitespace-nowrap">
-                        {cfg?.applicationFee?.calculationType === "FIXED_AMOUNT"
-                          ? `Rp ${cfg?.applicationFee?.value.toLocaleString("id-ID")}`
-                          : `${cfg?.applicationFee?.value}%`}
-                      </td>
-                      <td className="p-3 font-medium text-slate-900 whitespace-nowrap">
-                        {cfg?.affiliateFee?.value}%
-                      </td>
-                      <td className="p-3 text-slate-700 whitespace-nowrap">
-                        Mitra {cfg?.providerReward?.value}% / Tek {cfg?.workerReward?.value}%
-                      </td>
-                      <td className="p-3 font-medium text-slate-900 whitespace-nowrap">
-                        {cfg?.tax?.status === "USED" && cfg?.tax?.rate !== null ? `${cfg?.tax?.rate}%` : "NOT_USED (—)"}
-                      </td>
-                      <td className="p-3 max-w-xs">
-                        <div className="font-medium text-slate-900">{item.changeReason || "—"}</div>
-                        {item.notes && <div className="text-[11px] text-slate-500 mt-0.5">{item.notes}</div>}
-                      </td>
-                      <td className="p-3 text-slate-600 whitespace-nowrap">{item.appliedBy || "Michael Surya (CEO)"}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* Snapshot Inspection Modal */}
+      <Modal
+        isOpen={!!inspectingItem}
+        onClose={() => setInspectingItem(null)}
+        title="Spesifikasi Tarif Kebijakan (Audit Read-Only)"
+        size="lg"
+      >
+        {inspectingItem && (
+          <div className="space-y-5 text-left font-body text-xs">
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-slate-500 text-[11px]">
+                  ID Versi: {inspectingItem.version.id} • Grup: {inspectingItem.group.slug}
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    inspectingItem.version.status === "ACTIVE"
+                      ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                      : "bg-slate-100 text-slate-700"
+                  }`}
+                >
+                  {inspectingItem.version.status}
+                </span>
+              </div>
+              <h3 className="text-sm font-extrabold text-slate-900">
+                {inspectingItem.group.display_name} (Versi v{inspectingItem.version.version_no})
+              </h3>
+              <p className="text-slate-600 text-xs">
+                {inspectingItem.group.description || "Tidak ada deskripsi kebijakan."}
+              </p>
+            </div>
+
+            <div>
+              <h4 className="font-bold text-slate-900 mb-2">Target Tarif yang Diberlakukan</h4>
+              <div className="space-y-2.5">
+                {(inspectingItem.version.targets || []).map((t, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3.5 rounded-xl border border-slate-200 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                  >
+                    <div>
+                      <div className="font-bold text-slate-900 flex items-center gap-2">
+                        <span>{t.policy_code}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-800 text-[10px] font-bold">
+                          {t.payer_type}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        Charge Scope: {t.charge_scope} • Basis: {t.calculation_base}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-black text-slate-900">
+                        {t.fee_type === "FIXED"
+                          ? `Rp ${(t.fixed_amount_idr || 0).toLocaleString("id-ID")}`
+                          : `${t.percentage_rate}%`}
+                      </div>
+                      <span className="text-[10px] text-slate-400 uppercase font-mono">
+                        {t.fee_type}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 text-[11px] text-slate-500 space-y-1">
+              <div>
+                <strong>Alasan Kebijakan:</strong> {inspectingItem.version.change_reason || "-"}
+              </div>
+              <div>
+                <strong>Mulai Efektif:</strong>{" "}
+                {inspectingItem.version.effective_from
+                  ? new Date(inspectingItem.version.effective_from).toLocaleString("id-ID")
+                  : "Langsung saat terbit"}
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

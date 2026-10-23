@@ -80,7 +80,7 @@ export default function HomePage() {
         return {
           id: c.id,
           label: c.name,
-          href: `/categories/${c.id}`,
+          href: `/services?categories=${c.id}`,
           icon: IconComponent,
         };
       });
@@ -108,13 +108,15 @@ export default function HomePage() {
     priceMin: s.priceMin ?? s.basePrice,
     priceMax: s.priceMax ?? s.basePrice,
     pricingModel: s.pricingModel,
-    rating: s.rating,
-    reviewCount: s.reviewCount,
-    warrantyDays: s.warrantyDays,
-    providerName: s.providerName,
+    providerName: s.providerName || "Penyedia Jasa",
     isVerifiedProvider: s.isVerifiedProvider,
     thumbnailUrl: s.thumbnailUrl,
     description: s.description || s.shortDescription || "",
+    surveyFee: s.surveyFee,
+    surveyFeeModel: s.surveyFeeModel,
+    durationMin: s.durationMin,
+    durationMax: s.durationMax,
+    durationUnit: s.durationUnit,
   });
 
   return (
@@ -366,10 +368,10 @@ export default function HomePage() {
             </h2>
           </div>
           <Link
-            href="/categories"
+            href="/services"
             className="text-xs sm:text-sm font-bold text-primary hover:text-primary-dark flex items-center gap-1"
           >
-            <span>Semua Kategori</span>
+            <span>Semua Layanan Jasa</span>
             <CaretRight size={16} weight="bold" />
           </Link>
         </div>
@@ -411,7 +413,7 @@ export default function HomePage() {
                   <h3 className="font-display font-bold text-xs sm:text-sm text-neutral-dark group-hover:text-primary transition-colors">
                     {domain.label}
                   </h3>
-                  <span className="text-[11px] text-neutral-muted mt-1">Lihat Subkategori</span>
+                  <span className="text-[11px] text-neutral-muted mt-1">Jelajahi Layanan</span>
                 </motion.div>
               );
             })}

@@ -187,7 +187,7 @@ export default function CartPage() {
                   onClick={handleCheckout}
                   className="w-full py-3.5 px-4 rounded-xl bg-[#0F4C81] text-white text-xs font-bold hover:bg-[#0c3c66] transition shadow-md shadow-sky-900/15 flex items-center justify-center gap-2"
                 >
-                  Lanjut ke Checkout Produk
+                  <span>Checkout ({cartGroups.length} Toko)</span>
                   <ArrowRight size={16} weight="bold" />
                 </button>
               </div>

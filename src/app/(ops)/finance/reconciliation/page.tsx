@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import {
   Scales,
@@ -18,49 +18,80 @@ import {
   FileText,
   ArrowsLeftRight,
   TrendUp,
+  Receipt,
+  User,
+  Eye,
 } from "@phosphor-icons/react";
-import { useFinanceOperations, ReconciliationMatchStatus } from "@/features/finance/useFinanceOperations";
+import { financeApi } from "@/lib/servioApi";
+import { BackendReconciliation, BackendFinanceAuditLog } from "@/types/finance";
 import { Toast } from "@/components/feedback/Toast";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
+import { EmptyState } from "@/components/feedback/EmptyState";
 
 export default function FinancialReconciliationPage() {
-  const { reconciliations, triggerAutoReconciliation } = useFinanceOperations();
-
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [reconData, setReconData] = useState<BackendReconciliation | null>(null);
+  const [auditLogs, setAuditLogs] = useState<BackendFinanceAuditLog[]>([]);
+  const [totalLogs, setTotalLogs] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [lastPage, setLastPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [isReconciling, setIsReconciling] = useState(false);
 
-  const matchedCount = reconciliations.filter((r) => r.status === "MATCHED").length;
-  const matchRate = Math.round((matchedCount / reconciliations.length) * 100);
-  const totalDiscrepancy = reconciliations.reduce((sum, r) => sum + r.difference, 0);
+  // Filters
+  const [searchQuery, setSearchQuery] = useState("");
+  const [eventFilter, setEventFilter] = useState("ALL");
 
-  const filteredItems = reconciliations.filter((item) => {
-    const matchesSearch =
-      item.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.gatewayTrxId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.internalTrxId.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.bankChannel.toLowerCase().includes(searchQuery.toLowerCase());
+  // Selected audit log for detail inspection
+  const [selectedLog, setSelectedLog] = useState<BackendFinanceAuditLog | null>(null);
 
-    if (!matchesSearch) return false;
-    if (statusFilter !== "ALL" && item.status !== statusFilter) return false;
+  const fetchReconciliationAndAudit = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const [reconRes, auditRes] = await Promise.all([
+        financeApi.ops.reconciliation(),
+        financeApi.ops.auditLogs({
+          event: eventFilter !== "ALL" ? eventFilter : undefined,
+          page: currentPage,
+          per_page: 20,
+        }),
+      ]);
 
-    return true;
-  });
-
-  const handleTriggerAutoReconcile = () => {
-    setIsReconciling(true);
-    setTimeout(() => {
-      triggerAutoReconciliation();
-      setIsReconciling(false);
-      setToastMessage(
-        "Proses rekonsiliasi otomatis berhasil dijalankan. Mutasi gateway telah dipetakan ke buku besar internal."
-      );
-    }, 600);
+      if (reconRes && reconRes.data) {
+        setReconData(reconRes.data);
+      }
+      if (auditRes && auditRes.data) {
+        setAuditLogs(auditRes.data.data || []);
+        setTotalLogs(auditRes.data.total || 0);
+        setCurrentPage(auditRes.data.current_page || 1);
+        setLastPage(auditRes.data.last_page || 1);
+      }
+    } catch (err: unknown) {
+      console.error("Gagal memuat data rekonsiliasi:", err);
+      setError(err instanceof Error ? err.message : "Gagal memuat status rekonsiliasi dan audit log.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleExportCSV = () => {
-    setToastMessage("Laporan rekonsiliasi keuangan format CSV berhasil diunduh.");
-  };
+  useEffect(() => {
+    fetchReconciliationAndAudit();
+  }, [eventFilter, currentPage]);
+
+  const filteredLogs = useMemo(() => {
+    if (!searchQuery.trim()) return auditLogs;
+    const q = searchQuery.toLowerCase();
+    return auditLogs.filter(
+      (log) =>
+        log.id.toLowerCase().includes(q) ||
+        log.action.toLowerCase().includes(q) ||
+        log.actor_user_id.toLowerCase().includes(q) ||
+        (log.subject_type && log.subject_type.toLowerCase().includes(q)) ||
+        (log.subject_id && log.subject_id.toLowerCase().includes(q))
+    );
+  }, [auditLogs, searchQuery]);
 
   return (
     <div className="space-y-6 pb-16 font-body text-left">
@@ -76,220 +107,345 @@ export default function FinancialReconciliationPage() {
       {/* Header */}
       <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-[#0F4C81] bg-sky-50 px-2.5 py-0.5 rounded-full border border-sky-200">
-              Bank & Ledger Reconciliation
-            </span>
-            <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-200">
-              <ShieldCheck size={14} weight="fill" />
-              Buku Besar Akuntansi
-            </span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-bold font-display text-slate-900">
-            Rekonsiliasi Finansial Bank & Gateway
+          <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+            Double-Entry Ledger & Financial Audit
+          </span>
+          <h1 className="text-2xl sm:text-3xl font-black font-display text-slate-900 mt-1">
+            Rekonsiliasi Buku Besar & Audit Log
           </h1>
           <p className="text-xs text-slate-500 mt-1 max-w-xl">
-            Pencocokan mutasi kas masuk/keluar dari payment gateway & bank kustodian dengan buku besar internal transaksi Servio untuk memastikan zero variance.
+            Audit integritas buku besar ganda (double-entry balancing), monitoring selisih mutasi debit-kredit, dan rekaman audit log transaksi finansial yang tidak dapat diubah (immutable).
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 shrink-0">
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            className="px-3.5 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1.5"
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchReconciliationAndAudit}
+            disabled={loading}
+            className="rounded-2xl border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold"
           >
-            <DownloadSimple size={16} weight="bold" />
-            <span>Ekspor CSV</span>
-          </button>
-          <button
-            type="button"
-            disabled={isReconciling}
-            onClick={handleTriggerAutoReconcile}
-            className="px-4 py-2.5 rounded-2xl bg-[#0F4C81] hover:bg-sky-900 text-white text-xs font-bold shadow-sm transition flex items-center gap-1.5"
-          >
-            <ArrowsClockwise size={16} weight="bold" className={isReconciling ? "animate-spin" : ""} />
-            <span>{isReconciling ? "Mencocokkan..." : "Jalankan Auto-Match"}</span>
-          </button>
+            <ArrowsClockwise className={`w-4 h-4 mr-1.5 ${loading ? "animate-spin text-[#0F4C81]" : "text-slate-500"}`} />
+            Segarkan Telemetri
+          </Button>
         </div>
       </div>
 
-      {/* KPI Reconciliation Matrix */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-sm space-y-2">
+      {/* Error alert */}
+      {error && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 flex items-start gap-3 text-sm">
+          <WarningCircle size={20} className="text-rose-600 shrink-0 mt-0.5" weight="fill" />
+          <div className="flex-1">
+            <h4 className="font-bold">Kendala Koneksi Finance</h4>
+            <p className="text-xs text-rose-800 mt-0.5">{error}</p>
+          </div>
+          <button
+            onClick={fetchReconciliationAndAudit}
+            className="text-xs font-bold px-3 py-1 bg-white border border-rose-300 rounded-xl hover:bg-rose-100"
+          >
+            Coba Lagi
+          </button>
+        </div>
+      )}
+
+      {/* 1. Double-Entry Balance Telemetry Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {/* Status Keseimbangan */}
+        <div className="p-5 rounded-3xl bg-white border border-slate-200/90 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">Tingkat Kecocokan (Match Rate)</span>
-            <span className="p-2 rounded-xl bg-emerald-50 text-emerald-700">
-              <CheckCircle size={18} weight="fill" />
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+              Status Integritas
+            </span>
+            <span
+              className={`p-1.5 rounded-lg text-xs font-bold ${
+                reconData?.is_double_entry_balanced
+                  ? "bg-emerald-100 text-emerald-800"
+                  : "bg-rose-100 text-rose-800"
+              }`}
+            >
+              {reconData?.is_double_entry_balanced ? "BALANCED" : "IMBALANCE"}
             </span>
           </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-bold font-mono text-emerald-600">
-              {matchRate}%
+          <div className="mt-3">
+            <span className="text-base font-black text-slate-900 block">
+              {reconData?.audit_status || "CLEAN_AND_BALANCED"}
             </span>
-            <span className="text-xs text-slate-400">
-              ({matchedCount} dari {reconciliations.length} mutasi)
+            <span className="text-[10px] text-slate-400 mt-0.5 block">
+              Total Debit = Total Kredit
             </span>
           </div>
-          <p className="text-[11px] text-slate-400">Target kepatuhan akuntansi &gt; 95%</p>
         </div>
 
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-sm space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">Total Selisih (Discrepancy)</span>
-            <span className="p-2 rounded-xl bg-amber-50 text-amber-700">
-              <Scales size={18} weight="duotone" />
+        {/* Total Debit */}
+        <div className="p-5 rounded-3xl bg-white border border-slate-200/90 shadow-xs flex flex-col justify-between">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            Total Debit Buku Besar
+          </span>
+          <div className="mt-3">
+            <span className="text-xl font-black font-display text-slate-900 block">
+              Rp {(reconData?.total_debit_idr ?? 0).toLocaleString("id-ID")}
+            </span>
+            <span className="text-[10px] text-slate-400 mt-0.5 block">
+              Sisi Penerimaan Kas / Piutang
             </span>
           </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl sm:text-3xl font-bold font-mono text-amber-600">
-              Rp {totalDiscrepancy.toLocaleString("id-ID")}
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-400">Perbedaan rounding atau fee transfer</p>
         </div>
 
-        <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-sm space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">Status Siklus Kliring</span>
-            <span className="p-2 rounded-xl bg-sky-50 text-[#0F4C81]">
-              <Clock size={18} weight="duotone" />
+        {/* Total Kredit */}
+        <div className="p-5 rounded-3xl bg-white border border-slate-200/90 shadow-xs flex flex-col justify-between">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            Total Kredit Buku Besar
+          </span>
+          <div className="mt-3">
+            <span className="text-xl font-black font-display text-slate-900 block">
+              Rp {(reconData?.total_credit_idr ?? 0).toLocaleString("id-ID")}
+            </span>
+            <span className="text-[10px] text-slate-400 mt-0.5 block">
+              Sisi Kewajiban / Pendapatan
             </span>
           </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-xl sm:text-2xl font-bold font-display text-slate-900">
-              T+0 Real-Time
+        </div>
+
+        {/* Selisih (Discrepancy) */}
+        <div className="p-5 rounded-3xl bg-white border border-slate-200/90 shadow-xs flex flex-col justify-between">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            Selisih Rekonsiliasi
+          </span>
+          <div className="mt-3">
+            <span
+              className={`text-xl font-black font-display block ${
+                (reconData?.discrepancy_idr ?? 0) === 0 ? "text-emerald-700" : "text-rose-700"
+              }`}
+            >
+              Rp {(reconData?.discrepancy_idr ?? 0).toLocaleString("id-ID")}
+            </span>
+            <span className="text-[10px] text-slate-400 mt-0.5 block">
+              Toleransi selisih = 0 Rupiah bulat
             </span>
           </div>
-          <p className="text-[11px] text-slate-400">Sinkronisasi mutasi bank setiap 15 menit</p>
         </div>
       </div>
 
-      {/* Filter & Search Bar */}
-      <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row items-center gap-3">
-          <div className="relative flex-1 w-full">
-            <MagnifyingGlass
-              size={18}
-              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
-            />
+      {/* 2. Audit Logs Table */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden space-y-4 p-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+          <div>
+            <h3 className="text-sm font-black text-slate-900">Log Aktivitas Keuangan (Audit Events)</h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Jejak audit permanen setiap mutasi kebijakan, pembayaran, pelepasan dana, refund, dan penarikan saldo.
+            </p>
+          </div>
+          <span className="text-xs font-bold px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 self-start sm:self-auto">
+            {totalLogs} Aktivitas Tercatat
+          </span>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+          <div className="flex-1 relative">
+            <MagnifyingGlass className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Cari ID mutasi, ID gateway, nomor transaksi internal..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F4C81]"
+              placeholder="Cari aksi (action), subjek, aktor, atau correlation ID..."
+              className="w-full pl-10 pr-4 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 font-mono"
             />
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto text-xs font-bold">
-            {[
-              { id: "ALL", label: "Semua Mutasi" },
-              { id: "MATCHED", label: "Cocok (Matched)" },
-              { id: "DISCREPANCY_AMOUNT", label: "Selisih Nominal" },
-              { id: "UNMATCHED_GATEWAY", label: "Belum Tercocokkan" },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setStatusFilter(tab.id)}
-                className={`px-3 py-2 rounded-xl transition whitespace-nowrap ${
-                  statusFilter === tab.id
-                    ? "bg-[#0F4C81] text-white shadow-xs"
-                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <select
+              value={eventFilter}
+              onChange={(e) => {
+                setEventFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="px-3 py-2 text-xs rounded-xl border border-slate-200 bg-white font-semibold text-slate-700 focus:outline-none"
+            >
+              <option value="ALL">Semua Aksi</option>
+              <option value="FEE_POLICY_DRAFT_CREATED">FEE_POLICY_DRAFT_CREATED</option>
+              <option value="FEE_POLICY_PUBLISHED">FEE_POLICY_PUBLISHED</option>
+              <option value="PAYMENT_SIMULATED">PAYMENT_SIMULATED</option>
+              <option value="PAYOUT_SIMULATED">PAYOUT_SIMULATED</option>
+              <option value="REFUND_CREDITED">REFUND_CREDITED</option>
+            </select>
           </div>
         </div>
-      </div>
 
-      {/* Reconciliation Comparison Table */}
-      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 font-semibold uppercase tracking-wider text-[11px]">
-                <th className="p-4 pl-6">ID & Tanggal</th>
-                <th className="p-4">Ref Gateway Pihak Ketiga</th>
-                <th className="p-4">ID Buku Besar Servio</th>
-                <th className="p-4">Kanal Bank</th>
-                <th className="p-4 text-right">Nominal Gateway</th>
-                <th className="p-4 text-right">Nominal Ledger</th>
-                <th className="p-4 text-right">Selisih (Variance)</th>
-                <th className="p-4 pr-6 text-center">Status Audit</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-slate-700">
-              {filteredItems.map((item) => (
-                <tr key={item.id} className="hover:bg-slate-50/70 transition">
-                  <td className="p-4 pl-6 space-y-0.5">
-                    <span className="font-mono font-bold text-slate-900 block">{item.id}</span>
-                    <span className="text-[10px] text-slate-400 block">{item.date}</span>
-                  </td>
-
-                  <td className="p-4 font-mono font-bold text-slate-800">
-                    {item.gatewayTrxId}
-                  </td>
-
-                  <td className="p-4 font-mono text-[#0F4C81] font-bold">
-                    {item.internalTrxId}
-                  </td>
-
-                  <td className="p-4">
-                    <span className="px-2.5 py-1 rounded-xl bg-slate-100 font-semibold text-slate-700">
-                      {item.bankChannel}
-                    </span>
-                  </td>
-
-                  <td className="p-4 text-right font-mono font-bold text-slate-900">
-                    Rp {item.gatewayAmount.toLocaleString("id-ID")}
-                  </td>
-
-                  <td className="p-4 text-right font-mono font-bold text-slate-900">
-                    Rp {item.ledgerAmount.toLocaleString("id-ID")}
-                  </td>
-
-                  <td className="p-4 text-right font-mono font-bold">
-                    {item.difference === 0 ? (
-                      <span className="text-emerald-600">Rp 0 (Sesuai)</span>
-                    ) : (
-                      <span className="text-amber-600">
-                        +Rp {item.difference.toLocaleString("id-ID")}
-                      </span>
-                    )}
-                  </td>
-
-                  <td className="p-4 pr-6 text-center">
-                    <span
-                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full inline-block ${
-                        item.status === "MATCHED"
-                          ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                          : item.status === "DISCREPANCY_AMOUNT"
-                          ? "bg-amber-50 text-amber-700 border border-amber-200"
-                          : "bg-sky-50 text-sky-800 border border-sky-200"
-                      }`}
-                    >
-                      {item.status === "MATCHED"
-                        ? "MATCHED"
-                        : item.status === "DISCREPANCY_AMOUNT"
-                        ? "SELISIH NOMINAL"
-                        : "UNMATCHED GATEWAY"}
-                    </span>
-                    {item.matchedAt && (
-                      <span className="text-[9px] text-slate-400 block mt-0.5">
-                        {item.matchedAt}
-                      </span>
-                    )}
-                  </td>
+        {/* Table */}
+        {loading ? (
+          <div className="p-16 flex flex-col items-center justify-center gap-3 text-slate-400">
+            <ArrowsClockwise className="w-8 h-8 animate-spin text-[#0F4C81]" />
+            <p className="text-xs font-medium text-slate-500">Memuat log audit finansial...</p>
+          </div>
+        ) : filteredLogs.length === 0 ? (
+          <div className="p-16 text-center">
+            <EmptyState
+              title="Tidak Ada Log Audit"
+              description="Belum ada aktivitas mutasi yang tercatat dalam audit log Finance Service."
+            />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                  <th className="py-3 px-4">Waktu & Service</th>
+                  <th className="py-3 px-4">Aksi / Event</th>
+                  <th className="py-3 px-4">Subjek Terdampak</th>
+                  <th className="py-3 px-4">Aktor / User</th>
+                  <th className="py-3 px-4">Hasil</th>
+                  <th className="py-3 px-4 text-right">Rincian</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-xs font-body">
+                {filteredLogs.map((log) => (
+                  <tr key={log.id} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="py-3.5 px-4">
+                      <div className="font-mono text-[11px] text-slate-900">
+                        {new Date(log.created_at).toLocaleString("id-ID")}
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        {log.actor_service}
+                      </span>
+                    </td>
+
+                    <td className="py-3.5 px-4 font-mono font-bold text-slate-800 text-[11px]">
+                      {log.action}
+                    </td>
+
+                    <td className="py-3.5 px-4">
+                      <div className="font-bold text-slate-800 text-[11px]">{log.subject_type}</div>
+                      <span className="font-mono text-[10px] text-slate-400">
+                        {log.subject_id}
+                      </span>
+                    </td>
+
+                    <td className="py-3.5 px-4 font-mono text-[11px] text-slate-600">
+                      {log.actor_user_id}
+                    </td>
+
+                    <td className="py-3.5 px-4">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                          log.result === "SUCCESS"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : "bg-rose-100 text-rose-800"
+                        }`}
+                      >
+                        {log.result}
+                      </span>
+                    </td>
+
+                    <td className="py-3.5 px-4 text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedLog(log)}
+                        className="text-xs text-slate-700 hover:bg-slate-100 rounded-xl"
+                      >
+                        <Eye className="w-3.5 h-3.5 mr-1" />
+                        Detail
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {lastPage > 1 && (
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
+            <span>
+              Halaman <strong>{currentPage}</strong> dari <strong>{lastPage}</strong>
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage <= 1 || loading}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                className="text-xs rounded-xl"
+              >
+                Sebelumnya
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage >= lastPage || loading}
+                onClick={() => setCurrentPage((p) => Math.min(lastPage, p + 1))}
+                className="text-xs rounded-xl"
+              >
+                Berikutnya
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* =========================================================================
+          MODAL: Detail Audit Event
+         ========================================================================= */}
+      <Modal
+        isOpen={!!selectedLog}
+        onClose={() => setSelectedLog(null)}
+        title="Rincian Audit Event Finansial"
+        size="md"
+      >
+        {selectedLog && (
+          <div className="space-y-4 text-left font-body text-xs">
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Log ID:</span>
+                <strong className="font-mono text-slate-900">{selectedLog.id}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Aksi (Action):</span>
+                <strong className="font-mono text-[#0F4C81]">{selectedLog.action}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Aktor (Actor ID):</span>
+                <strong className="font-mono text-slate-900">{selectedLog.actor_user_id}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Subjek:</span>
+                <span className="font-mono text-slate-900">
+                  {selectedLog.subject_type} ({selectedLog.subject_id})
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Waktu Pencatatan:</span>
+                <span className="font-mono">{new Date(selectedLog.created_at).toLocaleString("id-ID")}</span>
+              </div>
+            </div>
+
+            {selectedLog.after_state && (
+              <div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  Payload State (After State):
+                </span>
+                <pre className="p-3 rounded-2xl bg-slate-900 text-slate-100 font-mono text-[11px] overflow-x-auto">
+                  {JSON.stringify(selectedLog.after_state, null, 2)}
+                </pre>
+              </div>
+            )}
+
+            <div className="flex justify-end pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedLog(null)}
+                className="rounded-xl text-xs font-bold"
+              >
+                Tutup
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

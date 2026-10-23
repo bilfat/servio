@@ -29,7 +29,9 @@ export function AppShell({ children }: AppShellProps) {
   const isAuthPage = pathname?.startsWith("/auth/") || pathname === "/login" || pathname === "/register";
 
   const isOperationalRoute = Boolean(
-    pathname?.startsWith("/provider") ||
+    pathname?.startsWith("/provider/") ||
+    pathname === "/provider" ||
+    pathname?.startsWith("/business/provider") ||
     pathname?.startsWith("/worker") ||
     pathname?.startsWith("/ceo") ||
     pathname?.startsWith("/executive") ||
@@ -44,7 +46,7 @@ export function AppShell({ children }: AppShellProps) {
   );
 
   const isProviderRoute = Boolean(
-    pathname?.startsWith("/provider") || pathname?.startsWith("/business/provider")
+    pathname?.startsWith("/provider/") || pathname === "/provider" || pathname?.startsWith("/business/provider")
   );
   const isProviderClosed = isProviderRoute && storeStatus === "TEMPORARY_CLOSED";
 
@@ -68,20 +70,39 @@ export function AppShell({ children }: AppShellProps) {
     pathname?.startsWith("/checkout") ||
     pathname?.startsWith("/returns/new") ||
     pathname?.startsWith("/products") ||
+    pathname?.startsWith("/services") ||
     pathname?.startsWith("/merchants") ||
-    (pathname?.startsWith("/warranties/") && pathname !== "/warranties");
+    pathname?.startsWith("/providers") ||
+    pathname?.startsWith("/warranties") ||
+    pathname?.startsWith("/chat");
+
+  const isChatRoute = pathname?.startsWith("/chat");
+
+  // Check if current route is a store detail page (provider/jasa or merchant/barang storefront)
+  const isStoreDetailPage = Boolean(
+    pathname?.startsWith("/providers/") ||
+    pathname?.startsWith("/merchants/")
+  );
 
   return (
-    <div className={`min-h-screen bg-white flex flex-col selection:bg-sky selection:text-primary ${isProviderClosed ? "overflow-hidden" : ""}`}>
-      {/* Top Navbar */}
-      <Navbar
-        onToggleSidebar={handleToggleSidebar}
-        isMobileSidebarOpen={mobileSidebarOpen}
-        hideSidebarToggle={isProviderClosed || !isDashboardRole}
-      />
+    <div
+      className={`bg-white flex flex-col selection:bg-sky selection:text-primary ${
+        isChatRoute
+          ? "h-screen max-h-screen overflow-hidden"
+          : "min-h-screen"
+      } ${isProviderClosed ? "overflow-hidden" : ""}`}
+    >
+      {/* Top Navbar: Disembunyikan di halaman detail etalase toko (jasa maupun barang) sesuai instruksi UI/UX */}
+      {!isStoreDetailPage && (
+        <Navbar
+          onToggleSidebar={handleToggleSidebar}
+          isMobileSidebarOpen={mobileSidebarOpen}
+          hideSidebarToggle={isProviderClosed || !isDashboardRole}
+        />
+      )}
 
       {/* Main Layout Body */}
-      <div className="flex-1 flex w-full">
+      <div className={`flex-1 flex w-full ${isChatRoute ? "min-h-0 overflow-hidden" : ""}`}>
         {/* Sidebar for Dashboard roles: Disembunyikan saat Toko Tutup */}
         {isDashboardRole && !isProviderClosed && (
           <RoleSidebar
@@ -95,7 +116,9 @@ export function AppShell({ children }: AppShellProps) {
         {/* Content Viewport */}
         <main
           className={`flex-1 flex flex-col min-w-0 transition-all ${
-            isProviderClosed
+            isChatRoute
+              ? "p-0 min-h-0 overflow-hidden"
+              : isProviderClosed
               ? "p-0 overflow-hidden"
               : isFullBleed
               ? "p-0"
@@ -107,7 +130,7 @@ export function AppShell({ children }: AppShellProps) {
           }`}
         >
           {isFullBleed || isProviderClosed ? (
-            <div className="flex-1 w-full overflow-hidden">{children}</div>
+            <div className={`flex-1 w-full overflow-hidden ${isChatRoute ? "h-full min-h-0 flex flex-col" : ""}`}>{children}</div>
           ) : isDashboardRole ? (
             <div className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6">
               {children}

@@ -17,8 +17,27 @@ function mapCategoryCodeToDomainId(code?: string): FixedDomainId {
   return "repair";
 }
 
-export function useServiceDetail(serviceId: string) {
-  const [apiService, setApiService] = useState<ApiCatalogService | null>(null);
+export interface ServiceDetailCoverageCity {
+  city_code: string;
+  label?: string;
+}
+
+export interface ServiceDetailPricing {
+  model: "FREE" | "RANGE" | "AFTER_SURVEY" | string;
+  min_price_idr: number | null;
+  max_price_idr: number | null;
+  currency?: string;
+}
+
+export interface ServiceDetailSurvey {
+  availability: string;
+  requirement: string;
+  fee_model: string;
+  fee_idr: number | null;
+}
+
+export function useServiceDetail(serviceId: string, cityCode = "JKT-BARAT") {
+  const [apiService, setApiService] = useState<any | null>(null);
   const [catalogItems, setCatalogItems] = useState<ApiCatalogService[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -29,17 +48,22 @@ export function useServiceDetail(serviceId: string) {
       try {
         setIsLoading(true);
         const [res, catalogRes] = await Promise.allSettled([
-          publicCatalogApi.getDetail(serviceId),
-          publicCatalogApi.getCatalog(),
+          publicCatalogApi.getDetail(serviceId, cityCode),
+          publicCatalogApi.getCatalog({ city_code: cityCode }),
         ]);
         if (mounted && res.status === "fulfilled" && res.value && res.value.data) {
           setApiService(res.value.data);
         }
         if (mounted && catalogRes.status === "fulfilled" && catalogRes.value && catalogRes.value.data) {
-          setCatalogItems(catalogRes.value.data);
+          const raw = Array.isArray(catalogRes.value.data?.items)
+            ? catalogRes.value.data.items
+            : Array.isArray(catalogRes.value.data)
+            ? catalogRes.value.data
+            : [];
+          setCatalogItems(raw);
         }
       } catch {
-        // Fallback handled below
+        // Error handling handled by isNotFound state
       } finally {
         if (mounted) setIsLoading(false);
       }
@@ -49,48 +73,75 @@ export function useServiceDetail(serviceId: string) {
     return () => {
       mounted = false;
     };
-  }, [serviceId]);
+  }, [serviceId, cityCode]);
 
-  const service: ServiceOffering | undefined = useMemo(() => {
-    if (apiService) {
-      return {
-        id: apiService.id,
-        providerMasterServiceId: apiService.id,
-        providerId: apiService.providerId,
-        providerName: apiService.providerName,
-        isVerifiedProvider: true,
-        domainId: mapCategoryCodeToDomainId(apiService.categoryCode),
-        categoryId: apiService.categoryId,
-        categoryName: apiService.categoryName,
-        categoryCode: apiService.categoryCode,
-        subcategoryId: apiService.subcategoryId,
-        subcategoryName: apiService.subcategoryName,
-        subcategoryCode: apiService.subcategoryCode,
-        title: apiService.title || apiService.name,
-        shortDescription: apiService.shortDescription || apiService.description,
-        fullDescription: apiService.description || apiService.shortDescription || "",
-        pricingModel: "ESTIMATED_RANGE" as PricingModel,
-        basePrice: apiService.basePrice || apiService.priceMin,
-        priceFormatted: `Rp ${(apiService.basePrice || apiService.priceMin).toLocaleString("id-ID")}`,
-        estimatedDurationHours: 1,
-        warrantyDays: apiService.warrantyDays || (apiService.warrantyConfig?.durationDays ?? 30),
-        rating: apiService.rating || 4.9,
-        reviewCount: apiService.reviewCount || 38,
-        thumbnailUrl: apiService.thumbnailUrl || "/images/services/default.jpg",
-        serviceModes: ((apiService.serviceModes || ["HOME_SERVICE"]).filter((m) => m === "HOME_SERVICE" || m === "WORKSHOP").length > 0
-          ? ((apiService.serviceModes || ["HOME_SERVICE"]).filter((m) => m === "HOME_SERVICE" || m === "WORKSHOP") as ("HOME_SERVICE" | "WORKSHOP")[])
-          : (["HOME_SERVICE"] as ("HOME_SERVICE" | "WORKSHOP")[])),
-        inclusions: ["Inspeksi Awal", "Pengerjaan Profesional Bergaransi", "Proteksi Pembayaran Escrow"],
-        exclusions: ["Suku Cadang / Material Tambahan (Bila ada)"],
-      };
-    }
-    return undefined;
-  }, [apiService]);
+  const service = useMemo(() => {
+    if (!apiService) return undefined;
+
+    const basePrice = Number(apiService.pricing?.min_price_idr ?? apiService.basePrice ?? apiService.priceMin ?? 0);
+    const maxPrice = Number(apiService.pricing?.max_price_idr ?? apiService.priceMax ?? basePrice);
+
+    return {
+      id: apiService.id,
+      providerMasterServiceId: apiService.id,
+      providerId: apiService.provider?.organization_id || apiService.providerId || "0740d857-b665-4191-aaf5-d7dd3611dc1d",
+      providerName: apiService.provider?.store_name || apiService.provider?.display_name || apiService.providerName || "Penyedia Jasa",
+      providerOfficeCity: apiService.provider?.office_city || apiService.provider?.city || null,
+      isVerifiedProvider: true,
+      domainId: mapCategoryCodeToDomainId(apiService.categoryCode || apiService.service_definition?.name),
+      categoryId: apiService.categoryId || apiService.service_definition?.category_id || "repair",
+      categoryName: apiService.categoryName || "Servis & Perbaikan",
+      categoryCode: apiService.categoryCode || "REPAIR",
+      subcategoryId: apiService.subcategoryId || apiService.service_definition?.subcategory_id || "ac",
+      subcategoryName: apiService.service_definition?.name || apiService.subcategoryName || "Servis AC",
+      subcategoryCode: apiService.subcategoryCode || "AC",
+      title: apiService.display_name || apiService.title || apiService.name || "Layanan Jasa",
+      shortDescription: apiService.description ? apiService.description.slice(0, 160) : "",
+      fullDescription: apiService.description || "",
+      pricingModel: (apiService.pricing?.model || "RANGE") as PricingModel,
+      basePrice,
+      priceMin: basePrice,
+      priceMax: maxPrice,
+      priceFormatted:
+        apiService.pricing?.model === "FREE"
+          ? "Gratis (Rp0)"
+          : apiService.pricing?.model === "AFTER_SURVEY"
+          ? "Setelah Survei"
+          : `Rp ${Number(basePrice || 0).toLocaleString("id-ID")}${maxPrice > basePrice ? ` – Rp ${Number(maxPrice || 0).toLocaleString("id-ID")}` : ""}`,
+      estimatedDurationHours: apiService.duration?.max || apiService.duration?.min || 1,
+      durationMin: apiService.duration?.min ?? 1,
+      durationMax: apiService.duration?.max ?? 2,
+      durationUnit: apiService.duration?.unit ?? "HOUR",
+      surveyFee: apiService.survey?.fee_idr ?? 0,
+      surveyFeeModel: apiService.survey?.fee_model ?? ((apiService.survey?.fee_idr !== undefined && apiService.survey?.fee_idr > 0) ? "PAID" : "FREE"),
+      surveyAvailability: apiService.survey?.availability ?? "AVAILABLE",
+      surveyRequirement: apiService.survey?.requirement ?? "OPTIONAL",
+      warrantyDays: 0,
+      rating: 0,
+      reviewCount: 0,
+      thumbnailUrl: apiService.gallery?.[0]?.url || (apiService.primary_media?.url ?? null),
+      serviceModes: ["HOME_SERVICE", "WORKSHOP"] as ("HOME_SERVICE" | "WORKSHOP")[],
+      inclusions: Array.isArray(apiService.included_items) && apiService.included_items.length > 0
+        ? apiService.included_items
+        : ["Pemeriksaan unit dan diagnosis", "Pengerjaan terstandarisasi Servio", "Pengujian fungsi pasca perbaikan"],
+      exclusions: Array.isArray(apiService.excluded_items) && apiService.excluded_items.length > 0
+        ? apiService.excluded_items
+        : ["Suku cadang / komponen pengganti tambahan di luar paket"],
+      customerRequirements: apiService.customer_requirements || [],
+      pricing: apiService.pricing as ServiceDetailPricing,
+      survey: apiService.survey as ServiceDetailSurvey,
+      coverageCities: (apiService.coverage_cities || []) as ServiceDetailCoverageCity[],
+      serviceable: apiService.location?.serviceable ?? true,
+      selectedCityCode: apiService.location?.selected_city_code || cityCode,
+      nextAction: apiService.next_action,
+      gallery: Array.isArray(apiService.gallery) && apiService.gallery.length > 0
+        ? apiService.gallery
+        : (apiService.primary_media ? [{ id: apiService.primary_media.id, url: apiService.primary_media.url, is_primary: true }] : []),
+    };
+  }, [apiService, cityCode]);
 
   const provider: ServiceProvider | undefined = useMemo(() => {
     if (!service) return undefined;
-    const found = MOCK_PROVIDERS.find((p) => p.id === service.providerId);
-    if (found) return found;
     return ({
       id: service.providerId,
       name: service.providerName,
@@ -101,10 +152,8 @@ export function useServiceDetail(serviceId: string) {
       completedJobs: 142,
       operationalHoursSummary: "08:00 - 18:00 WIB",
       operatingHoursDetail: [],
-      workRadiusKm: 25,
       address: "Kawasan Industri Servio Center",
-      city: "Jakarta Selatan",
-      coordinates: { lat: -6.2, lng: 106.8 },
+      city: "Jakarta Barat",
       specialties: [service.title],
       isVerified: true,
       joinedYear: 2024,
@@ -117,31 +166,31 @@ export function useServiceDetail(serviceId: string) {
   const relatedServices: ServiceOffering[] = useMemo(() => {
     if (!service || catalogItems.length === 0) return [];
     return catalogItems
-      .filter((s) => s.id !== service.id && (s.categoryId === service.categoryId || mapCategoryCodeToDomainId(s.categoryCode) === service.domainId))
+      .filter((s) => s.id !== service.id)
       .slice(0, 3)
       .map((s) => ({
         id: s.id,
         providerMasterServiceId: s.id,
-        providerId: s.providerId,
-        providerName: s.providerName,
+        providerId: s.providerId || s.provider_organization_id || "0740d857-b665-4191-aaf5-d7dd3611dc1d",
+        providerName: s.providerName || "Penyedia Jasa",
         isVerifiedProvider: true,
         domainId: mapCategoryCodeToDomainId(s.categoryCode),
-        categoryId: s.categoryId,
-        categoryName: s.categoryName,
-        categoryCode: s.categoryCode,
-        subcategoryId: s.subcategoryId,
-        subcategoryName: s.subcategoryName,
-        subcategoryCode: s.subcategoryCode,
-        title: s.title || s.name,
-        shortDescription: s.shortDescription || s.description,
+        categoryId: s.categoryId || "repair",
+        categoryName: s.categoryName || "Kategori Jasa",
+        categoryCode: s.categoryCode || "REPAIR",
+        subcategoryId: s.subcategoryId || "subcat",
+        subcategoryName: s.subcategoryName || "Subkategori",
+        subcategoryCode: s.subcategoryCode || "SUBCAT",
+        title: s.title || s.name || s.display_name || "Layanan Jasa",
+        shortDescription: s.shortDescription || s.description || "",
         fullDescription: s.description || s.shortDescription || "",
-        pricingModel: "ESTIMATED_RANGE" as PricingModel,
-        basePrice: s.basePrice || s.priceMin,
-        priceFormatted: `Rp ${(s.basePrice || s.priceMin).toLocaleString("id-ID")}`,
+        pricingModel: (s.pricingModel || "ESTIMATED_RANGE") as PricingModel,
+        basePrice: Number(s.basePrice || s.priceMin || 0),
+        priceFormatted: `Rp ${Number(s.basePrice || s.priceMin || 0).toLocaleString("id-ID")}`,
         estimatedDurationHours: 1,
-        warrantyDays: s.warrantyDays || (s.warrantyConfig?.durationDays ?? 30),
+        warrantyDays: s.warrantyDays || 30,
         rating: s.rating || 4.9,
-        reviewCount: s.reviewCount || 38,
+        reviewCount: s.reviewCount || 12,
         thumbnailUrl: s.thumbnailUrl || "/images/services/default.jpg",
         serviceModes: ["HOME_SERVICE"],
         inclusions: ["Inspeksi Awal", "Pengerjaan Profesional Bergaransi"],

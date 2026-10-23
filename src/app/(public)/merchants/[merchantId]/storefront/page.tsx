@@ -168,9 +168,9 @@ export default function MerchantStorefrontPage() {
   }
 
   return (
-    <div className="-mt-16 min-h-screen lg:min-h-0 lg:h-screen flex flex-col overflow-hidden bg-slate-50/50 font-sans">
-      {/* 1 & 2. Hero Banner Bleeding Under Glass Navbar with Integrated Breadcrumb */}
-      <div className="bg-gradient-to-r from-slate-900 via-[#0A3359] to-[#0F4C81] text-white relative shrink-0 border-b border-slate-800/80 pt-16 shadow-md">
+    <div className="min-h-screen lg:min-h-0 lg:h-screen flex flex-col overflow-hidden bg-slate-50/50 font-sans">
+      {/* 1 & 2. Hero Banner With Integrated Top Breadcrumb */}
+      <div className="bg-gradient-to-r from-slate-900 via-[#0A3359] to-[#0F4C81] text-white relative shrink-0 border-b border-slate-800/80 shadow-md">
         {/* Breadcrumb Navigation (Dark Glass Bar Directly Beneath Navbar) */}
         <div className="border-b border-white/10 bg-black/15 backdrop-blur-xs">
           <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between">

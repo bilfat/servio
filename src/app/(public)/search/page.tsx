@@ -134,13 +134,15 @@ function SearchPageContent() {
     priceMin: s.priceMin ?? s.basePrice,
     priceMax: s.priceMax ?? s.basePrice,
     pricingModel: s.pricingModel,
-    rating: s.rating,
-    reviewCount: s.reviewCount,
-    warrantyDays: s.warrantyDays,
-    providerName: s.providerName,
+    providerName: s.providerName || "Penyedia Jasa",
     isVerifiedProvider: s.isVerifiedProvider,
     thumbnailUrl: s.thumbnailUrl,
     description: s.description || s.shortDescription || "",
+    surveyFee: s.surveyFee,
+    surveyFeeModel: s.surveyFeeModel,
+    durationMin: s.durationMin,
+    durationMax: s.durationMax,
+    durationUnit: s.durationUnit,
   });
 
   const toProviderCard = (p: ServiceProvider): ProviderCardData => ({

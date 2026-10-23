@@ -434,14 +434,14 @@ class ProductIntegrationCR004Test extends TestCase
     }
 
     /**
-     * Requirement 10: Non-MERCHANT organization returns 422.
+     * Requirement 10: Non-MERCHANT / Non-PROVIDER organization returns 422.
      */
     public function test_public_merchant_profile_non_merchant_organization_returns_422(): void
     {
-        // Provider organization is SERVICE_PROVIDER, not MERCHANT
-        $providerOrg = Organization::where('type', '!=', 'MERCHANT')->first();
-        if (! $providerOrg) {
-            $providerOrg = Organization::create([
+        // Organization with type not MERCHANT or PROVIDER
+        $unsupportedOrg = Organization::whereNotIn('type', ['MERCHANT', 'PROVIDER'])->first();
+        if (! $unsupportedOrg) {
+            $unsupportedOrg = Organization::create([
                 'id' => (string) Str::uuid(),
                 'type' => 'SERVICE_PROVIDER',
                 'status' => 'ACTIVE',
@@ -449,12 +449,40 @@ class ProductIntegrationCR004Test extends TestCase
         }
 
         $response = $this->withHeaders(['X-Internal-Service-Key' => $this->internalKey])
-            ->getJson("/internal/v1/organizations/{$providerOrg->id}/public-profile");
+            ->getJson("/internal/v1/organizations/{$unsupportedOrg->id}/public-profile");
 
         $response->assertStatus(422)
             ->assertJson([
                 'success' => false,
                 'code' => 'IDENTITY_ORGANIZATION_NOT_MERCHANT',
+            ]);
+    }
+
+    /**
+     * CR-04-IDENTITY-001: Provider organization returns 200 with public profile.
+     */
+    public function test_public_profile_provider_organization(): void
+    {
+        $providerOrg = Organization::where('type', 'PROVIDER')->first();
+        if (! $providerOrg) {
+            $providerOrg = Organization::create([
+                'id' => (string) Str::uuid(),
+                'type' => 'PROVIDER',
+                'status' => 'ACTIVE',
+            ]);
+        }
+
+        $response = $this->withHeaders(['X-Internal-Service-Key' => $this->internalKey])
+            ->getJson("/internal/v1/organizations/{$providerOrg->id}/public-profile");
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'success' => true,
+                'code' => 'IDENTITY_PUBLIC_PROFILE_LOADED',
+                'data' => [
+                    'organization_id' => $providerOrg->id,
+                    'type' => 'PROVIDER',
+                ],
             ]);
     }
 

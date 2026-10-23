@@ -27,6 +27,8 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Toast } from "@/components/feedback/Toast";
+import Link from "next/link";
+import { useAfterSales } from "@/features/afterSales/useAfterSales";
 
 interface CategoryOption {
   id: string;
@@ -100,7 +102,17 @@ function MerchantProductsContent() {
   ]);
   const [isCreatingProduct, setIsCreatingProduct] = useState(false);
 
-  // Warranty Policy Configuration State (Step 7)
+  // Warranty Policy Configuration State (Phase 07 Preset Integration)
+  const { warrantyPresets } = useAfterSales();
+  const activeMerchantPresets = useMemo(() => {
+    return (warrantyPresets || []).filter((p: any) => p.organizationId === "merch-jaya-motor" && p.isActive);
+  }, [warrantyPresets]);
+
+  const [hasWarranty, setHasWarranty] = useState<boolean>(true);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>("preset-merch-01");
+  const [editHasWarranty, setEditHasWarranty] = useState<boolean>(true);
+  const [editSelectedPresetId, setEditSelectedPresetId] = useState<string>("preset-merch-01");
+
   const [warrantyDuration, setWarrantyDuration] = useState(12);
   const [warrantyType, setWarrantyType] = useState("MANUFACTURER_AND_STORE");
   const [warrantyCoverage, setWarrantyCoverage] = useState("Cacat manufaktur, kegagalan fungsi kelistrikan suku cadang");
@@ -380,6 +392,9 @@ function MerchantProductsContent() {
       const isRegistered = brands.some((b) => b.name.toLowerCase() === currentBrand.toLowerCase());
       setIsEditCustomBrand(!isRegistered && Boolean(currentBrand));
       setEditDescription(full.description || "");
+      const hasExistingWar = Boolean(full.warrantyPolicy?.durationMonths && full.warrantyPolicy.durationMonths > 0);
+      setEditHasWarranty(hasExistingWar);
+      setEditSelectedPresetId(activeMerchantPresets[0]?.id || "");
       setEditWarrantyDuration(full.warrantyPolicy?.durationMonths ?? 0);
       setEditWarrantyType(full.warrantyPolicy?.type || "MANUFACTURER_AND_STORE");
       setEditWarrantyCoverage(full.warrantyPolicy?.coverage || "Cacat manufaktur, kegagalan fungsi kelistrikan suku cadang");
@@ -1445,84 +1460,110 @@ function MerchantProductsContent() {
                 </div>
               </div>
 
-              {/* SECTION 3: KETENTUAN GARANSI (PRATINJAU UI) */}
+              {/* SECTION 3: KETENTUAN GARANSI TOKO (INTEGRASI AFTER-SALES PHASE 07) */}
               <div className="pt-4 border-t border-slate-100 space-y-3">
-                <div className="p-3 bg-amber-50/80 border border-amber-200/90 rounded-2xl space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <WarningCircle size={16} className="text-amber-700 shrink-0" weight="bold" />
-                    <span className="text-xs font-bold text-amber-950 font-heading">
-                      Fitur Tambahan: Kebijakan Garansi &amp; Purnajual (Pratinjau UI)
-                    </span>
-                    <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-200/70 text-amber-900 border border-amber-300">
-                      Belum Tersimpan ke Database
-                    </span>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <ShieldCheck size={16} className="text-[#0F4C81]" weight="bold" />
+                      <span>Kebijakan Garansi Toko</span>
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      Pilih opsi garansi aktif milik toko Anda untuk produk ini
+                    </p>
                   </div>
-                  <p className="text-[11px] text-amber-900/90 leading-relaxed">
-                    Formulir garansi di bawah ini saat ini disiapkan sebagai pratinjau tampilan antarmuka (UI). Data garansi belum disimpan secara permanen ke basis data produk.
-                  </p>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-[#0F4C81] border border-sky-200">
+                    DATA SIMULASI
+                  </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Durasi Garansi <span className="text-slate-400 font-normal">(Opsional)</span>
-                    </label>
-                    <select
-                      value={warrantyDuration}
-                      onChange={(e) => setWarrantyDuration(Number(e.target.value))}
-                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20"
-                    >
-                      <option value={0}>0 Bulan (Tanpa Garansi / Non-Garansi)</option>
-                      <option value={1}>1 Bulan Garansi Toko</option>
-                      <option value={3}>3 Bulan Garansi Toko &amp; Manufaktur</option>
-                      <option value={6}>6 Bulan Garansi Resmi</option>
-                      <option value={12}>12 Bulan (1 Tahun) Garansi Pabrik Standar</option>
-                      <option value={24}>24 Bulan (2 Tahun) Garansi Extended</option>
-                    </select>
+                {/* Toggle Ada Garansi? Ya/Tidak */}
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">Ada Garansi?</p>
+                      <p className="text-[11px] text-slate-500">Tentukan apakah produk ini dilindungi garansi toko atau non-garansi</p>
+                    </div>
+                    <div className="inline-flex p-1 bg-slate-200/70 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => setHasWarranty(true)}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                          hasWarranty
+                            ? "bg-[#0F4C81] text-white shadow-xs"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        Ya
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setHasWarranty(false)}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                          !hasWarranty
+                            ? "bg-slate-700 text-white shadow-xs"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        Tidak
+                      </button>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Tipe Penjamin Garansi <span className="text-slate-400 font-normal">(Opsional)</span>
-                    </label>
-                    <select
-                      value={warrantyType}
-                      onChange={(e) => setWarrantyType(e.target.value)}
-                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20"
-                    >
-                      <option value="MANUFACTURER_AND_STORE">Toko &amp; Pabrik Manufaktur Resmi</option>
-                      <option value="STORE_ONLY">Garansi Toko (Tukar Baru / Perbaikan)</option>
-                      <option value="OFFICIAL_BRAND">Brand / Distributor Tunggal</option>
-                    </select>
-                  </div>
-                </div>
+                  {hasWarranty ? (
+                    activeMerchantPresets.length > 0 ? (
+                      <div className="space-y-2 pt-2 border-t border-slate-200/70">
+                        <label className="block text-[11px] font-bold text-slate-700">
+                          Pilih Opsi Garansi Aktif Toko:
+                        </label>
+                        <select
+                          value={selectedPresetId || activeMerchantPresets[0]?.id}
+                          onChange={(e) => setSelectedPresetId(e.target.value)}
+                          className="w-full text-xs p-2.5 bg-white border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
+                        >
+                          {activeMerchantPresets.map((preset: any) => (
+                            <option key={preset.id} value={preset.id}>
+                              {preset.name} ({preset.durationDays} Hari)
+                            </option>
+                          ))}
+                        </select>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Cakupan Perlindungan Garansi <span className="text-slate-400 font-normal">(Opsional)</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={warrantyCoverage}
-                      onChange={(e) => setWarrantyCoverage(e.target.value)}
-                      placeholder="Misal: Cacat manufaktur, kebocoran freon bawaan"
-                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Pengecualian Garansi (Exclusions) <span className="text-slate-400 font-normal">(Opsional)</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={warrantyExclusions}
-                      onChange={(e) => setWarrantyExclusions(e.target.value)}
-                      placeholder="Misal: Kesalahan pasang, benturan fisik"
-                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                    />
-                  </div>
+                        {/* Preset preview card */}
+                        {(() => {
+                          const curPreset = activeMerchantPresets.find(
+                            (p: any) => p.id === (selectedPresetId || activeMerchantPresets[0]?.id)
+                          );
+                          if (!curPreset) return null;
+                          return (
+                            <div className="p-2.5 rounded-xl bg-white border border-slate-200/90 text-[11px] space-y-1">
+                              <p className="text-slate-700 font-semibold">
+                                <span className="text-[#0F4C81] font-bold">Cakupan:</span> {curPreset.coverage}
+                              </p>
+                              {curPreset.exclusions && (
+                                <p className="text-slate-500">
+                                  <span className="text-rose-600 font-bold">Pengecualian:</span> {curPreset.exclusions}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs flex items-center justify-between">
+                        <span className="text-amber-800 font-medium">Belum ada opsi garansi aktif untuk toko Anda.</span>
+                        <Link
+                          href="/merchant/warranty"
+                          className="px-3 py-1 bg-[#0F4C81] text-white rounded-lg font-bold text-[11px] hover:bg-[#0B3860] shrink-0"
+                        >
+                          Atur Garansi
+                        </Link>
+                      </div>
+                    )
+                  ) : (
+                    <div className="p-2.5 rounded-xl bg-slate-100 text-[11px] text-slate-500 font-medium">
+                      Produk ini dijual tanpa perlindungan garansi toko. Pembeli tetap dilindungi kebijakan retur jika barang cacat atau bermasalah.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1691,83 +1732,109 @@ function MerchantProductsContent() {
                 ></textarea>
               </div>
 
-              {/* Warranty Policy Edit Section (UI-only preview) */}
+              {/* Warranty Policy Edit Section (Integrasi Presets Phase 07) */}
               <div className="pt-4 border-t border-slate-200/80 space-y-3">
-                <div className="p-3.5 bg-amber-50/80 border border-amber-200/90 rounded-2xl space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <WarningCircle size={18} className="text-amber-700 shrink-0" weight="bold" />
-                    <span className="text-xs font-bold text-amber-950 font-heading">
-                      Kebijakan Garansi Produk (Pratinjau UI)
-                    </span>
-                    <span className="text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-200/70 text-amber-900 border border-amber-300">
-                      Belum Tersimpan ke Database
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-amber-900/90 leading-relaxed">
-                    Pengaturan garansi berikut disiapkan sebagai simulasi antarmuka purnajual dan saat ini belum disimpan secara permanen ke basis data.
-                  </p>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex items-center justify-between">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Masa Garansi <span className="text-slate-400 font-normal">(Opsional)</span>
+                    <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <ShieldCheck size={16} className="text-[#0F4C81]" weight="bold" />
+                      <span>Kebijakan Garansi Toko</span>
                     </label>
-                    <select
-                      id="edit-warranty-duration"
-                      value={editWarrantyDuration}
-                      onChange={(e) => setEditWarrantyDuration(Number(e.target.value))}
-                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium"
-                    >
-                      <option value={0}>0 Bulan (Tanpa Garansi / Non-Garansi)</option>
-                      <option value={1}>1 Bulan Garansi Toko</option>
-                      <option value={3}>3 Bulan Garansi Toko &amp; Manufaktur</option>
-                      <option value={6}>6 Bulan Garansi Resmi</option>
-                      <option value={12}>12 Bulan (1 Tahun) Garansi Pabrik Standar</option>
-                      <option value={24}>24 Bulan (2 Tahun) Garansi Extended</option>
-                    </select>
+                    <p className="text-[11px] text-slate-500">
+                      Pilih opsi garansi aktif milik toko Anda
+                    </p>
                   </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Tipe Penjamin Garansi</label>
-                    <select
-                      value={editWarrantyType}
-                      onChange={(e) => setEditWarrantyType(e.target.value)}
-                      disabled={editWarrantyDuration === 0}
-                      className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium disabled:opacity-50"
-                    >
-                      <option value="MANUFACTURER_AND_STORE">Toko &amp; Pabrik Manufaktur Resmi</option>
-                      <option value="STORE_ONLY">Garansi Toko (Tukar Baru / Perbaikan)</option>
-                      <option value="OFFICIAL_BRAND">Brand / Distributor Tunggal</option>
-                    </select>
-                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-[#0F4C81] border border-sky-200">
+                    DATA SIMULASI
+                  </span>
                 </div>
 
-                {editWarrantyDuration > 0 && (
-                  <>
+                <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between">
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Cakupan Perlindungan Garansi</label>
-                      <input
-                        type="text"
-                        value={editWarrantyCoverage}
-                        onChange={(e) => setEditWarrantyCoverage(e.target.value)}
-                        placeholder="Misal: Cacat manufaktur, malfungsi kelistrikan komponen resmi"
-                        className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                      />
+                      <p className="text-xs font-bold text-slate-800">Ada Garansi?</p>
+                      <p className="text-[11px] text-slate-500">Tentukan apakah produk ini memiliki garansi toko</p>
                     </div>
+                    <div className="inline-flex p-1 bg-slate-200/70 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => setEditHasWarranty(true)}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                          editHasWarranty
+                            ? "bg-[#0F4C81] text-white shadow-xs"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        Ya
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditHasWarranty(false)}
+                        className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                          !editHasWarranty
+                            ? "bg-slate-700 text-white shadow-xs"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        Tidak
+                      </button>
+                    </div>
+                  </div>
 
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Pengecualian Garansi (Exclusions)</label>
-                      <input
-                        type="text"
-                        value={editWarrantyExclusions}
-                        onChange={(e) => setEditWarrantyExclusions(e.target.value)}
-                        placeholder="Misal: Kerusakan fisik benturan, korsleting listrik, modifikasi"
-                        className="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
-                      />
+                  {editHasWarranty ? (
+                    activeMerchantPresets.length > 0 ? (
+                      <div className="space-y-2 pt-2 border-t border-slate-200/70">
+                        <label className="block text-[11px] font-bold text-slate-700">
+                          Pilih Opsi Garansi Aktif Toko:
+                        </label>
+                        <select
+                          value={editSelectedPresetId || activeMerchantPresets[0]?.id}
+                          onChange={(e) => setEditSelectedPresetId(e.target.value)}
+                          className="w-full text-xs p-2.5 bg-white border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
+                        >
+                          {activeMerchantPresets.map((preset: any) => (
+                            <option key={preset.id} value={preset.id}>
+                              {preset.name} ({preset.durationDays} Hari)
+                            </option>
+                          ))}
+                        </select>
+
+                        {(() => {
+                          const curPreset = activeMerchantPresets.find(
+                            (p: any) => p.id === (editSelectedPresetId || activeMerchantPresets[0]?.id)
+                          );
+                          if (!curPreset) return null;
+                          return (
+                            <div className="p-2.5 rounded-xl bg-white border border-slate-200/90 text-[11px] space-y-1">
+                              <p className="text-slate-700 font-semibold">
+                                <span className="text-[#0F4C81] font-bold">Cakupan:</span> {curPreset.coverage}
+                              </p>
+                              {curPreset.exclusions && (
+                                <p className="text-slate-500">
+                                  <span className="text-rose-600 font-bold">Pengecualian:</span> {curPreset.exclusions}
+                                </p>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs flex items-center justify-between">
+                        <span className="text-amber-800 font-medium">Belum ada opsi garansi aktif untuk toko Anda.</span>
+                        <Link
+                          href="/merchant/warranty"
+                          className="px-3 py-1 bg-[#0F4C81] text-white rounded-lg font-bold text-[11px] hover:bg-[#0B3860] shrink-0"
+                        >
+                          Atur Garansi
+                        </Link>
+                      </div>
+                    )
+                  ) : (
+                    <div className="p-2.5 rounded-xl bg-slate-100 text-[11px] text-slate-500 font-medium">
+                      Produk ini dijual tanpa perlindungan garansi toko.
                     </div>
-                  </>
-                )}
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100">

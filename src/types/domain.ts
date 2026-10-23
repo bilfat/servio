@@ -94,9 +94,27 @@ export interface ProviderMasterService {
   priceMin: number;
   priceMax: number;
   surveyFee: number;
+  surveyFeeModel?: "FREE" | "PAID" | string;
+  surveyAvailability?: "NOT_AVAILABLE" | "AVAILABLE" | string;
+  surveyRequirement?: "OPTIONAL" | "REQUIRED" | string;
   serviceMethods: ProviderServiceMethod[];
-  status: "ACTIVE" | "INACTIVE" | "DRAFT";
+  status: "ACTIVE" | "INACTIVE" | "DRAFT" | "ARCHIVED";
   availability?: "AVAILABLE" | "UNAVAILABLE";
+  media?: Array<{
+    id: string;
+    url: string;
+    is_primary?: boolean;
+    sort_order?: number;
+    storage_state?: string;
+  }>;
+  primary_media?: {
+    id: string;
+    url: string;
+  } | null;
+  thumbnailUrl?: string | null;
+  lockVersion?: number;
+  lock_version?: number;
+  warrantyConfig?: any;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -334,6 +352,11 @@ export interface ServiceOffering {
   estimatedDurationHours: number;
   inclusions: string[];
   exclusions: string[];
+  surveyFee?: number;
+  surveyFeeModel?: string;
+  durationMin?: number;
+  durationMax?: number;
+  durationUnit?: string;
   thumbnailUrl?: string;
 }
 

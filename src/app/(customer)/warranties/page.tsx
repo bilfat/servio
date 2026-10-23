@@ -1,1118 +1,716 @@
 "use client";
 
 import React, { useState, useEffect, Suspense } from "react";
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  CalendarCheck,
-  ClockCountdown,
-  ArrowRight,
-  CheckCircle,
-  MagnifyingGlass,
-  SealCheck,
   ShieldCheck,
-  ShieldPlus,
+  Package,
+  Wrench,
   Clock,
   WarningCircle,
+  CheckCircle,
+  XCircle,
+  ArrowsClockwise,
+  ArrowRight,
+  MagnifyingGlass,
+  Funnel,
   FileText,
-  Wrench,
-  User,
-  Camera,
-  Check,
-  X,
-  Plus,
-  Package,
+  SlidersHorizontal,
+  Info,
+  CalendarCheck,
 } from "@phosphor-icons/react";
-import { useWarranties } from "@/features/warranties/useWarranties";
-import { CustomerDemoScenarioSelector } from "@/components/navigation/CustomerDemoScenarioSelector";
-import { WarrantyV1, WarrantyClaimV1 } from "@/types/domain";
-import { CustomerProductWarrantyView } from "@/components/features/products/CustomerProductWarrantyView";
+import { useAfterSales } from "@/features/afterSales/useAfterSales";
+import { CustomerWarrantyEntitlement, AfterSalesCase } from "@/types/afterSales";
+import { AfterSalesCaseDetail } from "@/components/features/afterSales/AfterSalesCaseDetail";
+import { WarrantyClaimModal } from "@/components/features/afterSales/WarrantyClaimModal";
+import { DemoScenarioSwitcher } from "@/components/features/afterSales/DemoScenarioSwitcher";
 
-function CustomerWarrantiesInner() {
+type MainTab = "active" | "submissions" | "expired";
+type CaseTypeFilter = "ALL" | "claim_product" | "claim_service" | "return_product";
+type CaseStatusFilter = "ALL" | "IN_PROGRESS" | "COMPLETED" | "REJECTED" | "NO_RESPONSE";
+type ItemTypeFilter = "ALL" | "PRODUCT" | "SERVICE";
+
+function CustomerWarrantiesAndSubmissionsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const domainParam = searchParams.get("domain")?.toUpperCase();
-  const [warrantyDomain, setWarrantyDomain] = useState<"PRODUCT" | "SERVICE">(
-    domainParam === "SERVICE" ? "SERVICE" : "PRODUCT"
+
+  const initialTab = (searchParams.get("tab") as MainTab) || "active";
+  const initialCaseId = searchParams.get("caseId") || null;
+  const initialType = searchParams.get("type") as CaseTypeFilter || "ALL";
+
+  const [activeTab, setActiveTab] = useState<MainTab>(
+    initialTab === "submissions" || initialTab === "expired" ? initialTab : "active"
   );
+  const [selectedCaseId, setSelectedCaseId] = useState<string | null>(initialCaseId);
+
+  // Filters for Tab 1 & Tab 3 (Warranties)
+  const [warrantyFilter, setWarrantyFilter] = useState<ItemTypeFilter>("ALL");
+  const [warrantySearch, setWarrantySearch] = useState("");
+
+  // Filters for Tab 2 (Submissions)
+  const [caseTypeFilter, setCaseTypeFilter] = useState<CaseTypeFilter>(initialType);
+  const [caseStatusFilter, setCaseStatusFilter] = useState<CaseStatusFilter>("ALL");
+  const [submissionSearch, setSubmissionSearch] = useState("");
+
+  // Warranty Claim Modal state
+  const [claimModalWarranty, setClaimModalWarranty] = useState<CustomerWarrantyEntitlement | null>(null);
+
+  // Warranty Detail Sheet / Modal state
+  const [viewingWarranty, setViewingWarranty] = useState<CustomerWarrantyEntitlement | null>(null);
+
+  const { warranties, cases, getCaseById } = useAfterSales();
 
   useEffect(() => {
-    if (domainParam === "SERVICE" || domainParam === "PRODUCT") {
-      setWarrantyDomain(domainParam);
+    const tabParam = searchParams.get("tab") as MainTab;
+    if (tabParam && ["active", "submissions", "expired"].includes(tabParam)) {
+      setActiveTab(tabParam);
     }
-  }, [domainParam]);
-  const {
-    warrantiesV1,
-    claimsV1,
-    paidWorkProposalsV1,
-    assignmentsV1,
-    diagnosesV1,
-    submitWarrantyClaim,
-    customerRespondPaidWorkProposal,
-    isWarrantyActive,
-  } = useWarranties();
+    const cId = searchParams.get("caseId");
+    if (cId) {
+      setSelectedCaseId(cId);
+    }
+  }, [searchParams]);
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  // 3 Simplified Customer Tabs (Spec: [Aktif] [Menggunakan Garansi] [Garansi Habis])
-  type CustomerTab = "ACTIVE" | "IN_USE" | "EXPIRED";
-  const [activeTab, setActiveTab] = useState<CustomerTab>("ACTIVE");
-
-  // Claim Modal State
-  const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
-  const [selectedWarrantyForClaim, setSelectedWarrantyForClaim] = useState<WarrantyV1 | null>(null);
-  const [claimReason, setClaimReason] = useState("");
-  const [claimDescription, setClaimDescription] = useState("");
-  const [issueOccurredAt, setIssueOccurredAt] = useState(new Date().toISOString().split("T")[0]);
-  const [claimEvidence, setClaimEvidence] = useState<string[]>([
-    "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=600&auto=format&fit=crop&q=80",
-  ]);
-  const [claimNotes, setClaimNotes] = useState("");
-
-  const customerId = "cust-01"; // Canonical default customer
-
-  const customerWarranties = warrantiesV1.filter(
-    (w) => w.customerId === customerId || w.customerId === "usr-cust-001"
+  // Tab 1: Active Warranties
+  const activeWarranties = warranties.filter(
+    (w) =>
+      w.isActive &&
+      (warrantyFilter === "ALL" || w.itemType === warrantyFilter) &&
+      (w.itemTitle.toLowerCase().includes(warrantySearch.toLowerCase()) ||
+        w.organizationName.toLowerCase().includes(warrantySearch.toLowerCase()))
   );
 
-  // Helper to find active claim for a warranty
-  const getActiveClaimForWarranty = (warId: string): WarrantyClaimV1 | undefined => {
-    return claimsV1.find(
-      (c) => c.warrantyId === warId && c.status !== "RESOLVED" && c.status !== "REJECTED"
-    );
-  };
-
-  // Helper to check if warranty is expired
-  const checkIsExpired = (w: WarrantyV1): boolean => {
-    if (w.status === "EXPIRED") return true;
-    if (w.status === "PENDING_ACTIVATION") return false;
-    return !isWarrantyActive(w.id);
-  };
-
-  // Tab 1: AKTIF — Warranty masih berlaku (atau pending) dan BELUM sedang diproses dalam claim aktif
-  const tabAktifWarranties = customerWarranties.filter((w) => {
-    const hasActiveClaim = !!getActiveClaimForWarranty(w.id);
-    const expired = checkIsExpired(w);
-    return !hasActiveClaim && !expired;
-  });
-
-  // Tab 2: MENGGUNAKAN GARANSI — Warranty sedang memiliki active claim
-  const tabMenggunakanGaransiWarranties = customerWarranties.filter((w) => {
-    const hasActiveClaim = !!getActiveClaimForWarranty(w.id);
-    return hasActiveClaim;
-  });
-
-  // Tab 3: GARANSI HABIS — Warranty yang sudah expired dan tidak memiliki claim aktif berjalan
-  const tabGaransiHabisWarranties = customerWarranties.filter((w) => {
-    const hasActiveClaim = !!getActiveClaimForWarranty(w.id);
-    const expired = checkIsExpired(w);
-    return expired && !hasActiveClaim;
-  });
-
-  // Pending Paid Work Proposals for this customer
-  const pendingProposals = paidWorkProposalsV1.filter(
-    (p) =>
-      (p.customerId === customerId || p.customerId === "usr-cust-001") &&
-      p.status === "PROPOSAL_SENT"
+  // Tab 3: Expired Warranties
+  const expiredWarranties = warranties.filter(
+    (w) =>
+      !w.isActive &&
+      (warrantyFilter === "ALL" || w.itemType === warrantyFilter) &&
+      (w.itemTitle.toLowerCase().includes(warrantySearch.toLowerCase()) ||
+        w.organizationName.toLowerCase().includes(warrantySearch.toLowerCase()))
   );
 
-  const handleOpenClaimModal = (war?: WarrantyV1) => {
-    const targetWar = war || tabAktifWarranties[0];
-    if (!targetWar) {
-      alert("Tidak ada garansi aktif yang memenuhi syarat untuk klaim.");
-      return;
-    }
-    if (targetWar.status === "PENDING_ACTIVATION") {
-      alert("Garansi ini masih menunggu aktivasi dari Mitra Provider.");
-      return;
-    }
-    setSelectedWarrantyForClaim(targetWar);
-    setClaimReason("AC kembali tidak dingin");
-    setClaimDescription("");
-    setClaimNotes("");
-    setIsClaimModalOpen(true);
-  };
+  // Tab 2: Unified Submissions (Claims + Returns)
+  const filteredSubmissions = cases.filter((c) => {
+    // Type Filter
+    if (caseTypeFilter !== "ALL" && c.caseType !== caseTypeFilter) return false;
 
-  const handleClaimSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedWarrantyForClaim) return;
-    if (!claimReason.trim() || !claimDescription.trim()) {
-      alert("Harap lengkapi masalah dan ceritakan kendala.");
-      return;
-    }
+    // Status Filter
+    if (caseStatusFilter === "NO_RESPONSE" && !c.isNoResponse) return false;
+    if (caseStatusFilter === "IN_PROGRESS" && (c.mainStatus === "COMPLETED" || c.mainStatus === "REJECTED")) return false;
+    if (caseStatusFilter === "COMPLETED" && c.mainStatus !== "COMPLETED") return false;
+    if (caseStatusFilter === "REJECTED" && c.mainStatus !== "REJECTED") return false;
 
-    try {
-      submitWarrantyClaim(customerId, selectedWarrantyForClaim.id, {
-        reason: claimReason.trim(),
-        description: claimNotes.trim()
-          ? `${claimDescription.trim()} (Catatan: ${claimNotes.trim()})`
-          : claimDescription.trim(),
-        issueOccurredAt,
-        evidence: claimEvidence,
-      });
-
-      setIsClaimModalOpen(false);
-      setToastMessage(
-        `Klaim garansi berhasil dikirimkan! Status garansi berpindah ke tab 'Menggunakan Garansi'.`
-      );
-      // Automatically switch to Tab 2: Menggunakan Garansi
-      setActiveTab("IN_USE");
-      setTimeout(() => setToastMessage(null), 4000);
-    } catch (err: any) {
-      alert(err.message || "Gagal mengajukan klaim garansi.");
-    }
-  };
-
-  const handleApproveProposal = (proposalId: string) => {
-    try {
-      const res = customerRespondPaidWorkProposal(customerId, proposalId, true);
-      setToastMessage(
-        `Pekerjaan berbayar disetujui! Order baru #${res.newOrder?.id || ""} telah diterbitkan.`
-      );
-      setTimeout(() => setToastMessage(null), 3500);
-    } catch (err: any) {
-      alert(err.message || "Gagal menyetujui penawaran.");
-    }
-  };
-
-  const handleRejectProposal = (proposalId: string) => {
-    try {
-      customerRespondPaidWorkProposal(
-        customerId,
-        proposalId,
-        false,
-        "Pelanggan menolak penawaran tambahan."
-      );
-      setToastMessage("Penawaran pekerjaan berbayar ditolak. Pekerjaan dihentikan dengan aman.");
-      setTimeout(() => setToastMessage(null), 3500);
-    } catch (err: any) {
-      alert(err.message || "Gagal menolak penawaran.");
-    }
-  };
-
-  // Filter current displayed list by search query
-  const getFilteredList = () => {
-    const q = searchQuery.toLowerCase();
-    let currentList: WarrantyV1[] = [];
-
-    if (activeTab === "ACTIVE") currentList = tabAktifWarranties;
-    else if (activeTab === "IN_USE") currentList = tabMenggunakanGaransiWarranties;
-    else currentList = tabGaransiHabisWarranties;
-
-    if (!q) return currentList;
-
-    return currentList.filter(
-      (w) =>
-        (w.serviceTitle || "").toLowerCase().includes(q) ||
-        (w.providerName || "").toLowerCase().includes(q) ||
-        w.id.toLowerCase().includes(q) ||
-        (w.originalWorkerName || "").toLowerCase().includes(q)
-    );
-  };
-
-  const displayedWarranties = getFilteredList();
-
-  const formatDate = (isoString?: string | null) => {
-    if (!isoString) return "-";
-    try {
-      return new Date(isoString).toLocaleDateString("id-ID", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      });
-    } catch {
-      return isoString;
-    }
-  };
-
-  const getRemainingDays = (w: WarrantyV1): number => {
-    if (w.status === "PENDING_ACTIVATION") return w.durationDaysSnapshot;
-    if (!w.expiresAt) return 0;
-    const diff = new Date(w.expiresAt).getTime() - Date.now();
-    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
-  };
-
-  // Helper to determine customer-safe simplified status in Tab 2
-  const getInUseStatusSummary = (
-    claim: WarrantyClaimV1,
-    asg?: (typeof assignmentsV1)[0],
-    dx?: (typeof diagnosesV1)[0],
-    proposal?: (typeof paidWorkProposalsV1)[0]
-  ) => {
-    if (proposal && proposal.status === "PROPOSAL_SENT") {
-      return {
-        badge: "MENUNGGU PERSETUJUAN ANDA",
-        badgeClass: "bg-amber-500 text-white",
-        label: "Pekerjaan di Luar Garansi Ditawarkan",
-        stepIndex: 6,
-      };
-    }
+    // Search query
     if (
-      claim.status === "REPAIR_APPROVED" ||
-      claim.status === "REPAIR_SCHEDULED" ||
-      claim.status === "REPAIR_IN_PROGRESS"
+      submissionSearch &&
+      !c.itemTitle.toLowerCase().includes(submissionSearch.toLowerCase()) &&
+      !c.caseNumber.toLowerCase().includes(submissionSearch.toLowerCase()) &&
+      !c.organizationName.toLowerCase().includes(submissionSearch.toLowerCase())
     ) {
-      return {
-        badge: "PERBAIKAN GARANSI",
-        badgeClass: "bg-emerald-600 text-white",
-        label: "Perbaikan Garansi Berlangsung",
-        stepIndex: 6,
-      };
+      return false;
     }
-    if (dx || claim.status === "WAITING_PROVIDER_DECISION") {
-      return {
-        badge: "HASIL PEMERIKSAAN",
-        badgeClass: "bg-purple-600 text-white",
-        label: "Diagnosis Diserahkan ke Provider",
-        stepIndex: 5,
-      };
-    }
-    if (asg?.checkInAt) {
-      return {
-        badge: "PEMERIKSAAN",
-        badgeClass: "bg-sky-600 text-white",
-        label: "Teknisi Tiba di Lokasi & Memeriksa Unit",
-        stepIndex: 4,
-      };
-    }
-    if (asg?.otwAt) {
-      return {
-        badge: "TEKNISI OTW",
-        badgeClass: "bg-sky-500 text-white",
-        label: "Teknisi Sedang Menuju Lokasi Anda",
-        stepIndex: 4,
-      };
-    }
-    if (asg || claim.status === "INSPECTION_SCHEDULED") {
-      return {
-        badge: "TEKNISI SUDAH DIJADWALKAN",
-        badgeClass: "bg-indigo-600 text-white",
-        label: "Jadwal Pemeriksaan Telah Ditetapkan",
-        stepIndex: 3,
-      };
-    }
-    return {
-      badge: "MENUNGGU PERSETUJUAN PROVIDER",
-      badgeClass: "bg-slate-700 text-white",
-      label: "Pengajuan Klaim Sedang Ditinjau Provider",
-      stepIndex: 1,
-    };
-  };
 
-  return (
-    <div className="space-y-6 pb-20">
-      {/* Dev / Demo Scenario Selector Banner */}
-      <div className="-mx-4 sm:-mx-6 lg:-mx-8 -mt-6 mb-4">
-        <CustomerDemoScenarioSelector onSelectScenario={(id) => router.push(`/orders/${id}`)} />
-      </div>
+    return true;
+  });
 
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-display font-extrabold text-neutral-dark">
-            Garansi & Perlindungan Resmi
-          </h1>
-          <p className="text-xs sm:text-sm text-neutral-slate mt-0.5">
-            Pusat pemantauan masa berlaku garansi suku cadang, produk resmi, dan jaminan perbaikan jasa SERVIO.
-          </p>
-        </div>
-
-        {warrantyDomain === "SERVICE" && tabAktifWarranties.length > 0 && (
-          <button
-            type="button"
-            onClick={() => handleOpenClaimModal()}
-            className="px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition-all flex items-center gap-1.5 shadow-servio-xs shrink-0"
-          >
-            <ShieldPlus size={16} weight="bold" />
-            <span>Ajukan Klaim Baru</span>
-          </button>
-        )}
-      </div>
-
-      {/* Top Nav: Pesanan vs Garansi */}
-      <div className="flex items-center gap-2 border-b border-slate-200 text-xs font-bold">
-        <Link
-          href="/orders"
-          className="px-4 py-2 border-b-2 border-transparent text-neutral-slate hover:text-neutral-dark transition"
-        >
-          Pesanan
-        </Link>
-        <span className="px-4 py-2 border-b-2 border-primary text-primary">
-          Garansi
-        </span>
-      </div>
-
-      {/* Domain Switcher: Produk vs Jasa */}
-      <div className="flex items-center gap-2 p-1.5 bg-slate-100 rounded-2xl w-fit">
-        <button
-          type="button"
-          onClick={() => setWarrantyDomain("PRODUCT")}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition ${
-            warrantyDomain === "PRODUCT"
-              ? "bg-[#0F4C81] text-white shadow-sm"
-              : "text-slate-600 hover:text-slate-900"
-          }`}
-        >
-          <Package size={16} weight="bold" />
-          <span>Garansi Suku Cadang & Produk</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setWarrantyDomain("SERVICE")}
-          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition ${
-            warrantyDomain === "SERVICE"
-              ? "bg-[#0F4C81] text-white shadow-sm"
-              : "text-slate-600 hover:text-slate-900"
-          }`}
-        >
-          <Wrench size={16} weight="bold" />
-          <span>Garansi Jasa & Layanan Servis</span>
-        </button>
-      </div>
-
-      {warrantyDomain === "PRODUCT" ? (
-        <CustomerProductWarrantyView />
-      ) : (
-        <>
-
-      {/* Search & 3 SIMPLIFIED CUSTOMER TABS */}
-      <div className="glass-panel p-4 rounded-2xl border border-slate-200/80 bg-white space-y-3">
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-muted">
-            <MagnifyingGlass size={16} weight="bold" />
-          </div>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Cari garansi (#WAR-...), nama layanan, atau mitra provider..."
-            className="w-full pl-10 pr-4 py-2 text-xs rounded-xl bg-slate-100 border border-slate-200 text-neutral-dark placeholder:text-neutral-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-white transition-all"
+  // If a case is selected, render the unified detail page!
+  if (selectedCaseId) {
+    const currentCase = getCaseById(selectedCaseId);
+    if (currentCase) {
+      return (
+        <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <AfterSalesCaseDetail
+            caseData={currentCase}
+            onBack={() => {
+              setSelectedCaseId(null);
+              router.push("/warranties?tab=submissions");
+            }}
           />
         </div>
+      );
+    }
+  }
 
-        {/* 3 CUSTOMER TABS: [Aktif] [Menggunakan Garansi] [Garansi Habis] */}
-        <div className="flex items-center gap-2 overflow-x-auto pt-1 scrollbar-none">
-          {[
-            {
-              key: "ACTIVE" as const,
-              label: "Aktif",
-              count: tabAktifWarranties.length,
-              description: "Garansi berlaku yang siap digunakan",
-            },
-            {
-              key: "IN_USE" as const,
-              label: "Menggunakan Garansi",
-              count: tabMenggunakanGaransiWarranties.length,
-              description: "Sedang dalam proses klaim aktif",
-            },
-            {
-              key: "EXPIRED" as const,
-              label: "Garansi Habis",
-              count: tabGaransiHabisWarranties.length,
-              description: "Masa garansi telah kedaluwarsa",
-            },
-          ].map((tab) => {
-            const isSelected = activeTab === tab.key;
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setActiveTab(tab.key)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-2 ${
-                  isSelected
-                    ? "bg-primary text-white shadow-servio-xs"
-                    : "bg-slate-100 text-neutral-slate hover:bg-slate-200"
-                }`}
-              >
-                <span>{tab.label}</span>
-                <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                    isSelected ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
-                  }`}
-                >
-                  {tab.count}
+  return (
+    <div className="min-h-screen bg-slate-50/50 pb-24">
+      {/* Top Banner */}
+      <div className="bg-white border-b border-slate-200">
+        <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-3 py-1 rounded-full border border-blue-200">
+                  Layanan Purnajual Terpadu
                 </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Info & Stats Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/80">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-            <SealCheck size={22} weight="fill" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-emerald-950">
-              Proteksi Pelanggan Resmi SERVIO
-            </p>
-            <p className="text-[11px] text-emerald-800">
-              Semua pengerjaan dilindungi garansi mutu. Jika kendala kembali terulang, teknisi siap datang kembali.
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 shrink-0 self-start sm:self-center">
-          <span className="text-xs font-semibold text-emerald-900">Garansi Siap Pakai:</span>
-          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-600 text-white shadow-xs">
-            {tabAktifWarranties.filter((w) => w.status === "ACTIVE").length} Layanan
-          </span>
-        </div>
-      </div>
-
-      {/* Toast Alert */}
-      {toastMessage && (
-        <div className="fixed top-4 right-4 z-50 bg-emerald-800 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 text-sm animate-fade-in">
-          <CheckCircle size={20} weight="fill" className="text-emerald-300" />
-          <span>{toastMessage}</span>
-          <button onClick={() => setToastMessage(null)} className="ml-2 text-white/70 hover:text-white">
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* PROPOSAL BERBAYAR BANNER (Jika sedang di Tab Menggunakan Garansi atau Aktif) */}
-      {pendingProposals.length > 0 && activeTab === "IN_USE" && (
-        <div className="space-y-4">
-          {pendingProposals.map((proposal) => {
-            const claim = claimsV1.find((c) => c.id === proposal.warrantyClaimId);
-            const war = claim ? warrantiesV1.find((w) => w.id === claim.warrantyId) : null;
-            return (
-              <div
-                key={proposal.id}
-                className="p-6 rounded-3xl bg-amber-50/90 border-2 border-amber-400 shadow-md space-y-4"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200 pb-3">
-                  <div>
-                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-600 text-white">
-                      PEKERJAAN DI LUAR GARANSI — MENUNGGU PERSETUJUAN
-                    </span>
-                    <h2 className="text-base font-bold text-slate-900 font-display mt-2">
-                      {proposal.title}
-                    </h2>
-                    <p className="text-xs text-slate-600 mt-0.5">
-                      Layanan Terkait: <strong className="text-slate-800">{war?.serviceTitle || "Layanan Servis"}</strong> ({war?.providerName})
-                    </p>
-                  </div>
-                  <div className="text-left sm:text-right">
-                    <span className="text-[11px] text-slate-500 block">Total Biaya Tambahan:</span>
-                    <p className="text-xl font-black text-emerald-800 font-display">
-                      Rp {proposal.totalAmount.toLocaleString("id-ID")}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  <div className="p-3 bg-white rounded-2xl border border-amber-200/60">
-                    <span className="font-bold text-slate-900 block mb-0.5">Alasan di Luar Garansi:</span>
-                    <p className="text-slate-700 leading-relaxed">{proposal.reasonOutsideWarranty}</p>
-                  </div>
-                  <div className="p-3 bg-white rounded-2xl border border-amber-200/60">
-                    <span className="font-bold text-slate-900 block mb-0.5">Ruang Lingkup Pengerjaan:</span>
-                    <p className="text-slate-700 leading-relaxed">{proposal.scope}</p>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-white/90 rounded-2xl border border-amber-100 text-xs space-y-1">
-                  <span className="font-bold text-slate-800 block text-[11px]">Rincian Biaya:</span>
-                  {proposal.lineItems.map((item, idx) => (
-                    <div key={idx} className="flex justify-between text-slate-600">
-                      <span>
-                        {item.description} ({item.quantity}x)
-                      </span>
-                      <strong className="text-slate-900">Rp {item.total.toLocaleString("id-ID")}</strong>
-                    </div>
-                  ))}
-                  <div className="flex justify-between text-slate-500 pt-1 border-t border-slate-100">
-                    <span>Biaya Layanan Aplikasi</span>
-                    <span>Rp {proposal.fees.toLocaleString("id-ID")}</span>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => handleApproveProposal(proposal.id)}
-                    className="px-5 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5"
-                  >
-                    <CheckCircle size={16} weight="bold" />
-                    <span>Setujui &amp; Lanjutkan</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleRejectProposal(proposal.id)}
-                    className="px-4 py-2.5 rounded-xl bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 font-bold text-xs transition"
-                  >
-                    Tolak
-                  </button>
-                  {war && (
-                    <Link
-                      href={`/warranties/${war.id}`}
-                      className="ml-auto px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50 transition flex items-center gap-1.5"
-                    >
-                      <span>Lihat Rincian Garansi</span>
-                      <ArrowRight size={14} />
-                    </Link>
-                  )}
-                </div>
               </div>
-            );
-          })}
+              <h1 className="text-2xl sm:text-3xl font-bold font-display text-slate-900 mt-2">
+                Garansi & Pengajuan
+              </h1>
+              <p className="text-xs text-slate-500 mt-1 max-w-xl">
+                Pantau hak garansi toko dan layanan, ajukan klaim perbaikan, ajukan retur barang bermasalah, serta lacak status pengembalian dana dalam satu pusat terpadu.
+              </p>
+            </div>
+          </div>
+
+          {/* 3 Main Tabs */}
+          <div className="flex items-center gap-2 border-b border-slate-200 -mb-px">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("active");
+                router.push("/warranties?tab=active");
+              }}
+              className={`pb-3.5 px-4 text-xs font-bold border-b-2 transition flex items-center gap-2 cursor-pointer ${
+                activeTab === "active"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <ShieldCheck size={16} weight="bold" />
+              Garansi Aktif
+              <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-sky/40 text-primary font-bold">
+                {warranties.filter((w) => w.isActive).length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("submissions");
+                router.push("/warranties?tab=submissions");
+              }}
+              className={`pb-3.5 px-4 text-xs font-bold border-b-2 transition flex items-center gap-2 cursor-pointer ${
+                activeTab === "submissions"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <ArrowsClockwise size={16} weight="bold" />
+              Pengajuan (Klaim & Retur)
+              <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-rose-100 text-rose-700 font-bold">
+                {cases.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("expired");
+                router.push("/warranties?tab=expired");
+              }}
+              className={`pb-3.5 px-4 text-xs font-bold border-b-2 transition flex items-center gap-2 cursor-pointer ${
+                activeTab === "expired"
+                  ? "border-blue-600 text-blue-600"
+                  : "border-transparent text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              <Clock size={16} weight="bold" />
+              Berakhir
+              <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-600 font-bold">
+                {warranties.filter((w) => !w.isActive).length}
+              </span>
+            </button>
+          </div>
         </div>
-      )}
+      </div>
 
-      {/* CONTENT LIST BERDASARKAN 3 TAB */}
-      <div className="space-y-4">
-        {displayedWarranties.length === 0 ? (
-          <div className="bg-white rounded-3xl border border-dashed border-slate-200 p-12 text-center space-y-2">
-            <ShieldCheck size={48} className="mx-auto text-slate-300" />
-            <h3 className="text-sm font-bold text-slate-700 font-display">
-              {activeTab === "ACTIVE" && "Tidak ada garansi aktif yang belum digunakan."}
-              {activeTab === "IN_USE" && "Tidak ada garansi yang sedang dalam proses klaim."}
-              {activeTab === "EXPIRED" && "Tidak ada garansi yang telah kedaluwarsa."}
-            </h3>
-            <p className="text-xs text-slate-400 max-w-sm mx-auto">
-              {activeTab === "ACTIVE" &&
-                "Garansi baru akan otomatis muncul di sini setelah pesanan servis Anda selesai dikonfirmasi."}
-              {activeTab === "IN_USE" &&
-                "Saat Anda mengajukan klaim perbaikan garansi, status dan jadwal teknisi akan tampil di tab ini."}
-              {activeTab === "EXPIRED" &&
-                "Semua arsip masa garansi yang telah lewat akan tersimpan dengan aman di halaman ini."}
-            </p>
-          </div>
-        ) : activeTab === "ACTIVE" ? (
-          /* ========================================================================= */
-          /* TAB 1: AKTIF — Warranty yang masih berlaku dan belum memiliki claim aktif   */
-          /* Card sesuai spesifikasi: Header, Service, Provider, WarID, Masa, Sisa, CTA  */
-          /* ========================================================================= */
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {displayedWarranties.map((w) => {
-              const isPending = w.status === "PENDING_ACTIVATION";
-              const remainingDays = getRemainingDays(w);
+      <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        {/* Scenario Switcher Component */}
+        <DemoScenarioSwitcher
+          onSelectCase={(cId) => setSelectedCaseId(cId)}
+          onSelectTab={(tab) => {
+            setActiveTab(tab);
+            setSelectedCaseId(null);
+          }}
+        />
 
-              return (
-                <div
-                  key={w.id}
-                  className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-sm flex flex-col justify-between space-y-5 hover:border-slate-300 hover:shadow-md transition"
-                >
-                  <div className="space-y-4">
-                    {/* Header Card: GARANSI AKTIF ● AKTIF */}
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                      <span className="text-xs font-extrabold uppercase tracking-wider text-slate-700">
-                        {isPending ? "GARANSI MENUNGGU" : "GARANSI AKTIF"}
-                      </span>
-                      <span
-                        className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${
-                          isPending
-                            ? "bg-amber-100 text-amber-800"
-                            : "bg-emerald-100 text-emerald-800"
-                        }`}
-                      >
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            isPending ? "bg-amber-600" : "bg-emerald-600"
-                          }`}
-                        />
-                        <span>{isPending ? "MENUNGGU AKTIVASI" : "AKTIF"}</span>
-                      </span>
-                    </div>
+        {/* TAB 1: GARANSI AKTIF */}
+        {activeTab === "active" && (
+          <div className="space-y-6">
+            {/* Filter Bar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500">Filter Jenis:</span>
+                {(["ALL", "PRODUCT", "SERVICE"] as ItemTypeFilter[]).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setWarrantyFilter(type)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      warrantyFilter === type
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    {type === "ALL" ? "Semua" : type === "PRODUCT" ? "Barang" : "Jasa"}
+                  </button>
+                ))}
+              </div>
 
-                    {/* Layanan & Provider */}
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900 font-display line-clamp-2">
-                        {w.serviceTitle}
-                      </h3>
-                      <p className="text-xs font-medium text-slate-600 mt-1">
-                        {w.providerName}
-                      </p>
-                    </div>
+              <div className="relative">
+                <MagnifyingGlass size={15} className="absolute left-3 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Cari garansi / usaha..."
+                  value={warrantySearch}
+                  onChange={(e) => setWarrantySearch(e.target.value)}
+                  className="w-full sm:w-60 pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                />
+              </div>
+            </div>
 
-                    {/* Meta Info Grid */}
-                    <div className="space-y-2.5 text-xs">
-                      <div>
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
-                          Warranty ID
-                        </span>
-                        <span className="font-mono font-bold text-slate-800 text-xs">
-                          {w.id}
-                        </span>
-                      </div>
-
-                      <div>
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
-                          Masa Garansi
-                        </span>
-                        <span className="font-semibold text-slate-700">
-                          {isPending
-                            ? `Durasi ${w.durationDaysSnapshot} Hari (Menunggu Aktivasi Mitra)`
-                            : `${formatDate(w.startedAt)} – ${formatDate(w.expiresAt)}`}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center justify-between p-3 rounded-2xl bg-emerald-50/70 border border-emerald-100">
-                        <span className="text-xs font-bold text-emerald-950">
-                          Sisa Garansi
-                        </span>
-                        <span className="text-xs font-extrabold text-emerald-800 bg-white px-2.5 py-1 rounded-xl border border-emerald-200">
-                          {isPending ? `${w.durationDaysSnapshot} Hari Snapshot` : `${remainingDays} Hari`}
-                        </span>
-                      </div>
-
-                      <div>
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
-                          Layanan
-                        </span>
-                        <span className="text-xs text-slate-600 font-medium">
-                          {w.serviceTitle}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Actions: [Lihat Detail] and [Ajukan Garansi] */}
-                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100">
-                    <Link
-                      href={`/warranties/${w.id}`}
-                      className="py-2.5 px-3 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs transition text-center flex items-center justify-center gap-1"
-                    >
-                      <span>Lihat Detail</span>
-                    </Link>
-
-                    <button
-                      type="button"
-                      disabled={isPending}
-                      onClick={() => handleOpenClaimModal(w)}
-                      className={`py-2.5 px-3 rounded-xl font-bold text-xs transition text-center flex items-center justify-center gap-1 shadow-xs ${
-                        isPending
-                          ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                          : "bg-emerald-700 hover:bg-emerald-800 text-white"
-                      }`}
-                      title={
-                        isPending
-                          ? "Garansi masih menunggu aktivasi provider setelah pengerjaan selesai"
-                          : "Ajukan klaim perbaikan garansi"
-                      }
-                    >
-                      <ShieldPlus size={15} weight="bold" />
-                      <span>Ajukan Garansi</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : activeTab === "IN_USE" ? (
-          /* ========================================================================= */
-          /* TAB 2: MENGGUNAKAN GARANSI — Warranty dengan claim yang sedang berjalan   */
-          /* Card sesuai spesifikasi #12: Service, Provider, WarID, KlaimID, Status,    */
-          /* Worker, Jadwal, Progress checklist, [Lihat Penanganan]                    */
-          /* ========================================================================= */
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {displayedWarranties.map((w) => {
-              const activeClaim = getActiveClaimForWarranty(w.id);
-              if (!activeClaim) return null;
-
-              const asg = assignmentsV1.find((a) => a.warrantyClaimId === activeClaim.id);
-              const dx = diagnosesV1.find((d) => d.warrantyClaimId === activeClaim.id);
-              const proposal = paidWorkProposalsV1.find(
-                (p) => p.warrantyClaimId === activeClaim.id
-              );
-
-              const statusInfo = getInUseStatusSummary(activeClaim, asg, dx, proposal);
-
-              return (
-                <div
-                  key={w.id}
-                  className="bg-white rounded-3xl border-2 border-sky-300 p-6 shadow-sm flex flex-col justify-between space-y-5 hover:shadow-md transition"
-                >
-                  <div className="space-y-4">
-                    {/* Header Card: GARANSI DIGUNAKAN */}
-                    <div className="flex items-center justify-between border-b border-sky-100 pb-3">
-                      <span className="text-xs font-black uppercase tracking-wider text-sky-950">
-                        GARANSI SEDANG DIGUNAKAN
-                      </span>
-                      <span
-                        className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${statusInfo.badgeClass}`}
-                      >
-                        {statusInfo.badge}
-                      </span>
-                    </div>
-
-                    {/* Layanan & Provider */}
-                    <div>
-                      <h3 className="text-base font-bold text-slate-900 font-display">
-                        {w.serviceTitle}
-                      </h3>
-                      <p className="text-xs font-medium text-slate-600 mt-0.5">
-                        {w.providerName}
-                      </p>
-                    </div>
-
-                    {/* ID Grid */}
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
-                          Warranty ID
-                        </span>
-                        <span className="font-mono font-bold text-slate-800">
-                          {w.id}
-                        </span>
-                      </div>
-                      <div className="p-2.5 bg-sky-50/80 rounded-xl border border-sky-100">
-                        <span className="text-[10px] uppercase font-bold text-sky-700 block tracking-wider">
-                          Nomor Klaim
-                        </span>
-                        <span className="font-mono font-bold text-sky-900">
-                          #{activeClaim.claimNumber}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Worker & Jadwal */}
-                    <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 text-xs space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <User size={16} className="text-[#0F4C81]" weight="bold" />
-                          <span className="text-slate-500">Teknisi:</span>
-                        </div>
-                        <strong className="text-slate-900">
-                          {asg?.workerName || "Menunggu Penugasan Teknisi"}
-                        </strong>
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1 border-t border-slate-200/60">
-                        <div className="flex items-center gap-2">
-                          <CalendarCheck size={16} className="text-emerald-700" weight="bold" />
-                          <span className="text-slate-500">Jadwal:</span>
-                        </div>
-                        <strong className="text-slate-900">
-                          {asg
-                            ? `${asg.scheduledDate} • ${asg.scheduledStartTime}`
-                            : "Belum Ditetapkan"}
-                        </strong>
-                      </div>
-
-                      {asg?.otwAt && !asg.checkInAt && (
-                        <div className="p-2 bg-sky-100/80 rounded-xl text-[11px] text-sky-900 flex items-center gap-2 font-semibold">
-                          <span className="w-2 h-2 rounded-full bg-sky-600 animate-ping" />
-                          <span>Teknisi sedang dalam perjalanan menuju lokasi Anda</span>
-                        </div>
-                      )}
-
-                      {asg?.checkInAt && (
-                        <div className="p-2 bg-emerald-100/80 rounded-xl text-[11px] text-emerald-900 flex items-center gap-2 font-semibold">
-                          <CheckCircle size={15} weight="fill" className="text-emerald-700" />
-                          <span>Teknisi telah tiba di lokasi dan sedang memeriksa unit</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Progress Checklist (8 Langkah Human-Readable) */}
-                    <div className="space-y-1.5 pt-1">
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
-                        Progress Penanganan Klaim
-                      </span>
-                      <div className="grid grid-cols-2 gap-1 text-[11px]">
-                        {[
-                          { label: "Pengajuan", done: true },
-                          { label: "Disetujui Provider", done: activeClaim.status !== "SUBMITTED" },
-                          { label: "Worker Ditugaskan", done: !!asg },
-                          { label: "Jadwal Pemeriksaan", done: !!asg?.scheduledDate },
-                          { label: "Pemeriksaan Unit", done: !!asg?.checkInAt || !!dx },
-                          { label: "Hasil Diagnosis", done: !!dx },
-                          {
-                            label: "Perbaikan",
-                            done:
-                              activeClaim.status === "REPAIR_IN_PROGRESS" ||
-                              activeClaim.status === "RESOLVED",
-                          },
-                          { label: "Selesai", done: activeClaim.status === "RESOLVED" },
-                        ].map((step, idx) => (
-                          <div
-                            key={idx}
-                            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg ${
-                              step.done
-                                ? "bg-emerald-50 text-emerald-900 font-bold"
-                                : "text-slate-400"
+            {/* List */}
+            {activeWarranties.length === 0 ? (
+              <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 space-y-3">
+                <ShieldCheck size={36} className="mx-auto text-slate-300" />
+                <h3 className="font-bold text-sm text-slate-700">Belum Ada Garansi Usaha Aktif</h3>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  Belum ada hak garansi toko atau layanan yang aktif untuk akun Anda. Hak perlindungan konsumen Anda tetap berlaku untuk pesanan selesai.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {activeWarranties.map((w) => (
+                  <div
+                    key={w.id}
+                    className="p-5 rounded-3xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition space-y-4 flex flex-col justify-between"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                              w.itemType === "PRODUCT"
+                                ? "bg-blue-50 text-blue-700 border-blue-200"
+                                : "bg-purple-50 text-purple-700 border-purple-200"
                             }`}
                           >
-                            <span className="text-xs">
-                              {step.done ? "✓" : "○"}
-                            </span>
-                            <span className="truncate">{step.label}</span>
-                          </div>
-                        ))}
+                            {w.itemType === "PRODUCT" ? <Package size={12} weight="bold" /> : <Wrench size={12} weight="bold" />}
+                            {w.itemType === "PRODUCT" ? "Garansi Toko Barang" : "Garansi Layanan Jasa"}
+                          </span>
+                          <h3 className="font-bold text-sm text-slate-900 line-clamp-2">
+                            {w.itemTitle}
+                          </h3>
+                          <p className="text-xs text-slate-500">
+                            {w.organizationName} • Ref: {w.orderNumber}
+                          </p>
+                        </div>
+
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                          Aktif
+                        </span>
+                      </div>
+
+                      <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 text-xs space-y-1">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Pilihan Garansi:</span>
+                          <span className="font-bold text-slate-700">{w.presetName}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Durasi:</span>
+                          <span className="font-bold text-primary">{w.durationDays} Hari Kalender</span>
+                        </div>
+                        <div className="flex justify-between pt-1 border-t border-slate-200/60">
+                          <span className="text-slate-400">Berlaku Sampai:</span>
+                          <span className="font-semibold text-emerald-800">{w.endDate}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  {/* CTA: [Lihat Penanganan] */}
-                  <Link
-                    href={`/warranties/${w.id}`}
-                    className="w-full py-3 px-4 rounded-xl bg-[#0F4C81] hover:bg-[#0D3F6B] text-white text-xs font-bold transition text-center flex items-center justify-center gap-2 shadow-xs"
-                  >
-                    <span>Lihat Penanganan Klaim</span>
-                    <ArrowRight size={14} weight="bold" />
-                  </Link>
-                </div>
-              );
-            })}
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setViewingWarranty(w)}
+                        className="px-3 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-800 transition"
+                      >
+                        Detail Garansi
+                      </button>
+
+                      {w.activeCaseId ? (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCaseId(w.activeCaseId!)}
+                          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
+                        >
+                          Lihat Klaim Berjalan
+                          <ArrowRight size={14} weight="bold" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setClaimModalWarranty(w)}
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                        >
+                          Ajukan Klaim
+                          <ArrowRight size={14} weight="bold" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        ) : (
-          /* ========================================================================= */
-          /* TAB 3: GARANSI HABIS — Card sesuai spesifikasi #13: EXPIRED badge,         */
-          /* Berlaku, Status: GARANSI BERAKHIR, Riwayat Klaim, [Lihat Riwayat]         */
-          /* ========================================================================= */
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {displayedWarranties.map((w) => {
-              const pastClaims = claimsV1.filter((c) => c.warrantyId === w.id);
+        )}
 
-              return (
-                <div
-                  key={w.id}
-                  className="bg-white rounded-3xl border border-slate-200/70 p-6 shadow-sm flex flex-col justify-between space-y-5 opacity-90 hover:opacity-100 transition"
-                >
-                  <div className="space-y-4">
-                    {/* Header Card: GARANSI HABIS EXPIRED */}
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                      <span className="text-xs font-extrabold uppercase tracking-wider text-slate-500">
-                        GARANSI HABIS
-                      </span>
-                      <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-200 text-slate-700">
-                        EXPIRED
+        {/* TAB 2: PENGAJUAN (KLAIM GARANSI & RETUR BARANG TERPADU) */}
+        {activeTab === "submissions" && (
+          <div className="space-y-6">
+            {/* Filter Bar */}
+            <div className="bg-white p-4 rounded-3xl border border-slate-200 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-bold text-slate-500">Jenis Kasus:</span>
+                  {(
+                    [
+                      { id: "ALL", label: "Semua" },
+                      { id: "claim_product", label: "Klaim Barang" },
+                      { id: "claim_service", label: "Klaim Jasa" },
+                      { id: "return_product", label: "Retur Barang" },
+                    ] as const
+                  ).map((type) => (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={() => setCaseTypeFilter(type.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        caseTypeFilter === type.id
+                          ? "bg-blue-600 text-white shadow-sm"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                      }`}
+                    >
+                      {type.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative">
+                  <MagnifyingGlass size={15} className="absolute left-3 top-3 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Cari kasus / item..."
+                    value={submissionSearch}
+                    onChange={(e) => setSubmissionSearch(e.target.value)}
+                    className="w-full sm:w-60 pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              </div>
+
+              {/* Status Filter */}
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+                <span className="text-xs font-bold text-slate-500">Status:</span>
+                {(
+                  [
+                    { id: "ALL", label: "Semua" },
+                    { id: "IN_PROGRESS", label: "Berjalan" },
+                    { id: "COMPLETED", label: "Selesai" },
+                    { id: "REJECTED", label: "Ditolak" },
+                    { id: "NO_RESPONSE", label: "Tidak Ditanggapi" },
+                  ] as const
+                ).map((st) => (
+                  <button
+                    key={st.id}
+                    type="button"
+                    onClick={() => setCaseStatusFilter(st.id)}
+                    className={`px-3 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                      caseStatusFilter === st.id
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200"
+                    }`}
+                  >
+                    {st.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Submissions List */}
+            {filteredSubmissions.length === 0 ? (
+              <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 space-y-3">
+                <ArrowsClockwise size={36} className="mx-auto text-slate-300" />
+                <h3 className="font-bold text-sm text-slate-700">Belum Ada Pengajuan</h3>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  Belum ada pengajuan klaim garansi atau retur yang sesuai filter. Ajukan masalah melalui detail pesanan atau garansi yang aktif.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4.5">
+                {filteredSubmissions.map((c) => {
+                  const isClaimProduct = c.caseType === "claim_product";
+                  const isClaimService = c.caseType === "claim_service";
+
+                  return (
+                    <motion.div
+                      key={c.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-6 rounded-3xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition space-y-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                    >
+                      <div className="space-y-2 max-w-2xl">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                              isClaimProduct
+                                ? "bg-blue-50 text-blue-700 border-blue-200"
+                                : isClaimService
+                                ? "bg-purple-50 text-purple-700 border-purple-200"
+                                : "bg-rose-50 text-rose-700 border-rose-200"
+                            }`}
+                          >
+                            {isClaimProduct
+                              ? "Klaim Garansi Barang"
+                              : isClaimService
+                              ? "Klaim Garansi Jasa"
+                              : "Retur Barang"}
+                          </span>
+                          <span className="text-xs font-mono font-bold text-slate-400">
+                            #{c.caseNumber}
+                          </span>
+                          <span className="text-slate-300">•</span>
+                          <span className="text-xs font-semibold text-slate-600">
+                            Order #{c.sourceOrderNumber}
+                          </span>
+                        </div>
+
+                        <h3 className="font-bold text-base text-slate-900">{c.itemTitle}</h3>
+
+                        <p className="text-xs text-slate-500 line-clamp-1">
+                          Masalah: <strong className="text-slate-700">{c.issueReason}</strong> • Usaha: {c.organizationName}
+                        </p>
+
+                        <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500 pt-1">
+                          <span>Diajukan: {new Date(c.submittedAt).toLocaleDateString("id-ID")}</span>
+                          {c.approvedSolution && (
+                            <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                              Solusi: {c.approvedSolution}
+                            </span>
+                          )}
+                          {c.specialCondition === "WAITING_CUSTOMER_APPROVAL" && (
+                            <span className="font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                              Menunggu Persetujuan Solusi Anda
+                            </span>
+                          )}
+                          {c.refundDetail && (
+                            <span className="font-bold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded">
+                              Refund Rp{c.refundDetail.totalRefund.toLocaleString("id-ID")} ({c.refundDetail.status})
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col items-start sm:items-end gap-3 shrink-0">
+                        {c.isNoResponse ? (
+                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-500 text-white border border-amber-600">
+                            TIDAK DITANGGAPI
+                          </span>
+                        ) : (
+                          <span
+                            className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                              c.mainStatus === "COMPLETED"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : c.mainStatus === "REJECTED"
+                                ? "bg-rose-50 text-rose-700 border-rose-200"
+                                : c.mainStatus === "IN_RESOLUTION"
+                                ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                : "bg-sky-50 text-sky-700 border-sky-200"
+                            }`}
+                          >
+                            {c.mainStatus === "COMPLETED"
+                              ? "Selesai"
+                              : c.mainStatus === "REJECTED"
+                              ? "Ditolak"
+                              : c.mainStatus === "IN_RESOLUTION"
+                              ? "Dalam Penyelesaian"
+                              : "Diajukan"}
+                          </span>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedCaseId(c.id)}
+                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+                        >
+                          Lihat Detail Pengajuan
+                          <ArrowRight size={14} weight="bold" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 3: BERAKHIR */}
+        {activeTab === "expired" && (
+          <div className="space-y-6">
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center gap-2">
+              <Info size={18} weight="fill" className="shrink-0 text-amber-600" />
+              <span>
+                Garansi usaha di bawah ini telah melewati masa aktif. Riwayat klaim yang diajukan tepat waktu tetap dapat dibuka. Hak perlindungan hukum konsumen tetap dihormati.
+              </span>
+            </div>
+
+            {expiredWarranties.length === 0 ? (
+              <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 space-y-3">
+                <Clock size={36} className="mx-auto text-slate-300" />
+                <h3 className="font-bold text-sm text-slate-700">Belum Ada Garansi Berakhir</h3>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  Semua garansi usaha Anda saat ini masih aktif atau belum kedaluwarsa.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {expiredWarranties.map((w) => (
+                  <div
+                    key={w.id}
+                    className="p-5 rounded-3xl bg-white border border-slate-200/80 shadow-sm opacity-80 space-y-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200">
+                          {w.itemType === "PRODUCT" ? "Garansi Toko Barang" : "Garansi Layanan Jasa"}
+                        </span>
+                        <h3 className="font-bold text-sm text-slate-800 mt-1">{w.itemTitle}</h3>
+                        <p className="text-xs text-slate-400">{w.organizationName}</p>
+                      </div>
+                      <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-500 border border-slate-200">
+                        Berakhir
                       </span>
                     </div>
 
-                    {/* Layanan & Provider */}
-                    <div>
-                      <h3 className="text-base font-bold text-slate-800 font-display line-clamp-2">
-                        {w.serviceTitle}
-                      </h3>
-                      <p className="text-xs font-medium text-slate-500 mt-1">
-                        {w.providerName}
-                      </p>
+                    <div className="p-3 bg-slate-50 rounded-2xl text-xs space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Pilihan:</span>
+                        <span className="font-medium text-slate-700">{w.presetName}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Periode:</span>
+                        <span className="text-slate-500">
+                          {w.startDate} s.d. {w.endDate}
+                        </span>
+                      </div>
                     </div>
 
-                    {/* Details */}
-                    <div className="space-y-2.5 text-xs">
-                      <div>
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
-                          Warranty ID
-                        </span>
-                        <span className="font-mono font-bold text-slate-600">
-                          {w.id}
-                        </span>
-                      </div>
-
-                      <div>
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
-                          Berlaku
-                        </span>
-                        <span className="font-medium text-slate-600">
-                          {formatDate(w.startedAt)} – {formatDate(w.expiresAt)}
-                        </span>
-                      </div>
-
-                      <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-1">
-                        <div className="flex justify-between text-slate-500">
-                          <span>Status:</span>
-                          <strong className="text-rose-600">GARANSI BERAKHIR</strong>
-                        </div>
-                        <div className="flex justify-between text-slate-500">
-                          <span>Riwayat Klaim:</span>
-                          <strong className="text-slate-800">
-                            {w.claimCount || pastClaims.length} Pengajuan
-                          </strong>
-                        </div>
-                      </div>
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setViewingWarranty(w)}
+                        className="font-bold text-slate-600 hover:text-slate-800"
+                      >
+                        Lihat Ketentuan Historis
+                      </button>
+                      <span className="text-slate-400 text-[11px] italic">Garansi Usaha Telah Habis</span>
                     </div>
                   </div>
-
-                  {/* Actions: ONLY [Lihat Riwayat], NO [Ajukan Klaim] */}
-                  <Link
-                    href={`/warranties/${w.id}`}
-                    className="w-full py-2.5 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition text-center flex items-center justify-center gap-1.5"
-                  >
-                    <span>Lihat Riwayat</span>
-                    <ArrowRight size={14} />
-                  </Link>
-                </div>
-              );
-            })}
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
-      </>
+
+      {/* Claim Modal */}
+      {claimModalWarranty && (
+        <WarrantyClaimModal
+          isOpen={!!claimModalWarranty}
+          onClose={() => setClaimModalWarranty(null)}
+          warranty={claimModalWarranty}
+          onSuccess={(caseId) => {
+            setActiveTab("submissions");
+            setSelectedCaseId(caseId);
+          }}
+        />
       )}
 
-      {/* ========================================================================= */}
-      {/* FORM PENGAJUAN GARANSI MODAL (Spec #3)                                      */}
-      {/* Layanan, Masalah, Ceritakan masalah, Kapan mulai, Foto, Catatan, [Kirim]   */}
-      {/* ========================================================================= */}
+      {/* Warranty Detail Modal */}
       <AnimatePresence>
-        {isClaimModalOpen && (
-          <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+        {viewingWarranty && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-800/20 backdrop-blur-sm">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto"
+              className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-5 shadow-2xl border border-slate-200"
             >
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div>
-                  <h3 className="text-base font-bold text-slate-900 font-display">
-                    Ajukan Garansi
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Klaim perbaikan resmi SERVIO &bull; Garansi #{selectedWarrantyForClaim?.id}
-                  </p>
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2 font-bold text-slate-900 text-base">
+                  <ShieldCheck size={22} weight="fill" className="text-primary" />
+                  <span>Rincian Cakupan & Janji Garansi</span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setIsClaimModalOpen(false)}
-                  className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-slate-200 transition"
+                  onClick={() => setViewingWarranty(null)}
+                  className="text-slate-400 hover:text-slate-600 font-bold"
                 >
                   ✕
                 </button>
               </div>
 
-              <form onSubmit={handleClaimSubmit} className="space-y-4 text-xs">
-                {/* Layanan */}
+              <div className="space-y-3 text-xs">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Layanan
-                  </label>
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-slate-900 font-semibold">
-                    {selectedWarrantyForClaim?.serviceTitle}
-                    <span className="text-[11px] text-slate-500 block font-normal mt-0.5">
-                      Mitra: {selectedWarrantyForClaim?.providerName}
-                    </span>
+                  <span className="text-slate-400 block text-[11px]">Item / Jasa Terlindungi:</span>
+                  <strong className="text-slate-800 text-sm">{viewingWarranty.itemTitle}</strong>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 p-3 bg-slate-50 rounded-xl">
+                  <div>
+                    <span className="text-slate-400 text-[11px]">Penyedia:</span>
+                    <p className="font-bold text-slate-700">{viewingWarranty.organizationName}</p>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[11px]">Durasi Garansi:</span>
+                    <p className="font-bold text-primary">{viewingWarranty.durationDays} Hari Kalender</p>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[11px]">Tanggal Mulai:</span>
+                    <p className="font-semibold text-slate-700">{viewingWarranty.startDate}</p>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 text-[11px]">Tanggal Selesai:</span>
+                    <p className="font-semibold text-slate-700">{viewingWarranty.endDate}</p>
                   </div>
                 </div>
 
-                {/* Masalah (Dropdown / Preset Selector) */}
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Masalah
-                  </label>
-                  <select
-                    value={claimReason}
-                    onChange={(e) => setClaimReason(e.target.value)}
-                    className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-[#0F4C81] text-xs font-semibold text-slate-800"
-                    required
-                  >
-                    <option value="AC kembali tidak dingin">AC kembali tidak dingin</option>
-                    <option value="Pipa bocor / air rembes">Pipa bocor / air menetes</option>
-                    <option value="Unit indoor/outdoor bergetar keras">Unit indoor/outdoor bergetar keras</option>
-                    <option value="MCB listrik kembali trip / padam">MCB listrik kembali trip / padam</option>
-                    <option value="Hasil servis tidak bertahan lama">Hasil servis tidak bertahan lama</option>
-                    <option value="Kendala teknis lainnya">Kendala teknis lainnya</option>
-                  </select>
+                <div className="space-y-1">
+                  <span className="font-bold text-slate-700 block">Cakupan yang Ditanggung:</span>
+                  <p className="p-3 bg-slate-50 rounded-xl text-slate-600 leading-relaxed">
+                    {viewingWarranty.coverage}
+                  </p>
                 </div>
 
-                {/* Ceritakan Masalah */}
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Ceritakan masalah
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={claimDescription}
-                    onChange={(e) => setClaimDescription(e.target.value)}
-                    placeholder="Jelaskan secara singkat kendala yang dialami pasca servis..."
-                    className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#0F4C81] text-xs"
-                    required
-                  />
+                <div className="space-y-1">
+                  <span className="font-bold text-slate-700 block">Syarat & Ketentuan:</span>
+                  <p className="p-3 bg-slate-50 rounded-xl text-slate-600 leading-relaxed">
+                    {viewingWarranty.terms}
+                  </p>
                 </div>
+              </div>
 
-                {/* Kapan Masalah Mulai Terjadi */}
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Kapan masalah mulai terjadi?
-                  </label>
-                  <input
-                    type="date"
-                    value={issueOccurredAt}
-                    onChange={(e) => setIssueOccurredAt(e.target.value)}
-                    className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-xs font-medium"
-                    required
-                  />
-                </div>
-
-                {/* Upload Foto / Video */}
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Upload Foto / Video Bukti
-                  </label>
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap gap-2">
-                      {claimEvidence.map((url, i) => (
-                        <div
-                          key={i}
-                          className="relative w-16 h-16 rounded-xl overflow-hidden border border-slate-200 shadow-2xs group"
-                        >
-                          <img
-                            src={url}
-                            alt="Bukti"
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setClaimEvidence((prev) => [
-                            ...prev,
-                            "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=600&auto=format&fit=crop&q=80",
-                          ])
-                        }
-                        className="w-16 h-16 rounded-xl border-2 border-dashed border-slate-300 hover:border-slate-400 bg-slate-50 flex flex-col items-center justify-center text-slate-500 gap-1 transition"
-                      >
-                        <Camera size={18} />
-                        <span className="text-[9px] font-bold">+ Bukti</span>
-                      </button>
-                    </div>
-                    <p className="text-[11px] text-slate-400">
-                      Foto unit atau video suara kerusakan memudahkan teknisi mempersiapkan peralatan.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Catatan Tambahan */}
-                <div>
-                  <label className="block font-bold text-slate-700 mb-1">
-                    Catatan tambahan (Opsional)
-                  </label>
-                  <input
-                    type="text"
-                    value={claimNotes}
-                    onChange={(e) => setClaimNotes(e.target.value)}
-                    placeholder="Contoh: Rumah hanya bisa dikunjungi di akhir pekan"
-                    className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-[#0F4C81] text-xs"
-                  />
-                </div>
-
-                {/* Actions: [Batalkan] [Kirim Pengajuan] */}
-                <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setViewingWarranty(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
+                >
+                  Tutup
+                </button>
+                {viewingWarranty.isActive && (
                   <button
                     type="button"
-                    onClick={() => setIsClaimModalOpen(false)}
-                    className="px-4 py-2.5 rounded-xl font-bold text-slate-600 hover:bg-slate-100 transition"
+                    onClick={() => {
+                      const target = viewingWarranty;
+                      setViewingWarranty(null);
+                      setClaimModalWarranty(target);
+                    }}
+                    className="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm cursor-pointer"
                   >
-                    Batalkan
+                    Ajukan Klaim Sekarang
                   </button>
-                  <button
-                    type="submit"
-                    className="px-6 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold transition shadow-xs flex items-center gap-1.5"
-                  >
-                    <CheckCircle size={16} weight="bold" />
-                    <span>Kirim Pengajuan</span>
-                  </button>
-                </div>
-              </form>
+                )}
+              </div>
             </motion.div>
           </div>
         )}
@@ -1123,8 +721,8 @@ function CustomerWarrantiesInner() {
 
 export default function CustomerWarrantiesPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-xs text-slate-400">Memuat pusat garansi...</div>}>
-      <CustomerWarrantiesInner />
+    <Suspense fallback={<div className="p-12 text-center text-xs text-slate-400">Memuat Garansi & Pengajuan...</div>}>
+      <CustomerWarrantiesAndSubmissionsContent />
     </Suspense>
   );
 }

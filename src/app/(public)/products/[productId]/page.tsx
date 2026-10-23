@@ -943,26 +943,31 @@ export default function ProductDetailPage() {
             </div>
           )}
 
-          {/* Warranty Policy */}
+          {/* Warranty Policy (Phase 07 Preview) */}
           <div className="pt-4 border-t border-slate-100">
-            <div className="flex items-center gap-2 mb-2.5">
-              <ShieldCheck size={16} className="text-emerald-700" weight="bold" />
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 font-heading">
-                Kebijakan Garansi &amp; Jaminan Resmi
-              </h3>
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={16} className="text-emerald-700" weight="bold" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 font-heading">
+                  Kebijakan Garansi &amp; Jaminan Purnajual
+                </h3>
+              </div>
+              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-[#0F4C81] border border-sky-200">
+                DATA SIMULASI
+              </span>
             </div>
             {(product as any).warrantyPolicy?.durationMonths ? (
               <div className="p-3.5 bg-emerald-50/70 border border-emerald-200/80 rounded-xl space-y-1.5 text-xs">
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-emerald-950 font-heading">
-                    Masa Garansi Resmi: {(product as any).warrantyPolicy.durationMonths} Bulan
+                    Masa Garansi: {(product as any).warrantyPolicy.durationMonths} Bulan
                   </span>
                   <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
                     {(product as any).warrantyPolicy.type === "MANUFACTURER"
                       ? "Garansi Resmi Pabrikan"
                       : (product as any).warrantyPolicy.type === "STORE_ONLY"
                       ? "Garansi Toko Mitra"
-                      : "Garansi Resmi Terdaftar"}
+                      : "Garansi Toko & Pabrik"}
                   </span>
                 </div>
                 <p className="text-[11px] text-emerald-900 leading-relaxed">
@@ -974,9 +979,9 @@ export default function ProductDetailPage() {
               </div>
             ) : (
               <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1">
-                <p className="font-bold text-slate-800">Suku Cadang Standar Pabrikan (Non-Garansi Purnajual)</p>
+                <p className="font-bold text-slate-800">Suku Cadang Standar (Non-Garansi Toko)</p>
                 <p className="text-[11px] text-slate-500 leading-relaxed">
-                  Produk ini tergolong suku cadang umum atau barang habis pakai. Pembeli tetap dilindungi asuransi pengiriman serta jaminan barang baru &amp; utuh saat unboxing.
+                  Produk ini tidak menyediakan garansi purnajual jangka panjang dari toko. Namun pembeli tetap dilindungi <strong>kebijakan retur barang SERVIO</strong> jika barang tiba dalam kondisi rusak, cacat manufaktur, atau salah kirim.
                 </p>
               </div>
             )}

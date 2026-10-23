@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { Button } from "@/components/ui/Button";
 import {
   ArrowLeft,
   Package,
@@ -23,13 +24,41 @@ import {
 import { formatRupiah } from "@/components/data-display/PriceBreakdown";
 import { Toast } from "@/components/feedback/Toast";
 import { Modal } from "@/components/ui/Modal";
-import { Button } from "@/components/ui/Button";
 import { productOrdersApi } from "@/lib/servioApi";
+import { useAfterSales } from "@/features/afterSales/useAfterSales";
+import { ProductReturnModal } from "@/components/features/afterSales/ProductReturnModal";
+import { WarrantyClaimModal } from "@/components/features/afterSales/WarrantyClaimModal";
+
+import { useOrderBarang } from "@/features/order-barang/hooks/useOrderBarang";
+import {
+  CancelUnpaidCheckoutModal,
+  CancelConfirmedModal,
+  RequestCancellationModal,
+  ConfirmDeliveredModal,
+  ReceiptModal,
+  TrackingModal,
+} from "@/features/order-barang/components/CustomerOrderModals";
 
 export default function ProductOrderDetailPage() {
   const params = useParams();
   const router = useRouter();
   const orderId = (params?.orderId as string) || "prod-order-881";
+
+  const {
+    customerOrders,
+    checkoutGroups,
+    cancelUnpaidCheckoutGroup,
+    cancelConfirmedMerchantOrder,
+    requestCancellation,
+    customerConfirmDelivered,
+    currentTime,
+  } = useOrderBarang();
+
+  const storeOrder = useMemo(() => {
+    return customerOrders.find(
+      (o) => o.id === orderId || o.orderNumber === orderId
+    );
+  }, [customerOrders, orderId]);
 
   const [orderStatus, setOrderStatus] = useState<
     "PENDING_PAYMENT" | "PAID" | "PROCESSING" | "PACKED" | "SHIPPED" | "DELIVERED" | "COMPLETED" | "CANCELLED" | "REFUNDED"
@@ -45,10 +74,53 @@ export default function ProductOrderDetailPage() {
   const [cancelReason, setCancelReason] = useState("Salah memilih varian produk");
   const [cancelError, setCancelError] = useState<string | null>(null);
 
+  // Phase 05A Modals state
+  const [isCancelUnpaidModalOpen, setIsCancelUnpaidModalOpen] = useState(false);
+  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
+  const [isTrackingModalOpen, setIsTrackingModalOpen] = useState(false);
+
   // Confirm Received Modal state
   const [isConfirmReceivedModalOpen, setIsConfirmReceivedModalOpen] = useState(false);
 
+  // After-Sales Phase 07 Integration
+  const { cases, warranties } = useAfterSales();
+  const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
+  const [isClaimModalOpen, setIsClaimModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (storeOrder) {
+      switch (storeOrder.status) {
+        case "CREATED":
+        case "PAYMENT_PENDING":
+          setOrderStatus("PENDING_PAYMENT");
+          break;
+        case "CONFIRMED":
+          setOrderStatus("PAID");
+          break;
+        case "PROCESSING":
+          setOrderStatus("PROCESSING");
+          break;
+        case "PACKED":
+          setOrderStatus("PACKED");
+          break;
+        case "DELIVERING":
+          setOrderStatus("SHIPPED");
+          break;
+        case "DELIVERED":
+          setOrderStatus("DELIVERED");
+          break;
+        case "COMPLETED":
+          setOrderStatus("COMPLETED");
+          break;
+        case "CANCELLED":
+          setOrderStatus("CANCELLED");
+          break;
+      }
+    }
+  }, [storeOrder]);
+
   const fetchOrder = async () => {
+    if (storeOrder) return;
     try {
       const res = await productOrdersApi.get(orderId);
       if (res.data) {
@@ -75,68 +147,139 @@ export default function ProductOrderDetailPage() {
 
   useEffect(() => {
     fetchOrder();
-  }, [orderId]);
+  }, [orderId, storeOrder]);
 
-  const orderData = {
-    id: realOrder?.orderId || realOrder?.order?.orderId || orderId,
-    orderNumber: realOrder?.orderNumber || realOrder?.order?.orderNumber || `PO-${orderId.slice(-6)}`,
-    trackingNumber:
-      realOrder?.shipment?.trackingNumber ||
-      realOrder?.trackingNumber ||
-      (orderStatus === "SHIPPED" || orderStatus === "DELIVERED" || orderStatus === "COMPLETED"
-        ? "JNE-REG-0988127391"
-        : "-"),
-    courierName:
-      realOrder?.shippingMethod?.courierName ||
-      realOrder?.shippingMethodSnapshot?.courierName ||
-      realOrder?.order?.shippingMethodSnapshot?.courierName ||
-      "JNE Express (Reguler)",
-    createdAt: realOrder?.createdAt
-      ? new Date(realOrder.createdAt).toLocaleString("id-ID")
-      : "30 September 2026, 14:30 WIB",
-    paidAt: realOrder?.paidAt
-      ? new Date(realOrder.paidAt).toLocaleString("id-ID")
-      : "30 September 2026, 14:35 WIB",
-    merchantName: realOrder?.merchantName || "Toko Sparepart Glodok",
-    recipientName:
-      realOrder?.shippingAddress?.recipientName ||
-      realOrder?.shippingAddressSnapshot?.recipientName ||
-      "Ahmad Pratama",
-    recipientPhone:
-      realOrder?.shippingAddress?.phone ||
-      realOrder?.shippingAddressSnapshot?.phone ||
-      "0812-9988-1122",
-    recipientStreet:
-      realOrder?.shippingAddress?.street ||
-      realOrder?.shippingAddressSnapshot?.street ||
-      "Gedung BEI Tower 2 Lt. 14, Jakarta Selatan",
-    items:
-      realOrder?.items?.map((it: any) => ({
-        id: it.orderItemId || it.variantId,
-        title: it.productTitle || it.productNameSnapshot || "Sparepart Pendingin",
-        variantName: it.variantName || it.variantNameSnapshot,
-        quantity: it.quantity,
-        price: it.unitPrice || it.unitPriceSnapshot || 45000,
-      })) || [
-        {
-          id: "prod-cap-daikin",
-          title: "Kapasitor Kompresor AC Split Universal",
-          variantName: "25 uF (0.5 PK - 0.75 PK)",
-          quantity: 2,
-          price: 45000,
+  const orderData = useMemo(() => {
+    if (storeOrder) {
+      return {
+        id: storeOrder.id,
+        orderNumber: storeOrder.orderNumber,
+        checkoutGroupId: storeOrder.checkoutGroupId,
+        trackingNumber: storeOrder.delivery.trackingNumber || "-",
+        courierName:
+          storeOrder.delivery.courierMethod === "GOSEND"
+            ? "GoSend (Manual oleh Merchant)"
+            : "Kurir Toko (Lokal)",
+        createdAt: storeOrder.createdAt,
+        paidAt:
+          storeOrder.payment.paidAt ||
+          (storeOrder.payment.status === "PAID" ? "Telah Dibayar (Lunas)" : "-"),
+        merchantName: storeOrder.merchantName,
+        recipientName: storeOrder.shippingAddressSnapshot.recipientName,
+        recipientPhone: storeOrder.shippingAddressSnapshot.phone,
+        recipientStreet: `${storeOrder.shippingAddressSnapshot.street}, ${storeOrder.shippingAddressSnapshot.city}`,
+        items: storeOrder.items.map((it) => ({
+          id: it.id,
+          title: it.title,
+          variantName: it.variantName,
+          quantity: it.quantity,
+          price: it.unitPrice,
+        })),
+        pricing: {
+          subtotal: storeOrder.pricing.itemsSubtotal,
+          shipping: storeOrder.pricing.shippingFee,
+          fee: storeOrder.pricing.platformFee,
+          tax: storeOrder.pricing.taxAmount,
+          total: storeOrder.pricing.merchantOrderTotal,
         },
-      ],
-    pricing: {
-      subtotal: realOrder?.subtotal || realOrder?.order?.subtotal || 90000,
-      shipping: realOrder?.shippingAmount || realOrder?.order?.shippingAmount || 15000,
-      fee: realOrder?.feeAmount || 2500,
-      total: realOrder?.totalAmount || realOrder?.order?.totalAmount || 107500,
-    },
-    pod: realOrder?.pod || realOrder?.proofOfDelivery || realOrder?.shipment?.pod || null,
-    cancellation: realOrder?.cancellation || null,
-    cancellationReason: realOrder?.cancellationReason || realOrder?.cancellation?.reason || null,
-    refund: realOrder?.refund || null,
-  };
+        pod: storeOrder.delivery.recipientReceivedBy
+          ? {
+              recipient: storeOrder.delivery.recipientReceivedBy,
+              notes: storeOrder.delivery.deliveredNotes,
+              deliveredAt: storeOrder.delivery.deliveredAt,
+            }
+          : null,
+        cancellation: storeOrder.cancellationDetails || null,
+        cancellationReason: storeOrder.cancellationDetails?.reason || null,
+        refund: storeOrder.refund || null,
+        cancellationRequest: storeOrder.cancellationRequest || null,
+      };
+    }
+
+    return {
+      id: realOrder?.orderId || realOrder?.order?.orderId || orderId,
+      orderNumber: realOrder?.orderNumber || realOrder?.order?.orderNumber || `PO-${orderId.slice(-6)}`,
+      checkoutGroupId: null,
+      trackingNumber:
+        realOrder?.shipment?.trackingNumber ||
+        realOrder?.trackingNumber ||
+        (orderStatus === "SHIPPED" || orderStatus === "DELIVERED" || orderStatus === "COMPLETED"
+          ? "JNE-REG-0988127391"
+          : "-"),
+      courierName:
+        realOrder?.shippingMethod?.courierName ||
+        realOrder?.shippingMethodSnapshot?.courierName ||
+        realOrder?.order?.shippingMethodSnapshot?.courierName ||
+        "JNE Express (Reguler)",
+      createdAt: realOrder?.createdAt
+        ? new Date(realOrder.createdAt).toLocaleString("id-ID")
+        : "30 September 2026, 14:30 WIB",
+      paidAt: realOrder?.paidAt
+        ? new Date(realOrder.paidAt).toLocaleString("id-ID")
+        : "30 September 2026, 14:35 WIB",
+      merchantName: realOrder?.merchantName || "Toko Sparepart Glodok",
+      recipientName:
+        realOrder?.shippingAddress?.recipientName ||
+        realOrder?.shippingAddressSnapshot?.recipientName ||
+        "Ahmad Pratama",
+      recipientPhone:
+        realOrder?.shippingAddress?.phone ||
+        realOrder?.shippingAddressSnapshot?.phone ||
+        "0812-9988-1122",
+      recipientStreet:
+        realOrder?.shippingAddress?.street ||
+        realOrder?.shippingAddressSnapshot?.street ||
+        "Gedung BEI Tower 2 Lt. 14, Jakarta Selatan",
+      items:
+        realOrder?.items?.map((it: any) => ({
+          id: it.orderItemId || it.variantId,
+          title: it.productTitle || it.productNameSnapshot || "Sparepart Pendingin",
+          variantName: it.variantName || it.variantNameSnapshot,
+          quantity: it.quantity,
+          price: it.unitPrice || it.unitPriceSnapshot || 45000,
+        })) || [
+          {
+            id: "prod-cap-daikin",
+            title: "Kapasitor Kompresor AC Split Universal",
+            variantName: "25 uF (0.5 PK - 0.75 PK)",
+            quantity: 2,
+            price: 45000,
+          },
+        ],
+      pricing: {
+        subtotal: realOrder?.subtotal || realOrder?.order?.subtotal || 90000,
+        shipping: realOrder?.shippingAmount || realOrder?.order?.shippingAmount || 15000,
+        fee: realOrder?.feeAmount || 2500,
+        tax: 0,
+        total: realOrder?.totalAmount || realOrder?.order?.totalAmount || 107500,
+      },
+      pod: realOrder?.pod || realOrder?.proofOfDelivery || realOrder?.shipment?.pod || null,
+      cancellation: realOrder?.cancellation || null,
+      cancellationReason: realOrder?.cancellationReason || realOrder?.cancellation?.reason || null,
+      refund: realOrder?.refund || null,
+      cancellationRequest: null,
+    };
+  }, [storeOrder, realOrder, orderId, orderStatus]);
+
+  const associatedCase = useMemo(() => {
+    return cases.find(
+      (c) =>
+        c.sourceOrderId === orderId ||
+        c.sourceOrderId === orderData.id ||
+        c.sourceOrderNumber === orderData.orderNumber ||
+        c.id === "CAS-RET-PRD-01"
+    );
+  }, [cases, orderId, orderData.id, orderData.orderNumber]);
+
+  const associatedWarranty = useMemo(() => {
+    return warranties.find(
+      (w) =>
+        w.orderId === orderId ||
+        w.orderId === orderData.id ||
+        w.orderNumber === orderData.orderNumber ||
+        w.id === "WAR-BRG-2026-1001"
+    );
+  }, [warranties, orderId, orderData.id, orderData.orderNumber]);
 
   const steps = [
     {
@@ -182,6 +325,25 @@ export default function ProductOrderDetailPage() {
     setIsLoadingAction(true);
     setCancelError(null);
     try {
+      if (storeOrder) {
+        if (storeOrder.status === "CONFIRMED") {
+          cancelConfirmedMerchantOrder(storeOrder.id, cancelReason);
+          setIsCancelModalOpen(false);
+          setToastType("success");
+          setToastMessage("Pesanan toko berhasil dibatalkan. Pengembalian dana 100% diproses.");
+        } else if (storeOrder.status === "PROCESSING") {
+          requestCancellation(storeOrder.id, cancelReason);
+          setIsCancelModalOpen(false);
+          setToastType("success");
+          setToastMessage("Pengajuan pembatalan telah dikirim ke penjual (SLA 12 jam operasional).");
+        } else if (storeOrder.status === "CREATED" || storeOrder.status === "PAYMENT_PENDING") {
+          cancelUnpaidCheckoutGroup(storeOrder.checkoutGroupId || storeOrder.id, cancelReason);
+          setIsCancelModalOpen(false);
+          setToastType("success");
+          setToastMessage("Seluruh tagihan checkout berhasil dibatalkan.");
+        }
+        return;
+      }
       await productOrdersApi.cancel(orderId, cancelReason);
       setIsCancelModalOpen(false);
       setToastType("success");
@@ -200,6 +362,13 @@ export default function ProductOrderDetailPage() {
   const handleConfirmReceived = async () => {
     setIsLoadingAction(true);
     try {
+      if (storeOrder) {
+        customerConfirmDelivered(storeOrder.id);
+        setIsConfirmReceivedModalOpen(false);
+        setToastType("success");
+        setToastMessage("Pesanan telah dikonfirmasi selesai! Garansi resmi produk kini aktif.");
+        return;
+      }
       await productOrdersApi.confirmReceived(orderId);
       setIsConfirmReceivedModalOpen(false);
       setToastType("success");
@@ -525,29 +694,63 @@ export default function ProductOrderDetailPage() {
                 <ArrowsClockwise size={22} weight="bold" />
               </div>
               <div className="text-xs">
-                <p className="font-bold text-slate-900">Pusat Bantuan & Resolusi Pesanan</p>
+                <p className="font-bold text-slate-900">Pusat Layanan Purnajual & Resolusi (Phase 07)</p>
                 <p className="text-slate-500">
-                  Ada kendala fisik, barang tidak sesuai, atau ingin mengajukan retur & klaim garansi resmi?
+                  {associatedCase
+                    ? `Pengajuan aktif: #${associatedCase.caseNumber} (${associatedCase.mainStatus})`
+                    : "Tersedia perlindungan retur barang bermasalah & klaim garansi resmi toko."}
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Link
-                id="apply-return-button"
-                href={`/returns/new?orderId=${orderData.id}&orderItemId=${orderData.items[0]?.id || "item-01"}`}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-[#0F4C81] hover:text-white text-slate-700 text-xs font-bold transition flex items-center gap-1.5"
-              >
-                <ArrowsClockwise size={15} weight="bold" />
-                Ajukan Retur Barang
-              </Link>
-              <Link
-                id="apply-warranty-button"
-                href="/warranties"
-                className="px-4 py-2 rounded-xl bg-purple-50 hover:bg-purple-600 hover:text-white text-purple-700 text-xs font-bold transition flex items-center gap-1.5 border border-purple-200"
-              >
-                <ShieldCheck size={15} weight="bold" />
-                Klaim Garansi
-              </Link>
+
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {associatedCase ? (
+                <>
+                  <Link
+                    href={`/warranties?tab=submissions&caseId=${associatedCase.id}`}
+                    className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                  >
+                    <ArrowsClockwise size={15} weight="bold" />
+                    Lihat Kasus #{associatedCase.caseNumber}
+                  </Link>
+
+                  {associatedCase.refundDetail && (
+                    <Link
+                      href={`/warranties?tab=submissions&caseId=${associatedCase.id}`}
+                      className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold transition flex items-center gap-1.5 border border-emerald-300"
+                    >
+                      <Receipt size={15} weight="bold" />
+                      Status Refund: {associatedCase.refundDetail.status}
+                    </Link>
+                  )}
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setIsReturnModalOpen(true)}
+                    className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 border border-slate-200"
+                  >
+                    <ArrowsClockwise size={15} weight="bold" />
+                    Ajukan Retur Barang
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (associatedWarranty) {
+                        setIsClaimModalOpen(true);
+                      } else {
+                        router.push("/warranties?tab=active");
+                      }
+                    }}
+                    className="px-4 py-2 rounded-xl bg-purple-50 hover:bg-purple-600 hover:text-white text-purple-700 text-xs font-bold transition flex items-center gap-1.5 border border-purple-200"
+                  >
+                    <ShieldCheck size={15} weight="bold" />
+                    Lihat Garansi / Ajukan Klaim
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -845,6 +1048,70 @@ export default function ProductOrderDetailPage() {
           onClose={() => setToastMessage(null)}
         />
       )}
+
+      {/* Interactive Phase 07 Return Modal */}
+      {isReturnModalOpen && (
+        <ProductReturnModal
+          isOpen={isReturnModalOpen}
+          onClose={() => setIsReturnModalOpen(false)}
+          orderId={orderData.id}
+          orderNumber={orderData.orderNumber}
+          merchantId="merch-jaya-motor"
+          merchantName={orderData.merchantName}
+          items={orderData.items.map((it: any) => ({
+            productId: it.id,
+            productTitle: it.title,
+            unitPrice: it.price,
+            purchasedQuantity: it.quantity,
+            eligibleQuantity: it.quantity,
+          }))}
+          onSuccess={(caseId) => {
+            router.push(`/warranties?tab=submissions&caseId=${caseId}`);
+          }}
+        />
+      )}
+
+      {/* Interactive Phase 07 Warranty Claim Modal */}
+      {isClaimModalOpen && associatedWarranty && (
+        <WarrantyClaimModal
+          isOpen={isClaimModalOpen}
+          onClose={() => setIsClaimModalOpen(false)}
+          warranty={associatedWarranty}
+          onSuccess={(caseId) => {
+            router.push(`/warranties?tab=submissions&caseId=${caseId}`);
+          }}
+        />
+      )}
+
+      {/* Phase 05A Modals */}
+      <CancelUnpaidCheckoutModal
+        order={storeOrder || null}
+        checkoutGroup={
+          storeOrder?.checkoutGroupId
+            ? checkoutGroups.find((g) => g.id === storeOrder.checkoutGroupId) || null
+            : null
+        }
+        isOpen={isCancelUnpaidModalOpen}
+        onClose={() => setIsCancelUnpaidModalOpen(false)}
+        onConfirm={(groupId) => {
+          cancelUnpaidCheckoutGroup(groupId, "Dibatalkan oleh Pelanggan");
+          setIsCancelUnpaidModalOpen(false);
+          setToastMessage("Seluruh pesanan dalam tagihan checkout berhasil dibatalkan.");
+          setToastType("success");
+        }}
+      />
+
+      <ReceiptModal
+        order={storeOrder || null}
+        isOpen={isReceiptModalOpen}
+        onClose={() => setIsReceiptModalOpen(false)}
+      />
+
+      <TrackingModal
+        order={storeOrder || null}
+        isOpen={isTrackingModalOpen}
+        onClose={() => setIsTrackingModalOpen(false)}
+      />
     </div>
   );
 }

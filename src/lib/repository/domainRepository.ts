@@ -10294,7 +10294,7 @@ export class CentralDomainStore {
       recipientId: warranty.providerId,
       title: "Sengketa Klaim Garansi Masuk",
       message: `Pelanggan mengajukan sengketa #${disputeId} atas penolakan klaim #${claim.claimNumber}. Silakan lakukan peninjauan mediasi.`,
-      link: "/provider/disputes",
+      link: "/provider/warranty",
     });
 
     this.notify();

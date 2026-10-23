@@ -7,7 +7,8 @@ import { usePathname } from "next/navigation";
 import { useActiveRole } from "@/context/RoleContext";
 import { useCart } from "@/features/cart/useCart";
 import { useDomainRepository } from "@/lib/repository/domainRepository";
-import { taxonomyApi } from "@/lib/servioApi";
+import { taxonomyApi, resolveLocationToCityCode } from "@/lib/servioApi";
+import { useActiveLocation } from "@/context/LocationContext";
 import { CATEGORY_ICON_MAP } from "@/config/navigation";
 import { UserRole } from "@/types/auth";
 import {
@@ -30,6 +31,7 @@ import {
   ShieldCheck,
   Wrench,
   CircleNotch,
+  MapPin,
 } from "@phosphor-icons/react";
 
 interface NavbarProps {
@@ -41,6 +43,7 @@ interface NavbarProps {
 
 export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSidebarToggle }: NavbarProps) {
   const { activeRole: rawActiveRole, user, isPublicGuest: rawIsPublicGuest, setIsPublicGuest, logout } = useActiveRole();
+  const { location: activeLocation, openLocationModal } = useActiveLocation();
   const { totalItemCount } = useCart();
   const effectiveCartCount = cartCount !== undefined ? cartCount : totalItemCount;
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
@@ -163,7 +166,7 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
         return {
           id: c.id,
           label: c.name,
-          href: `/categories/${c.id}`,
+          href: `/services?categories=${c.id}`,
           icon: IconComponent,
         };
       });
@@ -173,7 +176,10 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
 
   // Penentu status aktif navigasi publik
   const isHomeActive = pathname === "/";
-  const isServicesActive = pathname.startsWith("/services") || pathname.startsWith("/categories");
+  const isServicesActive =
+    pathname.startsWith("/services") ||
+    pathname.startsWith("/categories") ||
+    pathname.startsWith("/providers");
   const isProductsActive = pathname.startsWith("/products");
   const isHowItWorksActive = pathname.startsWith("/how-it-works");
   const isSupportActive =
@@ -342,6 +348,9 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
                     <span className="w-1.5 h-1.5 rounded-full bg-secondary shrink-0" />
                   )}
                   <span>Jasa</span>
+                  {activeLocation.isGps && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 ring-2 ring-white shrink-0" title="GPS Beranda Terhubung" />
+                  )}
                   <CaretDown
                     size={14}
                     weight="bold"
@@ -355,16 +364,66 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
                 </button>
 
                 {activeDropdown === "services" && (
-                  <div className="absolute top-full left-0 mt-2 w-80 rounded-2xl bg-white border border-slate-200/90 shadow-servio-lg p-2 grid grid-cols-1 gap-1 z-50 animate-in fade-in zoom-in-95 duration-150">
-                    <div className="flex items-center justify-between px-3 py-1.5">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-neutral-muted">
-                        Layanan Servio
-                      </span>
-                      {isServicesActive && (
-                        <span className="text-[10px] font-bold text-primary bg-sky px-2 py-0.5 rounded-full">
-                          Kategori Aktif
+                  <div className="absolute top-full left-0 mt-2 w-88 rounded-2xl bg-white border border-slate-200/90 shadow-servio-lg p-2.5 grid grid-cols-1 gap-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
+                    {/* Active GPS Location Card from Beranda */}
+                    <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className={`p-1.5 rounded-lg shrink-0 ${activeLocation.isGps ? "bg-emerald-100 text-emerald-700" : "bg-sky text-primary"}`}>
+                          <MapPin size={16} weight="fill" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
+                            Lokasi Beranda (GPS)
+                          </p>
+                          <p className="text-xs font-bold text-slate-800 truncate">
+                            {activeLocation.city || activeLocation.displayName}
+                          </p>
+                        </div>
+                      </div>
+                      {activeLocation.isGps ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-200 shrink-0">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          GPS Aktif
                         </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveDropdown(null);
+                            openLocationModal();
+                          }}
+                          className="text-[10px] text-primary font-bold underline hover:text-primary-dark shrink-0 cursor-pointer"
+                        >
+                          Ubah
+                        </button>
                       )}
+                    </div>
+
+                    {/* Direct 1-City Catalog Link */}
+                    <Link
+                      href={`/services?city=${resolveLocationToCityCode(activeLocation.city)}`}
+                      onClick={() => setActiveDropdown(null)}
+                      className="flex items-center justify-between p-2.5 rounded-xl bg-primary text-white hover:bg-primary-dark transition shadow-xs group font-bold"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-1.5 rounded-lg bg-white/20">
+                          <Wrench size={16} weight="bold" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-bold leading-tight">Semua Layanan Jasa</p>
+                          <p className="text-[10px] text-sky-light font-normal">Katalog Sekota ({activeLocation.city || "Jakarta"})</p>
+                        </div>
+                      </div>
+                      <ArrowRight size={14} weight="bold" className="group-hover:translate-x-0.5 transition-transform" />
+                    </Link>
+
+                    <div className="flex items-center justify-between px-3 pt-2 pb-0.5 border-t border-slate-100 mt-0.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-muted">
+                        Kategori Layanan
+                      </span>
+                      <span className="text-[10px] text-neutral-slate">
+                        Pilih Kategori Spesifik
+                      </span>
                     </div>
 
                     {isLoadingCategories ? (
@@ -551,21 +610,9 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
             </div>
           ) : isCustomer ? (
             /* --- CUSTOMER CENTER (P0.4) --- */
-            <div className="hidden md:flex flex-1 items-center max-w-xl mx-4 gap-3">
-              {/* Search Bar Halo */}
-              <div className="relative flex-1">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-neutral-muted">
-                  <MagnifyingGlass size={16} weight="bold" />
-                </div>
-                <input
-                  type="text"
-                  placeholder="Cari servis AC, renovasi, atau spare part..."
-                  className="w-full pl-10 pr-4 py-2 text-xs rounded-full bg-slate-100/75 border border-slate-200 text-neutral-dark placeholder:text-neutral-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-white transition-all shadow-servio-xs"
-                />
-              </div>
-
+            <div className="hidden md:flex items-center mx-4">
               {/* Customer Quick Links */}
-              <div className="flex items-center gap-1 sm:gap-1.5">
+              <div className="flex items-center gap-1 sm:gap-2">
                 <Link
                   href="/"
                   className={`relative px-2.5 py-1.5 rounded-lg text-xs transition-colors ${
@@ -580,14 +627,18 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
                   )}
                 </Link>
                 <Link
-                  href="/services"
-                  className={`relative px-2.5 py-1.5 rounded-lg text-xs transition-colors ${
+                  href={`/services?city=${resolveLocationToCityCode(activeLocation.city)}`}
+                  className={`relative px-2.5 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-1.5 ${
                     isServicesActive
                       ? "font-bold text-primary"
                       : "font-medium text-neutral-slate hover:text-neutral-dark hover:bg-slate-100/70"
                   }`}
+                  title={`Katalog Layanan Area ${activeLocation.city}`}
                 >
                   <span>Jasa</span>
+                  {activeLocation.isGps && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="GPS Beranda Terhubung" />
+                  )}
                   {isServicesActive && (
                     <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4 h-0.5 bg-secondary rounded-full" />
                   )}
@@ -602,6 +653,22 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
                 >
                   <span>Produk</span>
                   {isProductsActive && (
+                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4 h-0.5 bg-secondary rounded-full" />
+                  )}
+                </Link>
+                <Link
+                  href="/chat"
+                  className={`relative px-2.5 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-1.5 ${
+                    pathname?.startsWith("/chat")
+                      ? "font-bold text-primary"
+                      : "font-medium text-neutral-slate hover:text-neutral-dark hover:bg-slate-100/70"
+                  }`}
+                >
+                  <span>Chat</span>
+                  <span className="px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-rose-500 text-white">
+                    2
+                  </span>
+                  {pathname?.startsWith("/chat") && (
                     <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4 h-0.5 bg-secondary rounded-full" />
                   )}
                 </Link>
@@ -1104,15 +1171,6 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
             </div>
           ) : (
             <div className="space-y-2">
-              <div className="relative">
-                <MagnifyingGlass size={16} className="absolute left-3 top-3 text-neutral-muted" />
-                <input
-                  type="text"
-                  placeholder="Cari servis atau produk..."
-                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-slate-100 border border-slate-200"
-                />
-              </div>
-
               {/* Diagnosa AI highlight card for Mobile Customer */}
               <Link
                 href="/smart-discovery"
@@ -1176,6 +1234,27 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
               >
                 <span>Katalog Produk & Sparepart</span>
                 {isProductsActive && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary text-white">
+                    Aktif
+                  </span>
+                )}
+              </Link>
+              <Link
+                href="/chat"
+                onClick={() => setMobileDrawerOpen(false)}
+                className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-colors ${
+                  pathname.startsWith("/chat")
+                    ? "font-bold text-primary bg-sky/50"
+                    : "font-semibold text-neutral-dark hover:bg-slate-100"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span>Chat &amp; Pesan</span>
+                  <span className="px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-rose-500 text-white">
+                    2
+                  </span>
+                </div>
+                {pathname.startsWith("/chat") && (
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary text-white">
                     Aktif
                   </span>

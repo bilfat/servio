@@ -6,6 +6,7 @@ import { LocationPickerModal } from "@/components/features/location/LocationPick
 import { PageLoadingProvider } from "@/components/feedback/PageLoadingProvider";
 import { RoleSwitcher } from "@/components/navigation/RoleSwitcher";
 import { SPayProvider } from "@/features/spay/spay.frontend-provider";
+import { AfterSalesProvider } from "@/features/afterSales/useAfterSales";
 import "./globals.css";
 
 const sora = localFont({
@@ -107,9 +108,11 @@ export default function RootLayout({
         <RoleProvider>
           <LocationProvider>
             <SPayProvider>
-              <PageLoadingProvider>{children}</PageLoadingProvider>
-              <LocationPickerModal />
-              <RoleSwitcher />
+              <AfterSalesProvider>
+                <PageLoadingProvider>{children}</PageLoadingProvider>
+                <LocationPickerModal />
+                <RoleSwitcher />
+              </AfterSalesProvider>
             </SPayProvider>
           </LocationProvider>
         </RoleProvider>

@@ -201,10 +201,10 @@ class InternalIdentityController extends Controller
             );
         }
 
-        if ($org->type !== 'MERCHANT') {
+        if (!in_array($org->type, ['MERCHANT', 'PROVIDER'], true)) {
             return ApiResponse::error(
                 'IDENTITY_ORGANIZATION_NOT_MERCHANT',
-                'Organisasi bukan bertipe MERCHANT.',
+                'Organisasi bukan bertipe MERCHANT atau PROVIDER.',
                 422
             );
         }
@@ -223,6 +223,7 @@ class InternalIdentityController extends Controller
             'organization_id' => (string) $org->id,
             'type' => (string) $org->type,
             'store_name' => $storeName ?: null,
+            'display_name' => $storeName ?: null,
             'city' => $city,
             'province' => $province,
             'district' => $district,
@@ -231,6 +232,8 @@ class InternalIdentityController extends Controller
             'address' => $addr,
             'logo_url' => null,
             'public_description' => null,
+            'operational_hours' => $profile?->operational_hours_json,
+            'service_area' => $profile?->service_area_json,
             'status' => (string) $org->status,
             'operational_status' => $org->operational_status,
             'is_verified' => null,

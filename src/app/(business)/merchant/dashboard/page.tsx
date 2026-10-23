@@ -18,6 +18,8 @@ import {
   Sparkle,
   SlidersHorizontal,
   Handshake,
+  ShoppingCart,
+  ShieldCheck,
 } from "@phosphor-icons/react";
 import { useMerchantOperations, MerchantStoreStatus } from "@/features/merchant/useMerchantOperations";
 import { useDomainRepository } from "@/lib/repository/domainRepository";
@@ -312,9 +314,9 @@ export default function MerchantDashboardPage() {
                 </p>
               </div>
             </div>
-            <Link href="/business/merchant/inventory">
+            <Link href="/merchant/products">
               <Button variant="secondary" size="sm" className="whitespace-nowrap flex items-center gap-1.5">
-                <span>Kelola Stok Gudang</span>
+                <span>Kelola Katalog Produk</span>
                 <ArrowRight size={14} />
               </Button>
             </Link>
@@ -390,32 +392,32 @@ export default function MerchantDashboardPage() {
                 </Link>
 
                 <Link
-                  href="/business/merchant/fulfillment"
+                  href="/merchant/procurement"
                   className="flex items-center justify-between p-3 rounded-xl border border-slate-200/80 hover:border-primary/40 hover:bg-slate-50/80 transition-all group"
                 >
                   <div className="flex items-center gap-3">
                     <span className="p-2 rounded-lg bg-purple-50 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors">
-                      <Package size={18} weight="bold" />
+                      <ShoppingCart size={18} weight="bold" />
                     </span>
                     <div>
-                      <div className="text-xs font-semibold text-slate-800">Pick & Pack Workspace</div>
-                      <div className="text-[11px] text-slate-500">{pendingFulfillments.length} item antre dikemas</div>
+                      <div className="text-xs font-semibold text-slate-800">Pengadaan B2B</div>
+                      <div className="text-[11px] text-slate-500">Sourcing suku cadang & Purchase Order</div>
                     </div>
                   </div>
                   <ArrowRight size={16} className="text-slate-400 group-hover:text-primary transition-colors" />
                 </Link>
 
                 <Link
-                  href="/business/merchant/shipping"
+                  href="/merchant/warranty"
                   className="flex items-center justify-between p-3 rounded-xl border border-slate-200/80 hover:border-primary/40 hover:bg-slate-50/80 transition-all group"
                 >
                   <div className="flex items-center gap-3">
                     <span className="p-2 rounded-lg bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
-                      <Truck size={18} weight="bold" />
+                      <ShieldCheck size={18} weight="bold" />
                     </span>
                     <div>
-                      <div className="text-xs font-semibold text-slate-800">Dispatch Kurir</div>
-                      <div className="text-[11px] text-slate-500">Penjemputan ekspedisi AWB</div>
+                      <div className="text-xs font-semibold text-slate-800">Garansi & Klaim</div>
+                      <div className="text-[11px] text-slate-500">Pusat resolusi purnajual toko</div>
                     </div>
                   </div>
                   <ArrowRight size={16} className="text-slate-400 group-hover:text-primary transition-colors" />
