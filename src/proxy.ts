@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { getRoleDashboard, isOperationalRole } from "@/lib/roleNavigation";
 
 const PROTECTED_CUSTOMER_ROUTES = [
   "/orders",
@@ -14,6 +15,11 @@ const PROTECTED_CUSTOMER_ROUTES = [
   "/history",
   "/checkout",
   "/payments",
+  "/cart",
+  "/spay",
+  "/chat",
+  "/loyalty",
+  "/maintenance",
 ];
 
 const OPERATIONAL_PREFIXES = [
@@ -179,6 +185,22 @@ export function proxy(request: NextRequest) {
       (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
     ) && !pathname.startsWith("/worker/activate");
 
+  // Non-customer operational roles cannot access customer home or customer dashboard/features
+  if (pathname === "/" && isAuthenticated && isOperationalRole(activeRole)) {
+    const targetDashboard = getRoleDashboard(activeRole);
+    return NextResponse.redirect(new URL(targetDashboard, request.url));
+  }
+
+  if (isProtectedCustomer && isAuthenticated && isOperationalRole(activeRole)) {
+    const targetDashboard = getRoleDashboard(activeRole);
+    return NextResponse.redirect(new URL(targetDashboard, request.url));
+  }
+
+  // Regular customers cannot access operational backoffice routes
+  if (isProtectedOperational && !isGuest && activeRole === "CUSTOMER") {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+
   if ((isProtectedCustomer || isProtectedOperational) && isGuest) {
     const loginUrl = new URL("/auth/login", request.url);
     loginUrl.searchParams.set("returnUrl", pathname);
@@ -190,6 +212,7 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
+    "/",
     "/orders/:path*",
     "/bookings/:path*",
     "/profile/:path*",
@@ -203,6 +226,14 @@ export const config = {
     "/history/:path*",
     "/checkout/:path*",
     "/payments/:path*",
+    "/cart/:path*",
+    "/cart",
+    "/spay/:path*",
+    "/spay",
+    "/chat/:path*",
+    "/chat",
+    "/loyalty/:path*",
+    "/maintenance/:path*",
     "/provider/:path*",
     "/worker/:path*",
     "/merchant/:path*",

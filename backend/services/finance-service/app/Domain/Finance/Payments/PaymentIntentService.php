@@ -21,12 +21,23 @@ class PaymentIntentService
      */
     public function createPaymentIntent(string $checkoutGroupId, string $method, string $quotePayloadHash, ?int $orderQuoteRevision = null): PaymentIntent
     {
-        $method = strtoupper($method);
-        $normalizedMethod = str_contains($method, 'VA') ? 'VA' : 'QRIS';
-        if (!in_array($method, ['QRIS', 'VA', 'MOCK_QRIS', 'MOCK_VA_BCA', 'MOCK_VA_BRI', 'MOCK_VA_BNI', 'MOCK_VA_MANDIRI', 'MOCK_VA_PERMATA'], true)) {
+        $rawMethod = strtoupper($method);
+        if (!in_array($rawMethod, ['QRIS', 'VA', 'MOCK_QRIS', 'MOCK_VA', 'MOCK_VA_BCA', 'MOCK_VA_BRI', 'MOCK_VA_BNI', 'MOCK_VA_MANDIRI', 'MOCK_VA_PERMATA'], true)) {
             throw new HttpException(422, 'Metode pembayaran tidak valid. Harus QRIS atau VA.');
         }
-        $method = $normalizedMethod;
+
+        $bankCode = 'BCA';
+        if (str_contains($rawMethod, 'BRI')) {
+            $bankCode = 'BRI';
+        } elseif (str_contains($rawMethod, 'BNI')) {
+            $bankCode = 'BNI';
+        } elseif (str_contains($rawMethod, 'MANDIRI')) {
+            $bankCode = 'MANDIRI';
+        } elseif (str_contains($rawMethod, 'PERMATA')) {
+            $bankCode = 'PERMATA';
+        }
+
+        $method = str_contains($rawMethod, 'VA') ? 'VA' : 'QRIS';
 
         $checkout = FinanceCheckout::where('checkout_group_id', $checkoutGroupId)->first();
         if (!$checkout) {
@@ -50,7 +61,7 @@ class PaymentIntentService
             throw new HttpException(409, 'Snapshot data checkout telah berubah atau terkunci dengan versi berbeda.');
         }
 
-        return DB::transaction(function () use ($checkout, $method) {
+        return DB::transaction(function () use ($checkout, $method, $bankCode) {
             // Check for active intent
             $activeIntent = PaymentIntent::where('finance_checkout_id', $checkout->id)
                 ->where('is_active', true)
@@ -58,23 +69,27 @@ class PaymentIntentService
                 ->first();
 
             if ($activeIntent) {
-                // If same method and not expired, idempotent reuse
-                if ($activeIntent->method === $method && now()->lt($activeIntent->expires_at)) {
+                $existingBank = $activeIntent->instruction_payload['bank_code'] ?? null;
+                $isSameBank = $method === 'QRIS' || $existingBank === $bankCode;
+
+                // If same method and bank and not expired, idempotent reuse
+                if ($activeIntent->method === $method && $isSameBank && now()->lt($activeIntent->expires_at)) {
                     return $activeIntent;
                 }
 
-                // If different method on active pending intent
-                if ($activeIntent->method !== $method && now()->lt($activeIntent->expires_at)) {
-                    throw new HttpException(409, 'Terdapat tagihan aktif lain yang sedang berjalan untuk checkout ini.');
-                }
-
-                // If expired, deactivate old intent
-                if (now()->gte($activeIntent->expires_at)) {
-                    $activeIntent->update(['status' => 'EXPIRED', 'is_active' => false]);
-                }
+                // If switching method or bank, deactivate old intent cleanly
+                $activeIntent->update(['status' => 'CANCELLED', 'is_active' => false]);
             }
 
             $providerRef = 'MOCK-PAY-' . strtoupper(Str::random(12));
+            $bankPrefix = match ($bankCode) {
+                'BRI' => '88002',
+                'BNI' => '88003',
+                'MANDIRI' => '88004',
+                'PERMATA' => '88005',
+                default => '88001',
+            };
+
             $instruction = $method === 'QRIS'
                 ? [
                     'type' => 'DEMO_QRIS',
@@ -83,8 +98,8 @@ class PaymentIntentService
                 ]
                 : [
                     'type' => 'DEMO_VA',
-                    'bank_code' => 'BCA',
-                    'va_number' => '88001' . mt_rand(10000000, 99999999),
+                    'bank_code' => $bankCode,
+                    'va_number' => $bankPrefix . mt_rand(10000000, 99999999),
                     'display_text' => 'SIMULASI - BUKAN UNTUK PEMBAYARAN NYATA',
                 ];
 

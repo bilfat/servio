@@ -13,6 +13,7 @@ import {
 } from "@/types/auth";
 import { hasPermission as evaluatePermission } from "@/lib/permissions/hasPermission";
 import { authApi, MOCK_USERS_BY_ROLE } from "@/lib/servioApi";
+import { getRoleDashboard, isOperationalRole } from "@/lib/roleNavigation";
 
 const GUEST_USER_CONTEXT: UserContext = {
   id: "guest",
@@ -168,6 +169,7 @@ export function RoleProvider({
         if (typeof window !== "undefined") {
           try {
             document.cookie = `servio_active_role=${activeCode}; path=/; max-age=604800; SameSite=Lax`;
+            document.cookie = `servio_user_id=${encodeURIComponent(u.id)}; path=/; max-age=604800; SameSite=Lax`;
             document.cookie = "servio_guest=0; path=/; max-age=604800; SameSite=Lax";
           } catch {
             // ignore
@@ -296,8 +298,29 @@ export function RoleProvider({
     if (typeof window !== "undefined") {
       try {
         document.cookie = `servio_active_role=${targetRoleCode}; path=/; max-age=31536000; SameSite=Lax`;
+        document.cookie = "servio_guest=0; path=/; max-age=31536000; SameSite=Lax";
       } catch {
         // Safe fallback
+      }
+
+      if (isOperationalRole(targetRoleCode)) {
+        const dest = getRoleDashboard(targetRoleCode);
+        window.location.href = dest;
+      } else {
+        const currentPath = window.location.pathname;
+        const isOperationalPath =
+          currentPath.startsWith("/ops") ||
+          currentPath.startsWith("/ceo") ||
+          currentPath.startsWith("/provider") ||
+          currentPath.startsWith("/merchant") ||
+          currentPath.startsWith("/worker") ||
+          currentPath.startsWith("/supplier") ||
+          currentPath.startsWith("/finance") ||
+          currentPath.startsWith("/admin") ||
+          currentPath.startsWith("/staff");
+        if (isOperationalPath) {
+          window.location.href = "/";
+        }
       }
     }
   };

@@ -71,7 +71,7 @@ export default function CustomerProfilePage() {
         .then((res) => {
           if (res.data) setStaffOnboardingData(res.data);
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [isInternalStaff, user.id]);
 
@@ -125,16 +125,23 @@ export default function CustomerProfilePage() {
   const [addrLabel, setAddrLabel] = useState("Rumah");
   const [addrRecipient, setAddrRecipient] = useState("");
   const [addrPhone, setAddrPhone] = useState("");
-  const [addrStreet, setAddrStreet] = useState("");
-  const [addrCity, setAddrCity] = useState("Jakarta Selatan");
-  const [addrDistrict, setAddrDistrict] = useState("");
-  const [addrProvince, setAddrProvince] = useState("DKI Jakarta");
-  const [addrPostalCode, setAddrPostalCode] = useState("");
+  const [addrCascading, setAddrCascading] = useState<AddressData>({
+    province_name: "",
+    city_name: "",
+    district_name: "",
+    village_name: "",
+    postal_code: "",
+    street_address: "",
+    rt_rw: "",
+    landmark: "",
+  });
   const [addrLatitude, setAddrLatitude] = useState<number | undefined>(undefined);
   const [addrLongitude, setAddrLongitude] = useState<number | undefined>(undefined);
   const [addrIsDefault, setAddrIsDefault] = useState(false);
   const [isSavingAddress, setIsSavingAddress] = useState(false);
   const [isFetchingModalGps, setIsFetchingModalGps] = useState(false);
+  const [addressToDelete, setAddressToDelete] = useState<ApiAddress | null>(null);
+  const [isDeletingAddress, setIsDeletingAddress] = useState(false);
 
   const handleUseGpsInAddressModal = async () => {
     setIsFetchingModalGps(true);
@@ -148,16 +155,20 @@ export default function CustomerProfilePage() {
 
       // Otomatis mengambil dan mengisi titik wilayah
       const geo = await reverseGeocodeLocation(lat, lng);
-      if (geo.city) setAddrCity(geo.city);
-      if (geo.district) setAddrDistrict(geo.district);
-      if (geo.province) setAddrProvince(geo.province);
-      if (geo.postalCode) setAddrPostalCode(geo.postalCode);
-      if (!addrStreet || addrStreet.trim() === "") {
-        setAddrStreet(geo.street);
-      }
+      setAddrCascading((prev) => ({
+        ...prev,
+        province_name: geo.province || prev.province_name,
+        province: geo.province || prev.province,
+        city_name: geo.city || prev.city_name,
+        city: geo.city || prev.city,
+        district_name: geo.district || prev.district_name,
+        district: geo.district || prev.district,
+        postal_code: geo.postalCode || prev.postal_code,
+        street_address: prev.street_address ? prev.street_address : geo.street,
+      }));
 
       setToastMessage(
-        `Titik GPS berhasil disematkan: ${geo.district ? geo.district + ', ' : ''}${geo.city} (${lat}, ${lng}). Wilayah otomatis terisi!`
+        `Titik GPS berhasil disematkan: ${geo.district ? geo.district + ', ' : ''}${geo.city} (${lat}, ${lng}). Wilayah otomatis disesuaikan!`
       );
     } catch (err: any) {
       setToastMessage(err?.message || "Gagal mengambil lokasi GPS. Pastikan izin lokasi browser diaktifkan.");
@@ -285,49 +296,110 @@ export default function CustomerProfilePage() {
   const handleOpenAddressModal = (addr?: ApiAddress) => {
     if (addr) {
       setSelectedAddress(addr);
-      setAddrLabel(addr.label);
+      setAddrLabel(addr.label || "Rumah");
       setAddrRecipient(addr.recipientName || user.name);
       setAddrPhone(addr.phone || user.phone || "");
-      setAddrStreet(addr.addressLine);
-      setAddrCity(addr.city);
-      setAddrDistrict(addr.district || "");
-      setAddrProvince(addr.province || "DKI Jakarta");
-      setAddrPostalCode(addr.postalCode || "");
-      setAddrLatitude(addr.latitude ?? undefined);
-      setAddrLongitude(addr.longitude ?? undefined);
+      const lat = addr.latitude ?? -6.2088;
+      const lng = addr.longitude ?? 106.8456;
+      setAddrLatitude(lat);
+      setAddrLongitude(lng);
       setAddrIsDefault(addr.isDefault);
+
+      // Parse RT/RW and Patokan if present in addressLine
+      let streetVal = addr.addressLine || "";
+      let rtrwVal = "";
+      let landmarkVal = "";
+      const rtrwMatch = streetVal.match(/,\s*RT\/RW:\s*([^,(]+)/i);
+      if (rtrwMatch) {
+        rtrwVal = rtrwMatch[1].trim();
+      }
+      const landmarkMatch = streetVal.match(/\(Patokan:\s*([^)]+)\)/i);
+      if (landmarkMatch) {
+        landmarkVal = landmarkMatch[1].trim();
+      }
+      const cleanStreet = streetVal
+        .replace(/,\s*RT\/RW:\s*[^,(]+/i, "")
+        .replace(/\(Patokan:\s*[^)]+\)/i, "")
+        .trim();
+
+      setAddrCascading({
+        province_name: addr.province || "DKI JAKARTA",
+        province: addr.province || "DKI JAKARTA",
+        city_name: addr.city || "",
+        city: addr.city || "",
+        district_name: addr.district || "",
+        district: addr.district || "",
+        village_name: addr.village || "",
+        village: addr.village || "",
+        postal_code: addr.postalCode || "",
+        street_address: cleanStreet,
+        address: cleanStreet,
+        rt_rw: rtrwVal,
+        landmark: landmarkVal,
+        latitude: lat,
+        longitude: lng,
+      });
     } else {
       setSelectedAddress(null);
       setAddrLabel("Rumah");
       setAddrRecipient(user.name);
       setAddrPhone(user.phone || "");
-      setAddrStreet("");
-      setAddrCity("Jakarta Selatan");
-      setAddrDistrict("");
-      setAddrProvince("DKI Jakarta");
-      setAddrPostalCode("");
       setAddrLatitude(-6.2088);
       setAddrLongitude(106.8456);
       setAddrIsDefault(addresses.length === 0);
+      setAddrCascading({
+        province_name: "",
+        city_name: "",
+        district_name: "",
+        village_name: "",
+        postal_code: "",
+        street_address: "",
+        rt_rw: "",
+        landmark: "",
+        latitude: -6.2088,
+        longitude: 106.8456,
+      });
     }
     setShowAddressModal(true);
   };
 
   const handleSaveAddress = async (e: React.FormEvent) => {
     e.preventDefault();
+    const prov = addrCascading.province_name || addrCascading.province;
+    const city = addrCascading.city_name || addrCascading.city;
+    const street = addrCascading.street_address || addrCascading.address;
+
+    if (!prov || !city || !street) {
+      setToastMessage("Harap lengkapi setidaknya Provinsi, Kota/Kabupaten, dan Jalan/Nomor Alamat.");
+      return;
+    }
+
     setIsSavingAddress(true);
     try {
+      const finalLat = addrCascading.latitude ?? addrLatitude ?? -6.2088;
+      const finalLng = addrCascading.longitude ?? addrLongitude ?? 106.8456;
+
+      // Cleanly integrate street address with RT/RW and Landmark into addressLine
+      let addressLineCombined = street.trim();
+      if (addrCascading.rt_rw?.trim()) {
+        addressLineCombined += `, RT/RW: ${addrCascading.rt_rw.trim()}`;
+      }
+      if (addrCascading.landmark?.trim()) {
+        addressLineCombined += ` (Patokan: ${addrCascading.landmark.trim()})`;
+      }
+
       const payload = {
-        label: addrLabel,
-        recipientName: addrRecipient,
-        phone: addrPhone,
-        addressLine: addrStreet,
-        city: addrCity,
-        district: addrDistrict,
-        province: addrProvince,
-        postalCode: addrPostalCode,
-        latitude: addrLatitude,
-        longitude: addrLongitude,
+        label: addrLabel.trim() || "Rumah",
+        recipientName: addrRecipient.trim() || user.name,
+        phone: addrPhone.trim() || user.phone || "",
+        addressLine: addressLineCombined,
+        city: city.trim(),
+        district: (addrCascading.district_name || addrCascading.district || "").trim(),
+        village: (addrCascading.village_name || addrCascading.village || "").trim(),
+        province: prov.trim(),
+        postalCode: (addrCascading.postal_code || "").trim(),
+        latitude: finalLat,
+        longitude: finalLng,
         isDefault: addrIsDefault,
       };
 
@@ -348,14 +420,18 @@ export default function CustomerProfilePage() {
     }
   };
 
-  const handleDeleteAddress = async (id: string) => {
-    if (!confirm("Apakah Anda yakin ingin menghapus alamat ini?")) return;
+  const handleConfirmDeleteAddress = async () => {
+    if (!addressToDelete) return;
+    setIsDeletingAddress(true);
     try {
-      await profileApi.deleteAddress(id);
+      await profileApi.deleteAddress(addressToDelete.id);
       await loadAddresses();
-      setToastMessage("Alamat berhasil dihapus.");
+      setToastMessage(`Alamat "${addressToDelete.label}" berhasil dihapus.`);
+      setAddressToDelete(null);
     } catch (err: unknown) {
       setToastMessage(err instanceof Error ? err.message : "Gagal menghapus alamat.");
+    } finally {
+      setIsDeletingAddress(false);
     }
   };
 
@@ -366,112 +442,6 @@ export default function CustomerProfilePage() {
       setToastMessage(`Alamat "${addr.label}" dijadikan alamat utama.`);
     } catch (err: unknown) {
       setToastMessage(err instanceof Error ? err.message : "Gagal mengubah alamat default.");
-    }
-  };
-
-  // =========================================================================
-  // CR-04: Customer Primary Address State & Handlers
-  // =========================================================================
-  const [showEditCustAddressModal, setShowEditCustAddressModal] = useState<boolean>(false);
-  const [isSavingCustAddress, setIsSavingCustAddress] = useState<boolean>(false);
-  const [editingCustAddress, setEditingCustAddress] = useState<AddressData>({
-    province_id: "",
-    province_name: "",
-    city_id: "",
-    city_name: "",
-    district_id: "",
-    district_name: "",
-    village_id: "",
-    village_name: "",
-    postal_code: "",
-    street_address: "",
-    rt_rw: "",
-    landmark: "",
-  });
-
-  const myAddressData: AddressData | null = React.useMemo(() => {
-    const raw = (user as any).address_json ?? (user as any).address ?? user.personalProfile?.address_json ?? user.personalProfile?.address;
-    if (!raw) return null;
-    if (typeof raw === "string") {
-      try {
-        const parsed = JSON.parse(raw);
-        if (typeof parsed === "object" && parsed !== null) return parsed;
-      } catch {
-        return {
-          street_address: raw,
-          province_name: "",
-          city_name: "",
-          district_name: "",
-          postal_code: "",
-        };
-      }
-    }
-    if (typeof raw === "object") return raw as AddressData;
-    return null;
-  }, [user]);
-
-  const hasMyAddress = Boolean(
-    myAddressData &&
-    (myAddressData.street_address || myAddressData.province_name || myAddressData.city_name)
-  );
-
-  const handleOpenEditCustAddress = () => {
-    if (myAddressData) {
-      setEditingCustAddress({
-        province_id: myAddressData.province_id || "",
-        province_name: myAddressData.province_name || "",
-        city_id: myAddressData.city_id || "",
-        city_name: myAddressData.city_name || "",
-        district_id: myAddressData.district_id || "",
-        district_name: myAddressData.district_name || "",
-        village_id: myAddressData.village_id || "",
-        village_name: myAddressData.village_name || "",
-        postal_code: myAddressData.postal_code || "",
-        street_address: myAddressData.street_address || "",
-        rt_rw: myAddressData.rt_rw || "",
-        landmark: myAddressData.landmark || "",
-      });
-    } else {
-      setEditingCustAddress({
-        province_id: "",
-        province_name: "",
-        city_id: "",
-        city_name: "",
-        district_id: "",
-        district_name: "",
-        village_id: "",
-        village_name: "",
-        postal_code: "",
-        street_address: "",
-        rt_rw: "",
-        landmark: "",
-      });
-    }
-    setShowEditCustAddressModal(true);
-  };
-
-  const handleSaveCustAddress = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingCustAddress.province_name || !editingCustAddress.city_name || !editingCustAddress.street_address) {
-      setToastMessage("Harap lengkapi setidaknya Provinsi, Kota/Kabupaten, dan Jalan/Nomor Alamat.");
-      return;
-    }
-
-    setIsSavingCustAddress(true);
-    try {
-      await profileApi.updateProfile({
-        address: editingCustAddress,
-        address_json: editingCustAddress,
-        addressData: editingCustAddress,
-      });
-      await refreshUser();
-      setShowEditCustAddressModal(false);
-      setToastMessage("Alamat utama Customer berhasil diperbarui!");
-    } catch (err: unknown) {
-      const error = err as Error & { message?: string };
-      setToastMessage(error.message || "Gagal menyimpan alamat utama.");
-    } finally {
-      setIsSavingCustAddress(false);
     }
   };
 
@@ -531,20 +501,18 @@ export default function CustomerProfilePage() {
             </div>
             <div className="flex items-center gap-2">
               <span
-                className={`px-3 py-1 rounded-xl text-xs font-mono font-bold border ${
-                  user.status === "ACTIVE"
+                className={`px-3 py-1 rounded-xl text-xs font-mono font-bold border ${user.status === "ACTIVE"
                     ? "bg-emerald-950/60 text-emerald-400 border-emerald-800/80"
                     : "bg-rose-950/60 text-rose-400 border-rose-800/80"
-                }`}
+                  }`}
               >
                 AKUN: {user.status || "ACTIVE"}
               </span>
               <span
-                className={`px-3 py-1 rounded-xl text-xs font-mono font-bold border ${
-                  (staffOnboardingData?.readiness === "READY" || user.isOperationalReady || user.readiness === "READY")
+                className={`px-3 py-1 rounded-xl text-xs font-mono font-bold border ${(staffOnboardingData?.readiness === "READY" || user.isOperationalReady || user.readiness === "READY")
                     ? "bg-emerald-950/60 text-emerald-400 border-emerald-800/80"
                     : "bg-amber-950/60 text-amber-400 border-amber-800/80"
-                }`}
+                  }`}
               >
                 READINESS: {(staffOnboardingData?.readiness === "READY" || user.isOperationalReady || user.readiness === "READY") ? "READY" : "NOT READY"}
               </span>
@@ -686,10 +654,10 @@ export default function CustomerProfilePage() {
                 user.activeRole === "SERVICE_PROVIDER"
                   ? "/provider/profile"
                   : user.activeRole === "MERCHANT"
-                  ? "/merchant/profile"
-                  : user.activeRole === "SUPPLIER"
-                  ? "/supplier/profile"
-                  : "/provider/profile"
+                    ? "/merchant/profile"
+                    : user.activeRole === "SUPPLIER"
+                      ? "/supplier/profile"
+                      : "/provider/profile"
               }
               className="px-4 py-2 rounded-xl bg-primary text-white font-bold text-xs hover:bg-primary-dark transition text-center shrink-0 shadow-servio-xs"
             >
@@ -802,8 +770,8 @@ export default function CustomerProfilePage() {
                   (user.personalProfile?.gender === "MALE"
                     ? "Laki-laki"
                     : user.personalProfile?.gender === "FEMALE"
-                    ? "Perempuan"
-                    : user.personalProfile?.gender || "-")}
+                      ? "Perempuan"
+                      : user.personalProfile?.gender || "-")}
               </span>
             </div>
           </div>
@@ -816,8 +784,8 @@ export default function CustomerProfilePage() {
                 {staffOnboardingData?.profile?.birth_date
                   ? String(staffOnboardingData.profile.birth_date).split("T")[0]
                   : user.personalProfile?.dateOfBirth
-                  ? String(user.personalProfile.dateOfBirth).split("T")[0]
-                  : "-"}
+                    ? String(user.personalProfile.dateOfBirth).split("T")[0]
+                    : "-"}
               </span>
             </div>
           </div>
@@ -878,123 +846,16 @@ export default function CustomerProfilePage() {
         </div>
       </div>
 
-      {/* CR-04: Section Alamat Saya */}
-      <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 shadow-servio-xs space-y-6">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="font-display font-bold text-base text-neutral-dark">
-                Alamat Saya
-              </h3>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
-                Domisili Utama
-              </span>
-            </div>
-            <p className="text-xs text-neutral-slate mt-0.5">
-              Alamat domisili kependudukan dan penentuan jangkauan area pengiriman servis lokal.
-            </p>
-          </div>
-          <button
-            id="btn-edit-alamat-saya"
-            type="button"
-            onClick={handleOpenEditCustAddress}
-            className="px-4 py-2 rounded-xl bg-primary text-white font-bold text-xs hover:bg-primary-dark transition shadow-servio-xs flex items-center gap-1.5 cursor-pointer"
-          >
-            <PencilSimple size={15} weight="bold" />
-            <span>{hasMyAddress ? "Edit Alamat" : "Lengkapi Alamat"}</span>
-          </button>
-        </div>
-
-        {hasMyAddress && myAddressData ? (
-          <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-50 to-sky-50/30 border border-slate-200 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-neutral-dark flex items-center gap-1.5">
-                <MapPin size={18} className="text-primary" weight="fill" />
-                <span>Alamat Lengkap Terdaftar</span>
-              </span>
-              <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                <CheckCircle size={12} weight="fill" />
-                Terverifikasi
-              </span>
-            </div>
-
-            <div className="space-y-1.5 text-xs text-neutral-dark">
-              <p className="text-sm font-semibold text-neutral-dark leading-relaxed">
-                {myAddressData.street_address || "-"}
-              </p>
-              <div className="text-neutral-slate leading-relaxed flex flex-wrap gap-x-2 gap-y-1">
-                {myAddressData.rt_rw && (
-                  <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md font-medium text-[11px] text-neutral-dark">
-                    RT/RW: {myAddressData.rt_rw}
-                  </span>
-                )}
-                {myAddressData.village_name && (
-                  <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md font-medium text-[11px] text-neutral-dark">
-                    Kel. {myAddressData.village_name}
-                  </span>
-                )}
-                {myAddressData.district_name && (
-                  <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md font-medium text-[11px] text-neutral-dark">
-                    Kec. {myAddressData.district_name}
-                  </span>
-                )}
-                {myAddressData.city_name && (
-                  <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md font-medium text-[11px] text-neutral-dark">
-                    {myAddressData.city_name}
-                  </span>
-                )}
-                {myAddressData.province_name && (
-                  <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md font-medium text-[11px] text-neutral-dark">
-                    {myAddressData.province_name}
-                  </span>
-                )}
-                {myAddressData.postal_code && (
-                  <span className="bg-white border border-slate-200 px-2 py-0.5 rounded-md font-medium text-[11px] text-neutral-dark">
-                    Kode Pos: {myAddressData.postal_code}
-                  </span>
-                )}
-              </div>
-              {myAddressData.landmark && (
-                <p className="text-slate-600 text-xs italic pt-1 flex items-center gap-1">
-                  <span className="font-semibold not-italic text-slate-700">Patokan / Landmark:</span> {myAddressData.landmark}
-                </p>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="py-10 text-center space-y-3 bg-slate-50/60 rounded-2xl border border-dashed border-slate-200 p-6">
-            <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
-              <MapPin size={24} weight="duotone" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-neutral-dark">Alamat belum dilengkapi</p>
-              <p className="text-[11px] text-neutral-slate mt-0.5 max-w-sm mx-auto">
-                Silakan lengkapi alamat tempat tinggal domisili Anda untuk mempermudah perhitungan jarak servis lokal dan pengiriman.
-              </p>
-            </div>
-            <button
-              id="btn-lengkapi-alamat-saya-empty"
-              type="button"
-              onClick={handleOpenEditCustAddress}
-              className="px-4 py-2 rounded-xl bg-primary text-white font-bold text-xs hover:bg-primary-dark transition shadow-servio-xs inline-flex items-center gap-1.5 cursor-pointer"
-            >
-              <Plus size={15} weight="bold" />
-              <span>Lengkapi Alamat</span>
-            </button>
-          </div>
-        )}
-      </div>
-
       {/* Address Book Card - KHUSUS PELANGGAN (CUSTOMER) ONLY */}
       {isPureCustomer && (
         <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 shadow-servio-xs space-y-6">
           <div className="flex items-center justify-between pb-4 border-b border-slate-100">
             <div>
               <h3 className="font-display font-bold text-base text-neutral-dark">
-                Buku Alamat Pengerjaan
+                Buku Alamat Saya
               </h3>
               <p className="text-xs text-neutral-slate">
-                Alamat statis untuk kunjungan teknisi servis dan pengiriman suku cadang.
+                Daftar alamat pengiriman barang dan lokasi servis/kunjungan teknisi.
               </p>
             </div>
             <button
@@ -1028,11 +889,10 @@ export default function CustomerProfilePage() {
               {addresses.map((addr) => (
                 <div
                   key={addr.id}
-                  className={`p-5 rounded-2xl border transition-all flex flex-col justify-between space-y-3 ${
-                    addr.isDefault
+                  className={`p-5 rounded-2xl border transition-all flex flex-col justify-between space-y-3 ${addr.isDefault
                       ? "border-primary/80 bg-sky-50/40 shadow-servio-xs"
                       : "border-slate-200 bg-white"
-                  }`}
+                    }`}
                 >
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
@@ -1050,7 +910,12 @@ export default function CustomerProfilePage() {
                       {addr.recipientName || user.name} ({addr.phone || user.phone})
                     </p>
                     <p className="text-xs text-neutral-slate leading-relaxed">
-                      {addr.addressLine}{addr.district ? `, ${addr.district}` : ""}, {addr.city}{addr.postalCode ? ` ${addr.postalCode}` : ""}
+                      {addr.addressLine}
+                      {addr.village ? `, Kel. ${addr.village}` : ""}
+                      {addr.district ? `, Kec. ${addr.district}` : ""}
+                      {addr.city ? `, ${addr.city}` : ""}
+                      {addr.province ? `, ${addr.province}` : ""}
+                      {addr.postalCode ? ` ${addr.postalCode}` : ""}
                     </p>
                     {addr.latitude !== null && addr.latitude !== undefined && (
                       <div className="flex items-center gap-1 text-[11px] text-slate-500 font-mono">
@@ -1082,7 +947,7 @@ export default function CustomerProfilePage() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => handleDeleteAddress(addr.id)}
+                        onClick={() => setAddressToDelete(addr)}
                         className="text-rose-500 hover:text-rose-700 transition"
                         title="Hapus Alamat"
                       >
@@ -1247,191 +1112,214 @@ export default function CustomerProfilePage() {
         <Modal
           isOpen={showAddressModal}
           onClose={() => setShowAddressModal(false)}
-          title={selectedAddress ? "Ubah Alamat Kunjungan" : "Tambah Alamat Baru"}
-          maxWidth="lg"
+          title={selectedAddress ? "Ubah Alamat Tersimpan" : "Tambah Alamat Baru"}
+          maxWidth="4xl"
         >
-          <form onSubmit={handleSaveAddress} className="space-y-4 pt-2">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="block text-xs font-bold text-neutral-dark mb-1">Label Alamat</label>
-                <input
-                  type="text"
-                  required
-                  value={addrLabel}
-                  onChange={(e) => setAddrLabel(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
-                  placeholder="Contoh: Rumah, Kantor, Toko"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-neutral-dark mb-1">Nama Penerima</label>
-                <input
-                  type="text"
-                  required
-                  value={addrRecipient}
-                  onChange={(e) => setAddrRecipient(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
-                  placeholder="Nama kontak"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-neutral-dark mb-1">Nomor Telepon</label>
-                <input
-                  type="text"
-                  required
-                  value={addrPhone}
-                  onChange={(e) => setAddrPhone(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
-                  placeholder="0812xxxx"
-                />
-              </div>
-            </div>
+          <form onSubmit={handleSaveAddress} className="space-y-4 pt-1">
+            <AddressCascadingForm
+              value={addrCascading}
+              onChange={(data) => {
+                setAddrCascading(data);
+                if (data.latitude !== undefined) setAddrLatitude(data.latitude);
+                if (data.longitude !== undefined) setAddrLongitude(data.longitude);
+              }}
+              title="Wilayah & Kode Pos"
+              subtitle="Pilih provinsi, kota/kabupaten, kecamatan, dan kelurahan resmi."
+              required={true}
+              showRtRw={true}
+              showLandmark={true}
+              showGoogleMap={true}
+              layout="split"
+              onGpsTrigger={handleUseGpsInAddressModal}
+              isGpsLoading={isFetchingModalGps}
+              idPrefix="addr-book-modal"
+              slotTopLeft={
+                <div className="space-y-3">
+                  {/* Label Alamat */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-dark mb-1">
+                      Label Alamat <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                      {["Rumah", "Kantor", "Apartemen", "Lainnya"].map((preset) => {
+                        const isSelected =
+                          addrLabel === preset ||
+                          (preset === "Lainnya" && !["Rumah", "Kantor", "Apartemen"].includes(addrLabel));
+                        return (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setAddrLabel(preset === "Lainnya" ? "" : preset)}
+                            className={`px-2.5 py-1 rounded-xl text-xs font-semibold transition cursor-pointer ${isSelected
+                                ? "bg-[#0F4C81] text-white shadow-2xs"
+                                : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              }`}
+                          >
+                            {preset}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={addrLabel}
+                      onChange={(e) => setAddrLabel(e.target.value)}
+                      className="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+                      placeholder="Contoh: Rumah, Kantor, Toko..."
+                    />
+                  </div>
 
-            <div>
-              <label className="block text-xs font-bold text-neutral-dark mb-1">Alamat Lengkap</label>
-              <textarea
-                rows={2}
-                required
-                value={addrStreet}
-                onChange={(e) => setAddrStreet(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
-                placeholder="Jalan, Blok, Nomor Rumah/Gedung, RT/RW"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-              <div>
-                <label className="block text-xs font-bold text-neutral-dark mb-1">Kota / Kabupaten</label>
-                <input
-                  type="text"
-                  required
-                  value={addrCity}
-                  onChange={(e) => setAddrCity(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
-                  placeholder="Jakarta Selatan"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-neutral-dark mb-1">Kecamatan</label>
-                <input
-                  type="text"
-                  value={addrDistrict}
-                  onChange={(e) => setAddrDistrict(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
-                  placeholder="Kebayoran Baru"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-neutral-dark mb-1">Provinsi</label>
-                <input
-                  type="text"
-                  value={addrProvince}
-                  onChange={(e) => setAddrProvince(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
-                  placeholder="DKI Jakarta"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-neutral-dark mb-1">Kode Pos</label>
-                <input
-                  type="text"
-                  value={addrPostalCode}
-                  onChange={(e) => setAddrPostalCode(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
-                  placeholder="12150"
-                />
-              </div>
-            </div>
-
-            {/* Static Map Coordinate Pin (Level 03 GPS Boundary: static pin coordinate only) */}
-            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-2">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-1.5 font-bold text-slate-700">
-                  <NavigationArrow size={14} weight="bold" className="text-primary" />
-                  <span>Titik Koordinat Statis Alamat (Opsional Pin Peta)</span>
+                  {/* Nama Penerima & Nomor Telepon (2 Kolom) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="block text-[11px] font-bold text-neutral-dark mb-1">
+                        Nama Penerima <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={addrRecipient}
+                        onChange={(e) => setAddrRecipient(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+                        placeholder="Nama lengkap penerima"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-neutral-dark mb-1">
+                        Nomor Telepon <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={addrPhone}
+                        onChange={(e) => setAddrPhone(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-xl border border-slate-300 text-xs focus:ring-2 focus:ring-primary focus:border-transparent outline-none"
+                        placeholder="0812xxxx"
+                      />
+                    </div>
+                  </div>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={handleUseGpsInAddressModal}
-                  disabled={isFetchingModalGps}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0F4C81] hover:bg-sky-900 text-white font-bold text-[11px] transition shadow-xs disabled:opacity-50"
-                  title="Ambil titik koordinat dan wilayah otomatis dari GPS perangkat"
-                >
-                  {isFetchingModalGps ? (
-                    <>
-                      <CircleNotch size={13} weight="bold" className="animate-spin text-white" />
-                      <span>Mengambil GPS...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Crosshair size={13} weight="bold" className="text-rose-300" />
-                      <span>Gunakan GPS (Ambil Wilayah)</span>
-                    </>
-                  )}
-                </button>
-              </div>
-              <p className="text-[11px] text-slate-500">
-                Koordinat statis untuk panduan navigasi kurir dan teknisi Servio ke lokasi alamat tetap.
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <span className="text-[11px] text-slate-400 block mb-0.5">Latitude</span>
+              }
+              slotTopRight={
+                <div className="flex items-center justify-between p-2.5 rounded-xl bg-sky-50/80 border border-sky-200/80">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-[#0F4C81] text-white flex items-center justify-center shrink-0">
+                      <Crosshair size={16} weight="bold" />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-bold text-slate-800 leading-tight">Isi Otomatis via GPS</p>
+                      <p className="text-[10px] text-slate-500">
+                        Ambil titik koordinat &amp; isi wilayah otomatis
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleUseGpsInAddressModal}
+                    disabled={isFetchingModalGps}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0F4C81] hover:bg-sky-900 text-white font-bold text-xs transition shadow-2xs shrink-0 disabled:opacity-50 cursor-pointer"
+                    title="Ambil titik koordinat dan wilayah otomatis dari GPS perangkat"
+                  >
+                    {isFetchingModalGps ? (
+                      <>
+                        <CircleNotch size={12} className="animate-spin text-white" />
+                        <span>Mendeteksi...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Crosshair size={12} weight="bold" className="text-rose-300" />
+                        <span>Gunakan GPS</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              }
+              slotBottomRight={
+                <div className="flex items-center gap-2 pt-1">
                   <input
-                    type="number"
-                    step="any"
-                    value={addrLatitude ?? ""}
-                    onChange={(e) => setAddrLatitude(e.target.value ? parseFloat(e.target.value) : undefined)}
-                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-mono"
-                    placeholder="-6.2088"
+                    type="checkbox"
+                    id="isDefaultCheckbox"
+                    checked={addrIsDefault}
+                    onChange={(e) => setAddrIsDefault(e.target.checked)}
+                    className="w-4 h-4 rounded text-primary focus:ring-primary border-slate-300 cursor-pointer"
                   />
+                  <label htmlFor="isDefaultCheckbox" className="text-xs font-medium text-neutral-dark cursor-pointer">
+                    Jadikan sebagai alamat utama
+                  </label>
                 </div>
-                <div>
-                  <span className="text-[11px] text-slate-400 block mb-0.5">Longitude</span>
-                  <input
-                    type="number"
-                    step="any"
-                    value={addrLongitude ?? ""}
-                    onChange={(e) => setAddrLongitude(e.target.value ? parseFloat(e.target.value) : undefined)}
-                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-mono"
-                    placeholder="106.8456"
-                  />
-                </div>
-              </div>
-            </div>
+              }
+            />
 
-            <div className="flex items-center gap-2 pt-1">
-              <input
-                type="checkbox"
-                id="isDefaultCheckbox"
-                checked={addrIsDefault}
-                onChange={(e) => setAddrIsDefault(e.target.checked)}
-                className="w-4 h-4 rounded text-primary focus:ring-primary border-slate-300"
-              />
-              <label htmlFor="isDefaultCheckbox" className="text-xs font-medium text-neutral-dark cursor-pointer">
-                Jadikan sebagai alamat utama
-              </label>
-            </div>
-
-            <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2">
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setShowAddressModal(false)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition"
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
               >
                 Batal
               </button>
               <button
                 type="submit"
                 disabled={isSavingAddress}
-                className="px-5 py-2 rounded-xl text-xs font-bold bg-primary text-white hover:bg-primary-dark transition disabled:opacity-50"
+                className="px-5 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition flex items-center gap-2 shadow-servio-xs disabled:opacity-60 cursor-pointer"
               >
-                {isSavingAddress ? "Menyimpan..." : selectedAddress ? "Perbarui Alamat" : "Simpan Alamat"}
+                {isSavingAddress ? (
+                  <>
+                    <CircleNotch size={14} className="animate-spin" />
+                    <span>Menyimpan...</span>
+                  </>
+                ) : (
+                  <span>{selectedAddress ? "Simpan Perubahan" : "Simpan Alamat"}</span>
+                )}
               </button>
             </div>
           </form>
         </Modal>
       )}
+
+      {/* Custom Popup Konfirmasi Hapus Alamat (Servio Styled Modal - Bukan window.confirm) */}
+      <Modal
+        isOpen={Boolean(addressToDelete)}
+        onClose={() => setAddressToDelete(null)}
+        maxWidth="sm"
+      >
+        <div className="text-center p-3 space-y-4 font-body">
+          <div className="w-14 h-14 rounded-2xl bg-rose-50 border border-rose-100 text-rose-500 mx-auto flex items-center justify-center shadow-2xs">
+            <Trash size={28} weight="duotone" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-900 font-display">Hapus Alamat Tersimpan?</h3>
+            <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+              Apakah Anda yakin ingin menghapus alamat <span className="font-bold text-slate-800">"{addressToDelete?.label}"</span>? Alamat ini tidak dapat dipulihkan setelah dihapus.
+            </p>
+          </div>
+          <div className="pt-2 flex items-center justify-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setAddressToDelete(null)}
+              className="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition flex-1 cursor-pointer"
+            >
+              Batal
+            </button>
+            <button
+              type="button"
+              disabled={isDeletingAddress}
+              onClick={handleConfirmDeleteAddress}
+              className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shadow-2xs flex-1 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              {isDeletingAddress ? (
+                <>
+                  <CircleNotch size={14} className="animate-spin" />
+                  <span>Menghapus...</span>
+                </>
+              ) : (
+                <span>Ya, Hapus</span>
+              )}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Sensitive Business Legal Change Modal (Row 36, P03/P04 - Authorized Business Owners Only) */}
       {["SERVICE_PROVIDER", "MERCHANT", "SUPPLIER"].includes(activeRole || user.activeRole) && (
@@ -1527,50 +1415,7 @@ export default function CustomerProfilePage() {
         </Modal>
       )}
 
-      {/* CR-04: Modal Edit / Lengkapi Alamat Saya */}
-      <Modal
-        isOpen={showEditCustAddressModal}
-        onClose={() => setShowEditCustAddressModal(false)}
-        title={hasMyAddress ? "Edit Alamat Saya" : "Lengkapi Alamat Saya"}
-        maxWidth="lg"
-      >
-        <form onSubmit={handleSaveCustAddress} className="space-y-5 pt-2">
-          <AddressCascadingForm
-            value={editingCustAddress}
-            onChange={setEditingCustAddress}
-            title="Alamat Domisili Kependudukan"
-            subtitle="Pilih provinsi, kota/kabupaten, kecamatan, dan kelurahan resmi sesuai data tempat tinggal Anda"
-            required={true}
-            idPrefix="cust-edit-modal"
-          />
 
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={() => setShowEditCustAddressModal(false)}
-              disabled={isSavingCustAddress}
-              className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-neutral-dark hover:bg-slate-50 transition cursor-pointer"
-            >
-              Batal
-            </button>
-            <button
-              id="btn-save-cust-primary-address"
-              type="submit"
-              disabled={isSavingCustAddress}
-              className="px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition flex items-center gap-2 shadow-servio-xs disabled:opacity-60 cursor-pointer"
-            >
-              {isSavingCustAddress ? (
-                <>
-                  <CircleNotch size={16} className="animate-spin" />
-                  <span>Menyimpan Alamat...</span>
-                </>
-              ) : (
-                <span>Simpan Alamat</span>
-              )}
-            </button>
-          </div>
-        </form>
-      </Modal>
 
       {toastMessage && (
         <Toast

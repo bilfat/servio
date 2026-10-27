@@ -4,7 +4,7 @@ import { RoleProvider } from "@/context/RoleContext";
 import { LocationProvider } from "@/context/LocationContext";
 import { LocationPickerModal } from "@/components/features/location/LocationPickerModal";
 import { PageLoadingProvider } from "@/components/feedback/PageLoadingProvider";
-import { RoleSwitcher } from "@/components/navigation/RoleSwitcher";
+import { FlyToCartHost } from "@/components/feedback/FlyToCart";
 import { SPayProvider } from "@/features/spay/spay.frontend-provider";
 import { AfterSalesProvider } from "@/features/afterSales/useAfterSales";
 import "./globals.css";
@@ -111,7 +111,7 @@ export default function RootLayout({
               <AfterSalesProvider>
                 <PageLoadingProvider>{children}</PageLoadingProvider>
                 <LocationPickerModal />
-                <RoleSwitcher />
+                <FlyToCartHost />
               </AfterSalesProvider>
             </SPayProvider>
           </LocationProvider>

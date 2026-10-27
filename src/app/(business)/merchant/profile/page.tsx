@@ -30,6 +30,30 @@ import {
 
 type MerchantTab = "store" | "contact" | "address" | "documents" | "operations" | "settlement";
 
+const TIME_OPTIONS_24H = Array.from({ length: 48 }, (_, i) => {
+  const h = Math.floor(i / 2);
+  const m = i % 2 === 0 ? "00" : "30";
+  return `${String(h).padStart(2, "0")}:${m}`;
+});
+
+function normalizeTo24H(val?: string | null, fallback = "09:00"): string {
+  if (!val) return fallback;
+  const t = String(val).trim().toUpperCase();
+  const ampm = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+  if (ampm) {
+    let h = parseInt(ampm[1], 10);
+    const m = ampm[2];
+    if (ampm[3] === "PM" && h < 12) h += 12;
+    if (ampm[3] === "AM" && h === 12) h = 0;
+    return `${String(h).padStart(2, "0")}:${m}`;
+  }
+  const hms = t.match(/^(\d{1,2}):(\d{2})/);
+  if (hms) {
+    return `${String(parseInt(hms[1], 10)).padStart(2, "0")}:${hms[2]}`;
+  }
+  return fallback;
+}
+
 export default function MerchantProfilePage() {
   const { user, refreshUser } = useActiveRole();
   const [activeTab, setActiveTab] = useState<MerchantTab>("store");
@@ -37,44 +61,44 @@ export default function MerchantProfilePage() {
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [liveDocuments, setLiveDocuments] = useState<any[]>(user.documents || []);
 
-  // Store Information initialized from user.businessProfile with seed fallback
+  // Store Information initialized from user.activeOrganization / user.businessProfile with fallback
   const [brandName, setBrandName] = useState(
-    user.businessProfile?.businessData?.brandName || "Sinar AC & Sparepart Glodok"
+    user.activeOrganization?.name || (user.activeOrganization as any)?.brandName || user.businessProfile?.businessData?.brandName || "Sinar AC & Sparepart Glodok"
   );
   const [legalName, setLegalName] = useState(
-    user.businessProfile?.businessData?.legalName || "Toko Sinar AC Glodok"
+    (user.activeOrganization as any)?.legalName || (user.activeOrganization as any)?.legal_name || user.businessProfile?.businessData?.legalName || "Toko Sinar AC Glodok"
   );
   const [registrationNumber, setRegistrationNumber] = useState(
-    user.businessProfile?.registrationNumber || "REG-2026-0002"
+    (user.activeOrganization as any)?.registrationNumber || user.businessProfile?.registrationNumber || "REG-2026-0002"
   );
   const [nib, setNib] = useState(
-    user.businessProfile?.businessData?.nib || "8120009922331"
+    (user.activeOrganization as any)?.nib || user.businessProfile?.businessData?.nib || "8120009922331"
   );
   const [npwp, setNpwp] = useState(
-    user.businessProfile?.businessData?.npwp || "01.234.567.8-011.000"
+    (user.activeOrganization as any)?.npwp || user.businessProfile?.businessData?.npwp || "01.234.567.8-011.000"
   );
   const [storeType, setStoreType] = useState(
-    (user.businessProfile?.specializedData?.storeType as string) || "Retail Sparepart AC & Pendingin"
+    (user.activeOrganization as any)?.storeType || (user.activeOrganization as any)?.businessType || (user.businessProfile?.specializedData?.storeType as string) || "Retail Sparepart AC & Pendingin"
   );
   const [description, setDescription] = useState(
-    "Pusat penyedia suku cadang pendingin ruangan original, kompresor, pipa tembaga, manifold gauge, dan refrigeran bersertifikat SNI."
+    (user.activeOrganization as any)?.description || "Pusat penyedia suku cadang pendingin ruangan original, kompresor, pipa tembaga, manifold gauge, dan refrigeran bersertifikat SNI."
   );
 
   // Contact
   const [phone, setPhone] = useState(
-    user.businessProfile?.picData?.phone || user.phone || "+6281255566677"
+    (user.activeOrganization as any)?.phone || (user.activeOrganization as any)?.business_phone || user.businessProfile?.picData?.phone || user.phone || "+6281255566677"
   );
   const [email, setEmail] = useState(
-    user.businessProfile?.picData?.email || user.email || "merchant@servio.id"
+    (user.activeOrganization as any)?.email || (user.activeOrganization as any)?.business_email || user.businessProfile?.picData?.email || user.email || "merchant@servio.id"
   );
   const [picName, setPicName] = useState(
-    user.businessProfile?.picData?.fullName || user.name || "Ko Hendra"
+    (user.activeOrganization as any)?.picData?.fullName || user.businessProfile?.picData?.fullName || user.name || "Ko Hendra"
   );
   const [picNik, setPicNik] = useState(
-    user.businessProfile?.picData?.nik || user.nik || "3174051208880003"
+    (user.activeOrganization as any)?.picData?.nik || user.businessProfile?.picData?.nik || user.nik || "3174051208880003"
   );
   const [picPosition, setPicPosition] = useState(
-    user.businessProfile?.picData?.position || "Pemilik Toko"
+    (user.activeOrganization as any)?.picData?.position || user.businessProfile?.picData?.position || "Pemilik Toko"
   );
 
   // Address
@@ -245,8 +269,6 @@ export default function MerchantProfilePage() {
   const [openTime, setOpenTime] = useState("09:00");
   const [closeTime, setCloseTime] = useState("17:00");
   const [workDays, setWorkDays] = useState("Senin - Sabtu");
-  const [instantDeliveryActive, setInstantDeliveryActive] = useState(true);
-  const [cargoDeliveryActive, setCargoDeliveryActive] = useState(true);
   const [operationalAvailability, setOperationalAvailability] = useState<"AVAILABLE" | "UNAVAILABLE">("AVAILABLE");
 
   // Settlement Bank Info (Level 02+ features preserved)
@@ -255,22 +277,45 @@ export default function MerchantProfilePage() {
   const [accountHolder, setAccountHolder] = useState("Ko Hendra / Toko Sinar AC");
 
   // Keep state synchronized when user loads asynchronously
+  // Keep state synchronized when user loads asynchronously
   useEffect(() => {
+    // 1. Sync from activeOrganization if present
+    const activeOrg = user.activeOrganization as any;
+    if (activeOrg) {
+      if (activeOrg.brandName || activeOrg.name) setBrandName(activeOrg.brandName || activeOrg.name);
+      if (activeOrg.legalName || activeOrg.legal_name) setLegalName(activeOrg.legalName || activeOrg.legal_name);
+      if (activeOrg.nib) setNib(activeOrg.nib);
+      if (activeOrg.npwp) setNpwp(activeOrg.npwp);
+      if (activeOrg.phone || activeOrg.business_phone) setPhone(activeOrg.phone || activeOrg.business_phone);
+      if (activeOrg.email || activeOrg.business_email) setEmail(activeOrg.email || activeOrg.business_email);
+      if (activeOrg.description) setDescription(activeOrg.description);
+      if (activeOrg.storeType || activeOrg.businessType) setStoreType(activeOrg.storeType || activeOrg.businessType);
+      if (activeOrg.registrationNumber) setRegistrationNumber(activeOrg.registrationNumber);
+      if (activeOrg.picData) {
+        if (activeOrg.picData.fullName || activeOrg.picData.full_name) setPicName(activeOrg.picData.fullName || activeOrg.picData.full_name);
+        if (activeOrg.picData.nik) setPicNik(activeOrg.picData.nik);
+        if (activeOrg.picData.position) setPicPosition(activeOrg.picData.position);
+        if (activeOrg.picData.phone) setPhone(activeOrg.picData.phone);
+        if (activeOrg.picData.email) setEmail(activeOrg.picData.email);
+      }
+    }
+
+    // 2. Sync from businessProfile as fallback
     if (user.businessProfile?.businessData) {
       const b = user.businessProfile.businessData;
-      if (b.brandName) setBrandName(b.brandName);
-      if (b.legalName) setLegalName(b.legalName);
-      if (b.nib) setNib(b.nib);
-      if (b.npwp) setNpwp(b.npwp);
+      if (b.brandName && !activeOrg?.brandName) setBrandName(b.brandName);
+      if (b.legalName && !activeOrg?.legalName) setLegalName(b.legalName);
+      if (b.nib && !activeOrg?.nib) setNib(b.nib);
+      if (b.npwp && !activeOrg?.npwp) setNpwp(b.npwp);
       if (b.address) setAddress(b.address);
       if (b.city) setCity(b.city);
       if (b.district) setDistrict(b.district);
       if (b.postalCode) setPostalCode(b.postalCode);
     }
-    if (user.businessProfile?.registrationNumber) {
+    if (user.businessProfile?.registrationNumber && !activeOrg?.registrationNumber) {
       setRegistrationNumber(user.businessProfile.registrationNumber);
     }
-    if (user.businessProfile?.picData) {
+    if (user.businessProfile?.picData && !activeOrg?.picData) {
       const p = user.businessProfile.picData;
       if (p.fullName) setPicName(p.fullName);
       if (p.nik) setPicNik(p.nik);
@@ -282,19 +327,68 @@ export default function MerchantProfilePage() {
       setLiveDocuments(user.documents);
     }
 
+    const orgHours = (user.activeOrganization as any)?.operational_hours ||
+                     (user.activeOrganization as any)?.operationalHours ||
+                     (user.activeOrganization?.profile as any)?.operationalHours;
+    if (orgHours) {
+      if (orgHours.days) setWorkDays(orgHours.days);
+      if (orgHours.open_time || orgHours.openTime) setOpenTime(normalizeTo24H(orgHours.open_time || orgHours.openTime, "09:00"));
+      if (orgHours.close_time || orgHours.closeTime) setCloseTime(normalizeTo24H(orgHours.close_time || orgHours.closeTime, "17:00"));
+    }
+
     const orgId = user.activeOrganization?.id || user.organizationId;
     if (orgId) {
-      organizationApi.getAvailability(orgId)
-        .then((res) => {
-          if (res.data?.status) {
-            setOperationalAvailability(res.data.status);
+      organizationApi.getOrganization(orgId)
+        .then((res: any) => {
+          if (res.data) {
+            const d = res.data;
+            if (d.brandName || d.display_name || d.name) setBrandName(d.brandName || d.display_name || d.name);
+            if (d.legalName || d.legal_name) setLegalName(d.legalName || d.legal_name);
+            if (d.nib) setNib(d.nib);
+            if (d.npwp) setNpwp(d.npwp);
+            if (d.phone || d.business_phone) setPhone(d.phone || d.business_phone);
+            if (d.email || d.business_email) setEmail(d.email || d.business_email);
+            if (d.description) setDescription(d.description);
+            if (d.storeType || d.businessType) setStoreType(d.storeType || d.businessType);
+            if (d.registrationNumber) setRegistrationNumber(d.registrationNumber);
+            if (d.picData) {
+              if (d.picData.fullName || d.picData.full_name) setPicName(d.picData.fullName || d.picData.full_name);
+              if (d.picData.nik) setPicNik(d.picData.nik);
+              if (d.picData.position) setPicPosition(d.picData.position);
+              if (d.picData.phone) setPhone(d.picData.phone);
+              if (d.picData.email) setEmail(d.picData.email);
+            }
+            if (d.settlementBank || d.specialization?.settlementBank) {
+              const sb = d.settlementBank || d.specialization?.settlementBank;
+              if (sb.bankName) setBankName(sb.bankName);
+              if (sb.accountNumber) setAccountNumber(sb.accountNumber);
+              if (sb.accountHolder) setAccountHolder(sb.accountHolder);
+            }
+            const op = d.operational_hours || d.operationalHours;
+            if (op) {
+              if (op.days) setWorkDays(op.days);
+              if (op.open_time || op.openTime) setOpenTime(normalizeTo24H(op.open_time || op.openTime, "09:00"));
+              if (op.close_time || op.closeTime) setCloseTime(normalizeTo24H(op.close_time || op.closeTime, "17:00"));
+            }
+            const status = d.operational_status || d.operationalStatus;
+            if (status) {
+              setOperationalAvailability(status === "TEMPORARY_CLOSED" ? "UNAVAILABLE" : "AVAILABLE");
+            }
           }
         })
-        .catch(() => {});
+        .catch(() => {
+          organizationApi.getAvailability(orgId)
+            .then((res) => {
+              if (res.data?.status) {
+                setOperationalAvailability(res.data.status);
+              }
+            })
+            .catch(() => {});
+        });
     }
   }, [user]);
 
-  // Load latest registered merchant profile & uploaded documents directly from database
+  // Load uploaded documents directly from database application history
   useEffect(() => {
     registrationApi.myApplications().then((res: any) => {
       const items = res.data?.items || (Array.isArray(res.data) ? res.data : []);
@@ -302,28 +396,6 @@ export default function MerchantProfilePage() {
         const latest = items[0];
         if (latest.documents && latest.documents.length > 0) {
           setLiveDocuments(latest.documents);
-        }
-        if (latest.businessData) {
-          const b = latest.businessData;
-          if (b.brandName) setBrandName(b.brandName);
-          if (b.legalName) setLegalName(b.legalName);
-          if (b.nib) setNib(b.nib);
-          if (b.npwp) setNpwp(b.npwp);
-          if (b.address) setAddress(b.address);
-          if (b.city) setCity(b.city);
-          if (b.district) setDistrict(b.district);
-          if (b.postalCode) setPostalCode(b.postalCode);
-        }
-        if (latest.picData) {
-          const p = latest.picData;
-          if (p.fullName) setPicName(p.fullName);
-          if (p.nik) setPicNik(p.nik);
-          if (p.phone) setPhone(p.phone);
-          if (p.email) setEmail(p.email);
-          if (p.position) setPicPosition(p.position);
-        }
-        if (latest.registrationNumber) {
-          setRegistrationNumber(latest.registrationNumber);
         }
       }
     }).catch(() => {});
@@ -335,6 +407,26 @@ export default function MerchantProfilePage() {
     try {
       const orgId = user.activeOrganization?.id || user.organizationId;
       if (orgId) {
+        const operationalHoursPayload = {
+          days: workDays,
+          open_time: openTime,
+          close_time: closeTime,
+        };
+
+        const picDataPayload = {
+          fullName: picName,
+          nik: picNik,
+          position: picPosition,
+          phone,
+          email,
+        };
+
+        const settlementBankPayload = {
+          bankName,
+          accountNumber,
+          accountHolder,
+        };
+
         await organizationApi.updateOrganization(orgId, {
           name: brandName,
           brandName,
@@ -342,11 +434,23 @@ export default function MerchantProfilePage() {
           description,
           businessType: storeType,
           registrationNumber,
+          business_phone: phone,
+          business_email: email,
+          phone,
+          email,
+          nib,
+          npwp,
+          picName,
+          picNik,
+          picPosition,
+          picData: picDataPayload,
+          settlementBank: settlementBankPayload,
+          operational_hours: operationalHoursPayload,
+          operationalHours: operationalHoursPayload,
+          operational_status: operationalAvailability === "AVAILABLE" ? "ONLINE_ACCEPTING" : "TEMPORARY_CLOSED",
         });
-
-        await organizationApi.updateAvailability(orgId, operationalAvailability);
       }
-      setToastMessage("Profil dan konfigurasi toko sparepart berhasil diperbarui.");
+      setToastMessage("Profil dan informasi toko sparepart berhasil disimpan ke database!");
       await refreshUser();
     } catch (err: unknown) {
       setToastMessage(err instanceof Error ? err.message : "Gagal memperbarui profil toko.");
@@ -373,8 +477,8 @@ export default function MerchantProfilePage() {
         title="Profil &amp; Legalitas Toko Sparepart"
         description="Kelola identitas usaha dagang, berkas dokumen terverifikasi, jam buka toko, dan rincian rekening settlement."
         breadcrumbs={[
-          { label: "Dashboard Merchant", href: "/business/merchant/dashboard" },
-          { label: "Profil Toko", href: "/business/merchant/profile" },
+          { label: "Dashboard Merchant", href: "/merchant/dashboard" },
+          { label: "Profil Toko", href: "/merchant/profile" },
         ]}
       />
 
@@ -424,7 +528,7 @@ export default function MerchantProfilePage() {
             { id: "contact", label: "Kontak & PIC", icon: Phone },
             { id: "address", label: "Alamat Toko & Gudang", icon: MapPin },
             { id: "documents", label: "Dokumen Toko Terverifikasi", icon: FileText },
-            { id: "operations", label: "Jam Operasional & Kurir", icon: Clock },
+            { id: "operations", label: "Jam Operasional", icon: Clock },
             { id: "settlement", label: "Rekening Settlement", icon: Bank },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -881,67 +985,57 @@ export default function MerchantProfilePage() {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Hari Buka</label>
+                  <label className="block font-bold text-slate-700 mb-1 text-xs">Hari Buka</label>
                   <input
                     type="text"
                     value={workDays}
                     onChange={(e) => setWorkDays(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
+                    placeholder="Senin - Sabtu"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium text-xs sm:text-sm text-slate-900 bg-white"
                   />
+                  <span className="text-[10px] text-slate-400 mt-1 block">Hari aktif toko</span>
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Jam Buka</label>
-                  <input
-                    type="time"
-                    value={openTime}
-                    onChange={(e) => setOpenTime(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-                  />
+                  <label className="block font-bold text-slate-700 mb-1 text-xs">Jam Buka (24 Jam)</label>
+                  <div className="relative">
+                    <select
+                      value={openTime}
+                      onChange={(e) => setOpenTime(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-semibold text-xs sm:text-sm text-slate-900 bg-white appearance-none pr-9 cursor-pointer"
+                    >
+                      {!TIME_OPTIONS_24H.includes(openTime) && (
+                        <option value={openTime}>{openTime}</option>
+                      )}
+                      {TIME_OPTIONS_24H.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                    <Clock size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1 block">Format 24 jam (Contoh: 08:00, 09:00)</span>
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Jam Tutup</label>
-                  <input
-                    type="time"
-                    value={closeTime}
-                    onChange={(e) => setCloseTime(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-slate-100 space-y-3">
-                <p className="font-bold text-slate-800 text-xs">Dukungan Pengiriman Produk</p>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <label className="flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 cursor-pointer bg-slate-50/50 hover:bg-slate-50 transition">
-                    <input
-                      type="checkbox"
-                      checked={instantDeliveryActive}
-                      onChange={(e) => setInstantDeliveryActive(e.target.checked)}
-                      className="rounded text-[#0F4C81]"
-                    />
-                    <div>
-                      <p className="font-bold text-slate-900">Kurir Instan / Sameday (GoSend / GrabExpress)</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Teknisi mitra di radius 25km dapat menerima sparepart dalam hitungan jam.
-                      </p>
-                    </div>
-                  </label>
-
-                  <label className="flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 cursor-pointer bg-slate-50/50 hover:bg-slate-50 transition">
-                    <input
-                      type="checkbox"
-                      checked={cargoDeliveryActive}
-                      onChange={(e) => setCargoDeliveryActive(e.target.checked)}
-                      className="rounded text-[#0F4C81]"
-                    />
-                    <div>
-                      <p className="font-bold text-slate-900">Ekspedisi Logistik Kargo &amp; Reguler</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Pengiriman paket besar atau pesanan sparepart antar kota (JNE, SiCepat, Wahana).
-                      </p>
-                    </div>
-                  </label>
+                  <label className="block font-bold text-slate-700 mb-1 text-xs">Jam Tutup (24 Jam)</label>
+                  <div className="relative">
+                    <select
+                      value={closeTime}
+                      onChange={(e) => setCloseTime(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-semibold text-xs sm:text-sm text-slate-900 bg-white appearance-none pr-9 cursor-pointer"
+                    >
+                      {!TIME_OPTIONS_24H.includes(closeTime) && (
+                        <option value={closeTime}>{closeTime}</option>
+                      )}
+                      {TIME_OPTIONS_24H.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                    <Clock size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1 block">Format 24 jam (Contoh: 17:00, 21:00)</span>
                 </div>
               </div>
             </div>

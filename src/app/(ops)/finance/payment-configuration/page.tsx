@@ -103,10 +103,10 @@ function PaymentConfigurationContent() {
   const [accountsList, setAccountsList] = useState<CollectionAccountItem[]>([
     {
       id: "acc-escrow-bca",
-      purpose: "Rekening Utama Escrow Resmi (Jasa & Pesanan)",
+      purpose: "Rekening Utama Penampung Uang (Jasa & Pesanan)",
       institution: "Bank Central Asia (BCA)",
       accountNumber: "883019283742",
-      accountName: "PT SERVIO TEKNOLOGI INDONESIA - ESCROW",
+      accountName: "PT SERVIO TEKNOLOGI INDONESIA - PENAMPUNG",
       status: "VERIFIED",
       currency: "IDR",
     },
@@ -154,7 +154,7 @@ function PaymentConfigurationContent() {
   const [instructionSteps, setInstructionSteps] = useState<string[]>([
     "Pilih metode pembayaran yang didukung dan salin kode transaksi / nomor Virtual Account resmi.",
     "Selesaikan transfer dana sesuai nominal tagihan yang tertera sebelum batas waktu kedaluwarsa.",
-    "Sistem SERVIO akan memverifikasi dana secara otomatis ke rekening Escrow platform.",
+    "Sistem SERVIO akan memverifikasi uang secara otomatis ke rekening penampung platform.",
   ]);
 
   // Load Data from Database API
@@ -273,7 +273,7 @@ function PaymentConfigurationContent() {
     try {
       await paymentConfigApi.saveConfiguration("COLLECTION_ACCOUNTS", {
         type: "ACCOUNTS",
-        name: "Rekening Penampung & Escrow",
+        name: "Rekening Penampung Uang",
         configuration: { accounts: newList },
         status: "ACTIVE",
         isDummy: true,
@@ -348,7 +348,7 @@ function PaymentConfigurationContent() {
     <div className="space-y-6 font-body pb-20">
       <PageHeader
         title="Konfigurasi Pembayaran Platform"
-        description="Tata kelola metode pembayaran, rekening penampung (Escrow), channel gateway, dan API credentials (Mode Simulator / Dummy)"
+        description="Tata kelola metode pembayaran, rekening penampung uang, channel gateway, dan API credentials (Mode Simulator / Dummy)"
         breadcrumbs={[
           { label: "Finance & Ops", href: "/finance/dashboard" },
           { label: "Payment Setup", href: "/finance/payment-configuration" },
@@ -367,7 +367,7 @@ function PaymentConfigurationContent() {
       <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2 overflow-x-auto text-xs font-semibold">
         {[
           { key: "methods", label: "Metode Pembayaran", icon: CreditCard },
-          { key: "accounts", label: "Rekening Penampung (Escrow)", icon: Vault },
+          { key: "accounts", label: "Rekening Penampung Uang", icon: Vault },
           { key: "channels", label: "Channel & Gateway API", icon: ArrowsLeftRight },
           { key: "instructions", label: "Instruksi Pembayaran", icon: FileText },
         ].map((tab) => {
@@ -482,7 +482,7 @@ function PaymentConfigurationContent() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Rekening Penampung & Escrow Operasional</h3>
+              <h3 className="text-sm font-bold text-slate-900">Rekening Penampung Uang Operasional</h3>
               <p className="text-xs text-slate-500">
                 Daftar rekening bank penampung dana pembayaran transaksi konsumen dan biaya platform.
               </p>
@@ -822,7 +822,7 @@ function PaymentConfigurationContent() {
       <Modal
         isOpen={newAccountModal}
         onClose={() => setNewAccountModal(false)}
-        title="Tambah Rekening Penampung (Escrow)"
+        title="Tambah Rekening Penampung Uang"
         size="md"
       >
         <div className="space-y-4">
@@ -830,7 +830,7 @@ function PaymentConfigurationContent() {
             <label className="font-bold text-slate-700">Tujuan Rekening (Purpose)</label>
             <input
               type="text"
-              placeholder="Contoh: Rekening Escrow Penampung Jasa Servis AC"
+              placeholder="Contoh: Rekening Penampung Uang Jasa Servis AC"
               value={newAccountForm.purpose}
               onChange={(e) => setNewAccountForm({ ...newAccountForm, purpose: e.target.value })}
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-medium focus:ring-2 focus:ring-[#0F4C81] focus:outline-none"

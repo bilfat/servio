@@ -117,7 +117,7 @@ export default function SupportTripartiteChatPage() {
           </div>
 
           <span className="font-mono text-emerald-700 font-bold">
-            Escrow: Rp {currentCase.escrowAmount.toLocaleString("id-ID")}
+            Uang Ditahan: Rp {currentCase.escrowAmount.toLocaleString("id-ID")}
           </span>
         </div>
       </div>
@@ -132,7 +132,7 @@ export default function SupportTripartiteChatPage() {
               Ruang Mediasi Terenkripsi & Diawasi CS Servio
             </p>
             <p className="text-[11px] text-teal-800">
-              Seluruh rekaman pesan mengikat secara hukum untuk bahan pertimbangan pencairan atau pengembalian dana escrow.
+              Seluruh rekaman pesan mengikat secara hukum untuk bahan pertimbangan pencairan atau pengembalian uang transaksi.
             </p>
           </div>
 

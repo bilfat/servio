@@ -183,7 +183,7 @@ export default function MerchantPartnershipRequestsPage() {
 
         <div className="flex items-center gap-3">
           <Link
-            href="/business/merchant/dashboard"
+            href="/merchant/dashboard"
             className="px-3.5 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs transition"
           >
             ← Kembali ke Dashboard

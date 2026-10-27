@@ -25,7 +25,7 @@ class CustomerPaymentController extends Controller
         }
 
         // Ownership verification
-        if ($actor && !$actor->isFinanceOps() && $payment->checkout && $payment->checkout->customer_id !== $actor->actorId) {
+        if ($actor && !$actor->isFinanceOps() && !$actor->isAdmin() && !$actor->isCeo() && $payment->checkout && $payment->checkout->customer_id !== $actor->actorId) {
             return ApiResponse::error('FORBIDDEN_PAYMENT_ACCESS', 'Anda tidak memiliki akses ke tagihan pembayaran ini.', 403);
         }
 
@@ -60,7 +60,7 @@ class CustomerPaymentController extends Controller
             return ApiResponse::error('PAYMENT_NOT_FOUND', 'Tagihan pembayaran tidak ditemukan.', 404);
         }
 
-        if ($actor && !$actor->isFinanceOps() && $payment->checkout && $payment->checkout->customer_id !== $actor->actorId) {
+        if ($actor && !$actor->isFinanceOps() && !$actor->isAdmin() && !$actor->isCeo() && $payment->checkout && $payment->checkout->customer_id !== $actor->actorId) {
             return ApiResponse::error('FORBIDDEN_PAYMENT_ACCESS', 'Anda tidak memiliki akses ke resi pembayaran ini.', 403);
         }
 

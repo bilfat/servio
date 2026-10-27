@@ -14,6 +14,7 @@ import {
   MOCK_MERCHANT_SPAY_BY_ORG,
   MOCK_PROVIDER_SPAY_BY_ORG,
 } from "@/mocks/spay.mock";
+import { financeServiceApi } from "@/lib/financeServiceApi";
 
 export interface SPayContextValue {
   ownerType: SPayOwnerType;
@@ -74,6 +75,61 @@ export function SPayProvider({
   const [customerData, setCustomerData] = useState<SPayAccountSummary>(MOCK_CUSTOMER_SPAY);
   const [merchantDataMap, setMerchantDataMap] = useState<Record<string, SPayAccountSummary>>(MOCK_MERCHANT_SPAY_BY_ORG);
   const [providerDataMap, setProviderDataMap] = useState<Record<string, SPayAccountSummary>>(MOCK_PROVIDER_SPAY_BY_ORG);
+
+  // Sync with authoritative backend Finance Service
+  React.useEffect(() => {
+    let isMounted = true;
+    if (resolvedOwnerType === "MERCHANT") {
+      const canonicalOrgId =
+        currentOrgId && currentOrgId.includes("-") && currentOrgId.length > 20
+          ? currentOrgId
+          : "0c1467e7-af68-4b26-ae84-daa41d51aed0";
+
+      financeServiceApi.merchant
+        .getSpay(canonicalOrgId)
+        .then((res) => {
+          if (!isMounted || !res.data) return;
+          const liveAcc = res.data;
+          setMerchantDataMap((prev) => {
+            const existing = prev[currentOrgId] || prev["merch-01"] || MOCK_MERCHANT_SPAY_BY_ORG["merch-01"];
+            const updated: SPayAccountSummary = {
+              ...existing,
+              withdrawableBalance: liveAcc.available_idr ?? 0,
+              pendingSettlement: liveAcc.pending_held_idr ?? 0,
+              reservedBalance: liveAcc.withdrawal_locked_idr ?? 0,
+            };
+            return {
+              ...prev,
+              [currentOrgId]: updated,
+              [canonicalOrgId]: updated,
+              "merch-01": updated,
+            };
+          });
+        })
+        .catch((err) => {
+          console.warn("SPayProvider: failed to sync merchant live balance:", err);
+        });
+    } else if (resolvedOwnerType === "CUSTOMER" && activeRole === "CUSTOMER") {
+      financeServiceApi.customer
+        .getSpay()
+        .then((res) => {
+          if (!isMounted || !res.data) return;
+          const liveAcc = res.data;
+          setCustomerData((prev) => ({
+            ...prev,
+            withdrawableBalance: liveAcc.available_idr ?? 0,
+            reservedBalance: liveAcc.withdrawal_locked_idr ?? 0,
+          }));
+        })
+        .catch((err) => {
+          console.warn("SPayProvider: failed to sync customer live balance:", err);
+        });
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [resolvedOwnerType, currentOrgId]);
 
   // Balance Visibility State
   const [isBalanceVisible, setIsBalanceVisible] = useState<boolean>(true);

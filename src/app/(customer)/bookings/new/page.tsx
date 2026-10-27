@@ -201,7 +201,7 @@ function BookingWizardContent() {
             Pemesanan Servis Terstandar
           </h1>
           <p className="text-xs sm:text-sm text-neutral-slate mt-0.5">
-            Layanan: <strong className="text-neutral-dark">{state.service?.title}</strong> • Dilindungi Servio Escrow Protection
+            Layanan: <strong className="text-neutral-dark">{state.service?.title}</strong> • Dilindungi Jaminan Uang Aman Servio
           </p>
         </div>
 
@@ -562,10 +562,10 @@ function BookingWizardContent() {
               <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-xs space-y-2 text-amber-900">
                 <div className="flex items-center gap-2 font-bold">
                   <Info size={18} weight="fill" className="text-amber-600" />
-                  <span>Kebijakan Survei & Escrow Servio Protection</span>
+                  <span>Kebijakan Survei & Uang Aman Servio Protection</span>
                 </div>
                 <p className="text-[11px] leading-relaxed text-neutral-dark">
-                  Jika perbaikan memerlukan pemeriksaan fisik lebih lanjut di lokasi (seperti kebocoran freon dalam instalasi), estimasi biaya suku cadang akan diterbitkan dalam bentuk <strong>Quotation Resmi</strong> yang wajib Anda setujui sebelum pengerjaan dimulai. Dana ditampung aman di Escrow hingga pekerjaan selesai.
+                  Jika perbaikan memerlukan pemeriksaan fisik lebih lanjut di lokasi (seperti kebocoran freon dalam instalasi), estimasi biaya suku cadang akan diterbitkan dalam bentuk <strong>Quotation Resmi</strong> yang wajib Anda setujui sebelum pengerjaan dimulai. Uang ditampung aman di rekening penampung hingga pekerjaan selesai.
                 </p>
               </div>
             </div>

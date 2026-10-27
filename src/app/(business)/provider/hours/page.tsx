@@ -19,6 +19,30 @@ interface DayHour {
   closeTime: string;
 }
 
+const TIME_OPTIONS_24H = Array.from({ length: 48 }, (_, i) => {
+  const h = Math.floor(i / 2);
+  const m = i % 2 === 0 ? "00" : "30";
+  return `${String(h).padStart(2, "0")}:${m}`;
+});
+
+function normalizeTo24H(val?: string | null, fallback = "08:00"): string {
+  if (!val) return fallback;
+  const t = String(val).trim().toUpperCase();
+  const ampm = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+  if (ampm) {
+    let h = parseInt(ampm[1], 10);
+    const m = ampm[2];
+    if (ampm[3] === "PM" && h < 12) h += 12;
+    if (ampm[3] === "AM" && h === 12) h = 0;
+    return `${String(h).padStart(2, "0")}:${m}`;
+  }
+  const hms = t.match(/^(\d{1,2}):(\d{2})/);
+  if (hms) {
+    return `${String(parseInt(hms[1], 10)).padStart(2, "0")}:${hms[2]}`;
+  }
+  return fallback;
+}
+
 const DEFAULT_DAYS: DayHour[] = [
   { dayCode: "MONDAY", day: "Senin", isOpen: true, openTime: "08:00", closeTime: "18:00" },
   { dayCode: "TUESDAY", day: "Selasa", isOpen: true, openTime: "08:00", closeTime: "18:00" },
@@ -54,8 +78,8 @@ export default function ProviderHoursPage() {
                 return {
                   ...day,
                   isOpen: matched.isOpen,
-                  openTime: firstWindow?.start || day.openTime,
-                  closeTime: firstWindow?.end || day.closeTime,
+                  openTime: normalizeTo24H(firstWindow?.start || day.openTime, "08:00"),
+                  closeTime: normalizeTo24H(firstWindow?.end || day.closeTime, "18:00"),
                 };
               }
               return day;
@@ -144,27 +168,43 @@ export default function ProviderHoursPage() {
 
               {item.isOpen && (
                 <div className="flex items-center gap-2 text-xs">
-                  <input
-                    type="time"
+                  <select
                     value={item.openTime}
                     onChange={(e) => {
                       const updated = [...schedule];
                       updated[idx].openTime = e.target.value;
                       setSchedule(updated);
                     }}
-                    className="px-2.5 py-1.5 rounded-xl border border-slate-200 font-semibold"
-                  />
+                    className="px-2.5 py-1.5 rounded-xl border border-slate-200 font-semibold bg-white cursor-pointer"
+                  >
+                    {!TIME_OPTIONS_24H.includes(item.openTime) && (
+                      <option value={item.openTime}>{item.openTime}</option>
+                    )}
+                    {TIME_OPTIONS_24H.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
                   <span className="text-slate-400">s/d</span>
-                  <input
-                    type="time"
+                  <select
                     value={item.closeTime}
                     onChange={(e) => {
                       const updated = [...schedule];
                       updated[idx].closeTime = e.target.value;
                       setSchedule(updated);
                     }}
-                    className="px-2.5 py-1.5 rounded-xl border border-slate-200 font-semibold"
-                  />
+                    className="px-2.5 py-1.5 rounded-xl border border-slate-200 font-semibold bg-white cursor-pointer"
+                  >
+                    {!TIME_OPTIONS_24H.includes(item.closeTime) && (
+                      <option value={item.closeTime}>{item.closeTime}</option>
+                    )}
+                    {TIME_OPTIONS_24H.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
                   <span className="text-slate-400 text-[10px]">WIB</span>
                 </div>
               )}

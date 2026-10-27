@@ -33,6 +33,16 @@ class ProductService
             return $this->taxonomyCache;
         }
 
+        try {
+            $cached = \Illuminate\Support\Facades\Cache::get('product_taxonomy_map_v1');
+            if (is_array($cached) && ! empty($cached['categories'])) {
+                $this->taxonomyCache = $cached;
+                return $this->taxonomyCache;
+            }
+        } catch (\Throwable $e) {
+            // ignore cache read failure
+        }
+
         $tree = $this->categoryClient->getTree('PRODUK') ?: [];
         $catMap = [];
         $subMap = [];
@@ -47,6 +57,13 @@ class ProductService
         }
 
         $this->taxonomyCache = ['categories' => $catMap, 'subcategories' => $subMap];
+        if (! empty($catMap)) {
+            try {
+                \Illuminate\Support\Facades\Cache::put('product_taxonomy_map_v1', $this->taxonomyCache, 600);
+            } catch (\Throwable $e) {
+                // ignore cache write failure
+            }
+        }
         return $this->taxonomyCache;
     }
 
@@ -529,6 +546,14 @@ class ProductService
                 'logo_url' => $publicProfile['logo_url'] ?? null,
                 'public_description' => $publicProfile['public_description'] ?? null,
                 'business_status' => $orgStatus['status'] ?? $publicProfile['status'] ?? 'ACTIVE',
+                'street_address' => $publicProfile['street_address'] ?? null,
+                'city' => $publicProfile['city'] ?? null,
+                'district' => $publicProfile['district'] ?? null,
+                'province' => $publicProfile['province'] ?? null,
+                'postal_code' => $publicProfile['postal_code'] ?? null,
+                'address' => $publicProfile['address'] ?? null,
+                'operational_hours' => $publicProfile['operational_hours'] ?? null,
+                'operational_status' => $publicProfile['operational_status'] ?? $orgStatus['status'] ?? 'ACTIVE',
             ],
             'active_product_count' => $paginator->total(),
             'active_categories' => $activeCategories,

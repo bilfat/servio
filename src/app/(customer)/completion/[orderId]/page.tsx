@@ -36,7 +36,7 @@ export default function CompletionConfirmationPage() {
     await new Promise((r) => setTimeout(r, 600));
     updateOrderStatus("COMPLETED");
     setIsConfirming(false);
-    setToastMessage("Pekerjaan berhasil diselesaikan! Dana escrow siap diteruskan ke mitra.");
+    setToastMessage("Pekerjaan berhasil diselesaikan! Uang pembayaran siap diteruskan ke mitra.");
     setTimeout(() => {
       router.push(`/reviews/${orderId}`);
     }, 1000);
@@ -96,7 +96,7 @@ export default function CompletionConfirmationPage() {
                 </span>
               </div>
               <p className="text-xs text-amber-800 mt-0.5">
-                Sesuai kebijakan perlindungan Servio, dana dalam rekening penampung escrow akan otomatis dilepaskan kepada penyedia jasa bila tidak ada sanggahan sebelum batas waktu.
+                Sesuai kebijakan perlindungan Servio, uang dalam rekening penampung akan otomatis dilepaskan kepada penyedia jasa bila tidak ada sanggahan sebelum batas waktu.
               </p>
             </div>
           </div>
@@ -132,12 +132,12 @@ export default function CompletionConfirmationPage() {
                   <LockKeyOpen size={20} weight="duotone" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">Validasi Pelepasan Escrow</h3>
+                  <h3 className="text-sm font-bold text-slate-900">Validasi Pelepasan Uang</h3>
                   <p className="text-xs text-slate-500">Dana aman di rekening penampung resmi Servio</p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-xs text-slate-400">Total Nominal Escrow</p>
+                <p className="text-xs text-slate-400">Total Nominal Uang Ditahan</p>
                 <p className="text-lg font-bold text-[#0F4C81]">
                   Rp {order.pricing.totalAmount.toLocaleString("id-ID")}
                 </p>
@@ -190,7 +190,7 @@ export default function CompletionConfirmationPage() {
       <ConfirmationDialog
         isOpen={showDisputeModal}
         title="Ajukan Komplain ke Tim Mediasi Servio"
-        message="Jika hasil pengerjaan teknisi merusak unit atau tidak sesuai kesepakatan penawaran, tim CS Servio akan menahan dana escrow dan menginvestigasi bukti."
+        message="Jika hasil pengerjaan teknisi merusak unit atau tidak sesuai kesepakatan penawaran, tim CS Servio akan menahan uang pembayaran dan menginvestigasi bukti."
         confirmLabel="Buka Pusat Komplain"
         cancelLabel="Batal"
         intent="danger"

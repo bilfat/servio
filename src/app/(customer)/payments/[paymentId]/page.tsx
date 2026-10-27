@@ -121,7 +121,7 @@ export default function PaymentEscrowPage() {
     },
     {
       id: "fee",
-      label: "Biaya Aplikasi & Perlindungan Escrow",
+      label: "Biaya Aplikasi & Perlindungan Uang Aman",
       amount: appFee,
     },
   ];
@@ -144,20 +144,20 @@ export default function PaymentEscrowPage() {
     <div className="max-w-3xl mx-auto space-y-6 pb-20">
       <ProcessingOverlay
         isProcessing={isVerifying}
-        message="Memverifikasi Pembayaran Escrow..."
+        message="Memverifikasi Pembayaran Aman..."
         subMessage="Sistem sedang mengamankan dana Anda ke rekening penampung resmi Servio Protection."
       />
 
       {/* Header */}
       <div>
         <span className="text-xs font-bold text-primary uppercase tracking-wider">
-          Pembayaran Tagihan Escrow
+          Pembayaran Tagihan Aman
         </span>
         <h1 className="text-2xl sm:text-3xl font-display font-extrabold text-neutral-dark mt-1">
           Selesaikan Pembayaran Anda
         </h1>
         <p className="text-xs sm:text-sm text-neutral-slate mt-0.5">
-          Order ID: <strong className="text-neutral-dark">{paymentId}</strong> • Dilindungi Sistem Rekening Bersama Escrow
+          Order ID: <strong className="text-neutral-dark">{paymentId}</strong> • Dilindungi Sistem Rekening Bersama Uang Aman
         </p>
       </div>
 
@@ -286,10 +286,10 @@ export default function PaymentEscrowPage() {
           <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 space-y-1.5">
             <div className="flex items-center gap-1.5 font-bold">
               <ShieldCheck size={18} weight="fill" className="text-emerald-700" />
-              <span>Escrow Protection Aktif</span>
+              <span>Proteksi Uang Aman Aktif</span>
             </div>
             <p className="text-[11px] leading-relaxed text-emerald-800">
-              Dana Anda ditampung secara sah di rekening escrow resmi. Teknisi baru menerima pembayaran setelah pekerjaan tuntas dan Anda memberikan konfirmasi penyelesaian.
+              Uang Anda ditampung secara sah di rekening penampung resmi. Teknisi baru menerima pembayaran setelah pekerjaan tuntas dan Anda memberikan konfirmasi penyelesaian.
             </p>
           </div>
         </div>

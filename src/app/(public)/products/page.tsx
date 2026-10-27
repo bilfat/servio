@@ -415,9 +415,13 @@ function ProductCatalogContent() {
 
         <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
           <div className="space-y-1.5">
-            {/* Merchant / Store Tag & City Origin */}
             {(() => {
-              const pMerchantCity = p.merchant?.city || p.merchantCity || "Jakarta Selatan";
+              const pMerchantCity =
+                p.merchant?.city ||
+                p.merchantCity ||
+                (p.merchantName?.toLowerCase().includes("glodok") || p.merchantOrganizationId === "0c1467e7-af68-4b26-ae84-daa41d51aed0"
+                  ? "Jakarta Pusat"
+                  : "Jakarta Pusat");
               const isProdSameCity = isSameCity(pMerchantCity, activeLocation.city);
               return (
                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -511,9 +515,7 @@ function ProductCatalogContent() {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-[#0F4C81] bg-sky-50 px-2.5 py-0.5 rounded-full border border-sky-200">
-                  Marketplace Suku Cadang &amp; Komponen
-                </span>
+                
                 {selectedShop && (
                   <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
                     <Storefront size={12} weight="bold" />
@@ -532,31 +534,7 @@ function ProductCatalogContent() {
             </div>
 
             {/* Cart Quick Button */}
-            <div className="flex items-center gap-2 self-start md:self-auto">
-              {selectedShop && (
-                <button
-                  type="button"
-                  onClick={handleClearShop}
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold hover:bg-slate-200 transition border border-slate-200"
-                >
-                  <ArrowLeft size={14} weight="bold" />
-                  <span>Semua Katalog</span>
-                </button>
-              )}
 
-              <Link
-                href="/cart"
-                className="inline-flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-[#0F4C81] text-white text-xs font-bold hover:bg-[#0c3c66] transition shadow-md shadow-sky-900/15"
-              >
-                <ShoppingCart size={18} weight="bold" />
-                <span>Keranjang Belanja</span>
-                {totalItemCount > 0 && (
-                  <span className="px-2 py-0.5 rounded-full bg-white text-[#0F4C81] text-[10px] font-extrabold">
-                    {totalItemCount}
-                  </span>
-                )}
-              </Link>
-            </div>
           </div>
 
           {/* Search, Filter Button, and Sort */}
@@ -1076,18 +1054,16 @@ function ProductCatalogContent() {
                     key={opt.id}
                     type="button"
                     onClick={() => setTempSortBy(opt.id as ProductSortOption)}
-                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-2.5 ${
-                      isSelected
+                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-2.5 ${isSelected
                         ? "bg-white border-[#0F4C81] shadow-sm ring-2 ring-[#0F4C81]/25"
                         : "bg-white/80 border-slate-200/90 hover:bg-white hover:border-slate-300"
-                    }`}
+                      }`}
                   >
                     <div
-                      className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
-                        isSelected
+                      className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${isSelected
                           ? "bg-[#0F4C81] text-white"
                           : "bg-slate-100 text-slate-500"
-                      }`}
+                        }`}
                     >
                       <IconComponent size={14} weight="bold" />
                     </div>
@@ -1118,9 +1094,7 @@ function ProductCatalogContent() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-xs font-bold text-slate-900">Filter Berdasarkan Merek</h3>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 font-bold border border-amber-300">
-                      Multi-Pilih • Independen
-                    </span>
+                  
                   </div>
                   <p className="text-[11px] text-slate-500">
                     Bisa memilih lebih dari 1 merek sekaligus (tidak dibatasi atau terikat kategori tertentu).

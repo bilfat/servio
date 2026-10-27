@@ -128,7 +128,7 @@ export default function ProviderContextualChatPage() {
       <div className="bg-sky/40 px-4 py-2 border-x border-slate-200 flex items-center justify-between text-xs text-neutral-dark shrink-0">
         <div className="flex items-center gap-2">
           <ShieldCheck size={16} weight="fill" className="text-primary shrink-0" />
-          <span>Percakapan terikat garansi & escrow Servio. Dilarang meminta transfer pribadi ke rekening non-aplikasi.</span>
+          <span>Percakapan terikat garansi & proteksi uang Servio. Dilarang meminta transfer pribadi ke rekening non-aplikasi.</span>
         </div>
         <span className="text-[10px] text-neutral-slate font-medium hidden sm:inline">ID Sesi: CHAT-{conversationId}</span>
       </div>

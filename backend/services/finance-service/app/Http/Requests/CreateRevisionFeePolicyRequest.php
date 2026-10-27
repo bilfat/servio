@@ -9,6 +9,9 @@ class CreateRevisionFeePolicyRequest extends BaseFinanceRequest
     public function rules(): array
     {
         return [
+            'name' => ['nullable', 'string', 'max:255'],
+            'display_name' => ['nullable', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:1000'],
             'change_reason' => ['required', 'string', 'max:500'],
             'targets' => ['required', 'array', 'min:1'],
             'targets.*.policy_code' => ['required', 'string', 'in:CUSTOMER_PRODUCT_APP_FEE,MERCHANT_PRODUCT_COMMISSION'],

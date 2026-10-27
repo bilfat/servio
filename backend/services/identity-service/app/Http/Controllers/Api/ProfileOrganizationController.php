@@ -304,7 +304,19 @@ class ProfileOrganizationController extends Controller
                 'operational_status' => $org->operational_status ?? 'ONLINE_ACCEPTING',
                 'operationalStatus' => $org->operational_status ?? 'ONLINE_ACCEPTING',
                 'name' => $orgProf?->display_name ?? $orgProf?->legal_name,
+                'brandName' => $orgProf?->display_name,
                 'legalName' => $orgProf?->legal_name,
+                'legal_name' => $orgProf?->legal_name,
+                'business_email' => $orgProf?->business_email,
+                'email' => $orgProf?->business_email,
+                'business_phone' => $orgProf?->business_phone,
+                'phone' => $orgProf?->business_phone,
+                'nib' => $orgProf?->getDecryptedNib(),
+                'npwp' => $orgProf?->getDecryptedNpwp(),
+                'specialization' => $orgProf?->specialization_json,
+                'specializedData' => $orgProf?->specialization_json,
+                'picData' => $orgProf?->specialization_json['picData'] ?? null,
+                'description' => $orgProf?->specialization_json['description'] ?? null,
                 'address' => $orgProf?->address_json,
                 'address_json' => $orgProf?->address_json,
                 'operational_hours' => $orgProf?->operational_hours_json,
@@ -513,6 +525,15 @@ class ProfileOrganizationController extends Controller
         }
 
         $prof = $org->profile;
+        $spec = $prof?->specialization_json ?: [];
+        $picData = $spec['picData'] ?? [
+            'fullName' => $user->profile?->display_name ?? $user->name,
+            'phone' => $prof?->business_phone ?? $user->phone_e164,
+            'email' => $prof?->business_email ?? $user->email,
+            'nik' => null,
+            'position' => null,
+        ];
+
         return ApiResponse::success([
             'id' => $org->id,
             'type' => $org->type,
@@ -520,10 +541,27 @@ class ProfileOrganizationController extends Controller
             'operational_status' => $org->operational_status ?? 'ONLINE_ACCEPTING',
             'operationalStatus' => $org->operational_status ?? 'ONLINE_ACCEPTING',
             'display_name' => $prof?->display_name,
+            'name' => $prof?->display_name ?? $prof?->legal_name,
+            'brandName' => $prof?->display_name,
             'legal_name' => $prof?->legal_name,
+            'legalName' => $prof?->legal_name,
             'business_email' => $prof?->business_email,
+            'email' => $prof?->business_email,
             'business_phone' => $prof?->business_phone,
+            'phone' => $prof?->business_phone,
+            'nib' => $prof?->getDecryptedNib(),
+            'npwp' => $prof?->getDecryptedNpwp(),
+            'description' => $spec['description'] ?? null,
+            'businessType' => $spec['businessType'] ?? $spec['storeType'] ?? null,
+            'storeType' => $spec['storeType'] ?? $spec['businessType'] ?? null,
+            'registrationNumber' => $spec['registrationNumber'] ?? ('REG-' . substr($org->id, 0, 8)),
+            'picData' => $picData,
+            'settlementBank' => $spec['settlementBank'] ?? null,
+            'specialization' => $spec,
+            'specializedData' => $spec,
             'address' => $prof?->address_json,
+            'address_json' => $prof?->address_json,
+            'addressData' => $prof?->address_json,
             'operational_hours' => $prof?->operational_hours_json,
             'operationalHours' => $prof?->operational_hours_json,
             'service_area' => $prof?->service_area_json,
@@ -561,7 +599,26 @@ class ProfileOrganizationController extends Controller
             'legal_name' => 'nullable|string|max:190',
             'legalName' => 'nullable|string|max:190',
             'business_email' => 'nullable|email|max:191',
-            'business_phone' => 'nullable|string|max:20',
+            'email' => 'nullable|email|max:191',
+            'business_phone' => 'nullable|string|max:30',
+            'phone' => 'nullable|string|max:30',
+            'nib' => 'nullable|string|max:100',
+            'npwp' => 'nullable|string|max:100',
+            'description' => 'nullable|string|max:1000',
+            'businessType' => 'nullable|string|max:100',
+            'business_type' => 'nullable|string|max:100',
+            'registrationNumber' => 'nullable|string|max:100',
+            'picName' => 'nullable|string|max:190',
+            'pic_name' => 'nullable|string|max:190',
+            'picNik' => 'nullable|string|max:50',
+            'pic_nik' => 'nullable|string|max:50',
+            'picPosition' => 'nullable|string|max:100',
+            'pic_position' => 'nullable|string|max:100',
+            'picData' => 'nullable',
+            'settlementBank' => 'nullable',
+            'settlement_bank' => 'nullable',
+            'specialization' => 'nullable',
+            'specializedData' => 'nullable',
             'address' => 'nullable',
             'address_json' => 'nullable',
             'addressData' => 'nullable',
@@ -583,12 +640,91 @@ class ProfileOrganizationController extends Controller
         if (!empty($legal)) {
             $prof->legal_name = $legal;
         }
-        if (isset($validated['business_email'])) {
-            $prof->business_email = $validated['business_email'];
+        $email = $validated['business_email'] ?? $validated['email'] ?? null;
+        if (!empty($email)) {
+            $prof->business_email = $email;
         }
-        if (isset($validated['business_phone'])) {
-            $prof->business_phone = $validated['business_phone'];
+        $phone = $validated['business_phone'] ?? $validated['phone'] ?? null;
+        if (!empty($phone)) {
+            $prof->business_phone = substr($phone, 0, 20);
         }
+
+        if (array_key_exists('nib', $validated)) {
+            $nib = trim((string) $validated['nib']);
+            if ($nib !== '') {
+                $prof->nib_ciphertext = Crypt::encryptString($nib);
+                $prof->nib_lookup_hash = hash('sha256', $nib);
+            }
+        }
+
+        if (array_key_exists('npwp', $validated)) {
+            $npwp = trim((string) $validated['npwp']);
+            if ($npwp !== '') {
+                $prof->npwp_ciphertext = Crypt::encryptString($npwp);
+                $prof->npwp_lookup_hash = hash('sha256', $npwp);
+            }
+        }
+
+        // Specialization JSON handling (merging description, storeType, picData, settlementBank, etc.)
+        $spec = $prof->specialization_json ?: [];
+        if (isset($validated['description'])) {
+            $spec['description'] = $validated['description'];
+        }
+        $bType = $validated['businessType'] ?? $validated['business_type'] ?? null;
+        if (!empty($bType)) {
+            $spec['storeType'] = $bType;
+            $spec['businessType'] = $bType;
+        }
+        if (!empty($validated['registrationNumber'])) {
+            $spec['registrationNumber'] = $validated['registrationNumber'];
+        }
+
+        // Merge picData
+        $picData = $validated['picData'] ?? null;
+        if (is_array($picData)) {
+            $spec['picData'] = array_merge($spec['picData'] ?? [], $picData);
+        } elseif (is_string($picData)) {
+            $decodedPic = json_decode($picData, true);
+            if (is_array($decodedPic)) {
+                $spec['picData'] = array_merge($spec['picData'] ?? [], $decodedPic);
+            }
+        }
+        $picName = $validated['picName'] ?? $validated['pic_name'] ?? null;
+        if (!empty($picName)) {
+            $spec['picData'] = array_merge($spec['picData'] ?? [], ['fullName' => $picName]);
+        }
+        $picNik = $validated['picNik'] ?? $validated['pic_nik'] ?? null;
+        if (!empty($picNik)) {
+            $spec['picData'] = array_merge($spec['picData'] ?? [], ['nik' => $picNik]);
+        }
+        $picPos = $validated['picPosition'] ?? $validated['pic_position'] ?? null;
+        if (!empty($picPos)) {
+            $spec['picData'] = array_merge($spec['picData'] ?? [], ['position' => $picPos]);
+        }
+        if (!empty($phone)) {
+            $spec['picData'] = array_merge($spec['picData'] ?? [], ['phone' => $phone]);
+        }
+        if (!empty($email)) {
+            $spec['picData'] = array_merge($spec['picData'] ?? [], ['email' => $email]);
+        }
+
+        // Merge settlementBank
+        $settlement = $validated['settlementBank'] ?? $validated['settlement_bank'] ?? null;
+        if (is_array($settlement)) {
+            $spec['settlementBank'] = array_merge($spec['settlementBank'] ?? [], $settlement);
+        } elseif (is_string($settlement)) {
+            $decodedBank = json_decode($settlement, true);
+            if (is_array($decodedBank)) {
+                $spec['settlementBank'] = array_merge($spec['settlementBank'] ?? [], $decodedBank);
+            }
+        }
+
+        $specInput = $validated['specialization'] ?? $validated['specializedData'] ?? null;
+        if (is_array($specInput)) {
+            $spec = array_merge($spec, $specInput);
+        }
+        $prof->specialization_json = $spec;
+
         $addr = $validated['address_json'] ?? $validated['addressData'] ?? $validated['address'] ?? null;
         if (isset($addr)) {
             $prof->address_json = is_array($addr) ? $addr : (json_decode($addr, true) ?: ['address' => (string) $addr]);
@@ -634,6 +770,23 @@ class ProfileOrganizationController extends Controller
         return ApiResponse::success([
             'id' => $org->id,
             'display_name' => $prof->display_name,
+            'name' => $prof->display_name ?? $prof->legal_name,
+            'brandName' => $prof->display_name,
+            'legal_name' => $prof->legal_name,
+            'legalName' => $prof->legal_name,
+            'business_email' => $prof->business_email,
+            'email' => $prof->business_email,
+            'business_phone' => $prof->business_phone,
+            'phone' => $prof->business_phone,
+            'nib' => $prof->getDecryptedNib(),
+            'npwp' => $prof->getDecryptedNpwp(),
+            'description' => $spec['description'] ?? null,
+            'businessType' => $spec['businessType'] ?? $spec['storeType'] ?? null,
+            'storeType' => $spec['storeType'] ?? $spec['businessType'] ?? null,
+            'registrationNumber' => $spec['registrationNumber'] ?? ('REG-' . substr($org->id, 0, 8)),
+            'picData' => $spec['picData'] ?? null,
+            'settlementBank' => $spec['settlementBank'] ?? null,
+            'specialization' => $spec,
             'status' => $org->status,
             'operational_status' => $org->operational_status,
             'operationalStatus' => $org->operational_status,
@@ -667,14 +820,24 @@ class ProfileOrganizationController extends Controller
             return ApiResponse::error('IDENTITY_PERMISSION_DENIED', 'Akses ditolak.', 403);
         }
 
+        if ($request->isMethod('get')) {
+            $avail = ($org->operational_status === 'TEMPORARY_CLOSED') ? 'UNAVAILABLE' : 'AVAILABLE';
+            return ApiResponse::success([
+                'status' => $avail,
+                'operational_status' => $org->operational_status ?? 'ONLINE_ACCEPTING',
+                'operationalStatus' => $org->operational_status ?? 'ONLINE_ACCEPTING',
+                'updatedAt' => now()->toIso8601String(),
+            ], 'IDENTITY_ORG_AVAILABILITY_LOADED', 200);
+        }
+
         $validated = $request->validate([
-            'status' => 'required|string|in:ONLINE_ACCEPTING,BUSY_DELAYED,TEMPORARY_CLOSED,ONLINE,BUSY,CLOSED',
+            'status' => 'required|string|in:ONLINE_ACCEPTING,BUSY_DELAYED,TEMPORARY_CLOSED,ONLINE,BUSY,CLOSED,AVAILABLE,UNAVAILABLE',
         ]);
 
         $canonicalStatus = match ($validated['status']) {
-            'ONLINE' => 'ONLINE_ACCEPTING',
+            'ONLINE', 'AVAILABLE' => 'ONLINE_ACCEPTING',
             'BUSY' => 'BUSY_DELAYED',
-            'CLOSED' => 'TEMPORARY_CLOSED',
+            'CLOSED', 'UNAVAILABLE' => 'TEMPORARY_CLOSED',
             default => $validated['status'],
         };
 
@@ -694,6 +857,7 @@ class ProfileOrganizationController extends Controller
 
         return ApiResponse::success([
             'id' => $org->id,
+            'status' => $canonicalStatus === 'TEMPORARY_CLOSED' ? 'UNAVAILABLE' : 'AVAILABLE',
             'operational_status' => $canonicalStatus,
             'operationalStatus' => $canonicalStatus,
         ], 'IDENTITY_ORG_OPERATIONAL_STATUS_UPDATED', 200);

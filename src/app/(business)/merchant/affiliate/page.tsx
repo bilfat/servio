@@ -303,7 +303,7 @@ export default function MerchantAffiliateProgramPage() {
       {/* Contextual Links */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Link
-          href="/business/merchant/partnerships/requests"
+          href="/merchant/partnerships/requests"
           className="p-5 rounded-3xl bg-white border border-slate-200/80 shadow-xs hover:border-primary/40 transition group flex items-center justify-between"
         >
           <div className="flex items-center gap-3">
@@ -323,7 +323,7 @@ export default function MerchantAffiliateProgramPage() {
         </Link>
 
         <Link
-          href="/business/merchant/orders?source=AFFILIATE"
+          href="/merchant/orders?source=AFFILIATE"
           className="p-5 rounded-3xl bg-white border border-slate-200/80 shadow-xs hover:border-purple-300 transition group flex items-center justify-between"
         >
           <div className="flex items-center gap-3">

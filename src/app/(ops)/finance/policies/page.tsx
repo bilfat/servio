@@ -366,8 +366,8 @@ export default function FinancePlatformPoliciesPage() {
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
                   <th className="py-3.5 px-5">Nama Aturan & Versi</th>
-                  <th className="py-3.5 px-4">Biaya Aplikasi Customer</th>
-                  <th className="py-3.5 px-4">Komisi Toko Merchant</th>
+                  <th className="py-3.5 px-4">Untuk Customer</th>
+                  <th className="py-3.5 px-4">Untuk Merchant</th>
                   <th className="py-3.5 px-4">Status & Efektif</th>
                   <th className="py-3.5 px-4">Alasan Pembaruan</th>
                   <th className="py-3.5 px-5 text-right">Rincian</th>
@@ -410,8 +410,8 @@ export default function FinancePlatformPoliciesPage() {
                                 {customerTarget.fee_type === "FIXED" ? "Rp" : "%"}
                               </span>
                             </div>
-                            <span className="text-[10px] text-slate-500">
-                              Sekali / Checkout
+                            <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
+                              Biaya Checkout (Sekali/Transaksi)
                             </span>
                           </div>
                         ) : (
@@ -434,8 +434,8 @@ export default function FinancePlatformPoliciesPage() {
                                 {merchantTarget.fee_type === "PERCENTAGE" ? "%" : "Rp"}
                               </span>
                             </div>
-                            <span className="text-[10px] text-slate-500">
-                              Per Pesanan Toko
+                            <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
+                              Komisi Penjualan Per Toko
                             </span>
                           </div>
                         ) : (

@@ -24,8 +24,18 @@ class BankDestinationController extends Controller
 
         $orgId = $request->query('organization_id');
 
-        if ($orgId) {
-            if (!$actor->isFinanceOps() && $actor->organizationId !== $orgId) {
+        if ($actor->isFinanceOps()) {
+            if ($orgId) {
+                $query->where('owner_external_id', $orgId);
+            }
+            if ($ownerType = $request->query('owner_type')) {
+                $query->where('owner_type', $ownerType);
+            }
+            if ($status = $request->query('status') ?? $request->query('verification_status')) {
+                $query->where('verification_status', $status);
+            }
+        } elseif ($orgId) {
+            if ($actor->organizationId !== $orgId) {
                 return ApiResponse::error('FORBIDDEN_ORGANIZATION_ACCESS', 'Anda tidak memiliki akses ke rekening organisasi ini.', 403);
             }
             $query->where('owner_type', 'MERCHANT_ORGANIZATION')->where('owner_external_id', $orgId);
@@ -42,11 +52,15 @@ class BankDestinationController extends Controller
             'owner_type' => $bank->owner_type,
             'owner_id' => $bank->owner_external_id,
             'bank_code' => $bank->bank_code,
+            'bank_name' => $bank->bank_code,
+            'account_number' => $bank->account_last4 ? '•••• •••• ' . $bank->account_last4 : '••••••••',
             'account_last4' => $bank->account_last4,
+            'account_holder_name' => $bank->account_holder_name_masked,
             'account_holder_name_masked' => $bank->account_holder_name_masked,
             'verification_status' => $bank->verification_status,
             'verification_method' => $bank->verification_method,
             'is_default' => $bank->is_default,
+            'verified_at' => $bank->verified_at?->toIso8601String(),
             'created_at' => $bank->created_at?->toIso8601String(),
         ]);
 
@@ -63,8 +77,10 @@ class BankDestinationController extends Controller
         $data = $request->validated();
         $ownerType = $data['owner_type'];
 
+        $bankCode = strtoupper($data['bank_code'] ?? $data['bank_name'] ?? 'BCA');
+
         if ($ownerType === 'MERCHANT_ORGANIZATION') {
-            $ownerId = $data['organization_id'] ?? $actor->organizationId;
+            $ownerId = $data['organization_id'] ?? $data['owner_id'] ?? $actor->organizationId;
             if (!$ownerId || (!$actor->isFinanceOps() && $actor->organizationId !== $ownerId)) {
                 return ApiResponse::error('FORBIDDEN_ORGANIZATION_ACCESS', 'Anda tidak berhak mendaftarkan rekening untuk organisasi ini.', 403);
             }
@@ -75,7 +91,7 @@ class BankDestinationController extends Controller
         $hmac = hash_hmac('sha256', $data['account_number'], (string) config('app.key'));
         $existing = BankDestination::where('owner_type', $ownerType)
             ->where('owner_external_id', $ownerId)
-            ->where('bank_code', strtoupper($data['bank_code']))
+            ->where('bank_code', $bankCode)
             ->where('account_number_hmac', $hmac)
             ->first();
 
@@ -86,7 +102,7 @@ class BankDestinationController extends Controller
         $bank = new BankDestination();
         $bank->owner_type = $ownerType;
         $bank->owner_external_id = $ownerId;
-        $bank->bank_code = strtoupper($data['bank_code']);
+        $bank->bank_code = $bankCode;
         $bank->account_number = $data['account_number'];
         $bank->account_holder_name = $data['account_holder_name'];
         $bank->verification_status = 'PENDING';

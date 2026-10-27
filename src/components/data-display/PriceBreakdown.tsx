@@ -58,7 +58,7 @@ export function PriceBreakdown({
         {escrowProtected && (
           <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
             <ShieldCheck size={14} weight="fill" />
-            Servio Escrow Protection
+            Proteksi Uang Aman Servio
           </span>
         )}
       </div>

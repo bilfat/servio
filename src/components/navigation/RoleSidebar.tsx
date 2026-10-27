@@ -163,6 +163,7 @@ export function RoleSidebar({
                     <Link
                       key={item.id}
                       href={item.href}
+                      prefetch={true}
                       className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all ${
                         active
                           ? "bg-primary text-white font-semibold shadow-servio-xs"
@@ -204,6 +205,7 @@ export function RoleSidebar({
                   <Link
                     key={item.id}
                     href={item.href}
+                    prefetch={true}
                     className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all ${
                       active
                         ? "bg-primary text-white font-semibold shadow-servio-xs"
@@ -347,6 +349,7 @@ export function RoleSidebar({
                         <Link
                           key={item.id}
                           href={item.href}
+                          prefetch={true}
                           onClick={onCloseMobile}
                           className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all ${
                             active
@@ -386,6 +389,7 @@ export function RoleSidebar({
                       <Link
                         key={item.id}
                         href={item.href}
+                        prefetch={true}
                         onClick={onCloseMobile}
                         className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all ${
                           active

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Truck,
   MapPin,
@@ -13,39 +13,140 @@ import {
   ArrowsClockwise,
   FloppyDisk,
   SlidersHorizontal,
+  CircleNotch,
 } from "@phosphor-icons/react";
-import { useOrderBarang } from "@/features/order-barang/hooks/useOrderBarang";
+import { orderBarangApi, DeliverySettingResponse } from "@/lib/orderBarangApi";
 import { formatRupiah, calculateTieredShippingFee } from "@/features/order-barang/helpers";
 import { MockShippingRateTier, MockShippingSettings } from "@/types/order-barang";
 import { Toast } from "@/components/feedback/Toast";
+import { useActiveRole } from "@/context/RoleContext";
 
 export default function MerchantShippingSettingsPage() {
-  const {
-    activeMerchantId,
-    getShippingSettings,
-    updateShippingSettings,
-  } = useOrderBarang();
+  const { user } = useActiveRole();
 
-  const currentSettings = useMemo(
-    () => getShippingSettings(activeMerchantId),
-    [activeMerchantId, getShippingSettings]
-  );
+  // Resolve store details from Modul 01 / user context
+  const activeOrg = user?.activeOrganization;
+  const businessData = user?.businessProfile?.businessData;
+  const activeOrgProfile = activeOrg?.profile;
 
-  const [formData, setFormData] = useState<MockShippingSettings>(currentSettings);
+  const resolvedStoreName =
+    activeOrg?.name ||
+    activeOrgProfile?.brandName ||
+    activeOrgProfile?.legalName ||
+    businessData?.brandName ||
+    businessData?.legalName ||
+    "Sinar AC & Sparepart Glodok";
+
+  const resolvedAddress =
+    activeOrgProfile?.address_json?.address ||
+    activeOrgProfile?.address_json?.street_address ||
+    businessData?.address ||
+    businessData?.address_json?.address ||
+    (typeof user?.address === "string" ? user.address : user?.address?.address) ||
+    "Harco Glodok Blok A No. 15, Jl. Hayam Wuruk";
+
+  const resolvedCity =
+    activeOrgProfile?.address_json?.city_name ||
+    activeOrgProfile?.address_json?.city ||
+    businessData?.city ||
+    businessData?.address_json?.city_name ||
+    "Jakarta Pusat";
+
+  const [loading, setLoading] = useState<boolean>(true);
+  const [saving, setSaving] = useState<boolean>(false);
+  const [serverVersion, setServerVersion] = useState<number>(0);
+
+  const [formData, setFormData] = useState<MockShippingSettings>({
+    merchantId: user?.organizationId || "0c1467e7-af68-4b26-ae84-daa41d51aed0",
+    merchantName: resolvedStoreName,
+    city: resolvedCity,
+    address: resolvedAddress,
+    coordinates: { lat: -6.1805, lng: 106.8284 },
+    isLocalDeliveryActive: true,
+    maxRadiusKm: 25,
+    rateTiers: [
+      { id: "tier-1", minKm: 0, maxKm: 5, rate: 10000 },
+      { id: "tier-2", minKm: 5, maxKm: 10, rate: 15000 },
+      { id: "tier-3", minKm: 10, maxKm: 25, rate: 25000 },
+    ],
+  });
+
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<"success" | "warning">("success");
 
   // Calculator preview distance state
-  const [testDistance, setTestDistance] = useState<number>(4.2);
+  const [testDistance, setTestDistance] = useState<number | string>(4.2);
 
   // New tier inputs
-  const [newMinKm, setNewMinKm] = useState<number>(0);
-  const [newMaxKm, setNewMaxKm] = useState<number>(0);
-  const [newRate, setNewRate] = useState<number>(0);
+  const [newMinKm, setNewMinKm] = useState<number | string>(0);
+  const [newMaxKm, setNewMaxKm] = useState<number | string>(0);
+  const [newRate, setNewRate] = useState<number | string>("");
+
+  const fetchSettings = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await orderBarangApi.merchant.getDeliverySettings();
+      if (res.data) {
+        const data = res.data;
+        setServerVersion(data.version || 0);
+
+        const mappedTiers: MockShippingRateTier[] = (data.tiers && data.tiers.length > 0)
+          ? data.tiers.map((t, idx) => ({
+              id: t.id || `tier-${idx}-${t.from_km}`,
+              minKm: Number(t.from_km),
+              maxKm: Number(t.to_km),
+              rate: Number(t.shipping_fee_idr),
+            }))
+          : [
+              { id: "tier-1", minKm: 0, maxKm: 5, rate: 10000 },
+              { id: "tier-2", minKm: 5, maxKm: 10, rate: 15000 },
+              { id: "tier-3", minKm: 10, maxKm: 25, rate: 25000 },
+            ];
+
+        setFormData((prev) => {
+          const finalName = data.merchant_name || data.store_name || prev.merchantName || resolvedStoreName;
+          const finalAddress = data.address || data.address_line || prev.address || resolvedAddress;
+          let finalCity = data.city || prev.city || resolvedCity;
+          if (data.origin_region_code && (!finalCity || finalCity === "Surabaya")) {
+            finalCity = data.origin_region_code.replace(/_/g, " ").replace("KOTA ", "");
+          }
+          const finalLat = data.origin_lat != null ? Number(data.origin_lat) : (prev.coordinates?.lat ?? -6.1805);
+          const finalLng = data.origin_lng != null ? Number(data.origin_lng) : (prev.coordinates?.lng ?? 106.8284);
+
+          return {
+            ...prev,
+            merchantName: finalName,
+            address: finalAddress,
+            city: finalCity,
+            coordinates: { lat: finalLat, lng: finalLng },
+            isLocalDeliveryActive: Boolean(data.is_enabled),
+            maxRadiusKm: Number(data.maximum_distance_km) || 25,
+            rateTiers: mappedTiers.sort((a, b) => a.minKm - b.minKm),
+          };
+        });
+      }
+    } catch (err: unknown) {
+      console.warn("Using fallback initial settings for delivery settings:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [resolvedStoreName, resolvedAddress, resolvedCity]);
+
+  // Sync profile details if auth context loads after initial mount
+  useEffect(() => {
+    if (user && user.activeRole === "MERCHANT") {
+      setFormData((prev) => ({
+        ...prev,
+        merchantName: prev.merchantName && prev.merchantName !== "Bengkel Sentosa Motor" ? prev.merchantName : resolvedStoreName,
+        address: prev.address && !prev.address.includes("Ngagel") ? prev.address : resolvedAddress,
+        city: prev.city && prev.city !== "Surabaya" ? prev.city : resolvedCity,
+      }));
+    }
+  }, [user, resolvedStoreName, resolvedAddress, resolvedCity]);
 
   useEffect(() => {
-    setFormData(currentSettings);
-  }, [currentSettings]);
+    fetchSettings();
+  }, [fetchSettings]);
 
   // Validation
   const validationErrors = useMemo(() => {
@@ -90,8 +191,9 @@ export default function MerchantShippingSettingsPage() {
   }, [formData]);
 
   const previewResult = useMemo(() => {
+    const distNum = typeof testDistance === "string" ? (testDistance === "" ? 0 : parseFloat(testDistance) || 0) : testDistance;
     return calculateTieredShippingFee(
-      testDistance,
+      distNum,
       formData.rateTiers,
       formData.maxRadiusKm
     );
@@ -105,12 +207,16 @@ export default function MerchantShippingSettingsPage() {
   };
 
   const handleAddTier = () => {
-    if (newMinKm >= newMaxKm) {
+    const minKmNum = parseFloat(String(newMinKm)) || 0;
+    const maxKmNum = parseFloat(String(newMaxKm)) || 0;
+    const rateNum = parseInt(String(newRate).replace(/\D/g, ""), 10) || 0;
+
+    if (minKmNum >= maxKmNum) {
       setToastMessage("Jarak minimum harus lebih kecil daripada jarak maksimum.");
       setToastType("warning");
       return;
     }
-    if (newRate <= 0) {
+    if (rateNum <= 0) {
       setToastMessage("Tarif pengiriman harus lebih dari Rp0.");
       setToastType("warning");
       return;
@@ -118,9 +224,9 @@ export default function MerchantShippingSettingsPage() {
 
     const newTier: MockShippingRateTier = {
       id: `tier-${Date.now()}`,
-      minKm: newMinKm,
-      maxKm: newMaxKm,
-      rate: newRate,
+      minKm: minKmNum,
+      maxKm: maxKmNum,
+      rate: rateNum,
     };
 
     setFormData((prev) => ({
@@ -128,9 +234,9 @@ export default function MerchantShippingSettingsPage() {
       rateTiers: [...prev.rateTiers, newTier].sort((a, b) => a.minKm - b.minKm),
     }));
 
-    setNewMinKm(newMaxKm);
-    setNewMaxKm(newMaxKm + 3);
-    setNewRate(newRate + 5000);
+    setNewMinKm(maxKmNum);
+    setNewMaxKm(maxKmNum + 3);
+    setNewRate("");
     setToastMessage("Rentang tarif berhasil ditambahkan.");
     setToastType("success");
   };
@@ -142,21 +248,58 @@ export default function MerchantShippingSettingsPage() {
     }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (validationErrors.length > 0) {
       setToastMessage("Harap perbaiki kesalahan konfigurasi sebelum menyimpan.");
       setToastType("warning");
       return;
     }
 
-    updateShippingSettings(activeMerchantId, formData);
-    setToastMessage("Pengaturan pengiriman lokal berhasil disimpan!");
-    setToastType("success");
+    try {
+      setSaving(true);
+      const sortedTiers = [...formData.rateTiers].sort((a, b) => a.minKm - b.minKm);
+      const res = await orderBarangApi.merchant.updateDeliverySettings({
+        is_enabled: formData.isLocalDeliveryActive,
+        maximum_distance_km: formData.maxRadiusKm,
+        operational_note: "Pengiriman lokal toko via koordinat geodesik (Haversine)",
+        expected_version: serverVersion,
+        tiers: sortedTiers.map((t, idx) => ({
+          from_km: t.minKm,
+          to_km: t.maxKm,
+          shipping_fee_idr: t.rate,
+          position: idx + 1,
+        })),
+      });
+
+      if (res.data) {
+        setServerVersion(res.data.version || serverVersion + 1);
+        if (res.data.merchant_name || res.data.store_name) {
+          setFormData((prev) => ({
+            ...prev,
+            merchantName: res.data?.merchant_name || res.data?.store_name || prev.merchantName,
+            address: res.data?.address || res.data?.address_line || prev.address,
+            city: res.data?.city || prev.city,
+            coordinates: {
+              lat: res.data?.origin_lat != null ? Number(res.data.origin_lat) : prev.coordinates.lat,
+              lng: res.data?.origin_lng != null ? Number(res.data.origin_lng) : prev.coordinates.lng,
+            },
+          }));
+        }
+      }
+      setToastMessage("Pengaturan pengiriman lokal berhasil disimpan ke backend!");
+      setToastType("success");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Gagal menyimpan pengaturan ke server";
+      setToastMessage(msg);
+      setToastType("warning");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleReset = () => {
-    setFormData(currentSettings);
-    setToastMessage("Perubahan dibatalkan. Kembali ke pengaturan awal.");
+    fetchSettings();
+    setToastMessage("Perubahan dibatalkan. Mengambil ulang data server.");
     setToastType("warning");
   };
 
@@ -169,12 +312,17 @@ export default function MerchantShippingSettingsPage() {
             <span className="text-[10px] font-bold uppercase tracking-wider text-[#0F4C81] bg-sky-50 px-2 py-0.5 rounded-md border border-sky-200">
               Konfigurasi Logistik Toko
             </span>
+            {serverVersion > 0 && (
+              <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                v{serverVersion}
+              </span>
+            )}
           </div>
           <h1 className="text-lg sm:text-xl font-display font-extrabold text-slate-900 leading-tight">
             Pengaturan Pengiriman Lokal
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Atur radius jangkauan layanan toko dan tarif bertingkat untuk pembeli dalam satu kota administratif.
+            Atur radius jangkauan layanan toko dan tarif bertingkat untuk pembeli dalam satu kota administratif. Jarak dihitung secara geodesik (garis lurus/Haversine).
           </p>
         </div>
 
@@ -182,19 +330,24 @@ export default function MerchantShippingSettingsPage() {
           <button
             type="button"
             onClick={handleReset}
-            className="px-3.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+            disabled={loading || saving}
+            className="px-3.5 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
           >
-            <ArrowsClockwise size={14} />
-            <span>Batalkan</span>
+            <ArrowsClockwise size={14} className={loading ? "animate-spin" : ""} />
+            <span>Muat Ulang</span>
           </button>
           <button
             type="button"
             onClick={handleSave}
-            disabled={validationErrors.length > 0}
+            disabled={validationErrors.length > 0 || saving || loading}
             className="px-4 py-1.5 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
-            <FloppyDisk size={15} weight="bold" />
-            <span>Simpan Pengaturan</span>
+            {saving ? (
+              <CircleNotch size={15} className="animate-spin" />
+            ) : (
+              <FloppyDisk size={15} weight="bold" />
+            )}
+            <span>{saving ? "Menyimpan..." : "Simpan Pengaturan"}</span>
           </button>
         </div>
       </div>
@@ -225,14 +378,20 @@ export default function MerchantShippingSettingsPage() {
                 <MapPin size={15} className="text-primary shrink-0" weight="bold" />
                 <span>A. Lokasi Toko (Titik Asal)</span>
               </div>
-              <span className="text-[10px] text-slate-400 font-mono">GPS Origin</span>
+              <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
+                <CheckCircle size={11} weight="fill" className="text-emerald-600" />
+                <span>Modul 01 Identity</span>
+              </span>
             </div>
 
             <div className="space-y-2 text-xs">
               <div className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
-                <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">
-                  Nama &amp; Alamat Toko:
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">
+                    Nama &amp; Alamat Toko:
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono">Profil Resmi</span>
+                </div>
                 <p className="font-bold text-slate-900 text-xs">{formData.merchantName}</p>
                 <p className="text-[11px] text-slate-600 leading-snug">{formData.address}</p>
               </div>
@@ -304,13 +463,15 @@ export default function MerchantShippingSettingsPage() {
                     type="number"
                     min={1}
                     max={50}
-                    value={formData.maxRadiusKm}
-                    onChange={(e) =>
+                    placeholder="25"
+                    value={formData.maxRadiusKm === 0 ? "" : formData.maxRadiusKm}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/^0+([1-9])/, "$1");
                       setFormData((prev) => ({
                         ...prev,
-                        maxRadiusKm: parseFloat(e.target.value) || 0,
-                      }))
-                    }
+                        maxRadiusKm: raw === "" ? 0 : parseFloat(raw) || 0,
+                      }));
+                    }}
                     className="w-full bg-transparent text-xs font-bold text-slate-900 outline-none"
                   />
                   <span className="text-[10px] font-semibold text-slate-400 ml-1">KM</span>
@@ -342,8 +503,12 @@ export default function MerchantShippingSettingsPage() {
                     type="number"
                     step={0.1}
                     min={0}
+                    placeholder="0"
                     value={testDistance}
-                    onChange={(e) => setTestDistance(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/^0+([1-9])/, "$1");
+                      setTestDistance(raw);
+                    }}
                     className="w-full text-xs font-bold text-slate-900 outline-none bg-transparent"
                   />
                   <span className="text-[10px] font-semibold text-slate-400 ml-1">KM</span>
@@ -457,8 +622,12 @@ export default function MerchantShippingSettingsPage() {
                     type="number"
                     min={0}
                     step={0.5}
+                    placeholder="0"
                     value={newMinKm}
-                    onChange={(e) => setNewMinKm(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/^0+([1-9])/, "$1");
+                      setNewMinKm(raw);
+                    }}
                     className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 font-bold"
                   />
                 </div>
@@ -470,8 +639,12 @@ export default function MerchantShippingSettingsPage() {
                     type="number"
                     min={0}
                     step={0.5}
+                    placeholder="0"
                     value={newMaxKm}
-                    onChange={(e) => setNewMaxKm(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/^0+([1-9])/, "$1");
+                      setNewMaxKm(raw);
+                    }}
                     className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 font-bold"
                   />
                 </div>
@@ -483,8 +656,12 @@ export default function MerchantShippingSettingsPage() {
                     type="number"
                     min={0}
                     step={1000}
+                    placeholder="0"
                     value={newRate}
-                    onChange={(e) => setNewRate(parseFloat(e.target.value) || 0)}
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/^0+([1-9])/, "$1");
+                      setNewRate(raw);
+                    }}
                     className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white text-slate-900 font-bold"
                   />
                 </div>

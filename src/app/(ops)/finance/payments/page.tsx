@@ -21,8 +21,15 @@ import {
   PlayCircle,
   QrCode,
   CreditCard,
+  Receipt,
+  Printer,
+  Package,
+  MapPin,
+  Storefront,
+  ShoppingBag,
 } from "@phosphor-icons/react";
 import { financeApi } from "@/lib/servioApi";
+import { orderBarangApi, AdminOrderDetailEntity } from "@/lib/orderBarangApi";
 import { BackendPaymentIntent } from "@/types/finance";
 import { Toast } from "@/components/feedback/Toast";
 import { Button } from "@/components/ui/Button";
@@ -48,6 +55,10 @@ export default function PaymentGatewayOperationsPage() {
   const [simulationPayment, setSimulationPayment] = useState<BackendPaymentIntent | null>(null);
   const [simulationOutcome, setSimulationOutcome] = useState<"PAID" | "FAILED">("PAID");
   const [isSimulating, setIsSimulating] = useState(false);
+
+  // Struk & Rincian Barang State
+  const [paymentOrders, setPaymentOrders] = useState<AdminOrderDetailEntity[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
 
   const fetchPayments = async () => {
     try {
@@ -77,6 +88,154 @@ export default function PaymentGatewayOperationsPage() {
   useEffect(() => {
     fetchPayments();
   }, [statusFilter, methodFilter, currentPage]);
+
+  // Helper status pesanan barang
+  const getOrderStatusLabel = (status: string) => {
+    switch (status) {
+      case "CREATED":
+      case "PAYMENT_PENDING":
+        return { label: "Menunggu Pembayaran", color: "bg-amber-100 text-amber-800" };
+      case "CONFIRMED":
+        return { label: "Pesanan Masuk", color: "bg-blue-100 text-blue-800" };
+      case "PROCESSING":
+        return { label: "Diproses Toko", color: "bg-indigo-100 text-indigo-800" };
+      case "PACKED":
+        return { label: "Dikemas", color: "bg-purple-100 text-purple-800" };
+      case "DELIVERING":
+        return { label: "Dalam Pengiriman", color: "bg-cyan-100 text-cyan-800" };
+      case "DELIVERED":
+        return { label: "Tiba di Tujuan", color: "bg-teal-100 text-teal-800" };
+      case "COMPLETED":
+        return { label: "Selesai", color: "bg-emerald-100 text-emerald-800" };
+      case "CANCELLED":
+        return { label: "Dibatalkan", color: "bg-rose-100 text-rose-800" };
+      default:
+        return { label: status, color: "bg-slate-100 text-slate-800" };
+    }
+  };
+
+  // Muat rincian pesanan dan barang yang dibeli saat modal rincian pembayaran dibuka
+  useEffect(() => {
+    if (!selectedPayment) {
+      setPaymentOrders([]);
+      setLoadingOrders(false);
+      return;
+    }
+
+    const loadOrdersForPayment = async () => {
+      try {
+        setLoadingOrders(true);
+        const checkoutGroupId =
+          selectedPayment.checkout?.checkout_group_id || selectedPayment.finance_checkout_id;
+
+        let foundOrders: AdminOrderDetailEntity[] = [];
+
+        if (checkoutGroupId) {
+          const res = await orderBarangApi.admin.getOrders({
+            search: checkoutGroupId,
+            per_page: 50,
+          });
+          if (res?.data?.data && res.data.data.length > 0) {
+            foundOrders = res.data.data.filter(
+              (o) => o.checkout_group_id === checkoutGroupId || o.order_number?.includes(checkoutGroupId)
+            );
+            if (foundOrders.length === 0) {
+              foundOrders = res.data.data;
+            }
+          }
+        }
+
+        if (foundOrders.length === 0) {
+          const resByPayId = await orderBarangApi.admin.getOrders({
+            search: selectedPayment.id,
+            per_page: 20,
+          });
+          if (resByPayId?.data?.data && resByPayId.data.data.length > 0) {
+            foundOrders = resByPayId.data.data;
+          }
+        }
+
+        setPaymentOrders(foundOrders);
+      } catch (err) {
+        console.error("Gagal memuat detail pesanan untuk struk:", err);
+        setPaymentOrders([]);
+      } finally {
+        setLoadingOrders(false);
+      }
+    };
+
+    loadOrdersForPayment();
+  }, [selectedPayment]);
+
+  // Data penerima dan alamat pengiriman dari pesanan
+  const recipientInfo = useMemo(() => {
+    if (!paymentOrders || paymentOrders.length === 0) {
+      return null;
+    }
+    const firstOrder = paymentOrders[0];
+    const recipient = firstOrder.recipient_snapshot || firstOrder.address_snapshot;
+    const address = firstOrder.address_snapshot;
+    if (!recipient && !address) return null;
+
+    return {
+      name: recipient?.recipient_name || address?.recipient_name || "Pelanggan SERVIO",
+      phone: recipient?.recipient_phone || address?.recipient_phone || recipient?.phone || "-",
+      label: address?.label || "Alamat Pengiriman",
+      fullAddress: [
+        address?.address_line,
+        address?.subdistrict,
+        address?.district,
+        address?.city,
+        address?.postal_code,
+      ]
+        .filter(Boolean)
+        .join(", "),
+    };
+  }, [paymentOrders]);
+
+  // Rincian perhitungan nominal struk
+  const breakdownData = useMemo(() => {
+    if (!selectedPayment) return null;
+
+    const checkoutObj = selectedPayment.checkout as Record<string, any> | undefined;
+    const productSubtotalFromCheckout = checkoutObj?.product_subtotal_idr ?? 0;
+    const shippingTotalFromCheckout = checkoutObj?.shipping_total_idr ?? 0;
+    const appFeeFromCheckout = checkoutObj?.customer_app_fee_idr ?? 2500;
+    const taxTotalFromCheckout = checkoutObj?.customer_tax_total_idr ?? 0;
+
+    if (paymentOrders && paymentOrders.length > 0) {
+      const ordersProductSubtotal = paymentOrders.reduce(
+        (sum, ord) => sum + (ord.product_subtotal_idr || 0),
+        0
+      );
+      const ordersShippingTotal = paymentOrders.reduce(
+        (sum, ord) => sum + (ord.shipping_customer_idr || 0),
+        0
+      );
+      const ordersAppFee = paymentOrders.reduce(
+        (sum, ord) => sum + (ord.app_fee_allocated_idr || 0),
+        0
+      );
+      const ordersTax = paymentOrders.reduce(
+        (sum, ord) => sum + (ord.customer_tax_allocated_idr || 0),
+        0
+      );
+
+      return {
+        productSubtotal: ordersProductSubtotal || productSubtotalFromCheckout,
+        shippingTotal: ordersShippingTotal || shippingTotalFromCheckout,
+        appFee: ordersAppFee || appFeeFromCheckout,
+        taxTotal: ordersTax || taxTotalFromCheckout,
+      };
+    }
+
+    return {
+      productSubtotal: productSubtotalFromCheckout,
+      shippingTotal: shippingTotalFromCheckout,
+      appFee: appFeeFromCheckout,
+      taxTotal: taxTotalFromCheckout,
+    };
+  }, [selectedPayment, paymentOrders]);
 
   const handleSimulatePayment = async () => {
     if (!simulationPayment) return;
@@ -130,7 +289,7 @@ export default function PaymentGatewayOperationsPage() {
       <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-            Payment Gateway Ingestion Log
+            Log Ingesti Gerbang Pembayaran
           </span>
           <h1 className="text-2xl sm:text-3xl font-black font-display text-slate-900 mt-1">
             Monitoring Pembayaran Checkout
@@ -355,72 +514,356 @@ export default function PaymentGatewayOperationsPage() {
       </div>
 
       {/* =========================================================================
-          MODAL: Rincian Pembayaran
+          MODAL: Struk Rincian Belanja & Pembayaran
          ========================================================================= */}
       <Modal
         isOpen={!!selectedPayment}
         onClose={() => setSelectedPayment(null)}
-        title="Rincian Transaksi Pembayaran"
-        size="md"
+        title={
+          <div className="flex items-center gap-2.5 text-left">
+            <div className="w-9 h-9 rounded-xl bg-[#0F4C81]/10 flex items-center justify-center text-[#0F4C81] shrink-0">
+              <Receipt className="w-5 h-5" weight="bold" />
+            </div>
+            <div>
+              <h3 className="text-base font-black font-display text-slate-900 leading-tight">
+                Struk Rincian Belanja & Pembayaran
+              </h3>
+              <p className="text-[11px] text-slate-400 font-normal">
+                Rincian transaksi pembayaran, proteksi dana escrow, dan struk belanja barang
+              </p>
+            </div>
+          </div>
+        }
+        size="2xl"
       >
         {selectedPayment && (
-          <div className="space-y-4 text-left font-body text-xs">
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
-              <div className="flex justify-between">
-                <span className="text-slate-400">Payment ID:</span>
-                <strong className="font-mono text-slate-900">{selectedPayment.id}</strong>
+          <div id="finance-receipt-area" className="space-y-4 text-left font-body text-xs">
+            {/* Kartu Struk Digital Modern */}
+            <div className="bg-slate-50/70 border border-slate-200/90 rounded-2xl p-4 sm:p-6 space-y-4 shadow-xs">
+              {/* Header Struk: Brand, Payment ID, Status & Metode */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3.5 border-b border-slate-200 gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-display font-black text-slate-900 text-base tracking-wide">
+                      SERVIO
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 tracking-wider">
+                      STRUK DIGITAL RESMI
+                    </span>
+                  </div>
+                  <div className="font-mono text-xs text-slate-600 mt-1">
+                    No. Pembayaran: <strong className="text-slate-900 font-bold">{selectedPayment.id}</strong>
+                  </div>
+                  {selectedPayment.checkout?.checkout_group_id && (
+                    <div className="font-mono text-[10px] text-slate-400">
+                      Grup Checkout: {selectedPayment.checkout.checkout_group_id}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex sm:flex-col items-end justify-between sm:justify-center">
+                  <span
+                    className={`px-3 py-1 rounded-full text-xs font-black inline-flex items-center gap-1.5 border shadow-2xs ${
+                      selectedPayment.status === "PAID"
+                        ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                        : selectedPayment.status === "PENDING"
+                        ? "bg-amber-50 text-amber-800 border-amber-300"
+                        : selectedPayment.status === "EXPIRED"
+                        ? "bg-slate-100 text-slate-700 border-slate-300"
+                        : selectedPayment.status === "PARTIALLY_REFUNDED" || selectedPayment.status === "REFUNDED"
+                        ? "bg-purple-50 text-purple-800 border-purple-300"
+                        : "bg-rose-50 text-rose-800 border-rose-300"
+                    }`}
+                  >
+                    {selectedPayment.status === "PAID" && <CheckCircle className="w-3.5 h-3.5" weight="fill" />}
+                    {selectedPayment.status === "PENDING" && <Clock className="w-3.5 h-3.5" weight="fill" />}
+                    {selectedPayment.status}
+                  </span>
+                  <span className="text-[11px] text-slate-500 mt-1 font-mono">
+                    Metode: <strong className="text-slate-800">{selectedPayment.method}</strong> ({selectedPayment.provider})
+                  </span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Checkout Group:</span>
-                <strong className="font-mono text-slate-900">
-                  {selectedPayment.checkout?.checkout_group_id || selectedPayment.finance_checkout_id}
-                </strong>
+
+              {/* Timestamp & Batas Waktu */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-3 rounded-xl bg-white border border-slate-200/80 text-[11px] text-slate-600">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Waktu Diterbitkan:</span>
+                  <span className="font-mono font-medium text-slate-800">
+                    {new Date(selectedPayment.issued_at).toLocaleString("id-ID")}
+                  </span>
+                </div>
+                {selectedPayment.paid_at ? (
+                  <div className="flex items-center justify-between">
+                    <span className="text-emerald-700 font-semibold">Waktu Terverifikasi LUNAS:</span>
+                    <span className="font-mono font-bold text-emerald-800">
+                      {new Date(selectedPayment.paid_at).toLocaleString("id-ID")}
+                    </span>
+                  </div>
+                ) : selectedPayment.expires_at ? (
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Batas Kedaluwarsa (6 Jam):</span>
+                    <span className="font-mono text-slate-700">
+                      {new Date(selectedPayment.expires_at).toLocaleString("id-ID")}
+                    </span>
+                  </div>
+                ) : null}
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Metode & Provider:</span>
-                <strong className="text-slate-900">
-                  {selectedPayment.method} ({selectedPayment.provider})
-                </strong>
+
+              {/* Penerima & Alamat Pengiriman */}
+              {recipientInfo && (
+                <div className="p-3.5 rounded-xl bg-white border border-slate-200/80 space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                    <MapPin className="w-4 h-4 text-[#0F4C81]" weight="bold" />
+                    <span>Penerima & Alamat Tujuan Pengiriman</span>
+                  </div>
+                  <div className="text-xs text-slate-700">
+                    <span className="font-bold text-slate-900">{recipientInfo.name}</span>
+                    {recipientInfo.phone && (
+                      <span className="text-slate-500 ml-2 font-mono text-[11px]">({recipientInfo.phone})</span>
+                    )}
+                    {recipientInfo.label && (
+                      <span className="ml-2 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                        {recipientInfo.label}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    {recipientInfo.fullAddress}
+                  </p>
+                </div>
+              )}
+
+              {/* Rincian Barang yang Dibeli (Itemized Products Breakdown) */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                    <ShoppingBag className="w-4 h-4 text-[#0F4C81]" weight="bold" />
+                    <span>Rincian Barang yang Dibeli (Struk Belanja)</span>
+                  </div>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    {loadingOrders
+                      ? "Mengambil data produk..."
+                      : paymentOrders.length > 0
+                      ? `${paymentOrders.reduce((sum, o) => sum + (o.items?.length || 0), 0)} Produk Dipesan`
+                      : "Data Transaksi"}
+                  </span>
+                </div>
+
+                {loadingOrders ? (
+                  <div className="p-8 rounded-2xl bg-white border border-slate-200/80 flex flex-col items-center justify-center gap-2 text-slate-400">
+                    <ArrowsClockwise className="w-6 h-6 animate-spin text-[#0F4C81]" />
+                    <span className="text-xs text-slate-500 font-medium">Memuat rincian struk barang...</span>
+                  </div>
+                ) : paymentOrders.length > 0 ? (
+                  <div className="space-y-3">
+                    {paymentOrders.map((order) => {
+                      const storeName = order.merchant_display_snapshot?.name || "Toko Mitra SERVIO";
+                      const storeCity = order.merchant_display_snapshot?.city;
+                      const statusInfo = getOrderStatusLabel(order.status);
+
+                      return (
+                        <div
+                          key={order.id}
+                          className="rounded-2xl bg-white border border-slate-200/90 p-4 space-y-3 shadow-2xs"
+                        >
+                          {/* Info Toko / Merchant */}
+                          <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+                            <div className="flex items-center gap-2">
+                              <Storefront className="w-4 h-4 text-emerald-700 shrink-0" weight="bold" />
+                              <span className="font-bold text-slate-900 text-xs">{storeName}</span>
+                              {storeCity && (
+                                <span className="text-[10px] text-slate-400 font-medium">
+                                  • {storeCity}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-[10px] text-slate-400">
+                                {order.order_number}
+                              </span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${statusInfo.color}`}>
+                                {statusInfo.label}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* List Produk pada Toko ini */}
+                          <div className="space-y-2.5">
+                            {order.items && order.items.length > 0 ? (
+                              order.items.map((item, idx) => {
+                                const productName =
+                                  item.product_snapshot?.name || item.name || "Produk Suku Cadang";
+                                const variantName = item.variant_snapshot?.name || (item as any).variant_name;
+                                const sku = item.variant_snapshot?.sku || item.sku;
+                                const itemImage =
+                                  item.product_image_ref || item.product_snapshot?.image_url;
+                                const unitPrice =
+                                  item.unit_price_idr || (item.variant_snapshot?.price_idr ?? 0);
+                                const subtotal =
+                                  item.line_subtotal_idr || item.quantity * unitPrice;
+
+                                return (
+                                  <div
+                                    key={item.id || idx}
+                                    className="flex items-center gap-3.5 p-2.5 rounded-xl bg-slate-50/60 border border-slate-100 hover:bg-slate-50 transition-colors"
+                                  >
+                                    <div className="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden relative">
+                                      {itemImage ? (
+                                        <img
+                                          src={itemImage}
+                                          alt={productName}
+                                          className="w-full h-full object-cover"
+                                          onError={(e) => {
+                                            (e.currentTarget as HTMLElement).style.display = "none";
+                                          }}
+                                        />
+                                      ) : (
+                                        <Package className="w-6 h-6 text-slate-400" />
+                                      )}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <h4 className="font-bold text-slate-900 text-xs truncate">
+                                        {productName}
+                                      </h4>
+                                      <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-[11px] text-slate-500">
+                                        {variantName && (
+                                          <span className="px-1.5 py-0.2 rounded bg-slate-200 font-semibold text-slate-700 text-[10px]">
+                                            {variantName}
+                                          </span>
+                                        )}
+                                        {sku && (
+                                          <span className="font-mono text-[10px] text-slate-400">
+                                            {sku}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="mt-1 text-[11px] text-slate-600">
+                                        <span className="font-bold text-slate-800">
+                                          {item.quantity}x
+                                        </span>{" "}
+                                        @ Rp {unitPrice.toLocaleString("id-ID")}
+                                      </div>
+                                    </div>
+                                    <div className="text-right shrink-0">
+                                      <span className="font-black text-slate-900 text-xs">
+                                        Rp {subtotal.toLocaleString("id-ID")}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <div className="text-xs text-slate-400 py-2 italic">
+                                Tidak ada data rincian item barang spesifik.
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Subtotal Toko */}
+                          <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 text-[11px] text-slate-500">
+                            <span>Subtotal Toko (Produk & Ongkir):</span>
+                            <span className="font-bold text-slate-800">
+                              Rp {(order.customer_total_idr || 0).toLocaleString("id-ID")}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-xl bg-white border border-slate-200/80 text-slate-500 text-xs text-center space-y-1">
+                    <p className="font-semibold text-slate-700">
+                      Transaksi Pembayaran Tanpa Keranjang Multi-Toko
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      Rincian item barang belum ditautkan pada transaksi pembayaran ini.
+                    </p>
+                  </div>
+                )}
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Nominal Tagihan:</span>
-                <strong className="text-sm font-black text-slate-900">
-                  Rp {selectedPayment.amount_idr.toLocaleString("id-ID")}
-                </strong>
+
+              {/* Garis Dashed Khas Struk Belanja */}
+              <div className="relative py-1">
+                <div className="border-t-2 border-dashed border-slate-300" />
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">Status Pembayaran:</span>
-                <span className="font-black px-2 py-0.5 rounded-full bg-slate-200 text-slate-800 text-[10px]">
-                  {selectedPayment.status}
-                </span>
+
+              {/* Rincian Kalkulasi Pembayaran (Receipt Breakdown) */}
+              <div className="space-y-2 p-4 rounded-xl bg-white border border-slate-200/80 text-xs">
+                <div className="flex justify-between text-slate-600">
+                  <span>Subtotal Produk:</span>
+                  <strong className="text-slate-900">
+                    Rp {(breakdownData?.productSubtotal || 0).toLocaleString("id-ID")}
+                  </strong>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Total Ongkos Kirim:</span>
+                  <strong className="text-slate-900">
+                    Rp {(breakdownData?.shippingTotal || 0).toLocaleString("id-ID")}
+                  </strong>
+                </div>
+                <div className="flex justify-between text-slate-600">
+                  <span>Biaya Layanan Aplikasi:</span>
+                  <strong className="text-slate-900">
+                    Rp {(breakdownData?.appFee || 0).toLocaleString("id-ID")}
+                  </strong>
+                </div>
+                {(breakdownData?.taxTotal || 0) > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Pajak (PPN):</span>
+                    <strong className="text-slate-900">
+                      Rp {breakdownData!.taxTotal.toLocaleString("id-ID")}
+                    </strong>
+                  </div>
+                )}
+
+                {/* Garis Total Tagihan */}
+                <div className="border-t border-slate-200 pt-3 mt-2 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-black text-slate-900 block uppercase tracking-wider">
+                      Total Nominal Pembayaran
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-medium">
+                      Status: {selectedPayment.status} • Metode: {selectedPayment.method}
+                    </span>
+                  </div>
+                  <span className="text-xl font-black text-[#0F4C81]">
+                    Rp {selectedPayment.amount_idr.toLocaleString("id-ID")}
+                  </span>
+                </div>
+              </div>
+
+              {/* Proteksi Rekening Escrow Platform */}
+              <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-start gap-2.5 text-[11px] text-emerald-950">
+                <ShieldCheck className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" weight="fill" />
+                <div className="space-y-0.5">
+                  <strong className="font-bold text-emerald-900 block">
+                    Proteksi Rekening Escrow Platform SERVIO
+                  </strong>
+                  <p className="text-emerald-800/90 leading-relaxed text-[11px]">
+                    Seluruh dana pembayaran pesanan ini diamankan di rekening escrow SERVIO. Dana baru akan diteruskan dan dicairkan ke saldo toko mitra secara otomatis setelah barang pesanan dipastikan sampai di tujuan dan pesanan diselesaikan oleh pelanggan.
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="space-y-1.5 p-3 rounded-2xl bg-slate-50/50 border border-slate-200/60 text-[11px] text-slate-600">
-              <div className="flex justify-between">
-                <span>Waktu Diterbitkan:</span>
-                <span className="font-mono">{new Date(selectedPayment.issued_at).toLocaleString("id-ID")}</span>
-              </div>
-              {selectedPayment.expires_at && (
-                <div className="flex justify-between">
-                  <span>Kedaluwarsa (6 Jam):</span>
-                  <span className="font-mono">{new Date(selectedPayment.expires_at).toLocaleString("id-ID")}</span>
-                </div>
-              )}
-              {selectedPayment.paid_at && (
-                <div className="flex justify-between text-emerald-800 font-bold">
-                  <span>Waktu Terverifikasi PAID:</span>
-                  <span className="font-mono">{new Date(selectedPayment.paid_at).toLocaleString("id-ID")}</span>
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end pt-2">
+            {/* Tombol Aksi Modal */}
+            <div className="flex items-center justify-between pt-2">
               <Button
                 variant="outline"
                 size="sm"
+                onClick={() => window.print()}
+                className="rounded-xl text-xs font-bold border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center gap-1.5"
+              >
+                <Printer className="w-4 h-4 text-slate-600" />
+                <span>Cetak Struk</span>
+              </Button>
+
+              <Button
+                variant="primary"
+                size="sm"
                 onClick={() => setSelectedPayment(null)}
-                className="rounded-xl text-xs font-bold"
+                className="rounded-xl text-xs font-bold bg-[#0F4C81] hover:bg-[#0d3f6c] text-white px-6"
               >
                 Tutup
               </Button>

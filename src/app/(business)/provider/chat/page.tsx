@@ -76,7 +76,7 @@ export default function ProviderChatListPage() {
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-medium border border-emerald-200">
             <ShieldCheck size={16} weight="fill" />
-            <span>Escrow Chat Protected</span>
+            <span>Jaminan Uang Aman</span>
           </div>
         </div>
       </div>

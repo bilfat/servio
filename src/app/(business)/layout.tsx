@@ -67,7 +67,8 @@ export default function BusinessLayout({
     user.activeRole === targetRole ||
     Boolean(user.availableRoles?.includes(targetRole));
 
-  if (isLoadingAuth) {
+  // Only block with ServioLoadingScreen on initial cold boot when user context is not yet loaded
+  if (isLoadingAuth && (!user || user.id === "guest")) {
     return (
       <AppShell>
         <ServioLoadingScreen

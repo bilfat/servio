@@ -11,6 +11,7 @@ import { taxonomyApi, resolveLocationToCityCode } from "@/lib/servioApi";
 import { useActiveLocation } from "@/context/LocationContext";
 import { CATEGORY_ICON_MAP } from "@/config/navigation";
 import { UserRole } from "@/types/auth";
+import { getRoleDashboard, getRoleProfileUrl } from "@/lib/roleNavigation";
 import {
   MagnifyingGlass,
   Bell,
@@ -34,6 +35,8 @@ import {
   MapPin,
 } from "@phosphor-icons/react";
 
+let cachedLiveCategories: any[] | null = null;
+
 interface NavbarProps {
   onToggleSidebar?: () => void;
   isMobileSidebarOpen?: boolean;
@@ -45,12 +48,117 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
   const { activeRole: rawActiveRole, user, isPublicGuest: rawIsPublicGuest, setIsPublicGuest, logout } = useActiveRole();
   const { location: activeLocation, openLocationModal } = useActiveLocation();
   const { totalItemCount } = useCart();
-  const effectiveCartCount = cartCount !== undefined ? cartCount : totalItemCount;
+  const [optimisticCartCount, setOptimisticCartCount] = useState<number | null>(null);
+  const pendingCountRef = useRef<number | null>(null);
+  const isFlightActiveRef = useRef<boolean>(false);
+
+  // Sync optimistic count when backend totalItemCount arrives, unless flight animation is currently active
+  useEffect(() => {
+    if (typeof totalItemCount === "number" && !isFlightActiveRef.current) {
+      setOptimisticCartCount(totalItemCount);
+    }
+  }, [totalItemCount]);
+
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [activeDropdown, setActiveDropdown] = useState<"services" | "help" | "register" | "profile" | "notifications" | null>(null);
 
   const pathname = usePathname() || "/";
   const [currentHash, setCurrentHash] = useState("");
+  const [cartBouncing, setCartBouncing] = useState(false);
+
+  // Re-verify cart badge count immediately on route change without requiring page reload
+  useEffect(() => {
+    if (typeof window !== "undefined" && !isFlightActiveRef.current) {
+      try {
+        const raw = localStorage.getItem("servio_customer_cart_v1");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const count = Array.isArray(parsed)
+            ? parsed.reduce((sum: number, g: any) => sum + (g.items?.reduce((s: number, it: any) => s + (it.quantity || 1), 0) || 0), 0)
+            : 0;
+          setOptimisticCartCount(count);
+        } else {
+          setOptimisticCartCount(0);
+        }
+      } catch {
+        setOptimisticCartCount(0);
+      }
+    }
+  }, [pathname]);
+
+  useEffect(() => {
+    const handleFlightStart = () => {
+      isFlightActiveRef.current = true;
+    };
+
+    const handleOptimistic = (e: Event) => {
+      const ce = e as CustomEvent<{ newTotalCount?: number; pending?: boolean }>;
+      if (typeof ce.detail?.newTotalCount === "number") {
+        if (ce.detail.pending || isFlightActiveRef.current) {
+          // Keep current badge number untouched while item is flying
+          pendingCountRef.current = ce.detail.newTotalCount;
+        } else {
+          setOptimisticCartCount(ce.detail.newTotalCount);
+        }
+      }
+    };
+
+    const handleCartLanded = () => {
+      isFlightActiveRef.current = false;
+      // Increment indicator at the exact moment the item lands and icon scales up
+      if (typeof pendingCountRef.current === "number") {
+        setOptimisticCartCount(pendingCountRef.current);
+        pendingCountRef.current = null;
+      }
+      setCartBouncing(true);
+      setTimeout(() => setCartBouncing(false), 800);
+    };
+
+    const handleCartUpdated = (e: Event) => {
+      const ce = e as CustomEvent<{ totalCount?: number; count?: number }>;
+      if (typeof ce?.detail?.totalCount === "number") {
+        setOptimisticCartCount(ce.detail.totalCount);
+      } else if (typeof ce?.detail?.count === "number") {
+        setOptimisticCartCount(ce.detail.count);
+      } else if (typeof window !== "undefined") {
+        try {
+          const raw = localStorage.getItem("servio_customer_cart_v1");
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            const count = Array.isArray(parsed)
+              ? parsed.reduce((sum: number, g: any) => sum + (g.items?.reduce((s: number, it: any) => s + (it.quantity || 1), 0) || 0), 0)
+              : 0;
+            setOptimisticCartCount(count);
+          } else {
+            setOptimisticCartCount(0);
+          }
+        } catch {
+          setOptimisticCartCount(0);
+        }
+      }
+    };
+
+    window.addEventListener("servio:cart-flight-start", handleFlightStart);
+    window.addEventListener("servio:cart-optimistic-add", handleOptimistic);
+    window.addEventListener("servio:cart-item-landed", handleCartLanded);
+    window.addEventListener("servio:cart-updated", handleCartUpdated);
+    window.addEventListener("storage", handleCartUpdated);
+
+    return () => {
+      window.removeEventListener("servio:cart-flight-start", handleFlightStart);
+      window.removeEventListener("servio:cart-optimistic-add", handleOptimistic);
+      window.removeEventListener("servio:cart-item-landed", handleCartLanded);
+      window.removeEventListener("servio:cart-updated", handleCartUpdated);
+      window.removeEventListener("storage", handleCartUpdated);
+    };
+  }, []);
+
+  const effectiveCartCount =
+    cartCount !== undefined
+      ? cartCount
+      : optimisticCartCount !== null
+      ? optimisticCartCount
+      : totalItemCount;
 
   useEffect(() => {
     const updateHash = () => {
@@ -110,7 +218,7 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
 
   // On operational dashboard routes, never treat as public guest
   const isPublicGuest = isOperationalRoute ? false : rawIsPublicGuest;
-  const isCustomer = (activeRole === "CUSTOMER" || !isOperationalRoute) && !isPublicGuest;
+  const isCustomer = activeRole === "CUSTOMER" && !isPublicGuest;
   const isDashboardRole = isOperationalRoute;
 
   // Filter service categories dynamically from canonical taxonomy API
@@ -133,15 +241,25 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
     }
   };
 
-  const [liveServiceCategories, setLiveServiceCategories] = useState<any[]>([]);
-  const [isLoadingCategories, setIsLoadingCategories] = useState(true);
+  const [liveServiceCategories, setLiveServiceCategories] = useState<any[]>(() => cachedLiveCategories || []);
+  const [isLoadingCategories, setIsLoadingCategories] = useState(() => !cachedLiveCategories);
 
   useEffect(() => {
     let mounted = true;
+    if (cachedLiveCategories && cachedLiveCategories.length > 0) {
+      setLiveServiceCategories(cachedLiveCategories);
+      setIsLoadingCategories(false);
+      if (!isPublicGuest) {
+        fetchLiveNotifications();
+      }
+      return;
+    }
+
     taxonomyApi
       .getCategories({ master_code: "JASA", status: "ACTIVE" })
       .then((res) => {
         if (mounted && res && Array.isArray(res.data) && res.data.length > 0) {
+          cachedLiveCategories = res.data;
           setLiveServiceCategories(res.data);
         }
       })
@@ -254,47 +372,26 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
               </button>
             )}
 
-            {/* Brand Logo: Hanya role pelanggan (Customer) & public guest yang dapat mengklik ke beranda. Role lainnya tidak terjadi apa-apa */}
-            {isCustomer || isPublicGuest ? (
-              <Link
-                href="/"
-                className="flex items-center gap-2.5 shrink-0 group focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-lg py-0.5 px-1"
-                title="SERVIO — Beranda"
-              >
-                <div className="relative h-9 flex items-center shrink-0">
-                  <Image
-                    src="/brand/logo.png"
-                    alt="SERVIO Logo"
-                    width={48}
-                    height={36}
-                    className="h-9 w-auto object-contain shrink-0"
-                    priority
-                  />
-                </div>
-                <span className="font-brand-latin text-[27px] leading-none font-bold text-slate-900 group-hover:text-primary transition-colors select-none tracking-tight pt-1">
-                  Servio
-                </span>
-              </Link>
-            ) : (
-              <div
-                className="flex items-center gap-2.5 shrink-0 select-none py-0.5 px-1 cursor-default"
-                title="SERVIO Workspace"
-              >
-                <div className="relative h-9 flex items-center shrink-0">
-                  <Image
-                    src="/brand/logo.png"
-                    alt="SERVIO Logo"
-                    width={48}
-                    height={36}
-                    className="h-9 w-auto object-contain shrink-0"
-                    priority
-                  />
-                </div>
-                <span className="font-brand-latin text-[27px] leading-none font-bold text-slate-900 select-none tracking-tight pt-1">
-                  Servio
-                </span>
+            {/* Brand Logo: Klik membawa ke Beranda (Customer/Guest) atau Dashboard Workspace (Role Operasional) */}
+            <Link
+              href={isCustomer || isPublicGuest ? "/" : getRoleDashboard(activeRole)}
+              className="flex items-center gap-2.5 shrink-0 group focus:outline-none focus:ring-2 focus:ring-primary/20 rounded-lg py-0.5 px-1"
+              title={isCustomer || isPublicGuest ? "SERVIO — Beranda" : `Dashboard ${activeRole?.replace(/_/g, " ")}`}
+            >
+              <div className="relative h-9 flex items-center shrink-0">
+                <Image
+                  src="/brand/logo.png"
+                  alt="SERVIO Logo"
+                  width={48}
+                  height={36}
+                  className="h-9 w-auto object-contain shrink-0"
+                  priority
+                />
               </div>
-            )}
+              <span className="font-brand-latin text-[27px] leading-none font-bold text-slate-900 group-hover:text-primary transition-colors select-none tracking-tight pt-1">
+                Servio
+              </span>
+            </Link>
 
             {/* Smart Discovery AI Chip (Customer view) */}
             {isCustomer && (
@@ -771,14 +868,30 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
                 {/* Cart Icon (Customer) */}
                 {isCustomer && (
                   <Link
+                    id="navbar-cart-button"
                     href="/cart"
-                    className="relative p-2.5 rounded-xl text-neutral-slate hover:text-primary hover:bg-sky/50 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+                    className={`relative p-2.5 rounded-xl transition-all duration-300 min-w-[44px] min-h-[44px] flex items-center justify-center ${
+                      cartBouncing
+                        ? "text-primary bg-sky/80 scale-125 shadow-md ring-4 ring-primary/25"
+                        : "text-neutral-slate hover:text-primary hover:bg-sky/50"
+                    }`}
                     title="Keranjang Belanja"
                     aria-label="Keranjang Belanja"
                   >
-                    <ShoppingCart size={22} weight="duotone" />
+                    <ShoppingCart
+                      size={22}
+                      weight="duotone"
+                      className={`transition-transform duration-300 ${cartBouncing ? "scale-125 rotate-[-12deg]" : ""}`}
+                    />
                     {effectiveCartCount > 0 && (
-                      <span className="absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full bg-secondary text-white text-[10px] font-bold flex items-center justify-center">
+                      <span
+                        id="navbar-cart-badge"
+                        className={`absolute top-1 right-1 min-w-4 h-4 px-1 rounded-full text-white text-[10px] font-bold flex items-center justify-center transition-all duration-300 ${
+                          cartBouncing
+                            ? "bg-emerald-500 scale-125 ring-2 ring-white shadow-md animate-bounce"
+                            : "bg-secondary"
+                        }`}
+                      >
                         {effectiveCartCount}
                       </span>
                     )}
@@ -906,17 +1019,7 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
                         </div>
                       </div>
                       <Link
-                        href={
-                          activeRole === "SERVICE_PROVIDER"
-                            ? "/provider/profile"
-                            : activeRole === "MERCHANT"
-                            ? "/merchant/profile"
-                            : activeRole === "SUPPLIER"
-                            ? "/supplier/profile"
-                            : activeRole === "WORKER_TECHNICIAN"
-                            ? "/worker/profile"
-                            : "/profile"
-                        }
+                        href={getRoleProfileUrl(activeRole)}
                         onClick={() => setActiveDropdown(null)}
                         className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-slate-100 transition-colors text-xs text-neutral-dark"
                       >
@@ -1090,7 +1193,7 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
                       : "font-semibold text-neutral-dark hover:bg-slate-100"
                   }`}
                 >
-                  <span>Cara Kerja & Escrow</span>
+                  <span>Cara Kerja & Uang Aman</span>
                   {isHowItWorksActive && (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white text-primary">
                       Aktif

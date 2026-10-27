@@ -74,7 +74,8 @@ export default function OpsLayout({
     (!isSupportRoute && !isFinanceRoute && !isAdminRoute) ||
     isOnboardingRoute;
 
-  if (isLoadingAuth) {
+  // Only block with ServioLoadingScreen on initial cold boot when user context is not yet loaded
+  if (isLoadingAuth && (!user || user.id === "guest")) {
     return (
       <AppShell>
         <ServioLoadingScreen

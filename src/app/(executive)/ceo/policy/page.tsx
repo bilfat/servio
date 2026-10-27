@@ -106,7 +106,7 @@ export default function CeoPolicyGovernancePage() {
           }`}
         >
           <ShieldCheck size={16} />
-          <span>3. Jaminan Pengerjaan & Garansi Escrow</span>
+          <span>3. Jaminan Pengerjaan & Garansi Uang Aman</span>
         </button>
       </div>
 
@@ -404,7 +404,7 @@ export default function CeoPolicyGovernancePage() {
             </div>
 
             <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-              <span className="text-[11px] font-bold text-neutral-slate uppercase">Ambang Auto-Refund Escrow</span>
+              <span className="text-[11px] font-bold text-neutral-slate uppercase">Ambang Auto-Refund Uang</span>
               <div className="flex items-center gap-2">
                 <input
                   type="number"

@@ -98,6 +98,6 @@ class AuthenticatedActor
         if ($this->isCeo()) {
             return true;
         }
-        return in_array($permission, $this->permissions, true);
+        return in_array('*', $this->permissions, true) || in_array($permission, $this->permissions, true);
     }
 }

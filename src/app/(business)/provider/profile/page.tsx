@@ -32,6 +32,30 @@ import {
 
 type ProfileTab = "business" | "contact" | "address" | "hours" | "competency" | "documents" | "notifications";
 
+const TIME_OPTIONS_24H = Array.from({ length: 48 }, (_, i) => {
+  const h = Math.floor(i / 2);
+  const m = i % 2 === 0 ? "00" : "30";
+  return `${String(h).padStart(2, "0")}:${m}`;
+});
+
+function normalizeTo24H(val?: string | null, fallback = "08:00"): string {
+  if (!val) return fallback;
+  const t = String(val).trim().toUpperCase();
+  const ampm = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+  if (ampm) {
+    let h = parseInt(ampm[1], 10);
+    const m = ampm[2];
+    if (ampm[3] === "PM" && h < 12) h += 12;
+    if (ampm[3] === "AM" && h === 12) h = 0;
+    return `${String(h).padStart(2, "0")}:${m}`;
+  }
+  const hms = t.match(/^(\d{1,2}):(\d{2})/);
+  if (hms) {
+    return `${String(parseInt(hms[1], 10)).padStart(2, "0")}:${hms[2]}`;
+  }
+  return fallback;
+}
+
 export default function ProviderProfilePage() {
   const repo = useDomainRepository();
   const { user, refreshUser } = useActiveRole();
@@ -270,8 +294,8 @@ export default function ProviderProfilePage() {
     }
     const opHours = user.activeOrganization?.operational_hours || (user.businessProfile as any)?.operationalHours || (user.businessProfile as any)?.operational_hours;
     if (opHours) {
-      if (opHours.open_time || opHours.openTime) setOpenTime(opHours.open_time || opHours.openTime);
-      if (opHours.close_time || opHours.closeTime) setCloseTime(opHours.close_time || opHours.closeTime);
+      if (opHours.open_time || opHours.openTime) setOpenTime(normalizeTo24H(opHours.open_time || opHours.openTime, "08:00"));
+      if (opHours.close_time || opHours.closeTime) setCloseTime(normalizeTo24H(opHours.close_time || opHours.closeTime, "18:00"));
       if (opHours.work_days || opHours.workDays) setWorkDays(opHours.work_days || opHours.workDays);
     }
   }, [user]);
@@ -902,22 +926,46 @@ export default function ProviderProfilePage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Jam Buka</label>
-                  <input
-                    type="time"
-                    value={openTime}
-                    onChange={(e) => setOpenTime(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-                  />
+                  <label className="block font-bold text-slate-700 mb-1 text-xs">Jam Buka (24 Jam)</label>
+                  <div className="relative">
+                    <select
+                      value={openTime}
+                      onChange={(e) => setOpenTime(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-semibold text-xs sm:text-sm text-slate-900 bg-white appearance-none pr-9 cursor-pointer"
+                    >
+                      {!TIME_OPTIONS_24H.includes(openTime) && (
+                        <option value={openTime}>{openTime}</option>
+                      )}
+                      {TIME_OPTIONS_24H.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                    <Clock size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1 block">Format 24 jam (Contoh: 08:00, 09:00)</span>
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Jam Tutup</label>
-                  <input
-                    type="time"
-                    value={closeTime}
-                    onChange={(e) => setCloseTime(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium"
-                  />
+                  <label className="block font-bold text-slate-700 mb-1 text-xs">Jam Tutup (24 Jam)</label>
+                  <div className="relative">
+                    <select
+                      value={closeTime}
+                      onChange={(e) => setCloseTime(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-semibold text-xs sm:text-sm text-slate-900 bg-white appearance-none pr-9 cursor-pointer"
+                    >
+                      {!TIME_OPTIONS_24H.includes(closeTime) && (
+                        <option value={closeTime}>{closeTime}</option>
+                      )}
+                      {TIME_OPTIONS_24H.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                    <Clock size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1 block">Format 24 jam (Contoh: 17:00, 21:00)</span>
                 </div>
               </div>
             </div>

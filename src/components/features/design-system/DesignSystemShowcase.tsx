@@ -124,11 +124,11 @@ export function DesignSystemShowcase() {
   const timelineEvents: TimelineEvent[] = [
     {
       id: "ev-1",
-      title: "Order Dibuat & Escrow Diverifikasi",
+      title: "Order Dibuat & Pembayaran Diverifikasi",
       description: "Pembayaran dana Rp 150.000 diamankan dalam rekening penampung Servio Protection.",
       timestamp: "21 Sep 2026, 09:30 WIB",
       status: "completed",
-      author: "Sistem Escrow",
+      author: "Sistem Pembayaran Aman",
     },
     {
       id: "ev-2",
@@ -623,7 +623,7 @@ export function DesignSystemShowcase() {
             isOpen={isModalOpen}
             onClose={() => setIsModalOpen(false)}
             title="Detail Jaminan Servio Protection"
-            description="Informasi perlindungan escrow dan garansi pengerjaan ulang."
+            description="Informasi perlindungan uang aman dan garansi pengerjaan ulang."
             footer={
               <Button variant="primary" size="sm" onClick={() => setIsModalOpen(false)}>
                 Saya Mengerti
@@ -639,7 +639,7 @@ export function DesignSystemShowcase() {
           <Drawer
             isOpen={isDrawerOpen}
             onClose={() => setIsDrawerOpen(false)}
-            title="Pilih Metode Pembayaran Escrow"
+            title="Pilih Metode Pembayaran Aman"
             description="Transaksi dilindungi rekening penampung resmi Servio."
             footer={
               <Button variant="primary" size="sm" onClick={() => setIsDrawerOpen(false)}>

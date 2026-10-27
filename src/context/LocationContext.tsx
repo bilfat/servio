@@ -1,7 +1,13 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
-import { getCurrentGpsPosition, reverseGeocodeLocation, formatStoreDistance } from "@/lib/geoUtils";
+import {
+  getCurrentGpsPosition,
+  reverseGeocodeLocation,
+  formatStoreDistance,
+  KNOWN_MERCHANT_COORDINATES,
+  CITY_CENTROIDS,
+} from "@/lib/geoUtils";
 import { profileApi, ApiAddress } from "@/lib/servioApi";
 import { useActiveRole } from "@/context/RoleContext";
 
@@ -114,16 +120,58 @@ export function calculateStoreDistance(
     district?: string;
   }
 ): string {
-  const mCity = merchant?.city || "Jakarta Selatan";
-  if (!isSameCity(mCity, userLoc.city)) {
+  let mLat = merchant?.latitude;
+  let mLng = merchant?.longitude;
+  let mCity = merchant?.city;
+
+  // 1. Resolve merchant coordinates from known partner registry (e.g. Sinar AC Glodok)
+  if ((mLat === undefined || mLng === undefined || mLat === null || mLng === null) && merchant?.id && KNOWN_MERCHANT_COORDINATES[merchant.id]) {
+    const known = KNOWN_MERCHANT_COORDINATES[merchant.id];
+    mLat = known.lat;
+    mLng = known.lng;
+    if (!mCity) mCity = known.city;
+  }
+
+  // 2. Resolve by store name keywords
+  if ((mLat === undefined || mLng === undefined || mLat === null || mLng === null) && merchant?.name) {
+    const lowerName = merchant.name.toLowerCase();
+    if (lowerName.includes("sinar ac") || lowerName.includes("glodok")) {
+      mLat = -6.1805;
+      mLng = 106.8284;
+      if (!mCity) mCity = "Jakarta Pusat";
+    }
+  }
+
+  // 3. Fallback to city centroid for merchant
+  if ((mLat === undefined || mLng === undefined || mLat === null || mLng === null) && mCity) {
+    const cityKey = mCity.toLowerCase().replace(/^kota\s+/i, "").trim();
+    if (CITY_CENTROIDS[cityKey]) {
+      mLat = CITY_CENTROIDS[cityKey].lat;
+      mLng = CITY_CENTROIDS[cityKey].lng;
+    }
+  }
+
+  // 4. Resolve user coordinates if missing
+  let uLat = userLoc.latitude;
+  let uLng = userLoc.longitude;
+  if ((uLat === undefined || uLng === undefined || uLat === null || uLng === null) && userLoc.city) {
+    const userCityKey = userLoc.city.toLowerCase().replace(/^kota\s+/i, "").trim();
+    if (CITY_CENTROIDS[userCityKey]) {
+      uLat = CITY_CENTROIDS[userCityKey].lat;
+      uLng = CITY_CENTROIDS[userCityKey].lng;
+    }
+  }
+
+  const effectiveMerchantCity = mCity || "Jakarta Pusat";
+  if (!isSameCity(effectiveMerchantCity, userLoc.city)) {
     return "Luar Kota";
   }
 
   return formatStoreDistance(
-    userLoc.latitude,
-    userLoc.longitude,
-    merchant?.latitude,
-    merchant?.longitude,
+    uLat,
+    uLng,
+    mLat,
+    mLng,
     `${merchant?.id || merchant?.name || "merch"}-${userLoc.city}-${userLoc.district || ""}`
   );
 }

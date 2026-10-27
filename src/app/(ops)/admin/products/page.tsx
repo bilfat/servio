@@ -378,7 +378,7 @@ export default function AdminProductsModerationPage() {
                 }`}
             >
               <Package size={16} weight={activeTab === "moderation" ? "fill" : "regular"} />
-              <span>Moderasi Listing</span>
+              <span>Katalog Produk</span>
               <span className={`px-2 py-0.5 rounded-full text-[10px] ${activeTab === "moderation" ? "bg-blue-100 text-[#0F4C81]" : "bg-slate-200 text-slate-600"
                 }`}>
                 {products.length}

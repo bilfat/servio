@@ -161,7 +161,7 @@ export default function SupportCaseDetail360Page() {
           </div>
           <div>
             <p className="text-xs text-amber-800 font-medium">
-              Dana Escrow Terkunci Aman di Sistem:
+              Uang Ditahan Aman di Sistem:
             </p>
             <p className="text-lg font-bold font-display text-amber-950">
               Rp {currentCase.escrowAmount.toLocaleString("id-ID")}
@@ -255,7 +255,7 @@ export default function SupportCaseDetail360Page() {
               Formulir Putusan Mediasi Resmi Otoritas Servio
             </h2>
             <p className="text-xs text-slate-500">
-              Putusan ini bersifat mengikat dan akan otomatis menerbitkan perubahan status escrow serta instruksi refund ke Finance Ops.
+              Putusan ini bersifat mengikat dan akan otomatis menerbitkan perubahan status uang serta instruksi refund ke Finance Ops.
             </p>
           </div>
         </div>
@@ -282,17 +282,17 @@ export default function SupportCaseDetail360Page() {
                   {
                     id: "FULL_REFUND",
                     label: "3. Pengembalian Dana Penuh (100% Refund)",
-                    desc: "Escrow dikembalikan penuh ke pelanggan via antrean Finance Ops.",
+                    desc: "Uang dikembalikan penuh ke pelanggan via antrean Finance Ops.",
                   },
                   {
                     id: "PARTIAL_REFUND",
                     label: "4. Pengembalian Dana Sebagian",
-                    desc: "Membagi dana escrow antara kompensasi pelanggan dan biaya mitra.",
+                    desc: "Membagi uang tertahan antara kompensasi pelanggan dan biaya mitra.",
                   },
                   {
                     id: "REJECT_CLAIM_RELEASE_ESCROW",
-                    label: "5. Tolak Komplain & Lepas Escrow",
-                    desc: "Keluhan tidak terbukti kelalaian mitra. Dana escrow dilepas ke mitra.",
+                    label: "5. Tolak Komplain & Lepas Uang ke Mitra",
+                    desc: "Keluhan tidak terbukti kelalaian mitra. Uang pembayaran dilepas ke mitra.",
                   },
                 ] as const
               ).map((opt) => (

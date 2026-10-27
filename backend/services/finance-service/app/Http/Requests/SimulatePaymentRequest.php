@@ -9,7 +9,7 @@ class SimulatePaymentRequest extends BaseFinanceRequest
     public function rules(): array
     {
         return [
-            'outcome' => ['required', 'string', 'in:SUCCESS,FAILED'],
+            'outcome' => ['required', 'string', 'in:SUCCESS,FAILED,PAID'],
             'provider_event_id' => ['required', 'string', 'max:64'],
             'reported_amount_idr' => ['required', 'integer', 'min:1'],
         ];

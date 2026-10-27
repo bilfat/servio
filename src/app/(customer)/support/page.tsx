@@ -27,7 +27,7 @@ interface FaqItem {
 const FAQS: FaqItem[] = [
   {
     category: "PAYMENT",
-    question: "Bagaimana cara kerja sistem rekening penampung (Escrow) Servio?",
+    question: "Bagaimana cara kerja sistem rekening penampung uang aman Servio?",
     answer:
       "Dana yang Anda bayarkan akan aman tersimpan di rekening resmi Servio dan baru dilepaskan kepada mitra penyedia jasa setelah Anda menyetujui bukti pengerjaan teknisi dan mengonfirmasi pekerjaan selesai tanpa keluhan.",
   },
@@ -77,7 +77,7 @@ export default function CustomerSupportPage() {
             Ada yang Bisa Kami Bantu Hari Ini?
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-2 max-w-xl mx-auto">
-            Temukan jawaban cepat seputar transaksi, rekening escrow, garansi pengerjaan, atau hubungi tim customer service kami.
+            Temukan jawaban cepat seputar transaksi, jaminan uang aman, garansi pengerjaan, atau hubungi tim customer service kami.
           </p>
 
           {/* Search Box */}
@@ -87,7 +87,7 @@ export default function CustomerSupportPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Ketik kata kunci: garansi, escrow, teknisi, retur..."
+              placeholder="Ketik kata kunci: garansi, uang aman, teknisi, retur..."
               className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-[#0F4C81] shadow-sm"
             />
           </div>
@@ -181,7 +181,7 @@ export default function CustomerSupportPage() {
             <div className="flex items-center gap-1.5 overflow-x-auto">
               {[
                 { id: "ALL", label: "Semua" },
-                { id: "PAYMENT", label: "Escrow & Bayar" },
+                { id: "PAYMENT", label: "Uang Aman & Bayar" },
                 { id: "SERVICE", label: "Pengerjaan" },
                 { id: "WARRANTY", label: "Garansi" },
                 { id: "PRODUCT", label: "Suku Cadang" },

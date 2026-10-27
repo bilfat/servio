@@ -101,7 +101,7 @@ export default function MerchantStorefrontPage() {
 
   // Filter & sort products
   const filteredProducts = useMemo(() => {
-    let result = products.filter((p) => {
+    const result = products.filter((p) => {
       if (activeCategoryTab !== "ALL" && p.categoryId !== activeCategoryTab) {
         return false;
       }
@@ -125,6 +125,42 @@ export default function MerchantStorefrontPage() {
 
     return result;
   }, [products, activeCategoryTab, onlyReadyStock, searchQuery, sortBy]);
+
+  const formattedAddress = useMemo(() => {
+    if (!shop) return "";
+    if (typeof shop.address === "string" && shop.address.trim()) return shop.address;
+    if (shop.address && typeof shop.address === "object") {
+      const addrObj = shop.address as Record<string, any>;
+      if (addrObj.address) return String(addrObj.address);
+      const parts = [
+        addrObj.street_address || addrObj.streetAddress,
+        addrObj.district_name || addrObj.district,
+        addrObj.city_name || addrObj.city,
+        addrObj.province_name || addrObj.province,
+        addrObj.postal_code || addrObj.postalCode,
+      ].filter(Boolean);
+      if (parts.length > 0) return parts.join(", ");
+    }
+    if (shop.streetAddress) {
+      const parts = [shop.streetAddress, shop.district, shop.city, shop.postalCode].filter(Boolean);
+      return parts.join(", ");
+    }
+    return "Harco Glodok Blok A No. 15, Jl. Hayam Wuruk, KOTA JAKARTA PUSAT, DKI JAKARTA 10410";
+  }, [shop]);
+
+  const formattedOperatingHours = useMemo(() => {
+    if (!shop) return "Senin – Sabtu: 09:00 – 17:00 WIB";
+    const op = shop.operationalHours;
+    if (typeof op === "string" && op.trim()) return op;
+    if (op && typeof op === "object") {
+      const opObj = op as Record<string, any>;
+      const days = opObj.days || "Senin – Sabtu";
+      const open = opObj.open_time || opObj.openTime || "09:00";
+      const close = opObj.close_time || opObj.closeTime || "17:00";
+      return `${days}: ${open} – ${close} WIB`;
+    }
+    return "Senin – Sabtu: 09:00 – 17:00 WIB";
+  }, [shop]);
 
   const handleCopyLink = () => {
     if (typeof window !== "undefined") {
@@ -389,9 +425,9 @@ export default function MerchantStorefrontPage() {
               <div className="flex items-start gap-2.5">
                 <MapPin size={16} className="text-slate-400 shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-bold text-slate-900 text-xs">Lokasi Sentra Glodok</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                    Pusat distribusi komponen elektrik, pendingin komersial, &amp; suku cadang AC Jakarta Barat.
+                  <div className="font-bold text-slate-900 text-xs">Alamat Toko &amp; Gudang Resmi</div>
+                  <div className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                    {formattedAddress}
                   </div>
                 </div>
               </div>
@@ -400,8 +436,8 @@ export default function MerchantStorefrontPage() {
                 <Clock size={16} className="text-slate-400 shrink-0 mt-0.5" />
                 <div>
                   <div className="font-bold text-slate-900 text-xs">Jam Layanan &amp; Pengiriman</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                    Senin – Sabtu: 08:30 – 17:00 WIB. Pesanan sebelum 15:00 WIB siap kirim same-day.
+                  <div className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
+                    {formattedOperatingHours}. Pesanan diproses pada hari &amp; jam kerja toko.
                   </div>
                 </div>
               </div>

@@ -680,7 +680,7 @@ export default function CeoInternalTeamPage() {
           <div className="text-xl font-bold font-display text-emerald-900">
             {stats.financeOperations}
           </div>
-          <span className="text-[9px] text-emerald-700">Escrow & pembayaran</span>
+          <span className="text-[9px] text-emerald-700">Arus uang & pembayaran</span>
         </div>
 
         <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200 shadow-servio-xs space-y-1">

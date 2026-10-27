@@ -51,7 +51,7 @@ export default function SupportDisputesPage() {
 
   const handleEscalate = (caseId: string) => {
     escalateCase(caseId, "FINANCE");
-    setToastMessage(`Sengketa #${caseId} telah dieskalasi ke tim Finance Ops untuk penahanan escrow.`);
+    setToastMessage(`Sengketa #${caseId} telah dieskalasi ke tim Finance Ops untuk penahanan uang.`);
   };
 
   return (
@@ -81,7 +81,7 @@ export default function SupportDisputesPage() {
             Mediasi Sengketa Pelanggan & Mitra
           </h1>
           <p className="text-xs text-slate-500 mt-1 max-w-xl">
-            Tangani klaim garansi bermasalah, selisih hasil pengerjaan servis, dan terbitkan putusan resmi untuk pelepasan atau pengembalian dana escrow.
+            Tangani klaim garansi bermasalah, selisih hasil pengerjaan servis, dan terbitkan putusan resmi untuk pelepasan atau pengembalian uang.
           </p>
         </div>
 
@@ -188,7 +188,7 @@ export default function SupportDisputesPage() {
               </div>
 
               <div className="space-y-1 md:border-l md:border-slate-100 md:pl-4">
-                <span className="text-slate-400 font-semibold block">Dana Escrow Tertahan:</span>
+                <span className="text-slate-400 font-semibold block">Uang Ditahan:</span>
                 <div className="text-xl font-bold font-mono text-emerald-600">
                   Rp {c.escrowAmount.toLocaleString("id-ID")}
                 </div>

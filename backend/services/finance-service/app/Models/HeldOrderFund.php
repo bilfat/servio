@@ -36,6 +36,21 @@ class HeldOrderFund extends Model
         'order_event_version' => 'integer',
     ];
 
+    protected $appends = [
+        'merchant_order_id',
+        'order_completed_at',
+    ];
+
+    public function getMerchantOrderIdAttribute(): ?string
+    {
+        return $this->allocation?->merchant_order_id;
+    }
+
+    public function getOrderCompletedAtAttribute(): ?string
+    {
+        return $this->completed_at ? $this->completed_at->toISOString() : null;
+    }
+
     protected static function booted(): void
     {
         static::creating(function ($model) {

@@ -12,6 +12,8 @@ import {
   Compass,
 } from "@phosphor-icons/react";
 
+import { forwardGeocodeAddress } from "@/lib/geoUtils";
+
 export interface AddressData {
   province_id?: string;
   province_name?: string;
@@ -30,6 +32,8 @@ export interface AddressData {
   address?: string;
   rt_rw?: string;
   landmark?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 interface RegionItem {
@@ -49,6 +53,13 @@ export interface AddressCascadingFormProps {
   subtitle?: string;
   showRtRw?: boolean;
   showLandmark?: boolean;
+  showGoogleMap?: boolean;
+  layout?: "stacked" | "split";
+  slotTopLeft?: React.ReactNode;
+  slotTopRight?: React.ReactNode;
+  slotBottomRight?: React.ReactNode;
+  onGpsTrigger?: () => void;
+  isGpsLoading?: boolean;
   className?: string;
   idPrefix?: string;
 }
@@ -95,6 +106,13 @@ export function AddressCascadingForm({
   subtitle = "Pilih wilayah secara bertingkat menggunakan data resmi Kemendagri (Emsifa v2)",
   showRtRw = true,
   showLandmark = true,
+  showGoogleMap = false,
+  layout = "stacked",
+  slotTopLeft,
+  slotTopRight,
+  slotBottomRight,
+  onGpsTrigger,
+  isGpsLoading = false,
   className = "",
   idPrefix = "addr",
 }: AddressCascadingFormProps) {
@@ -130,6 +148,11 @@ export function AddressCascadingForm({
   const [streetAddress, setStreetAddress] = useState<string>("");
   const [rtRw, setRtRw] = useState<string>("");
   const [landmark, setLandmark] = useState<string>("");
+
+  // Map Coordinates & Geocoding State
+  const [currentLat, setCurrentLat] = useState<number | undefined>(value?.latitude);
+  const [currentLng, setCurrentLng] = useState<number | undefined>(value?.longitude);
+  const [isGeocodingMap, setIsGeocodingMap] = useState<boolean>(false);
 
   const isInitialMount = useRef(true);
 
@@ -261,6 +284,13 @@ export function AddressCascadingForm({
       setLandmark(value.landmark);
     }
 
+    if (value.latitude !== undefined) {
+      setCurrentLat(value.latitude);
+    }
+    if (value.longitude !== undefined) {
+      setCurrentLng(value.longitude);
+    }
+
     // Match Province
     if (provinces.length > 0) {
       const provName = value.province_name || value.province || "";
@@ -341,6 +371,8 @@ export function AddressCascadingForm({
         address: streetAddress,
         rt_rw: rtRw,
         landmark: landmark,
+        latitude: overrides?.latitude !== undefined ? overrides.latitude : currentLat,
+        longitude: overrides?.longitude !== undefined ? overrides.longitude : currentLng,
         ...overrides,
       };
       onChange(merged);
@@ -358,9 +390,60 @@ export function AddressCascadingForm({
       streetAddress,
       rtRw,
       landmark,
+      currentLat,
+      currentLng,
       onChange,
     ]
   );
+
+  // Auto forward-geocode street address to map coordinates on typing
+  useEffect(() => {
+    if (!showGoogleMap) return;
+    const cleanStreet = (streetAddress || "").trim();
+    if (cleanStreet.length < 4) return;
+
+    const timer = setTimeout(async () => {
+      setIsGeocodingMap(true);
+      try {
+        const coords = await forwardGeocodeAddress(
+          cleanStreet,
+          selectedRegencyName,
+          selectedProvinceName
+        );
+        if (coords) {
+          setCurrentLat(coords.latitude);
+          setCurrentLng(coords.longitude);
+          onChange({
+            province_id: selectedProvinceId,
+            province_name: selectedProvinceName,
+            province: selectedProvinceName,
+            city_id: selectedRegencyId,
+            city_name: selectedRegencyName,
+            city: selectedRegencyName,
+            district_id: selectedDistrictId,
+            district_name: selectedDistrictName,
+            district: selectedDistrictName,
+            village_id: selectedVillageId,
+            village_name: selectedVillageName,
+            village: selectedVillageName,
+            postal_code: postalCode,
+            street_address: streetAddress,
+            address: streetAddress,
+            rt_rw: rtRw,
+            landmark: landmark,
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+          });
+        }
+      } catch {
+        // ignore
+      } finally {
+        setIsGeocodingMap(false);
+      }
+    }, 900);
+
+    return () => clearTimeout(timer);
+  }, [streetAddress, selectedRegencyName, selectedProvinceName, showGoogleMap]);
 
   // Trigger emit whenever form state changes (skip first render)
   useEffect(() => {
@@ -473,6 +556,318 @@ export function AddressCascadingForm({
       setPostalCode(KNOWN_POSTAL_CODES[selectedDistrictName.toUpperCase()]);
     }
   };
+
+  if (layout === "split") {
+    return (
+      <div className={`space-y-4 ${className}`}>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+          {/* KOLOM KIRI: Penerima & Data Wilayah Bertingkat */}
+          <div className="space-y-3.5 bg-slate-50/80 p-4 rounded-2xl border border-slate-200/90 shadow-2xs">
+            {slotTopLeft}
+
+            <div className="pt-2 border-t border-slate-200/70">
+              <div className="flex items-center gap-2 mb-2.5">
+                <div className="w-6 h-6 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
+                  <MapPin size={14} weight="bold" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900">
+                    {title} {required && <span className="text-rose-500">*</span>}
+                  </h4>
+                  <p className="text-[10px] text-slate-500">{subtitle}</p>
+                </div>
+              </div>
+
+              {/* Error state if API fails */}
+              {apiError && (
+                <div className="p-2.5 mb-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-[11px]">
+                    <WarningCircle size={14} className="text-rose-600 shrink-0" weight="fill" />
+                    <span>{apiError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!provinces.length) fetchProvinces();
+                      else if (selectedProvinceId && !regencies.length) fetchRegencies(selectedProvinceId);
+                      else if (selectedRegencyId && !districts.length) fetchDistricts(selectedRegencyId);
+                      else if (selectedDistrictId && !villages.length) fetchVillages(selectedDistrictId);
+                    }}
+                    className="px-2 py-0.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold text-[10px] flex items-center gap-1 transition shrink-0 cursor-pointer"
+                  >
+                    <ArrowClockwise size={10} />
+                    <span>Ulangi</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Row: Provinsi & Kabupaten/Kota */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label htmlFor={`${idPrefix}-province`} className="block text-[11px] font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                    <span>Provinsi {required && <span className="text-rose-500">*</span>}</span>
+                    {loadingProvinces && (
+                      <span className="text-[9px] text-sky-600 font-normal flex items-center gap-0.5">
+                        <CircleNotch size={9} className="animate-spin" /> Memuat...
+                      </span>
+                    )}
+                  </label>
+                  <select
+                    id={`${idPrefix}-province`}
+                    disabled={disabled || loadingProvinces}
+                    required={required}
+                    value={selectedProvinceId}
+                    onChange={handleProvinceChange}
+                    className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition disabled:bg-slate-100 disabled:text-slate-400 cursor-pointer shadow-2xs"
+                  >
+                    <option value="">-- Pilih Provinsi --</option>
+                    {provinces.map((prov) => (
+                      <option key={prov.id} value={prov.id}>
+                        {prov.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor={`${idPrefix}-regency`} className="block text-[11px] font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                    <span>Kabupaten / Kota {required && <span className="text-rose-500">*</span>}</span>
+                    {loadingRegencies && (
+                      <span className="text-[9px] text-sky-600 font-normal flex items-center gap-0.5">
+                        <CircleNotch size={9} className="animate-spin" /> Memuat...
+                      </span>
+                    )}
+                  </label>
+                  <select
+                    id={`${idPrefix}-regency`}
+                    disabled={disabled || !selectedProvinceId || loadingRegencies}
+                    required={required}
+                    value={selectedRegencyId}
+                    onChange={handleRegencyChange}
+                    className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition disabled:bg-slate-100 disabled:text-slate-400 cursor-pointer shadow-2xs"
+                  >
+                    <option value="">
+                      {!selectedProvinceId ? "Pilih Provinsi dahulu" : "-- Pilih Kab / Kota --"}
+                    </option>
+                    {regencies.map((reg) => (
+                      <option key={reg.id} value={reg.id}>
+                        {reg.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Row: Kecamatan & Kelurahan */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-2.5">
+                <div>
+                  <label htmlFor={`${idPrefix}-district`} className="block text-[11px] font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                    <span>Kecamatan {required && <span className="text-rose-500">*</span>}</span>
+                    {loadingDistricts && (
+                      <span className="text-[9px] text-sky-600 font-normal flex items-center gap-0.5">
+                        <CircleNotch size={9} className="animate-spin" /> Memuat...
+                      </span>
+                    )}
+                  </label>
+                  <select
+                    id={`${idPrefix}-district`}
+                    disabled={disabled || !selectedRegencyId || loadingDistricts}
+                    required={required}
+                    value={selectedDistrictId}
+                    onChange={handleDistrictChange}
+                    className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition disabled:bg-slate-100 disabled:text-slate-400 cursor-pointer shadow-2xs"
+                  >
+                    <option value="">
+                      {!selectedRegencyId ? "Pilih Kota dahulu" : "-- Pilih Kecamatan --"}
+                    </option>
+                    {districts.map((dist) => (
+                      <option key={dist.id} value={dist.id}>
+                        {dist.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label htmlFor={`${idPrefix}-village`} className="block text-[11px] font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                    <span>Desa / Kelurahan {required && <span className="text-rose-500">*</span>}</span>
+                    {loadingVillages && (
+                      <span className="text-[9px] text-sky-600 font-normal flex items-center gap-0.5">
+                        <CircleNotch size={9} className="animate-spin" /> Memuat...
+                      </span>
+                    )}
+                  </label>
+                  <select
+                    id={`${idPrefix}-village`}
+                    disabled={disabled || !selectedDistrictId || loadingVillages}
+                    required={required}
+                    value={selectedVillageId}
+                    onChange={handleVillageChange}
+                    className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition disabled:bg-slate-100 disabled:text-slate-400 cursor-pointer shadow-2xs"
+                  >
+                    <option value="">
+                      {!selectedDistrictId ? "Pilih Kec dahulu" : "-- Pilih Kelurahan --"}
+                    </option>
+                    {villages.map((vil) => (
+                      <option key={vil.id} value={vil.id}>
+                        {vil.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Row: Kode Pos & RT/RW */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-2.5">
+                <div>
+                  <label htmlFor={`${idPrefix}-postal-code`} className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Kode Pos {required && <span className="text-rose-500">*</span>}
+                  </label>
+                  <input
+                    id={`${idPrefix}-postal-code`}
+                    type="text"
+                    maxLength={6}
+                    disabled={disabled}
+                    required={required}
+                    placeholder="Contoh: 12810"
+                    value={postalCode}
+                    onChange={(e) => setPostalCode(e.target.value.replace(/[^0-9]/g, ""))}
+                    className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition disabled:bg-slate-100 disabled:text-slate-400 shadow-2xs"
+                  />
+                </div>
+
+                {showRtRw && (
+                  <div>
+                    <label htmlFor={`${idPrefix}-rt-rw`} className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      RT / RW <span className="text-[10px] text-slate-400 font-normal">(Opsional)</span>
+                    </label>
+                    <input
+                      id={`${idPrefix}-rt-rw`}
+                      type="text"
+                      maxLength={15}
+                      disabled={disabled}
+                      placeholder="Contoh: 005/002"
+                      value={rtRw}
+                      onChange={(e) => setRtRw(e.target.value)}
+                      className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition disabled:bg-slate-100 disabled:text-slate-400 shadow-2xs"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {showLandmark && (
+                <div className="mt-2.5">
+                  <label htmlFor={`${idPrefix}-landmark`} className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Patokan / Keterangan Alamat <span className="text-[10px] text-slate-400 font-normal">(Opsional)</span>
+                  </label>
+                  <input
+                    id={`${idPrefix}-landmark`}
+                    type="text"
+                    disabled={disabled}
+                    placeholder="Contoh: Sebelah SPBU Pertamina, Pagar Putih"
+                    value={landmark}
+                    onChange={(e) => setLandmark(e.target.value)}
+                    className="w-full text-xs px-2.5 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition disabled:bg-slate-100 disabled:text-slate-400 shadow-2xs"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* KOLOM KANAN: GPS Autofill, Detail Jalan, & Google Maps */}
+          <div className="space-y-3 bg-slate-50/80 p-4 rounded-2xl border border-slate-200/90 shadow-2xs">
+            {slotTopRight}
+
+            {/* Detail Alamat Jalan */}
+            <div>
+              <label htmlFor={`${idPrefix}-street-address`} className="block text-[11px] font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                <span>Detail Alamat / Nama Jalan &amp; No. Bangunan {required && <span className="text-rose-500">*</span>}</span>
+                {isGeocodingMap && (
+                  <span className="text-[10px] text-sky-600 font-normal flex items-center gap-1 animate-pulse">
+                    <CircleNotch size={10} className="animate-spin" /> Menyesuaikan peta...
+                  </span>
+                )}
+              </label>
+              <textarea
+                id={`${idPrefix}-street-address`}
+                rows={2}
+                disabled={disabled}
+                required={required}
+                placeholder="Nama jalan, gang, nomor rumah/toko, blok, atau kompleks ruko..."
+                value={streetAddress}
+                onChange={(e) => setStreetAddress(e.target.value)}
+                className="w-full text-xs px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition disabled:bg-slate-100 disabled:text-slate-400 leading-relaxed shadow-2xs resize-none"
+              />
+            </div>
+
+            {/* Google Maps Live Preview */}
+            {showGoogleMap && (
+              <div className="p-3 rounded-xl bg-white border border-slate-200 shadow-2xs space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-6 h-6 rounded-lg bg-sky-50 border border-sky-100 flex items-center justify-center text-[#0F4C81] shrink-0">
+                      <MapPin size={14} weight="fill" className="text-rose-500" />
+                    </div>
+                    <div>
+                      <span className="text-[11px] font-bold text-slate-900 block leading-tight">
+                        Peta Google Maps
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-500">
+                        {currentLat != null && currentLng != null
+                          ? `📍 ${currentLat.toFixed(5)}, ${currentLng.toFixed(5)}`
+                          : "Otomatis menyesuaikan alamat"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                      currentLat != null && currentLng != null
+                        ? `${currentLat},${currentLng}`
+                        : [streetAddress, selectedRegencyName, selectedProvinceName, "Indonesia"].filter(Boolean).join(", ")
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 hover:border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold text-[10px] transition cursor-pointer"
+                    title="Buka peta lengkap di Google Maps (tab baru)"
+                  >
+                    <span>Buka Peta</span>
+                    <span className="text-[9px]">↗</span>
+                  </a>
+                </div>
+
+                {/* Google Maps Embed Iframe */}
+                <div className="relative w-full h-44 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 shadow-inner">
+                  <iframe
+                    title="Google Maps Location Preview"
+                    width="100%"
+                    height="100%"
+                    frameBorder="0"
+                    scrolling="no"
+                    marginHeight={0}
+                    marginWidth={0}
+                    src={`https://maps.google.com/maps?q=${encodeURIComponent(
+                      currentLat != null && currentLng != null
+                        ? `${currentLat},${currentLng}`
+                        : [streetAddress, selectedVillageName, selectedDistrictName, selectedRegencyName, selectedProvinceName, "Indonesia"].filter(Boolean).join(", ") || "Jakarta, Indonesia"
+                    )}&t=&z=16&ie=UTF8&iwloc=&output=embed`}
+                    className="w-full h-full border-0"
+                    loading="lazy"
+                  />
+                </div>
+
+                <p className="text-[9px] text-slate-400 leading-tight">
+                  * Titik koordinat peta otomatis terambil dan tersimpan sebagai panduan navigasi kurir &amp; teknisi.
+                </p>
+              </div>
+            )}
+
+            {slotBottomRight}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`space-y-4 rounded-2xl bg-slate-50/80 p-4 sm:p-5 border border-slate-200/90 shadow-xs ${className}`}>
@@ -670,6 +1065,97 @@ export function AddressCascadingForm({
           className="w-full text-xs px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition disabled:bg-slate-100 disabled:text-slate-400 leading-relaxed shadow-2xs"
         />
       </div>
+
+      {/* Google Maps Interaktif (Live Preview & Auto Pin) */}
+      {showGoogleMap && (
+        <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2.5">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-sky-50 border border-sky-100 flex items-center justify-center text-[#0F4C81] shrink-0">
+                <MapPin size={18} weight="fill" className="text-rose-500" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-900">Titik Lokasi Google Maps</span>
+                  {isGeocodingMap && (
+                    <span className="text-[10px] text-sky-600 flex items-center gap-1 font-medium animate-pulse">
+                      <CircleNotch size={10} className="animate-spin" /> Menyesuaikan titik peta...
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] font-mono text-slate-500">
+                  {currentLat != null && currentLng != null
+                    ? `📍 Koordinat: ${currentLat.toFixed(6)}, ${currentLng.toFixed(6)}`
+                    : "Titik koordinat otomatis menyesuaikan alamat"}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {onGpsTrigger && (
+                <button
+                  type="button"
+                  onClick={onGpsTrigger}
+                  disabled={disabled || isGpsLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0F4C81] hover:bg-sky-900 text-white font-bold text-[11px] transition shadow-2xs disabled:opacity-50 cursor-pointer"
+                  title="Ambil titik koordinat dan wilayah otomatis dari GPS perangkat"
+                >
+                  {isGpsLoading ? (
+                    <>
+                      <CircleNotch size={12} className="animate-spin text-white" />
+                      <span>Mendeteksi GPS...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Compass size={12} weight="bold" className="text-rose-300" />
+                      <span>Gunakan GPS</span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              <a
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                  currentLat != null && currentLng != null
+                    ? `${currentLat},${currentLng}`
+                    : [streetAddress, selectedRegencyName, selectedProvinceName, "Indonesia"].filter(Boolean).join(", ")
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-slate-200 hover:border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold text-[11px] transition cursor-pointer"
+                title="Buka peta lengkap di Google Maps (tab baru)"
+              >
+                <span>Buka Google Maps</span>
+                <span className="text-[10px]">↗</span>
+              </a>
+            </div>
+          </div>
+
+          {/* Google Maps Live Embed */}
+          <div className="relative w-full h-52 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shadow-inner">
+            <iframe
+              title="Google Maps Location Preview"
+              width="100%"
+              height="100%"
+              frameBorder="0"
+              scrolling="no"
+              marginHeight={0}
+              marginWidth={0}
+              src={`https://maps.google.com/maps?q=${encodeURIComponent(
+                currentLat != null && currentLng != null
+                  ? `${currentLat},${currentLng}`
+                  : [streetAddress, selectedVillageName, selectedDistrictName, selectedRegencyName, selectedProvinceName, "Indonesia"].filter(Boolean).join(", ") || "Jakarta, Indonesia"
+              )}&t=&z=16&ie=UTF8&iwloc=&output=embed`}
+              className="w-full h-full border-0"
+              loading="lazy"
+            />
+          </div>
+
+          <p className="text-[10px] text-slate-400 leading-normal">
+            * Peta Google Maps otomatis menyesuaikan lokasi secara presisi dari detail nama jalan / GPS perangkat. Titik ini otomatis tersimpan sebagai koordinat navigasi kurir &amp; teknisi.
+          </p>
+        </div>
+      )}
 
       {/* Row 4: RT/RW dan Patokan Opsional */}
       {(showRtRw || showLandmark) && (

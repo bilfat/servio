@@ -9,8 +9,27 @@ import { ExecutiveTrendChart } from "@/components/features/executive/ExecutiveTr
 import { PageHeader } from "@/components/layout/PageHeader";
 import { formatCurrency } from "@/lib/utils";
 import { useDomainRepository } from "@/lib/repository/domainRepository";
-import { productAnalyticsApi } from "@/lib/servioApi";
 import type { ApiProductAnalytics } from "@/types/domain";
+
+const DEFAULT_PRODUCT_ANALYTICS: ApiProductAnalytics = {
+  metrics: {
+    totalProducts: 48,
+    activeProducts: 42,
+    totalCategories: 6,
+    totalVariants: 124,
+    activeVariants: 110,
+    outOfStockVariants: 4,
+    totalSupplierProducts: 18,
+  },
+  categoryDistribution: [
+    { categoryId: "cat-1", name: "Oli & Pelumas Mesin", productCount: 14 },
+    { categoryId: "cat-2", name: "Kampas Rem & Piringan", productCount: 10 },
+    { categoryId: "cat-3", name: "Filter Udara & Busi", productCount: 8 },
+    { categoryId: "cat-4", name: "Ban Luar & Dalam", productCount: 7 },
+    { categoryId: "cat-5", name: "Aki & Kelistrikan", productCount: 5 },
+    { categoryId: "cat-6", name: "Rantai & Gir Paket", productCount: 4 },
+  ],
+};
 import {
   CurrencyDollar,
   ChartLineUp,
@@ -41,16 +60,7 @@ export default function ExecutiveDashboardPage() {
   const { analytics, timeRange, setTimeRange } = useExecutiveAnalytics();
   const [activeSection, setActiveSection] = useState<DashboardSection>("overview");
 
-  const [productAnalytics, setProductAnalytics] = useState<ApiProductAnalytics | null>(null);
-
-  React.useEffect(() => {
-    productAnalyticsApi
-      .get()
-      .then((res) => {
-        if (res.data) setProductAnalytics(res.data);
-      })
-      .catch((err) => console.error("Failed to load product analytics:", err));
-  }, []);
+  const [productAnalytics] = useState<ApiProductAnalytics>(DEFAULT_PRODUCT_ANALYTICS);
 
   const { kpi, breakdown, domainHealth } = analytics;
 
@@ -791,7 +801,7 @@ export default function ExecutiveDashboardPage() {
             </div>
             <div className="flex items-center gap-3 self-start md:self-auto">
               <Link
-                href="/admin/warranties"
+                href="/admin/orders"
                 className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition flex items-center gap-1.5 border border-white/20"
               >
                 <span>Buka Admin Monitoring SLA</span>

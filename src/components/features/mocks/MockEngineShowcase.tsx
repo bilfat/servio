@@ -419,7 +419,7 @@ export function MockEngineShowcase() {
                       disabled={proofLoading || proof.isApprovedByCustomer}
                       className="px-4 py-2 rounded-xl bg-primary text-white font-bold text-xs hover:bg-primary-dark transition-all disabled:opacity-50"
                     >
-                      {proof.isApprovedByCustomer ? "Escrow Dirilis ke Mitra" : "Konfirmasi & Rilis Escrow"}
+                      {proof.isApprovedByCustomer ? "Uang Dirilis ke Mitra" : "Konfirmasi & Rilis Uang"}
                     </button>
                     <button
                       onClick={() => requestRevision("Mohon bersihkan ulang noda di sudut kanan.")}

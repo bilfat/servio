@@ -18,4 +18,7 @@ Route::prefix('internal/v1')->middleware('identity.internal')->group(function ()
 
     // I05: GET /internal/v1/organizations/{id}/public-profile (CR-IDENTITY-004)
     Route::get('/organizations/{id}/public-profile', [InternalIdentityController::class, 'getOrganizationPublicProfile']);
+
+    // I06: GET /internal/v1/users/{userId}/addresses/{addressId}
+    Route::get('/users/{userId}/addresses/{addressId}', [InternalIdentityController::class, 'getUserAddress']);
 });

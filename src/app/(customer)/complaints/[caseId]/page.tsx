@@ -311,7 +311,7 @@ export default function ComplaintDisputePage() {
                 <p className="font-bold text-slate-800">{dispute.customerName}</p>
               </div>
               <div>
-                <p className="text-slate-400">Dana Escrow Tertahan</p>
+                <p className="text-slate-400">Uang Ditahan</p>
                 <p className="font-bold text-[#0F4C81]">Rp 150.000 (Aman di Servio Protection)</p>
               </div>
             </div>

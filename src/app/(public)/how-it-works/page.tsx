@@ -29,9 +29,9 @@ export default function HowItWorksPage() {
     },
     {
       stepNumber: "02",
-      title: "Jadwalkan & Amankan dengan Escrow",
+      title: "Jadwalkan & Amankan Uang Pembayaran",
       description:
-        "Pilih slot waktu pengerjaan dan mode kunjungan (Home Service atau Workshop). Biaya awal ditampung di Servio Escrow Protection — dana tidak pernah dicairkan ke teknisi sebelum pekerjaan Anda setujui.",
+        "Pilih slot waktu pengerjaan dan mode kunjungan (Home Service atau Workshop). Biaya awal ditampung di rekening penampung uang aman Servio — dana tidak pernah dicairkan ke teknisi sebelum pekerjaan Anda setujui.",
       icon: LockKey,
       color: "bg-blue-600 text-white",
       features: [
@@ -142,7 +142,7 @@ export default function HowItWorksPage() {
           </div>
           <div>
             <h3 className="font-bold text-base sm:text-lg font-display text-neutral-dark">
-              Jaminan 100% Servio Escrow Protection
+              Jaminan 100% Proteksi Uang Aman Servio
             </h3>
             <p className="text-xs text-neutral-slate mt-0.5 leading-relaxed">
               Teknisi hanya menerima pembayaran setelah Anda memeriksa bukti kerja Before & After dan menandatangani Berita Acara Serah Terima (BAST).

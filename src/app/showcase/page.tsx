@@ -36,7 +36,7 @@ export default function ShowcasePage() {
         }
         description={
           isPublicGuest
-            ? "Temukan ribuan teknisi berlisensi, proteksi transaksi escrow anti-penipuan, dan garansi kerja terstandarisasi."
+            ? "Temukan ribuan teknisi berlisensi, proteksi transaksi uang aman anti-penipuan, dan garansi kerja terstandarisasi."
             : activeRole === "CUSTOMER"
             ? "Pesan jasa teknisi berpengalaman, beli spare part bergaransi, dan pantau perawatan aset rumah Anda dalam satu platform terintegrasi."
             : `Anda sedang aktif sebagai ${user.name} (${user.email}). Tampilan layout, menu navigasi, dan hak wewenang telah otomatis disesuaikan.`
@@ -164,7 +164,7 @@ export default function ShowcasePage() {
                         {domain.label}
                       </h3>
                       <p className="text-xs text-neutral-slate mt-1 leading-relaxed">
-                        Layanan profesional terverifikasi dengan garansi kepuasan & perlindungan escrow.
+                        Layanan profesional terverifikasi dengan garansi kepuasan & perlindungan uang aman.
                       </p>
                       <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary mt-2">
                         Telusuri Jasa <ArrowRight size={12} weight="bold" />

@@ -144,9 +144,12 @@ export interface MockRecipientAddress {
   phone: string;
   fullAddress: string;
   street?: string;
-  city: string;
+  subdistrict?: string;
   district?: string;
+  city: string;
+  province?: string;
   postalCode?: string;
+  label?: string;
   notes?: string;
   coordinates?: { lat: number; lng: number };
 }
@@ -157,6 +160,10 @@ export interface MockOrderPricing {
   platformFee: number;
   taxAmount: number;
   merchantOrderTotal: number;
+  merchantCommissionFee?: number;
+  merchantNetPayout?: number;
+  merchantFeeBreakdown?: Array<{ name: string; amount: number }>;
+  feeBearer?: string;
 }
 
 export interface MockOrderPayment {

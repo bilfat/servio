@@ -128,4 +128,29 @@ class InternalOrderEventController extends Controller
             'released_count' => $releasedCount,
         ], 'Pemrosesan dana tertahan yang jatuh tempo (120 jam) selesai.');
     }
+
+    public function showHeldFundByOrder(string $merchantOrderId): JsonResponse
+    {
+        $heldFund = \App\Models\HeldOrderFund::whereHas('allocation', function ($q) use ($merchantOrderId) {
+            $q->where('merchant_order_id', $merchantOrderId);
+        })->with('allocation')->first();
+
+        if (!$heldFund) {
+            return ApiResponse::error('HELD_FUND_NOT_FOUND', 'Data dana tertahan untuk pesanan ini belum tersedia.', 404);
+        }
+
+        return ApiResponse::success([
+            'id' => $heldFund->id,
+            'merchant_order_id' => $merchantOrderId,
+            'status' => $heldFund->status,
+            'gross_held_idr' => $heldFund->gross_held_idr,
+            'merchant_entitlement_idr' => $heldFund->merchant_entitlement_idr,
+            'completed_at' => $heldFund->completed_at?->toIso8601String(),
+            'eligible_release_at' => $heldFund->eligible_release_at?->toIso8601String(),
+            'released_at' => $heldFund->released_at?->toIso8601String(),
+            'refunded_at' => $heldFund->refunded_at?->toIso8601String(),
+            'hold_reason_code' => $heldFund->hold_reason_code,
+        ]);
+    }
 }
+

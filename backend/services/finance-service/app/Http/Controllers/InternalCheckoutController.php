@@ -34,6 +34,7 @@ class InternalCheckoutController extends Controller
             'discount_bearer' => $alloc->fee_snapshot['discount_bearer'] ?? 'MERCHANT',
             'customer_total_idr' => $alloc->customer_total_idr,
             'merchant_commission_idr' => $alloc->merchant_commission_idr,
+            'merchant_fee_breakdown' => $alloc->fee_snapshot['merchant_fee_breakdown'] ?? [],
             'merchant_net_entitlement_idr' => $alloc->merchant_net_entitlement_idr,
         ]);
 
@@ -116,6 +117,64 @@ class InternalCheckoutController extends Controller
             'expires_at' => $payment->expires_at?->toIso8601String(),
             'allocations' => $payment->checkout->paymentAllocations ?? [],
             'is_real_payment' => false,
+        ]);
+    }
+
+    public function voidPaymentIntent(\Illuminate\Http\Request $request, string $paymentId): JsonResponse
+    {
+        $payment = PaymentIntent::where('id', $paymentId)->first();
+        if (!$payment) {
+            return ApiResponse::error('PAYMENT_NOT_FOUND', 'Data payment intent tidak ditemukan.', 404);
+        }
+
+        if ($payment->status === 'PAID') {
+            return ApiResponse::error('PAYMENT_ALREADY_PAID', 'Pembayaran telah lunas dan tidak dapat di-void.', 409);
+        }
+
+        if ($payment->status === 'VOIDED' || $payment->status === 'CANCELLED') {
+            return ApiResponse::success([
+                'payment_id' => $payment->id,
+                'status' => $payment->status,
+                'message' => 'Payment intent sudah dibatalkan sebelumnya.',
+            ]);
+        }
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($payment) {
+            $payment->update([
+                'status' => 'CANCELLED',
+                'is_active' => false,
+            ]);
+
+            $payment->checkout?->update([
+                'status' => 'CANCELLED',
+            ]);
+
+            \App\Models\PaymentEvent::create([
+                'payment_intent_id' => $payment->id,
+                'provider' => 'MOCK',
+                'provider_event_id' => 'VOID_' . \Illuminate\Support\Str::random(12),
+                'event_type' => 'PAYMENT_VOIDED',
+                'reported_amount_idr' => $payment->amount_idr,
+                'received_at' => now(),
+                'validation_result' => 'VOIDED',
+                'payload' => ['reason' => 'Customer cancelled unpaid checkout'],
+            ]);
+
+            \App\Models\FinanceAuditLog::create([
+                'actor_user_id' => request()->header('X-Actor-User-Id') ?? 'SYSTEM',
+                'actor_service' => 'finance-service',
+                'action' => 'PAYMENT_VOIDED_BY_ORDER_SERVICE',
+                'subject_type' => 'PaymentIntent',
+                'subject_id' => $payment->id,
+                'result' => 'SUCCESS',
+                'after_state' => ['status' => 'CANCELLED'],
+            ]);
+        });
+
+        return ApiResponse::success([
+            'payment_id' => $payment->id,
+            'status' => 'CANCELLED',
+            'message' => 'Payment intent berhasil di-void.',
         ]);
     }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -28,9 +28,27 @@ import { Badge } from "@/components/ui/Badge";
 import { Toast } from "@/components/feedback/Toast";
 import { SPayBalanceCard } from "@/components/features/spay/SPayBalanceCard";
 import { useSPay } from "@/features/spay/spay.frontend-provider";
+import { financeServiceApi, MerchantSPayAccount } from "@/lib/financeServiceApi";
 
 export default function MerchantDashboardPage() {
   const { summary: spaySummary, isBalanceVisible, toggleBalanceVisibility } = useSPay();
+  const [merchantSPay, setMerchantSPay] = useState<MerchantSPayAccount | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    financeServiceApi.merchant
+      .getSpay("0c1467e7-af68-4b26-ae84-daa41d51aed0")
+      .then((res) => {
+        if (isMounted && res.data) {
+          setMerchantSPay(res.data);
+        }
+      })
+      .catch((e) => console.warn("Dashboard merchant SPay sync:", e));
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   const {
     storeStatus,
     updateStoreStatus,
@@ -181,7 +199,7 @@ export default function MerchantDashboardPage() {
 
             <div className="flex items-center gap-2 shrink-0">
               <Link
-                href="/business/merchant/partnerships/requests"
+                href="/merchant/partnerships/requests"
                 className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 transition shadow-xs w-full sm:w-auto"
               >
                 <span>Lihat Pengajuan</span>
@@ -194,7 +212,7 @@ export default function MerchantDashboardPage() {
         {/* S-PAY BALANCE CARD (MERCHANT SETTLEMENT) */}
         <div>
           <SPayBalanceCard
-            balance={spaySummary.withdrawableBalance}
+            balance={merchantSPay ? merchantSPay.available_idr : (spaySummary.withdrawableBalance || 0)}
             ownerType="MERCHANT"
             organizationName="Toko Suku Cadang Sejuk Abadi"
             subtitle="Settlement Penjualan Suku Cadang"
@@ -376,7 +394,7 @@ export default function MerchantDashboardPage() {
 
               <div className="space-y-2.5">
                 <Link
-                  href="/business/merchant/orders"
+                  href="/merchant/orders"
                   className="flex items-center justify-between p-3 rounded-xl border border-slate-200/80 hover:border-primary/40 hover:bg-slate-50/80 transition-all group"
                 >
                   <div className="flex items-center gap-3">
@@ -384,7 +402,7 @@ export default function MerchantDashboardPage() {
                       <ClipboardText size={18} weight="bold" />
                     </span>
                     <div>
-                      <div className="text-xs font-semibold text-slate-800">Pesanan Masuk</div>
+                      <div className="text-xs font-semibold text-slate-800">Pesanan Toko</div>
                       <div className="text-[11px] text-slate-500">{newOrders.length} pesanan baru belum diproses</div>
                     </div>
                   </div>
@@ -424,7 +442,7 @@ export default function MerchantDashboardPage() {
                 </Link>
 
                 <Link
-                  href="/business/merchant/settlement"
+                  href="/merchant/spay"
                   className="flex items-center justify-between p-3 rounded-xl border border-slate-200/80 hover:border-primary/40 hover:bg-slate-50/80 transition-all group"
                 >
                   <div className="flex items-center gap-3">
@@ -442,7 +460,7 @@ export default function MerchantDashboardPage() {
             </div>
 
             <div className="pt-3 border-t border-slate-100 mt-3">
-              <Link href="/business/merchant/products">
+              <Link href="/merchant/products">
                 <Button variant="outline" size="sm" className="w-full flex items-center justify-center gap-1.5">
                   <SlidersHorizontal size={16} />
                   <span>Katalog Produk ({products.length})</span>
@@ -468,7 +486,7 @@ export default function MerchantDashboardPage() {
                 </p>
               </div>
             </div>
-            <Link href="/business/merchant/orders">
+            <Link href="/merchant/orders">
               <span className="text-xs font-semibold text-primary hover:underline flex items-center gap-1">
                 Lihat Semua Pesanan <ArrowRight size={12} />
               </span>
@@ -551,7 +569,7 @@ export default function MerchantDashboardPage() {
                         <span>Konfirmasi Pesanan</span>
                       </Button>
                     ) : (
-                      <Link href={`/business/merchant/orders?id=${order.id}`}>
+                      <Link href={`/merchant/orders?id=${order.id}`}>
                         <Button variant="outline" size="sm" className="flex items-center gap-1">
                           <span>Detail</span>
                           <ArrowRight size={14} />

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   X,
   WarningCircle,
@@ -14,6 +14,9 @@ import {
   CreditCard,
   MapPin,
   Info,
+  Phone,
+  ArrowSquareOut,
+  Eye,
 } from "@phosphor-icons/react";
 import { MockMerchantOrder, MockCheckoutGroup } from "@/types/order-barang";
 import { formatRupiah, formatDateTimeIndo } from "../helpers";
@@ -42,8 +45,8 @@ export function CancelUnpaidCheckoutModal({
   const merchantCount = checkoutGroup?.merchantOrderIds?.length || 1;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl border border-slate-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-white/85 backdrop-blur-md animate-fade-in">
+      <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl border border-slate-200/90">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
@@ -138,8 +141,8 @@ export function CancelConfirmedModal({
   if (!isOpen || !order) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-slate-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-white/85 backdrop-blur-md animate-fade-in">
+      <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-slate-200/90">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
@@ -231,8 +234,8 @@ export function RequestCancellationModal({
   if (!isOpen || !order) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-slate-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-white/85 backdrop-blur-md animate-fade-in">
+      <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-slate-200/90">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
@@ -339,8 +342,8 @@ export function ConfirmDeliveredModal({
   if (!isOpen || !order) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-slate-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-white/85 backdrop-blur-md animate-fade-in">
+      <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-slate-200/90">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-teal-100 text-teal-800 flex items-center justify-center shrink-0">
@@ -377,7 +380,7 @@ export function ConfirmDeliveredModal({
             ))}
           </div>
           <p className="text-[11px] text-slate-500">
-            Setelah dikonfirmasi, status pesanan akan menjadi <strong>Selesai</strong> dan dana escrow akan diteruskan ke penjual.
+            Setelah dikonfirmasi, status pesanan akan menjadi <strong>Selesai</strong> dan dana pembayaran akan diteruskan ke penjual.
           </p>
         </div>
 
@@ -415,8 +418,8 @@ export function ReceiptModal({ order, isOpen, onClose }: ReceiptModalProps) {
   if (!isOpen || !order) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-6 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-white/85 backdrop-blur-md animate-fade-in">
+      <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-6 shadow-2xl border border-slate-200/90 max-h-[90vh] overflow-y-auto">
         <div className="flex items-start justify-between pb-4 border-b border-slate-100">
           <div>
             <div className="flex items-center gap-2">
@@ -529,7 +532,7 @@ export function ReceiptModal({ order, isOpen, onClose }: ReceiptModalProps) {
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition"
+            className="px-5 py-2.5 rounded-xl bg-[#0F4C81] text-white text-xs font-bold hover:bg-[#0B3860] transition shadow-xs"
           >
             Tutup Struk
           </button>
@@ -549,11 +552,47 @@ interface TrackingModalProps {
 }
 
 export function TrackingModal({ order, isOpen, onClose }: TrackingModalProps) {
+  // Step-by-step Sequential Flow Animation (flows downwards from top to running status)
+  const [animatedTimelineIndex, setAnimatedTimelineIndex] = useState<number>(0);
+  const [previewTrackingPhoto, setPreviewTrackingPhoto] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen || !order?.timeline?.length) {
+      setAnimatedTimelineIndex(0);
+      return;
+    }
+
+    const target = order.timeline.length - 1;
+    if (target <= 0) {
+      setAnimatedTimelineIndex(0);
+      return;
+    }
+
+    setAnimatedTimelineIndex(0);
+    let current = 0;
+    let interval: NodeJS.Timeout | null = null;
+
+    const startTimer = setTimeout(() => {
+      interval = setInterval(() => {
+        current += 1;
+        setAnimatedTimelineIndex(current);
+        if (current >= target) {
+          if (interval) clearInterval(interval);
+        }
+      }, 550);
+    }, 400);
+
+    return () => {
+      clearTimeout(startTimer);
+      if (interval) clearInterval(interval);
+    };
+  }, [isOpen, order?.id, order?.timeline?.length]);
+
   if (!isOpen || !order) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-white/85 backdrop-blur-md animate-fade-in overflow-y-auto">
+      <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl border border-slate-200/90 max-h-[92vh] overflow-y-auto my-auto">
         <div className="flex items-start justify-between pb-3 border-b border-slate-100">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
@@ -570,59 +609,344 @@ export function TrackingModal({ order, isOpen, onClose }: TrackingModalProps) {
           </div>
           <button
             onClick={onClose}
-            className="p-1 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+            className="p-1 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
           >
             <X size={18} />
           </button>
         </div>
 
         {/* Courier Info Summary */}
-        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs space-y-2">
-          <div className="flex justify-between items-center">
-            <span className="text-slate-500">Metode Pengiriman:</span>
-            <span className="font-bold text-slate-900">
-              {(order.delivery.provider === "GOSEND" || order.delivery.courierMethod === "GOSEND") ? "GoSend (Manual oleh Merchant)" : "Kurir Toko"}
-            </span>
-          </div>
-          {order.delivery.courierName && (
-            <div className="flex justify-between items-center">
-              <span className="text-slate-500">Nama Kurir:</span>
-              <span className="font-semibold text-slate-900">{order.delivery.courierName}</span>
-            </div>
-          )}
-          {(order.delivery.trackingNumber || order.delivery.trackingReference) && (
-            <div className="flex justify-between items-center">
-              <span className="text-slate-500">Nomor Referensi / Resi:</span>
-              <span className="font-mono font-bold text-indigo-700">{order.delivery.trackingNumber || order.delivery.trackingReference}</span>
-            </div>
-          )}
-          <div className="flex justify-between items-center">
-            <span className="text-slate-500">Alamat Tujuan:</span>
-            <span className="font-medium text-slate-800 text-right max-w-[220px] truncate">
-              {order.recipientAddress?.fullAddress || order.shippingAddressSnapshot?.fullAddress || order.shippingAddressSnapshot?.street}, {order.recipientAddress?.city || order.shippingAddressSnapshot?.city}
-            </span>
-          </div>
-        </div>
+        {(() => {
+          const isGosend = order.delivery.provider === "GOSEND" || order.delivery.courierMethod === "GOSEND";
+          const hasValidTrackingUrl = !!(order.delivery.trackingUrl && order.delivery.trackingUrl.trim().startsWith("http"));
 
-        {/* Notice of Manual Tracking */}
-        <div className="p-3 rounded-xl bg-purple-50 border border-purple-200 text-[11px] text-purple-900">
-          Pelacakan lokasi GPS langsung tidak tersedia. Status pengiriman diperbarui secara manual oleh penjual.
-        </div>
+          return (
+            <div className="space-y-3">
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Metode Pengiriman:</span>
+                  <span className="font-bold text-slate-900">
+                    {isGosend ? "GoSend (Gojek)" : "Kurir Toko (Pengiriman Sendiri)"}
+                  </span>
+                </div>
 
-        {/* Timeline */}
-        <div className="space-y-4 pt-1">
-          <h4 className="text-xs font-bold text-slate-800">Riwayat Perjalanan Pengiriman:</h4>
-          <div className="space-y-4 pl-3 border-l-2 border-primary/30 ml-2">
-            {order.timeline.map((event, idx) => (
-              <div key={idx} className="relative pl-4 space-y-0.5">
-                <span className="absolute -left-[19px] top-1 w-3 h-3 rounded-full bg-primary border-2 border-white shadow-sm" />
-                <p className="text-xs font-bold text-slate-900">{event.title}</p>
-                <p className="text-[11px] text-slate-600">{event.description}</p>
-                <span className="text-[10px] text-slate-400 font-mono">
-                  {formatDateTimeIndo(event.timestamp)}
-                </span>
+                {isGosend ? (
+                  // GoSend Info
+                  <>
+                    {(order.delivery.trackingNumber || order.delivery.trackingReference) && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Nomor Referensi / Resi:</span>
+                        <span className="font-mono font-bold text-indigo-700">
+                          {order.delivery.trackingNumber || order.delivery.trackingReference}
+                        </span>
+                      </div>
+                    )}
+                    {order.delivery.courierName && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Driver / Kurir:</span>
+                        <span className="font-semibold text-slate-800">{order.delivery.courierName}</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  // Kurir Toko Info
+                  <>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500">Keterangan:</span>
+                      <span className="font-semibold text-slate-800">Pesanan sedang diantar oleh kurir toko.</span>
+                    </div>
+                    {order.delivery.courierName && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Nama Kurir:</span>
+                        <span className="font-semibold text-slate-800">{order.delivery.courierName}</span>
+                      </div>
+                    )}
+                    {order.delivery.courierPhone && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Nomor HP Kurir:</span>
+                        <a
+                          href={`tel:${order.delivery.courierPhone}`}
+                          className="font-mono font-bold text-blue-600 hover:underline flex items-center gap-1"
+                        >
+                          <Phone size={12} weight="bold" />
+                          <span>{order.delivery.courierPhone}</span>
+                        </a>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                <div className="flex justify-between items-center pt-1 border-t border-slate-200/60">
+                  <span className="text-slate-500">Alamat Tujuan:</span>
+                  <span className="font-medium text-slate-800 text-right max-w-[220px] truncate">
+                    {order.recipientAddress?.fullAddress || order.shippingAddressSnapshot?.fullAddress || order.shippingAddressSnapshot?.street}, {order.recipientAddress?.city || order.shippingAddressSnapshot?.city}
+                  </span>
+                </div>
               </div>
-            ))}
+
+              {/* Specific Notice & Actions for GoSend vs Kurir Toko */}
+              {isGosend ? (
+                <div>
+                  {hasValidTrackingUrl ? (
+                    <a
+                      href={order.delivery.trackingUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer transition"
+                    >
+                      <ArrowSquareOut size={15} weight="bold" />
+                      <span>Lacak Pengiriman di Gojek</span>
+                    </a>
+                  ) : (
+                    <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-center gap-1.5">
+                      <Info size={14} weight="bold" className="text-amber-700 shrink-0" />
+                      <span>Link pelacakan belum tersedia</span>
+                    </div>
+                  )}
+                  <p className="text-[10px] text-slate-400 mt-1.5 leading-snug">
+                    * Merchant memesan GoSend secara manual melalui aplikasi Gojek. Jika link pelacakan tersedia, Anda dapat memantau pergerakan kurir secara eksternal.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3 rounded-xl bg-sky-50 border border-sky-200 text-[11px] text-sky-950 space-y-1">
+                  <p className="font-semibold text-sky-900 flex items-center gap-1">
+                    <Info size={14} weight="bold" className="text-blue-600 shrink-0" />
+                    <span>Pengiriman Sendiri Tanpa GPS</span>
+                  </p>
+                  <p className="text-slate-600 leading-snug">
+                    Tidak ada pelacakan live GPS untuk kurir toko. Penjual memperbarui status pengiriman secara manual dan mencatat bukti serah terima saat paket tiba.
+                  </p>
+                </div>
+              )}
+
+              {/* Bukti Serah Terima Paket (4 Item) if already delivered */}
+              {(order.status === "DELIVERED" || order.status === "COMPLETED" || order.delivery.deliveryStatus === "DELIVERED" || order.delivery.recipientReceivedBy) && (
+                <div className="p-3.5 rounded-2xl bg-teal-50 border border-teal-200 text-teal-950 text-xs space-y-2">
+                  <div className="flex items-center justify-between pb-1 border-b border-teal-200/60">
+                    <span className="font-bold text-teal-900 flex items-center gap-1.5">
+                      <ShieldCheck size={16} weight="bold" className="text-teal-600" />
+                      Bukti Serah Terima Paket (POD)
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-teal-100 text-teal-900">
+                      Tersimpan di Sistem
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-white border border-teal-200/80 text-[11px] space-y-1.5">
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500">1. Nama Penerima:</span>
+                      <span className="font-bold text-slate-900">
+                        {order.delivery.recipientReceivedBy || order.delivery.deliveredToName || order.shippingAddressSnapshot.recipientName}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-500">2. Hubungan / Jenis Bukti:</span>
+                      <span className="font-semibold text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                        {order.delivery.proofType || "Foto Serah Terima Paket"}
+                      </span>
+                    </div>
+
+                    {order.delivery.deliveredNotes && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">3. Catatan:</span>
+                        <span className="text-slate-700 italic">&ldquo;{order.delivery.deliveredNotes}&rdquo;</span>
+                      </div>
+                    )}
+
+                    {order.delivery.deliveredAt && (
+                      <div className="flex justify-between items-center text-[10px] text-slate-400 font-mono">
+                        <span>Waktu Penyerahan:</span>
+                        <span>{formatDateTimeIndo(order.delivery.deliveredAt)}</span>
+                      </div>
+                    )}
+
+                    {/* 4. Foto Bukti */}
+                    {order.delivery.proofPhotoUrl && (
+                      <div className="pt-2 border-t border-teal-100 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            onClick={() => setPreviewTrackingPhoto(order.delivery.proofPhotoUrl || null)}
+                            className="relative w-14 h-14 rounded-xl overflow-hidden border border-teal-200 cursor-pointer group shrink-0 bg-slate-100"
+                            title="Klik untuk memperbesar foto bukti"
+                          >
+                            <img
+                              src={order.delivery.proofPhotoUrl}
+                              alt="Bukti Paket Sampai"
+                              className="w-full h-full object-cover group-hover:scale-110 transition duration-200"
+                            />
+                            <div className="absolute inset-0 bg-slate-900/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white">
+                              <Eye size={16} weight="bold" />
+                            </div>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-500 block uppercase">4. Foto Bukti:</span>
+                            <button
+                              type="button"
+                              onClick={() => setPreviewTrackingPhoto(order.delivery.proofPhotoUrl || null)}
+                              className="text-teal-700 hover:text-teal-900 font-bold text-xs underline flex items-center gap-1 cursor-pointer mt-0.5"
+                            >
+                              <Eye size={13} weight="bold" />
+                              <span>Perbesar Foto Bukti</span>
+                            </button>
+                          </div>
+                        </div>
+                        <span className="text-[10px] text-teal-700/80 italic">
+                          (Klik untuk perbesar)
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Timeline Auto-Expanded without Inner Scroll & Downward Flow Animation */}
+        <div className="space-y-3 pt-1">
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold text-slate-800">
+              Riwayat Perjalanan Pengiriman ({order.timeline.length})
+            </h4>
+            <span className="text-[10px] text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full font-bold border border-sky-100">
+              Live Progress
+            </span>
+          </div>
+
+          <div className="relative space-y-0 pr-1">
+            <style dangerouslySetInnerHTML={{ __html: `
+              @keyframes trackingPulseBeam {
+                0% { transform: translateY(-100%); opacity: 0; }
+                25% { opacity: 0.9; }
+                75% { opacity: 0.9; }
+                100% { transform: translateY(280%); opacity: 0; }
+              }
+            `}} />
+
+            {order.timeline.map((event, idx) => {
+              const isLast = idx === order.timeline.length - 1;
+              const isCancelledEvent = event.step === "CANCELLED" || event.title?.toLowerCase().includes("batal");
+
+              const isStepReached = idx <= animatedTimelineIndex;
+              const isLineFlowed = idx < animatedTimelineIndex;
+              const isStepCurrentlyRunning =
+                idx === animatedTimelineIndex &&
+                animatedTimelineIndex === order.timeline.length - 1;
+              const isPassingThrough =
+                idx === animatedTimelineIndex &&
+                animatedTimelineIndex < order.timeline.length - 1;
+
+              return (
+                <div
+                  key={idx}
+                  className="relative flex items-start gap-3 group"
+                >
+                  {/* COLUMN 1: Centered Timeline Rail (24px) */}
+                  <div className="relative flex flex-col items-center shrink-0 w-6 self-stretch">
+                    {!isLast && (
+                      <div className="absolute left-1/2 -translate-x-1/2 top-3 bottom-0 w-0.5 bg-slate-200 overflow-hidden">
+                        <div
+                          className={`w-full h-full origin-top transition-transform duration-500 ease-out ${
+                            isCancelledEvent || (idx === order.timeline.length - 2 && (order.timeline[idx + 1].step === "CANCELLED" || order.timeline[idx + 1].title?.toLowerCase().includes("batal")))
+                              ? "bg-gradient-to-b from-primary via-amber-500 to-rose-600"
+                              : "bg-gradient-to-b from-primary to-sky-600"
+                          }`}
+                          style={{
+                            transform: isLineFlowed ? "scaleY(1)" : "scaleY(0)",
+                          }}
+                        />
+                        {isLineFlowed && (
+                          <div
+                            className="absolute inset-x-0 h-4 bg-sky-300 blur-[0.5px]"
+                            style={{
+                              animation: 'trackingPulseBeam 2s infinite ease-in-out',
+                              animationDelay: `${idx * 300}ms`,
+                            }}
+                          />
+                        )}
+                      </div>
+                    )}
+
+                    {/* Dot Indicator */}
+                    <div className="relative z-10 flex items-center justify-center w-6 h-6 shrink-0 mt-0.5">
+                      {isCancelledEvent ? (
+                        isStepReached ? (
+                          <div className="relative flex items-center justify-center transition-all duration-500 scale-105">
+                            <span className="absolute w-5 h-5 rounded-full bg-rose-500/30 animate-ping" />
+                            <span className="w-4 h-4 rounded-full bg-rose-600 ring-4 ring-rose-100 shadow-md z-20 flex items-center justify-center text-white">
+                              <X size={10} weight="bold" />
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="w-3 h-3 rounded-full bg-rose-200 ring-4 ring-white shadow-2xs z-20 transition-all duration-500" />
+                        )
+                      ) : isStepCurrentlyRunning ? (
+                        <div className="relative flex items-center justify-center transition-all duration-500 scale-105">
+                          <span className="absolute w-5 h-5 rounded-full bg-sky-500/30 animate-ping" />
+                          <span className="absolute w-4 h-4 rounded-full bg-sky-400/25 animate-pulse" />
+                          <span className="w-3.5 h-3.5 rounded-full bg-primary ring-4 ring-sky-100 shadow-md z-20 flex items-center justify-center">
+                            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                          </span>
+                        </div>
+                      ) : isPassingThrough ? (
+                        <span className="w-3.5 h-3.5 rounded-full bg-primary ring-4 ring-sky-100 shadow-xs z-20 transition-all duration-500" />
+                      ) : isStepReached ? (
+                        <span className="w-3 h-3 rounded-full bg-primary ring-4 ring-white shadow-xs z-20 transition-all duration-500" />
+                      ) : (
+                        <span className="w-3 h-3 rounded-full bg-slate-200 ring-4 ring-white shadow-2xs z-20 transition-all duration-500" />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* COLUMN 2: Event Details */}
+                  <div
+                    className={`flex-1 pb-4 pt-0.5 min-w-0 space-y-1 transition-all duration-500 ${
+                      isStepReached ? "opacity-100 translate-y-0" : "opacity-35 translate-y-1"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <p
+                        className={`text-xs font-bold leading-tight transition-colors duration-300 ${
+                          isCancelledEvent && isStepReached
+                            ? "text-rose-700"
+                            : isStepCurrentlyRunning
+                            ? "text-primary"
+                            : isStepReached
+                            ? "text-slate-900"
+                            : "text-slate-400"
+                        }`}
+                      >
+                        {event.title}
+                      </p>
+                      {isCancelledEvent && isStepReached ? (
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 flex items-center gap-1 animate-fade-in">
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-600" />
+                          <span>Dibatalkan</span>
+                        </span>
+                      ) : isStepCurrentlyRunning ? (
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-primary bg-sky-50 px-1.5 py-0.5 rounded border border-sky-100 flex items-center gap-1 animate-fade-in">
+                          <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                          <span>Sedang Berjalan</span>
+                        </span>
+                      ) : null}
+                    </div>
+                    <p
+                      className={`text-[11px] leading-snug ${
+                        isCancelledEvent && isStepReached
+                          ? "text-rose-800 bg-rose-50/60 p-2 rounded-xl border border-rose-100"
+                          : "text-slate-600"
+                      }`}
+                    >
+                      {event.description}
+                    </p>
+                    <span className="text-[10px] text-slate-400 font-mono block">
+                      {formatDateTimeIndo(event.timestamp)}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -630,12 +954,80 @@ export function TrackingModal({ order, isOpen, onClose }: TrackingModalProps) {
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition"
+            className="px-5 py-2.5 rounded-xl bg-[#0F4C81] text-white text-xs font-bold hover:bg-[#0B3860] transition shadow-xs cursor-pointer"
           >
             Tutup
           </button>
         </div>
       </div>
+
+      {/* Lightbox Popup: Perbesar Gambar Bukti Paket Sampai */}
+      {previewTrackingPhoto && (
+        <div
+          className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-white/90 backdrop-blur-md animate-fade-in"
+          onClick={() => setPreviewTrackingPhoto(null)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-xl w-full p-4 sm:p-5 shadow-2xl border border-slate-200/90 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <CheckCircle size={18} weight="bold" className="text-teal-600" />
+                <span className="font-bold text-slate-900 text-xs">
+                  Foto Bukti Serah Terima Paket #{order.orderNumber}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewTrackingPhoto(null)}
+                className="p-1 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="rounded-2xl overflow-hidden bg-slate-50 border border-slate-200 flex items-center justify-center max-h-[70vh]">
+              <img
+                src={previewTrackingPhoto}
+                alt="Foto Bukti Paket Sampai"
+                className="w-full h-auto max-h-[70vh] object-contain"
+              />
+            </div>
+
+            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-1">
+              <div className="flex justify-between">
+                <span className="text-slate-500">1. Nama Penerima:</span>
+                <span className="font-bold text-slate-800">
+                  {order.delivery.recipientReceivedBy || order.delivery.deliveredToName || order.shippingAddressSnapshot.recipientName}
+                </span>
+              </div>
+              {order.delivery.proofType && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">2. Hubungan / Jenis Bukti:</span>
+                  <span className="text-teal-800 font-semibold">{order.delivery.proofType}</span>
+                </div>
+              )}
+              {order.delivery.deliveredNotes && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">3. Catatan:</span>
+                  <span className="text-slate-700 italic">&ldquo;{order.delivery.deliveredNotes}&rdquo;</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => setPreviewTrackingPhoto(null)}
+                className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition cursor-pointer"
+              >
+                Tutup Gambar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

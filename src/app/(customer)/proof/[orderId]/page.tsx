@@ -291,7 +291,7 @@ export default function ProofReviewPage() {
                 <h3 className="text-sm font-bold">Persetujuan Hasil Kerja</h3>
               </div>
               <p className="text-xs text-slate-600 leading-relaxed mb-6">
-                Pastikan Anda telah memeriksa foto before/after dan parameter alat. Setelah disetujui, Anda akan diarahkan ke konfirmasi pelepasan escrow.
+                Pastikan Anda telah memeriksa foto before/after dan parameter alat. Setelah disetujui, Anda akan diarahkan ke konfirmasi pelepasan uang ke mitra.
               </p>
 
               <div className="space-y-3">

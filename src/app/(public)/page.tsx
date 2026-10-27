@@ -34,10 +34,33 @@ import {
 import { useActiveLocation } from "@/context/LocationContext";
 import { SPayBalanceCard } from "@/components/features/spay/SPayBalanceCard";
 import { useSPay } from "@/features/spay/spay.frontend-provider";
+import { getRoleDashboard, isOperationalRole } from "@/lib/roleNavigation";
 
 export default function HomePage() {
   const router = useRouter();
-  const { isPublicGuest } = useActiveRole();
+  const { isPublicGuest, activeRole, isAuthenticated } = useActiveRole();
+  const isOperational = Boolean(isAuthenticated && !isPublicGuest && isOperationalRole(activeRole));
+
+  React.useEffect(() => {
+    if (isOperational) {
+      const target = getRoleDashboard(activeRole);
+      router.replace(target);
+    }
+  }, [isOperational, activeRole, router]);
+
+  if (isOperational) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="flex flex-col items-center gap-3">
+          <CircleNotch size={32} className="animate-spin text-primary" />
+          <p className="text-sm font-medium text-slate-600">
+            Mengarahkan ke Dashboard {activeRole?.replace(/_/g, " ")}...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const { summary: spaySummary, isBalanceVisible, toggleBalanceVisibility } = useSPay();
   const { services, isLoading: loadingServices } = useServices();
   const { plans } = useMaintenancePlans();
@@ -130,7 +153,7 @@ export default function HomePage() {
         <div className="relative z-10 max-w-3xl space-y-6">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-semibold text-sky tracking-wide">
             <ShieldCheck size={16} weight="fill" className="text-secondary" />
-            <span>Garansi Resmi & Proteksi Rekening Escrow Terstandarisasi</span>
+            <span>Garansi Resmi & Proteksi Rekening Uang Aman</span>
           </div>
 
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-display font-extrabold tracking-tight leading-tight">
@@ -497,7 +520,7 @@ export default function HomePage() {
             <ShieldCheck size={24} weight="duotone" />
           </div>
           <div>
-            <h4 className="font-display font-bold text-sm text-neutral-dark">100% Escrow Protection</h4>
+            <h4 className="font-display font-bold text-sm text-neutral-dark">100% Proteksi Uang Aman</h4>
             <p className="text-xs text-neutral-slate mt-1">
               Dana Anda tersimpan aman di rekening penampung resmi. Pembayaran baru diteruskan ke teknisi setelah Anda menyetujui hasil kerja.
             </p>

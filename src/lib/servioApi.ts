@@ -183,7 +183,7 @@ export const MOCK_USERS_BY_ROLE: Record<string, any> = {
     createdAt: "2026-01-01T00:00:00Z",
   },
   CUSTOMER: {
-    id: "3bc92b94-627d-48c4-9e01-187ce79981ee",
+    id: "692f03fd-2362-485a-9a23-a672bbb4533f",
     fullName: "Ahmad Fauzi",
     email: "customer@servio.id",
     phone: "+62 812-3456-7890",
@@ -952,6 +952,16 @@ const FINANCE_BASE_URL =
     ? "/api/v1/finance"
     : (process.env.NEXT_PUBLIC_FINANCE_API_URL || "http://127.0.0.1:8006/api/v1/finance");
 
+const ORDER_BARANG_SERVICE_ROOT =
+  typeof window !== "undefined"
+    ? ""
+    : (process.env.NEXT_PUBLIC_ORDER_BARANG_SERVICE_URL || "http://127.0.0.1:8005");
+const ORDER_BARANG_BASE_URL =
+  typeof window !== "undefined"
+    ? "/api/v1/order-barang"
+    : (process.env.NEXT_PUBLIC_ORDER_BARANG_API_URL || "http://127.0.0.1:8005/api/v1/order-barang");
+
+
 let csrfPromise: Promise<void> | null = null;
 
 async function ensureSanctumCsrf(force = false): Promise<void> {
@@ -1037,6 +1047,14 @@ function isFinanceRoute(path: string): boolean {
     p.startsWith("/platform-policy")
   );
 }
+
+function isOrderBarangRoute(path: string): boolean {
+  const p = path.replace(/^\/api\/v1/, "");
+  return (
+    p.startsWith("/order-barang")
+  );
+}
+
 
 function isIdentityRoute(path: string): boolean {
   const p = path.replace(/^\/api\/v1/, "");
@@ -1583,9 +1601,22 @@ export async function apiFetch<T = unknown>(
       headers["X-Gateway-Key"] = gatewayKey;
 
       const activeRoleCookie = getCookie("servio_active_role");
-      const activeRole = resolveActorRole(activeRoleCookie || "CEO_PRODUCT_OWNER");
+      const isOpsOrDemo =
+        pathname.includes("/ops") ||
+        pathname.includes("/finance/ops") ||
+        pathname.includes("/demo");
+      const activeRole = isOpsOrDemo
+        ? "FINANCE_PAYMENT_OPS"
+        : resolveActorRole(
+            activeRoleCookie ||
+            (pathname.includes("/merchant")
+              ? "MERCHANT"
+              : pathname.includes("/ceo")
+              ? "CEO_PRODUCT_OWNER"
+              : "CUSTOMER")
+          );
 
-      const currentUser = MOCK_USERS_BY_ROLE[activeRole] || MOCK_USERS_BY_ROLE["CEO_PRODUCT_OWNER"];
+      const currentUser = MOCK_USERS_BY_ROLE[activeRole] || MOCK_USERS_BY_ROLE["CUSTOMER"];
       if (currentUser?.id) {
         headers["X-Actor-User-Id"] = currentUser.id;
         headers["X-Actor-Role"] = activeRole;
@@ -1596,10 +1627,14 @@ export async function apiFetch<T = unknown>(
           headers["X-Actor-Org-Id"] = currentUser.organizationId;
         }
         headers["X-Actor-Authz-Version"] = "1";
+        headers["X-Actor-Org-Active"] = "true";
+        headers["X-Actor-Membership-Active"] = "true";
         headers["X-Actor-Permissions"] =
           activeRole === "CEO_PRODUCT_OWNER"
             ? "finance.policy.manage,finance.policy.read,finance.ops.read"
-            : "finance.policy.read,finance.ops.read,finance.mock.simulate";
+            : activeRole === "FINANCE_PAYMENT_OPS"
+            ? "finance.policy.read,finance.ops.read,finance.mock.simulate"
+            : (currentUser.permissions?.join(",") || "");
       }
 
       if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
@@ -1678,7 +1713,136 @@ export async function apiFetch<T = unknown>(
       if ((err as any)?.status) {
         throw err;
       }
+      if (!(options as any)?._isRetry && typeof window !== "undefined") {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return apiFetch<T>(endpoint, { ...options, _isRetry: true } as any);
+      }
       console.warn("Finance Service network failure:", err);
+      throw err;
+    }
+  }
+
+  // =========================================================================
+  // REAL BACKEND INTEGRATION: Modul 05A Order Barang Service (Port 8005)
+  // =========================================================================
+  if (isOrderBarangRoute(pathname)) {
+    try {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+      };
+
+      const gatewayKey = process.env.NEXT_PUBLIC_ORDER_GATEWAY_KEY || "servio_local_gateway_key_2026";
+      headers["X-Gateway-Key"] = gatewayKey;
+
+      const isMerchantEndpoint = pathname.includes("/merchant");
+      const isAdminEndpoint = pathname.includes("/admin");
+      const activeRoleCookie = getCookie("servio_active_role");
+      const activeRole = isAdminEndpoint
+        ? "ADMIN_OPERATIONS"
+        : isMerchantEndpoint
+        ? "MERCHANT"
+        : resolveActorRole(activeRoleCookie || "CUSTOMER");
+
+      const currentUser = MOCK_USERS_BY_ROLE[activeRole] || MOCK_USERS_BY_ROLE[isAdminEndpoint ? "ADMIN_OPERATIONS" : isMerchantEndpoint ? "MERCHANT" : "CUSTOMER"];
+      const userIdCookie = getCookie("servio_user_id");
+      const effectiveUserId = (activeRole === "CUSTOMER" && userIdCookie)
+        ? userIdCookie
+        : (currentUser?.id || (isAdminEndpoint ? "8480d446-5855-4cb1-9488-01879e2da2cf" : isMerchantEndpoint ? "4bee4c28-6799-4054-87a3-321e29811921" : "692f03fd-2362-485a-9a23-a672bbb4533f"));
+
+      if (effectiveUserId) {
+        headers["X-Actor-User-Id"] = effectiveUserId;
+        headers["X-Actor-Role"] = activeRole;
+        if (currentUser.activeRole?.assignmentId) {
+          headers["X-Actor-Role-Assignment-Id"] = currentUser.activeRole.assignmentId;
+        }
+        const effectiveOrgId = currentUser.organizationId || (isMerchantEndpoint ? "0c1467e7-af68-4b26-ae84-daa41d51aed0" : undefined);
+        if (effectiveOrgId) {
+          headers["X-Actor-Org-Id"] = effectiveOrgId;
+        }
+        headers["X-Actor-Authz-Version"] = "1";
+        headers["X-Actor-Org-Active"] = "true";
+        headers["X-Actor-Membership-Active"] = "true";
+      }
+
+      if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+        if (!headers["Idempotency-Key"]) {
+          headers["Idempotency-Key"] = `idemp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        }
+      }
+
+      if (options.headers) {
+        if (options.headers instanceof Headers) {
+          options.headers.forEach((val, key) => {
+            headers[key] = val;
+          });
+        } else if (Array.isArray(options.headers)) {
+          options.headers.forEach(([k, v]) => {
+            headers[k] = v;
+          });
+        } else {
+          Object.assign(headers, options.headers);
+        }
+      }
+
+      if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
+        headers["Content-Type"] = "application/json";
+      }
+
+      const cleanSub = pathname.replace(/^\/api\/v1/, "").replace(/^\/+/, "");
+      const subWithoutOrder = cleanSub.replace(/^order-barang\/?/, "");
+
+      const targetUrl = `${ORDER_BARANG_BASE_URL.replace(/\/+$/, "")}/${subWithoutOrder.replace(/^\/+/, "")}${queryString ? `?${queryString}` : ""}`;
+
+      const res = await fetch(targetUrl, {
+        ...options,
+        headers,
+        credentials: "include",
+      });
+
+      const contentType = res.headers.get("content-type") || "";
+      let json: any = null;
+      if (contentType.includes("application/json")) {
+        json = await res.json();
+      } else {
+        const text = await res.text();
+        try {
+          json = JSON.parse(text);
+        } catch {
+          json = { message: text };
+        }
+      }
+
+      if (!res.ok) {
+        const errorMsg =
+          json?.error?.message ||
+          json?.message ||
+          (typeof json?.error === "string" ? json.error : null) ||
+          `Request ke Order Barang Service gagal dengan status ${res.status}.`;
+        const err: any = new Error(errorMsg);
+        err.status = res.status;
+        err.code = json?.code || json?.error?.code;
+        err.errors = json?.error?.field_errors || json?.errors;
+        throw err;
+      }
+
+      return {
+        success: json?.success ?? true,
+        message: json?.message,
+        data: json?.data !== undefined ? json.data : json,
+        count: json?.count,
+        meta: json?.meta,
+        ...json,
+      };
+    } catch (err) {
+      if ((err as any)?.status) {
+        throw err;
+      }
+      if (!(options as any)?._isRetry && typeof window !== "undefined") {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return apiFetch<T>(endpoint, { ...options, _isRetry: true } as any);
+      }
+      console.warn("Order Barang Service network failure:", err);
       throw err;
     }
   }
@@ -4478,6 +4642,7 @@ export interface ApiAddress {
   province?: string;
   city: string;
   district?: string;
+  village?: string;
   postalCode?: string;
   latitude?: number | null;
   longitude?: number | null;
@@ -4591,6 +4756,7 @@ export const profileApi = {
     province?: string;
     city: string;
     district?: string;
+    village?: string;
     postalCode?: string;
     latitude?: number;
     longitude?: number;
@@ -4667,6 +4833,19 @@ export const organizationApi = {
     address?: any;
     business_email?: string;
     business_phone?: string;
+    phone?: string;
+    email?: string;
+    nib?: string;
+    npwp?: string;
+    picName?: string;
+    picNik?: string;
+    picPosition?: string;
+    picData?: any;
+    settlementBank?: {
+      bankName?: string;
+      accountNumber?: string;
+      accountHolder?: string;
+    };
     operational_status?: string;
     operationalStatus?: string;
     operational_hours?: any;
@@ -6831,7 +7010,14 @@ export const shopsApi = {
       id: merchant.organization_id || id,
       name: merchant.store_name || "Mitra Toko SERVIO",
       productCount: rawData.active_product_count || 0,
-      city: "Jakarta Barat (Glodok)",
+      city: merchant.city || "Jakarta Pusat",
+      district: merchant.district,
+      province: merchant.province,
+      postalCode: merchant.postal_code,
+      streetAddress: merchant.street_address,
+      address: merchant.address,
+      operationalHours: merchant.operational_hours,
+      operationalStatus: merchant.operational_status,
       badge: "Mitra Toko Resmi SERVIO",
       rating: 4.9,
       reviewCount: 120,
@@ -8255,6 +8441,22 @@ export const refundsApi = {
 export const financeApi = {
   // CEO Policies
   policies: {
+    async getActiveCustomerFee() {
+      return apiFetch<{
+        has_active_policy: boolean;
+        policy_name: string;
+        policy_slug?: string | null;
+        version_no?: number | null;
+        policy_code?: string;
+        fee_type: "FIXED" | "PERCENTAGE";
+        fixed_amount_idr?: number | null;
+        percentage_rate?: number | null;
+        charge_scope?: string;
+        calculation_base?: string;
+        display_amount?: number | null;
+        display_label?: string;
+      }>("/finance/policies/active-customer-fee");
+    },
     async list(params?: { status?: string; scope?: string; search?: string; page?: number; per_page?: number }) {
       const q = new URLSearchParams();
       if (params?.status && params.status !== "ALL") q.append("status", params.status);
@@ -8313,7 +8515,27 @@ export const financeApi = {
         body: JSON.stringify(data || {}),
       });
     },
+    async updateGroup(
+      groupId: string,
+      data: {
+        name?: string;
+        display_name?: string;
+        description?: string;
+      }
+    ) {
+      return apiFetch<{
+        id: string;
+        display_name: string;
+        slug: string;
+      }>(`/finance/policies/${groupId}`, {
+        method: "PUT",
+        body: JSON.stringify(data),
+      });
+    },
     async createRevision(groupId: string, data: {
+      name?: string;
+      display_name?: string;
+      description?: string;
       change_reason: string;
       targets: Array<{
         policy_code: "CUSTOMER_PRODUCT_APP_FEE" | "MERCHANT_PRODUCT_COMMISSION";
@@ -8451,7 +8673,8 @@ export const financeApi = {
 
   // Demo Simulation (Authorized Finance Ops in Demo Mode only)
   demo: {
-    async simulatePayment(paymentId: string, data: { outcome: "PAID" | "FAILED"; provider_event_id: string; reported_amount_idr: number }) {
+    async simulatePayment(paymentId: string, data: { outcome: "SUCCESS" | "PAID" | "FAILED"; provider_event_id: string; reported_amount_idr: number }) {
+      const normalizedOutcome = data.outcome === "PAID" ? "SUCCESS" : data.outcome;
       return apiFetch<{
         payment_id: string;
         checkout_group_id: string;
@@ -8462,7 +8685,7 @@ export const financeApi = {
         mode: string;
       }>(`/finance/demo/payments/${paymentId}/simulate`, {
         method: "POST",
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, outcome: normalizedOutcome }),
       });
     },
     async simulateWithdrawal(withdrawalId: string, data: { outcome: "SUCCEEDED" | "FAILED"; provider_event_id: string }) {
@@ -8482,6 +8705,9 @@ export const financeApi = {
     },
   },
 };
+
+export { orderBarangApi } from "./orderBarangApi";
+export { financeServiceApi } from "./financeServiceApi";
 
 
 

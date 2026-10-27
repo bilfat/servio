@@ -60,6 +60,24 @@ class FeePolicyController extends Controller
         return ApiResponse::success($group);
     }
 
+    public function updateGroup(Request $request, string $groupId): JsonResponse
+    {
+        $actor = AuthenticatedActor::fromRequest($request);
+        $validated = $request->validate([
+            'name' => 'nullable|string|max:255',
+            'display_name' => 'nullable|string|max:255',
+            'description' => 'nullable|string|max:1000',
+        ]);
+
+        $group = $this->policyService->updateGroup(
+            groupId: $groupId,
+            data: $validated,
+            actorUserId: $actor?->actorId ?? 'SYSTEM'
+        );
+
+        return ApiResponse::success($group, 'Nama aturan biaya berhasil diperbarui.');
+    }
+
     public function publish(PublishFeePolicyRequest $request, string $groupId): JsonResponse
     {
         $actor = AuthenticatedActor::fromRequest($request);
@@ -120,6 +138,69 @@ class FeePolicyController extends Controller
         $rules = TaxRuleReference::where('status', 'ACTIVE')->get();
 
         return ApiResponse::success($rules);
+    }
+
+    public function activeCustomerFee(Request $request): JsonResponse
+    {
+        $now = now();
+
+        $activeVersions = \App\Models\FeePolicyVersion::where('status', 'ACTIVE')
+            ->where(function ($query) use ($now) {
+                $query->whereNull('effective_from')->orWhere('effective_from', '<=', $now);
+            })
+            ->where(function ($query) use ($now) {
+                $query->whereNull('effective_until')->orWhere('effective_until', '>', $now);
+            })
+            ->with(['targets', 'group'])
+            ->orderByDesc('effective_from')
+            ->get();
+
+        $customerTarget = null;
+        $policyGroup = null;
+        $policyVersion = null;
+
+        foreach ($activeVersions as $version) {
+            foreach ($version->targets as $target) {
+                if ($target->policy_code === 'CUSTOMER_PRODUCT_APP_FEE' && $target->payer_type === 'CUSTOMER') {
+                    $customerTarget = $target;
+                    $policyGroup = $version->group;
+                    $policyVersion = $version;
+                    break 2;
+                }
+            }
+        }
+
+        if (!$customerTarget) {
+            return ApiResponse::success([
+                'has_active_policy' => false,
+                'policy_name' => 'Bebas Biaya',
+                'policy_slug' => null,
+                'version_no' => null,
+                'policy_code' => 'CUSTOMER_PRODUCT_APP_FEE',
+                'fee_type' => 'FIXED',
+                'fixed_amount_idr' => 0,
+                'percentage_rate' => null,
+                'charge_scope' => 'CHECKOUT',
+                'calculation_base' => 'CHECKOUT_ELIGIBLE_SUBTOTAL',
+                'display_amount' => 0,
+                'display_label' => 'Bebas Biaya',
+            ]);
+        }
+
+        return ApiResponse::success([
+            'has_active_policy' => true,
+            'policy_name' => $policyGroup?->display_name ?? 'Biaya Layanan Aplikasi',
+            'policy_slug' => $policyGroup?->slug,
+            'version_no' => $policyVersion?->version_no,
+            'policy_code' => 'CUSTOMER_PRODUCT_APP_FEE',
+            'fee_type' => $customerTarget->fee_type,
+            'fixed_amount_idr' => $customerTarget->fixed_amount_idr ? (int) $customerTarget->fixed_amount_idr : 0,
+            'percentage_rate' => $customerTarget->percentage_rate ? (float) $customerTarget->percentage_rate : null,
+            'charge_scope' => $customerTarget->charge_scope,
+            'calculation_base' => $customerTarget->calculation_base,
+            'display_amount' => $customerTarget->fee_type === 'FIXED' ? (int) $customerTarget->fixed_amount_idr : null,
+            'display_label' => $policyGroup?->display_name ?? 'Biaya Layanan Aplikasi',
+        ]);
     }
 
     public function revenueOverview(Request $request): JsonResponse

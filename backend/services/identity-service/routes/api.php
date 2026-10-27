@@ -196,8 +196,9 @@ Route::prefix('v1')->group(function () {
         Route::get('/organizations/{id}', [ProfileOrganizationController::class, 'getOrganization']);
         Route::match(['patch', 'put'], '/organizations/{id}/profile', [ProfileOrganizationController::class, 'updateOrganizationProfile']);
         Route::match(['patch', 'put'], '/organizations/{id}', [ProfileOrganizationController::class, 'updateOrganizationProfile']);
-        Route::match(['patch', 'post'], '/organizations/{id}/operational-status', [ProfileOrganizationController::class, 'updateOperationalStatus']);
-        Route::match(['patch', 'post'], '/organizations/{id}/status', [ProfileOrganizationController::class, 'updateOperationalStatus']);
+        Route::match(['get', 'patch', 'post'], '/organizations/{id}/operational-status', [ProfileOrganizationController::class, 'updateOperationalStatus']);
+        Route::match(['get', 'patch', 'post'], '/organizations/{id}/status', [ProfileOrganizationController::class, 'updateOperationalStatus']);
+        Route::match(['get', 'patch', 'post'], '/organizations/{id}/availability', [ProfileOrganizationController::class, 'updateOperationalStatus']);
         Route::get('/organizations/{id}/memberships', [ProfileOrganizationController::class, 'organizationMemberships']);
         Route::get('/roles/me', [ProfileOrganizationController::class, 'myRoles']);
         Route::get('/permissions/me', [ProfileOrganizationController::class, 'myPermissions']);
@@ -304,4 +305,5 @@ Route::prefix('internal/v1')->middleware('identity.internal')->group(function ()
     Route::get('/users/{id}/access-context', [InternalIdentityController::class, 'getUserAccessContext']);
     Route::get('/organizations/{id}/status', [InternalIdentityController::class, 'getOrganizationStatus']);
     Route::get('/organizations/{id}/public-profile', [InternalIdentityController::class, 'getOrganizationPublicProfile']);
+    Route::get('/users/{userId}/addresses/{addressId}', [InternalIdentityController::class, 'getUserAddress']);
 });

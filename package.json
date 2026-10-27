@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "backend:start": "powershell -ExecutionPolicy Bypass -File ./start-microservices-background.ps1",
+    "backend:stop": "powershell -ExecutionPolicy Bypass -File ./stop-microservices.ps1",
+    "backend:status": "powershell -ExecutionPolicy Bypass -Command \"8001..8006 | ForEach-Object { $p = $_; $c = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue; [PSCustomObject]@{ Port = $p; Status = if ($c) { 'RUNNING (PID: ' + $c.OwningProcess + ')' } else { 'STOPPED' } } } | Format-Table -AutoSize\""
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

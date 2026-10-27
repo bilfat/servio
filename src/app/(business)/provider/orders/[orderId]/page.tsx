@@ -833,7 +833,7 @@ export default function ProviderOrderDetailPage() {
                 </span>
               </div>
               <p className="text-slate-500 text-[11px]">
-                Sesuai arsitektur Servio, konfirmasi penyelesaian dan rilis dana escrow dilakukan secara mandiri oleh Pelanggan. Provider memantau status tanpa hak substitusi konfirmasi.
+                Sesuai arsitektur Servio, konfirmasi penyelesaian dan rilis uang pembayaran dilakukan secara mandiri oleh Pelanggan. Provider memantau status tanpa hak substitusi konfirmasi.
               </p>
               {foundOrder.status === "COMPLETED" && (
                 <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-emerald-700 font-bold">

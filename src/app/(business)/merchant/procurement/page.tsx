@@ -945,7 +945,7 @@ function MerchantProcurementContent() {
                 <option value="NET_30">NET 30 Hari (Kredit Korporat)</option>
                 <option value="NET_60">NET 60 Hari (Kredit Jangka Panjang)</option>
                 <option value="COD">COD (Cash on Delivery)</option>
-                <option value="PREPAID">Prepaid Escrow Servio</option>
+                <option value="PREPAID">Prepaid Uang Aman Servio</option>
               </select>
             </div>
 

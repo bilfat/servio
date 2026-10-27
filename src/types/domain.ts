@@ -3137,6 +3137,18 @@ export interface ApiShopProfile {
   rating?: number;
   reviewCount?: number;
   city?: string;
+  district?: string;
+  province?: string;
+  postalCode?: string;
+  streetAddress?: string;
+  address?: any;
+  operationalHours?: {
+    days?: string;
+    open_time?: string;
+    close_time?: string;
+    [key: string]: any;
+  } | string | null;
+  operationalStatus?: string;
   verified?: boolean;
   badge?: string;
   joinedYear?: string;

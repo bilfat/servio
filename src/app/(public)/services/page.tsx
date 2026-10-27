@@ -417,14 +417,14 @@ function ServicesCatalogContent() {
                 </span>
                 <span className="text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
                   <ShieldCheck size={13} weight="fill" className="text-emerald-600" />
-                  Garansi Escrow &amp; Mitra Terverifikasi
+                  Garansi Uang Aman &amp; Mitra Terverifikasi
                 </span>
               </div>
               <h1 className="text-2xl font-bold font-display text-slate-900 mt-1">
                 Katalog Layanan Jasa Terstandarisasi
               </h1>
               <p className="text-xs text-slate-500 mt-0.5">
-                Ratusan spesialisasi teknis bergaransi resmi Servio yang dikerjakan oleh mitra teknisi berlisensi dan dilindungi garansi escrow.
+                Ratusan spesialisasi teknis bergaransi resmi Servio yang dikerjakan oleh mitra teknisi berlisensi dan dilindungi jaminan uang aman.
               </p>
             </div>
 

@@ -53,7 +53,7 @@ export default function SupportCaseQueuePage() {
 
   const handleEscalate = (caseId: string) => {
     escalateCase(caseId, "FINANCE");
-    setToastMessage(`Kasus #${caseId} telah dieskalasi ke tim Finance untuk tindakan audit escrow.`);
+    setToastMessage(`Kasus #${caseId} telah dieskalasi ke tim Finance untuk tindakan audit uang.`);
   };
 
   return (
@@ -261,7 +261,7 @@ export default function SupportCaseQueuePage() {
                     </span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[11px]">Escrow Terkunci:</span>
+                    <span className="text-slate-400 block text-[11px]">Uang Ditahan:</span>
                     <span className="font-bold text-emerald-700 font-mono mt-0.5 block">
                       Rp {c.escrowAmount.toLocaleString("id-ID")}
                     </span>

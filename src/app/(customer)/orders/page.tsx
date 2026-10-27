@@ -41,7 +41,7 @@ import {
 import { Toast } from "@/components/feedback/Toast";
 
 type OrderDomain = "PRODUCT" | "SERVICE";
-type ProductFilterTab = "BELUM_BAYAR" | "DIPROSES" | "DIKIRIM" | "SELESAI" | "BATAL";
+type ProductFilterTab = "BELUM_BAYAR" | "DIPROSES" | "DIKIRIM" | "TIBA" | "SELESAI" | "BATAL";
 type ServiceFilterTab = "ALL" | "ACTION_REQUIRED" | "ACTIVE" | "COMPLETED" | "CANCELLED";
 
 export default function OrderListPage() {
@@ -57,12 +57,48 @@ export default function OrderListPage() {
     requestCancellation,
     customerConfirmDelivered,
     currentTime,
+    isLoadingBackend,
+    hasLoadedBackend,
+    syncBackendOrders,
   } = useOrderBarang();
 
   const [orderDomain, setOrderDomain] = useState<OrderDomain>("PRODUCT");
   const [productFilterTab, setProductFilterTab] = useState<ProductFilterTab>("BELUM_BAYAR");
   const [serviceFilterTab, setServiceFilterTab] = useState<ServiceFilterTab>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(false);
+
+  useEffect(() => {
+    if (customerOrders.length === 0 && !hasLoadedBackend) {
+      setInitialLoading(true);
+      const timer = setTimeout(() => {
+        setInitialLoading(false);
+      }, 150);
+      return () => clearTimeout(timer);
+    } else {
+      setInitialLoading(false);
+    }
+  }, [customerOrders.length, hasLoadedBackend]);
+
+  const handleProductTabChange = (tabId: ProductFilterTab) => {
+    if (tabId === productFilterTab) return;
+    setProductFilterTab(tabId);
+  };
+
+  const handleRefreshData = async () => {
+    setIsRefreshing(true);
+    try {
+      await syncBackendOrders();
+      setToastMessage("Data pesanan berhasil dimuat ulang.");
+      setToastType("success");
+    } catch {
+      setToastMessage("Gagal memuat ulang data pesanan.");
+      setToastType("error");
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Modals state
   const [selectedOrderForCancelUnpaid, setSelectedOrderForCancelUnpaid] = useState<MockMerchantOrder | null>(null);
@@ -74,15 +110,33 @@ export default function OrderListPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<"success" | "error" | "warning">("success");
 
-  // Check URL query param for domain (tab) on initial mount
+  // Check URL query param for domain and status tab on initial mount
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
-      const tabParam = params.get("tab") || params.get("domain");
-      if (tabParam === "service" || tabParam === "services") {
+      const domainParam = params.get("domain") || "";
+      const rawTab = params.get("tab") || "";
+      const rawStatus = params.get("status") || "";
+
+      if (domainParam === "service" || domainParam === "services" || rawTab === "service" || rawTab === "services") {
         setOrderDomain("SERVICE");
-      } else if (tabParam === "product" || tabParam === "products") {
+      } else {
         setOrderDomain("PRODUCT");
+      }
+
+      const activeTab = (rawStatus || rawTab).toUpperCase();
+      if (activeTab === "BELUM_BAYAR" || activeTab === "UNPAID" || activeTab === "PENDING") {
+        setProductFilterTab("BELUM_BAYAR");
+      } else if (activeTab === "DIPROSES" || activeTab === "PROCESSING") {
+        setProductFilterTab("DIPROSES");
+      } else if (activeTab === "DIKIRIM" || activeTab === "SHIPPING" || activeTab === "DELIVERING") {
+        setProductFilterTab("DIKIRIM");
+      } else if (activeTab === "TIBA" || activeTab === "DELIVERED" || activeTab === "ARRIVED") {
+        setProductFilterTab("TIBA");
+      } else if (activeTab === "SELESAI" || activeTab === "COMPLETED") {
+        setProductFilterTab("SELESAI");
+      } else if (activeTab === "BATAL" || activeTab === "CANCELLED") {
+        setProductFilterTab("BATAL");
       }
     }
   }, []);
@@ -135,7 +189,7 @@ export default function OrderListPage() {
       return {
         hasAction: true,
         label: "Pembayaran Diperlukan",
-        detail: `Tagihan escrow Rp ${order.pricing?.totalAmount?.toLocaleString("id-ID")} siap dibayarkan.`,
+        detail: `Tagihan pembayaran Rp ${order.pricing?.totalAmount?.toLocaleString("id-ID")} siap dibayarkan.`,
         ctaLabel: "Bayar Sekarang",
         ctaAction: () => router.push(`/orders/${order.id}`),
         color: "border-amber-400 bg-amber-50 text-amber-900",
@@ -178,7 +232,14 @@ export default function OrderListPage() {
         dotClass: "bg-indigo-500",
       };
     }
-    if (["DELIVERED", "COMPLETED", "ARRIVED"].includes(s)) {
+    if (["DELIVERED", "ARRIVED", "TIBA"].includes(s)) {
+      return {
+        label: "Tiba di Tujuan",
+        colorClass: "bg-teal-50 text-teal-700 border-teal-200",
+        dotClass: "bg-teal-500",
+      };
+    }
+    if (["COMPLETED"].includes(s)) {
       return {
         label: "Pesanan Selesai",
         colorClass: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -270,10 +331,11 @@ export default function OrderListPage() {
     });
   }, [orders, serviceFilterTab, searchQuery]);
 
-  const productFilterTabs: { id: ProductFilterTab; label: string; count: number }[] = [
+  const productFilterTabs: { id: ProductFilterTab; label: string; count: number; alert?: boolean }[] = [
     { id: "BELUM_BAYAR", label: "Belum Bayar", count: customerOrdersByTab.BELUM_BAYAR.length },
     { id: "DIPROSES", label: "Diproses", count: customerOrdersByTab.DIPROSES.length },
     { id: "DIKIRIM", label: "Dikirim", count: customerOrdersByTab.DIKIRIM.length },
+    { id: "TIBA", label: "Tiba di Tujuan", count: customerOrdersByTab.TIBA.length, alert: customerOrdersByTab.TIBA.length > 0 },
     { id: "SELESAI", label: "Selesai", count: customerOrdersByTab.SELESAI.length },
     { id: "BATAL", label: "Batal", count: customerOrdersByTab.BATAL.length },
   ];
@@ -304,23 +366,35 @@ export default function OrderListPage() {
           </p>
         </div>
 
-        {orderDomain === "SERVICE" ? (
-          <Link
-            href="/services"
-            className="px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition-all flex items-center gap-1.5 shadow-servio-xs shrink-0"
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleRefreshData}
+            disabled={isLoadingBackend || isRefreshing}
+            className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition flex items-center gap-1.5 shadow-2xs shrink-0 cursor-pointer disabled:opacity-60"
+            title="Muat ulang data pesanan dari server"
           >
-            <Wrench size={16} weight="bold" />
-            <span>Pesan Servis Baru</span>
-          </Link>
-        ) : (
-          <Link
-            href="/products"
-            className="px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition-all flex items-center gap-1.5 shadow-servio-xs shrink-0"
-          >
-            <Package size={16} weight="bold" />
-            <span>Belanja Produk</span>
-          </Link>
-        )}
+            <ArrowsClockwise size={15} className={`text-primary ${(isLoadingBackend || isRefreshing) ? "animate-spin" : ""}`} />
+            <span>{(isLoadingBackend || isRefreshing) ? "Memuat Data..." : "Muat Data"}</span>
+          </button>
+          {orderDomain === "SERVICE" ? (
+            <Link
+              href="/services"
+              className="px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition-all flex items-center gap-1.5 shadow-servio-xs shrink-0"
+            >
+              <Wrench size={16} weight="bold" />
+              <span>Pesan Servis Baru</span>
+            </Link>
+          ) : (
+            <Link
+              href="/products"
+              className="px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition-all flex items-center gap-1.5 shadow-servio-xs shrink-0"
+            >
+              <Package size={16} weight="bold" />
+              <span>Belanja Produk</span>
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Top Nav: Pesanan vs Garansi (Sync with Warranties page) */}
@@ -413,7 +487,7 @@ export default function OrderListPage() {
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setProductFilterTab(tab.id)}
+                  onClick={() => handleProductTabChange(tab.id)}
                   className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-2 ${
                     isActive
                       ? "bg-primary text-white shadow-servio-xs"
@@ -470,7 +544,56 @@ export default function OrderListPage() {
       {/* CONTENT LIST: PRODUCT ORDERS */}
       {orderDomain === "PRODUCT" && (
         <>
-          {filteredProductOrders.length === 0 ? (
+          {(initialLoading || (isLoadingBackend && !hasLoadedBackend) || isRefreshing) ? (
+            <div className="space-y-4 animate-fade-in">
+              {/* Loading Banner */}
+              <div className="flex items-center justify-between gap-2 p-3.5 bg-blue-50/80 border border-blue-200/80 rounded-2xl text-xs text-blue-900 shadow-2xs">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-xl bg-blue-100 flex items-center justify-center text-blue-700 shrink-0">
+                    <ArrowsClockwise size={15} className="animate-spin text-primary" />
+                  </div>
+                  <div>
+                    <span className="font-bold text-slate-900 block leading-tight">Memuat Data Pesanan Pelanggan</span>
+                    <span className="text-[11px] text-slate-500">Menyinkronkan riwayat belanja dan status kurir terkini...</span>
+                  </div>
+                </div>
+                <span className="text-[10px] font-mono font-bold bg-white px-2.5 py-1 rounded-lg border border-blue-100 text-primary shadow-3xs shrink-0">
+                  Memuat Data...
+                </span>
+              </div>
+
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="glass-card p-5 sm:p-6 rounded-3xl border border-slate-200/80 bg-white animate-pulse space-y-4 shadow-servio-xs"
+                >
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded bg-slate-200" />
+                      <div className="w-32 h-4 rounded-md bg-slate-200" />
+                      <div className="w-20 h-4 rounded-md bg-slate-100" />
+                    </div>
+                    <div className="w-28 h-6 rounded-full bg-slate-200" />
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-slate-200 shrink-0" />
+                    <div className="space-y-2 flex-1">
+                      <div className="w-3/5 h-4 rounded-md bg-slate-200" />
+                      <div className="w-1/4 h-3 rounded-md bg-slate-100" />
+                      <div className="w-2/5 h-3 rounded-md bg-slate-100" />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between pt-2">
+                    <div className="space-y-1">
+                      <div className="w-20 h-2.5 rounded bg-slate-100" />
+                      <div className="w-28 h-4 rounded-md bg-slate-200" />
+                    </div>
+                    <div className="w-24 h-8 rounded-xl bg-slate-200" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : filteredProductOrders.length === 0 ? (
             <EmptyState
               title="Tidak Ada Pesanan Barang"
               description={
@@ -482,6 +605,8 @@ export default function OrderListPage() {
                   ? "Tidak ada pesanan barang yang sedang dipersiapkan atau dikemas oleh penjual."
                   : productFilterTab === "DIKIRIM"
                   ? "Tidak ada pesanan barang yang sedang dalam pengiriman kurir."
+                  : productFilterTab === "TIBA"
+                  ? "Belum ada pesanan barang yang tiba di tujuan dan menunggu konfirmasi Anda."
                   : productFilterTab === "SELESAI"
                   ? "Belum ada pesanan barang yang telah selesai."
                   : productFilterTab === "BATAL"
@@ -489,19 +614,28 @@ export default function OrderListPage() {
                   : "Anda belum memiliki riwayat pesanan barang atau suku cadang."
               }
               action={
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5 flex-wrap justify-center">
+                  <button
+                    type="button"
+                    onClick={handleRefreshData}
+                    disabled={isLoadingBackend || isRefreshing}
+                    className="px-4 py-2 rounded-xl bg-blue-50 text-primary border border-blue-200 hover:bg-blue-100 text-xs font-bold transition flex items-center gap-2 shadow-2xs cursor-pointer disabled:opacity-60"
+                  >
+                    <ArrowsClockwise size={14} className={(isLoadingBackend || isRefreshing) ? "animate-spin" : ""} />
+                    <span>{(isLoadingBackend || isRefreshing) ? "Memuat Data..." : "Periksa & Muat Ulang Data"}</span>
+                  </button>
                   {searchQuery && (
                     <button
                       type="button"
                       onClick={() => setSearchQuery("")}
-                      className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-neutral-dark text-xs font-bold transition"
+                      className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-neutral-dark text-xs font-bold transition cursor-pointer"
                     >
                       Reset Pencarian
                     </button>
                   )}
                   <Link
                     href="/products"
-                    className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition"
+                    className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition shadow-2xs"
                   >
                     Belanja di Katalog Produk
                   </Link>
@@ -515,7 +649,7 @@ export default function OrderListPage() {
                   key={order.id}
                   order={order}
                   currentTime={currentTime}
-                  onPayNow={(ord) => router.push(`/payments/products/${ord.checkoutGroupId || ord.id}`)}
+                  onPayNow={(ord) => router.push(`/payments/products/${ord.checkoutGroupId || ord.id}?from=card&orderId=${ord.id}`)}
                   onCancelUnpaidCheckout={(ord) => setSelectedOrderForCancelUnpaid(ord)}
                   onCancelConfirmedOrder={(ord) => setSelectedOrderForCancelConfirmed(ord)}
                   onRequestCancellation={(ord) => setSelectedOrderForRequestCancel(ord)}
@@ -753,7 +887,7 @@ export default function OrderListPage() {
         order={selectedOrderForCancelUnpaid}
         checkoutGroup={
           selectedOrderForCancelUnpaid?.checkoutGroupId
-            ? checkoutGroups.find((g) => g.id === selectedOrderForCancelUnpaid.checkoutGroupId) || null
+            ? checkoutGroups.find((g: any) => g.id === selectedOrderForCancelUnpaid.checkoutGroupId) || null
             : null
         }
         isOpen={!!selectedOrderForCancelUnpaid}
@@ -761,6 +895,7 @@ export default function OrderListPage() {
         onConfirm={(groupId) => {
           cancelUnpaidCheckoutGroup(groupId, "Dibatalkan oleh Pelanggan");
           setSelectedOrderForCancelUnpaid(null);
+          setProductFilterTab("BATAL");
           setToastMessage("Seluruh pesanan dalam tagihan checkout berhasil dibatalkan.");
           setToastType("success");
         }}
@@ -773,6 +908,7 @@ export default function OrderListPage() {
         onConfirm={(orderId, reason) => {
           cancelConfirmedMerchantOrder(orderId, reason);
           setSelectedOrderForCancelConfirmed(null);
+          setProductFilterTab("BATAL");
           setToastMessage("Pesanan toko berhasil dibatalkan. Pengembalian dana 100% diproses.");
           setToastType("success");
         }}
@@ -797,7 +933,8 @@ export default function OrderListPage() {
         onConfirm={(orderId) => {
           customerConfirmDelivered(orderId);
           setSelectedOrderForConfirmDelivered(null);
-          setToastMessage("Terima kasih! Pesanan telah selesai.");
+          setProductFilterTab("SELESAI");
+          setToastMessage("Pesanan telah berhasil dikonfirmasi selesai! Terima kasih. Dana telah diteruskan ke toko.");
           setToastType("success");
         }}
       />

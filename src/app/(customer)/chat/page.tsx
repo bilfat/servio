@@ -557,7 +557,7 @@ export default function CustomerChatPage() {
                   <div className="p-3 bg-amber-50/80 rounded-2xl border border-amber-200/80 text-[11px] text-amber-900 flex items-start gap-2 shadow-2xs">
                     <Info size={16} weight="fill" className="text-amber-600 shrink-0 mt-0.5" />
                     <span>
-                      <strong>Jaga Privasi &amp; Transaksi:</strong> Jangan pernah membagikan nomor rekening, PIN, atau mentransfer uang di luar sistem Servio Escrow resmi. Percakapan ini dipantau demi perlindungan garansi konsumen Anda.
+                      <strong>Jaga Privasi &amp; Transaksi:</strong> Jangan pernah membagikan nomor rekening, PIN, atau mentransfer uang di luar sistem pembayaran resmi Servio. Percakapan ini dipantau demi perlindungan garansi konsumen Anda.
                     </span>
                   </div>
 

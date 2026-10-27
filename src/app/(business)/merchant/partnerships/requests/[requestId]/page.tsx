@@ -45,7 +45,7 @@ export default function MerchantPartnershipRequestDetailPage() {
           ID pengajuan #{requestId} tidak terdaftar di sistem atau bukan ditujukan untuk toko Anda.
         </p>
         <Link
-          href="/business/merchant/partnerships/requests"
+          href="/merchant/partnerships/requests"
           className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs"
         >
           <ArrowLeft size={14} weight="bold" />
@@ -93,7 +93,7 @@ export default function MerchantPartnershipRequestDetailPage() {
       {/* Breadcrumb & Navigation */}
       <div className="flex items-center justify-between gap-3">
         <Link
-          href="/business/merchant/partnerships/requests"
+          href="/merchant/partnerships/requests"
           className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-900 transition"
         >
           <ArrowLeft size={14} weight="bold" />

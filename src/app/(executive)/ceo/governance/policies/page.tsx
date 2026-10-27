@@ -15,6 +15,8 @@ import {
   Plus,
   PaperPlaneTilt,
   PencilSimpleLine,
+  LockKey,
+  Wrench,
 } from "@phosphor-icons/react";
 import { financeApi } from "@/lib/servioApi";
 import {
@@ -48,9 +50,13 @@ export default function CeoPlatformPoliciesPage() {
   const [showRevisionModal, setShowRevisionModal] = useState(false);
   const [inspectingItem, setInspectingItem] = useState<FlatVersionItem | null>(null);
 
-  // Selected item for Publish / Revision
+  // Selected item for Publish / Revision / Rename
   const [selectedForPublish, setSelectedForPublish] = useState<FlatVersionItem | null>(null);
   const [selectedForRevision, setSelectedForRevision] = useState<FlatVersionItem | null>(null);
+  const [selectedForRename, setSelectedForRename] = useState<FlatVersionItem | null>(null);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [renameInput, setRenameInput] = useState("");
+  const [renameDescriptionInput, setRenameDescriptionInput] = useState("");
 
   // Form states for Create Policy (+ Tambah Aturan Biaya)
   const [newPolicyName, setNewPolicyName] = useState("Kebijakan Biaya & Komisi Barang 2026");
@@ -115,6 +121,8 @@ export default function CeoPlatformPoliciesPage() {
 
   // Revision Form States
   const [revisionReason, setRevisionReason] = useState("");
+  const [revPolicyName, setRevPolicyName] = useState("");
+  const [revPolicyDescription, setRevPolicyDescription] = useState("");
   const [revTargetScopeMode, setRevTargetScopeMode] = useState<"BOTH" | "CUSTOMER_ONLY" | "MERCHANT_ONLY">("BOTH");
   const [revCustomerFeeType, setRevCustomerFeeType] = useState<"FIXED" | "PERCENTAGE">("FIXED");
   const [revCustomerAmount, setRevCustomerAmount] = useState<number>(3000);
@@ -374,13 +382,16 @@ export default function CeoPlatformPoliciesPage() {
       }
 
       const res = await financeApi.policies.createRevision(selectedForRevision.group.id, {
+        name: revPolicyName.trim() || selectedForRevision.group.display_name,
+        display_name: revPolicyName.trim() || selectedForRevision.group.display_name,
+        description: revPolicyDescription.trim() || selectedForRevision.group.description || undefined,
         change_reason: revisionReason.trim(),
         targets: targetsPayload,
       });
 
       setToastMessage({
         type: "success",
-        text: `Revisi draft v${res.data?.version_no || 2} berhasil dibuat untuk grup '${selectedForRevision.group.display_name}'.`,
+        text: `Revisi draft v${res.data?.version_no || 2} berhasil dibuat untuk '${revPolicyName.trim() || selectedForRevision.group.display_name}'.`,
       });
 
       setShowRevisionModal(false);
@@ -395,10 +406,41 @@ export default function CeoPlatformPoliciesPage() {
     }
   };
 
+  // Handle Quick Rename Rule Submit
+  const handleRenameSubmit = async () => {
+    if (!selectedForRename || !renameInput.trim()) return;
+    try {
+      setIsSubmitting(true);
+      setError(null);
+
+      await financeApi.policies.updateGroup(selectedForRename.group.id, {
+        name: renameInput.trim(),
+        display_name: renameInput.trim(),
+        description: renameDescriptionInput.trim() || undefined,
+      });
+
+      setToastMessage({
+        type: "success",
+        text: `Nama aturan biaya berhasil diperbarui menjadi '${renameInput.trim()}'.`,
+      });
+
+      setShowRenameModal(false);
+      setSelectedForRename(null);
+      await loadAllPolicies();
+    } catch (err: unknown) {
+      console.error("Gagal mengubah nama aturan biaya:", err);
+      setError(err instanceof Error ? err.message : "Gagal mengubah nama aturan biaya.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // Open Revision Modal with auto-detection of existing targets
   const openRevisionModal = (item: FlatVersionItem) => {
     setSelectedForRevision(item);
     setRevisionReason(`Revisi tarif dari v${item.version.version_no}`);
+    setRevPolicyName(item.group.display_name || (item.group as any).name || "");
+    setRevPolicyDescription(item.group.description || "");
 
     const targets = item.version.targets || [];
     const custTarget = targets.find((t) => t.policy_code === "CUSTOMER_PRODUCT_APP_FEE");
@@ -714,8 +756,8 @@ export default function CeoPlatformPoliciesPage() {
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50/70 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
                   <th className="py-3.5 px-5">Nama Aturan & Versi</th>
-                  <th className="py-3.5 px-4">Biaya Aplikasi Customer</th>
-                  <th className="py-3.5 px-4">Komisi Toko Merchant</th>
+                  <th className="py-3.5 px-4">Untuk Customer</th>
+                  <th className="py-3.5 px-4">Untuk Merchant</th>
                   <th className="py-3.5 px-4">Status & Efektif</th>
                   <th className="py-3.5 px-4">Alasan Pembaruan</th>
                   <th className="py-3.5 px-5 text-right">Aksi</th>
@@ -761,8 +803,8 @@ export default function CeoPlatformPoliciesPage() {
                                 {customerTarget.fee_type === "FIXED" ? "Rp" : "%"}
                               </span>
                             </div>
-                            <span className="text-[10px] text-slate-500">
-                              Sekali / Checkout
+                            <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
+                              Biaya Checkout (Sekali/Transaksi)
                             </span>
                           </div>
                         ) : (
@@ -785,8 +827,8 @@ export default function CeoPlatformPoliciesPage() {
                                 {merchantTarget.fee_type === "PERCENTAGE" ? "%" : "Rp"}
                               </span>
                             </div>
-                            <span className="text-[10px] text-slate-500">
-                              Per Pesanan Toko
+                            <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
+                              Komisi Penjualan Per Toko
                             </span>
                           </div>
                         ) : (
@@ -841,6 +883,22 @@ export default function CeoPlatformPoliciesPage() {
                           >
                             <Eye className="w-3.5 h-3.5 mr-1" />
                             Detail
+                          </Button>
+
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedForRename({ group, version });
+                              setRenameInput(group.display_name || (group as any).name || "");
+                              setRenameDescriptionInput(group.description || "");
+                              setShowRenameModal(true);
+                            }}
+                            className="text-xs text-slate-700 hover:bg-slate-100 rounded-xl"
+                            title="Ubah nama aturan kebijakan biaya"
+                          >
+                            <PencilSimpleLine className="w-3.5 h-3.5 mr-1" />
+                            Ganti Nama
                           </Button>
 
                           {version.status === "DRAFT" && (
@@ -956,12 +1014,12 @@ export default function CeoPlatformPoliciesPage() {
             />
           </div>
 
-          {/* Target Penerapan Biaya (3 Pilihan Pill/Card) */}
+          {/* Target Penerapan Biaya (4 Pilihan Card termasuk Layanan Jasa Terkunci) */}
           <div>
             <label className="block text-xs font-bold text-slate-800 mb-2">
               Target Penerapan Biaya <span className="text-rose-500">*</span>
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
               <button
                 type="button"
                 onClick={() => setTargetScopeMode("CUSTOMER_ONLY")}
@@ -1045,6 +1103,24 @@ export default function CeoPlatformPoliciesPage() {
                   <p className="text-[10px] text-slate-500">Pelanggan & komisi toko</p>
                 </div>
               </button>
+
+              <div
+                className="p-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 text-left flex flex-col gap-1.5 opacity-70 cursor-not-allowed select-none"
+                title="Layanan Jasa telah disiapkan di skema database (CUSTOMER_SERVICE_APP_FEE & PROVIDER_SERVICE_COMMISSION). Saat ini terkunci khusus fase Order Barang 05A."
+              >
+                <div className="flex items-center justify-between">
+                  <Wrench className="w-4 h-4 text-slate-400" weight="duotone" />
+                  <span className="text-[9px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                    <LockKey className="w-3 h-3" weight="bold" /> Terkunci (Fase Jasa)
+                  </span>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-700">Mitra Jasa</p>
+                  <p className="text-[10px] text-slate-400 leading-tight">
+                    Komisi jasa & booking mekanik (DB siap, aktif fase jasa)
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1357,20 +1433,41 @@ export default function CeoPlatformPoliciesPage() {
       >
         <div className="space-y-5 text-left font-body">
           <p className="text-xs text-slate-600">
-            Revisi ini akan membuat versi <strong>DRAFT</strong> baru dari grup <strong>{selectedForRevision?.group.display_name}</strong>. Anda dapat mengubah sasaran target (Pelanggan/Merchant) serta mengganti format perhitungan (Rupiah atau Persentase).
+            Revisi ini akan membuat versi <strong>DRAFT</strong> baru dari grup <strong>{selectedForRevision?.group.display_name}</strong>. Anda dapat mengubah nama aturan biaya, sasaran target (Pelanggan/Merchant), serta mengganti besaran format perhitungan (Rupiah atau Persentase).
           </p>
 
-          <div>
-            <label className="block text-xs font-bold text-slate-800 mb-1">
-              Alasan Perubahan Revisi <span className="text-rose-500">*</span>
-            </label>
-            <input
-              type="text"
-              value={revisionReason}
-              onChange={(e) => setRevisionReason(e.target.value)}
-              placeholder="Contoh: Evaluasi margin komisi merchant semester baru"
-              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-800 mb-1">
+                Nama Aturan Biaya <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={revPolicyName}
+                onChange={(e) => setRevPolicyName(e.target.value)}
+                placeholder="Contoh: Biaya Layanan & Penanganan 2026"
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 font-semibold text-slate-800"
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                Dapat diubah bebas (misal: Biaya Layanan, Biaya Aplikasi, Biaya Tax, dll).
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-800 mb-1">
+                Alasan Perubahan Revisi <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={revisionReason}
+                onChange={(e) => setRevisionReason(e.target.value)}
+                placeholder="Contoh: Evaluasi margin komisi merchant semester baru"
+                className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20"
+              />
+              <p className="text-[10px] text-slate-400 mt-1">
+                Wajib diisi sebagai catatan audit perbaikan/versi baru.
+              </p>
+            </div>
           </div>
 
           {/* Target Scope Selector di Revisi */}
@@ -1378,7 +1475,7 @@ export default function CeoPlatformPoliciesPage() {
             <label className="block text-xs font-bold text-slate-800 mb-2">
               Target Penerapan Revisi <span className="text-rose-500">*</span>
             </label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
               <button
                 type="button"
                 onClick={() => setRevTargetScopeMode("CUSTOMER_ONLY")}
@@ -1462,6 +1559,24 @@ export default function CeoPlatformPoliciesPage() {
                   <p className="text-[10px] text-slate-500">Pelanggan & komisi toko</p>
                 </div>
               </button>
+
+              <div
+                className="p-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 text-left flex flex-col gap-1.5 opacity-70 cursor-not-allowed select-none"
+                title="Layanan Jasa telah disiapkan di skema database (CUSTOMER_SERVICE_APP_FEE & PROVIDER_SERVICE_COMMISSION). Saat ini terkunci khusus fase Order Barang 05A."
+              >
+                <div className="flex items-center justify-between">
+                  <Wrench className="w-4 h-4 text-slate-400" weight="duotone" />
+                  <span className="text-[9px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded-full flex items-center gap-1">
+                    <LockKey className="w-3 h-3" weight="bold" /> Terkunci (Fase Jasa)
+                  </span>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-700">Mitra Jasa</p>
+                  <p className="text-[10px] text-slate-400 leading-tight">
+                    Komisi jasa & booking mekanik (DB siap, aktif fase jasa)
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1635,6 +1750,69 @@ export default function CeoPlatformPoliciesPage() {
               className="rounded-xl text-xs bg-[#0F4C81] hover:bg-[#0d3f6b] text-white font-bold"
             >
               {isSubmitting ? "Menyimpan..." : "Simpan Revisi Draft"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* =========================================================================
+          MODAL: Ganti Nama Aturan Biaya
+         ========================================================================= */}
+      <Modal
+        isOpen={showRenameModal}
+        onClose={() => !isSubmitting && setShowRenameModal(false)}
+        title="Ganti Nama Aturan Biaya"
+        size="md"
+      >
+        <div className="space-y-4 text-left font-body">
+          <p className="text-xs text-slate-500 leading-relaxed">
+            Ubah nama tampilan aturan kebijakan biaya ini agar jelas dan tidak menimbulkan salah paham (misal: <em>Biaya Layanan Aplikasi</em>, <em>Biaya Penanganan Platform</em>, <em>Biaya Tax</em>, dll).
+          </p>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-800 mb-1">
+              Nama Aturan Biaya <span className="text-rose-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={renameInput}
+              onChange={(e) => setRenameInput(e.target.value)}
+              placeholder="Contoh: Biaya Layanan Aplikasi Platform"
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81] font-semibold text-slate-800"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-800 mb-1">
+              Deskripsi Kebijakan <span className="text-slate-400 font-normal">(Opsional)</span>
+            </label>
+            <textarea
+              rows={2}
+              value={renameDescriptionInput}
+              onChange={(e) => setRenameDescriptionInput(e.target.value)}
+              placeholder="Keterangan tambahan tujuan atau peruntukan aturan biaya..."
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowRenameModal(false)}
+              disabled={isSubmitting}
+              className="text-xs rounded-xl"
+            >
+              Batal
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleRenameSubmit}
+              disabled={isSubmitting || !renameInput.trim()}
+              className="text-xs bg-[#0F4C81] hover:bg-[#0d3f6b] text-white rounded-xl"
+            >
+              {isSubmitting ? "Menyimpan..." : "Simpan Perubahan Nama"}
             </Button>
           </div>
         </div>

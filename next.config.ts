@@ -3,6 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   devIndicators: false,
   allowedDevOrigins: ["127.0.0.1", "localhost"],
+  experimental: {
+    optimizePackageImports: ["@phosphor-icons/react", "framer-motion"],
+  },
   images: {
     remotePatterns: [
       {
@@ -97,6 +100,15 @@ const nextConfig: NextConfig = {
       {
         source: "/storage/:path*",
         destination: "http://127.0.0.1:8001/storage/:path*",
+      },
+      // Order Barang Service (Modul 05A - Port 8005)
+      {
+        source: "/api/v1/order-barang/:path*",
+        destination: "http://127.0.0.1:8005/api/v1/order-barang/:path*",
+      },
+      {
+        source: "/api/v1/order-barang",
+        destination: "http://127.0.0.1:8005/api/v1/order-barang",
       },
       // Finance Service (Modul 06 - Port 8006)
       {
@@ -295,6 +307,15 @@ const nextConfig: NextConfig = {
       {
         source: "/sanctum/:path*",
         destination: "http://127.0.0.1:8001/sanctum/:path*",
+      },
+      // Order Barang Service (Modul 05A - Port 8005)
+      {
+        source: "/api/v1/order-barang/:path*",
+        destination: "http://127.0.0.1:8005/api/v1/order-barang/:path*",
+      },
+      {
+        source: "/api/v1/order-barang",
+        destination: "http://127.0.0.1:8005/api/v1/order-barang",
       },
       // Identity Service (Modul 01 - Port 8001)
       {

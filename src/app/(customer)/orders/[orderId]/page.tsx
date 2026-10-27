@@ -212,7 +212,7 @@ export default function CustomerServiceOrderDetailPage() {
     const amountToPay = payableRemaining > 0 ? payableRemaining : order.pricing.totalAmount;
     customerPayOrder(amountToPay, selectedPaymentMethod, isAdditional);
     setShowPaymentModal(false);
-    setActionSuccessMsg("Pembayaran berhasil dikonfirmasi dan dana masuk ke escrow!");
+    setActionSuccessMsg("Pembayaran berhasil dikonfirmasi dan uang diamankan!");
     setTimeout(() => setActionSuccessMsg(null), 4000);
   };
 
@@ -226,7 +226,7 @@ export default function CustomerServiceOrderDetailPage() {
     customerReportDispute(disputeCategory, disputeDescription.trim() || "Komplain pengerjaan");
     setShowDisputeModal(false);
     setDisputeDescription("");
-    setActionSuccessMsg("Laporan masalah dikirim. Dana escrow dibekukan dan CS akan memediasi.");
+    setActionSuccessMsg("Laporan masalah dikirim. Uang pembayaran dibekukan dan CS akan memediasi.");
     setTimeout(() => setActionSuccessMsg(null), 5000);
   };
 
@@ -430,7 +430,7 @@ export default function CustomerServiceOrderDetailPage() {
               <p className="text-xs text-amber-900/90 leading-relaxed">
                 {totalPaid > 0
                   ? `Pembayaran awal Rp ${totalPaid.toLocaleString("id-ID")} tersimpan aman. Sisa selisih biaya Rp ${payableRemaining.toLocaleString("id-ID")} siap dilunasi.`
-                  : `Tagihan escrow awal sebesar Rp ${order.pricing.totalAmount.toLocaleString("id-ID")} siap disetorkan ke rekening Servio Shield.`}
+                  : `Tagihan pembayaran awal sebesar Rp ${order.pricing.totalAmount.toLocaleString("id-ID")} siap disetorkan ke rekening Servio Shield.`}
               </p>
             </div>
 
@@ -510,7 +510,7 @@ export default function CustomerServiceOrderDetailPage() {
                 <span>Pesanan Selesai — Masa Garansi Servio Shield Aktif</span>
               </div>
               <p className="text-xs text-emerald-800 leading-relaxed">
-                Layanan telah tuntas. Dana escrow telah dilepaskan kepada mitra. Perlindungan garansi selama {order.warrantyPeriodDays || 30} hari aktif otomatis.
+                Layanan telah tuntas. Uang pembayaran telah dilepaskan kepada mitra. Perlindungan garansi selama {order.warrantyPeriodDays || 30} hari aktif otomatis.
               </p>
             </div>
 
@@ -536,7 +536,7 @@ export default function CustomerServiceOrderDetailPage() {
                 <span>Sengketa Aktif — Mediasi Customer Support</span>
               </div>
               <p className="text-xs text-rose-900/90 leading-relaxed">
-                Dana escrow Rp {order.pricing.totalAmount.toLocaleString("id-ID")} saat ini dibekukan secara aman. Tim Customer Mediation Servio sedang meninjau kendala Anda.
+                Uang pembayaran Rp {order.pricing.totalAmount.toLocaleString("id-ID")} saat ini dibekukan secara aman. Tim Customer Mediation Servio sedang meninjau kendala Anda.
               </p>
             </div>
 
@@ -654,7 +654,7 @@ export default function CustomerServiceOrderDetailPage() {
           <div className="p-3 rounded-xl bg-emerald-50 text-emerald-800 text-xs flex items-center gap-2 border border-emerald-200">
             <ShieldCheck size={18} weight="fill" className="text-emerald-600 shrink-0" />
             <span>
-              Perlindungan Escrow Servio Shield aktif. Garansi {order.warrantyPeriodDays || 30} hari berlaku paska konfirmasi penyelesaian.
+              Perlindungan Uang Aman Servio Shield aktif. Garansi {order.warrantyPeriodDays || 30} hari berlaku paska konfirmasi penyelesaian.
             </span>
           </div>
         </div>
@@ -1411,7 +1411,7 @@ export default function CustomerServiceOrderDetailPage() {
       {/* MODAL 1: REJECT PRICE ADJUSTMENT (Section 17) */}
       {/* --------------------------------------------------------------------- */}
       {showRejectModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-white/85 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-servio-lg border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2 text-rose-600">
@@ -1475,13 +1475,13 @@ export default function CustomerServiceOrderDetailPage() {
       {/* MODAL 2: PAYMENT DIALOG (Section 28 to 31) */}
       {/* --------------------------------------------------------------------- */}
       {showPaymentModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-white/85 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-servio-lg border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2 text-primary">
                 <CreditCard size={20} weight="bold" />
                 <h3 className="font-display font-bold text-base text-neutral-dark">
-                  Pembayaran Escrow Servio Shield
+                  Pembayaran Uang Aman Servio Shield
                 </h3>
               </div>
               <button
@@ -1570,7 +1570,7 @@ export default function CustomerServiceOrderDetailPage() {
       {/* MODAL 3: DISPUTE REPORTING DIALOG (Section 39) */}
       {/* --------------------------------------------------------------------- */}
       {showDisputeModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-white/85 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-servio-lg border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <div className="flex items-center gap-2 text-rose-600">
@@ -1589,7 +1589,7 @@ export default function CustomerServiceOrderDetailPage() {
             </div>
 
             <p className="text-xs text-neutral-slate leading-relaxed">
-              Jika hasil kerja teknisi tidak sesuai janji atau unit masih bermasalah, dana escrow akan dibekukan sementara dan tim penengah Servio akan memediasi penyelesaian.
+              Jika hasil kerja teknisi tidak sesuai janji atau unit masih bermasalah, uang pembayaran akan dibekukan sementara dan tim penengah Servio akan memediasi penyelesaian.
             </p>
 
             <div className="space-y-1.5">
@@ -1641,7 +1641,7 @@ export default function CustomerServiceOrderDetailPage() {
 
       {/* CUSTOMER INVOICE MODAL (Section 2.1 & 35) */}
       {showInvoiceModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-white/85 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
             <div className="flex items-start justify-between border-b border-slate-100 pb-3">
               <div>
@@ -1736,7 +1736,7 @@ export default function CustomerServiceOrderDetailPage() {
               <button
                 type="button"
                 onClick={() => setShowInvoiceModal(false)}
-                className="px-5 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition"
+                className="px-5 py-2 rounded-xl bg-[#0F4C81] text-white text-xs font-bold hover:bg-[#0B3860] transition shadow-xs"
               >
                 Tutup Invoice
               </button>

@@ -124,6 +124,16 @@ class IdentityServiceClient
             }
         }
 
+        $cacheKey = 'identity_session_intro_' . md5($sessionReference);
+        try {
+            $cached = \Illuminate\Support\Facades\Cache::get($cacheKey);
+            if ($cached !== null && is_array($cached)) {
+                return $cached;
+            }
+        } catch (\Throwable $e) {
+            // ignore cache read failure
+        }
+
         try {
             $response = Http::withHeaders($this->getInternalHeaders())
                 ->timeout($this->timeout)
@@ -134,7 +144,13 @@ class IdentityServiceClient
             if ($response->successful()) {
                 $body = $response->json();
                 if (!empty($body['data']['active'])) {
-                    return $body['data'];
+                    $data = $body['data'];
+                    try {
+                        \Illuminate\Support\Facades\Cache::put($cacheKey, $data, 60);
+                    } catch (\Throwable $e) {
+                        // ignore cache write failure
+                    }
+                    return $data;
                 }
             }
         } catch (\Throwable $e) {
@@ -199,13 +215,31 @@ class IdentityServiceClient
             }
         }
 
+        $cacheKey = "identity_org_status_{$organizationId}";
+        try {
+            $cached = \Illuminate\Support\Facades\Cache::get($cacheKey);
+            if ($cached !== null && is_array($cached)) {
+                return $cached;
+            }
+        } catch (\Throwable $e) {
+            // ignore cache read failure
+        }
+
         try {
             $response = Http::withHeaders($this->getInternalHeaders())
                 ->timeout($this->timeout)
                 ->get("{$this->baseUrl}/internal/v1/organizations/{$organizationId}/status");
 
             if ($response->successful()) {
-                return $response->json()['data'] ?? null;
+                $data = $response->json()['data'] ?? null;
+                if ($data) {
+                    try {
+                        \Illuminate\Support\Facades\Cache::put($cacheKey, $data, 300);
+                    } catch (\Throwable $e) {
+                        // ignore cache write failure
+                    }
+                }
+                return $data;
             }
         } catch (\Throwable $e) {
             Log::warning('Identity organization status check failed: ' . $e->getMessage());
@@ -254,7 +288,7 @@ class IdentityServiceClient
                 if ($data) {
                     $this->profileMemoryCache[$organizationId] = $data;
                     try {
-                        \Illuminate\Support\Facades\Cache::put("identity_public_profile_{$organizationId}", $data, now()->addSeconds(120));
+                        \Illuminate\Support\Facades\Cache::put("identity_public_profile_{$organizationId}", $data, now()->addSeconds(600));
                     } catch (\Throwable $e) {
                         // ignore cache write failures
                     }

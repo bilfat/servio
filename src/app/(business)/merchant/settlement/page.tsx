@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, Suspense } from "react";
+import Link from "next/link";
 import {
   Bank,
   CurrencyCircleDollar,
@@ -10,6 +11,7 @@ import {
   CreditCard,
   ShieldCheck,
   DownloadSimple,
+  Wallet,
 } from "@phosphor-icons/react";
 import { useMerchantOperations } from "@/features/merchant/useMerchantOperations";
 import { MerchantSettlement, MerchantSettlementStatus } from "@/types/domain";
@@ -72,15 +74,15 @@ function MerchantSettlementContent() {
               </p>
             </div>
 
-            <Button
-              variant="primary"
-              size="md"
-              onClick={handleRequestEarlyPayout}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700"
-            >
-              <CurrencyCircleDollar size={18} weight="bold" />
-              <span>Tarik Saldo Instan</span>
-            </Button>
+            <div className="flex items-center gap-2.5">
+              <Link
+                href="/merchant/spay"
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs flex items-center gap-2"
+              >
+                <Wallet size={16} weight="bold" />
+                <span>Buka Dompet S-Pay Toko</span>
+              </Link>
+            </div>
           </div>
         </div>
       </div>

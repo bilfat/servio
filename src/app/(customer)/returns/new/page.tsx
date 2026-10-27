@@ -535,7 +535,7 @@ function CreateReturnRequestContent() {
               >
                 <p className="text-xs font-bold text-slate-900">Pengembalian Dana (Refund)</p>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  Dana escrow dikembalikan ke rekening/saldo
+                  Uang dikembalikan ke rekening/saldo
                 </p>
               </button>
             </div>

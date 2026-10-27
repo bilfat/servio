@@ -63,7 +63,7 @@ export default function SupportDashboardPage() {
             Pusat Mediasi & Bantuan CS
           </h1>
           <p className="text-xs text-slate-500 mt-1 max-w-xl">
-            Pantau kecepatan respon SLA pertama, eskalasi sengketa pelanggan vs mitra, dan pengawasan pelepasan dana penampung escrow.
+            Pantau kecepatan respon SLA pertama, eskalasi sengketa pelanggan vs mitra, dan pengawasan pelepasan uang penampung.
           </p>
         </div>
 
@@ -117,7 +117,7 @@ export default function SupportDashboardPage() {
 
         <div className="bg-white rounded-3xl border border-slate-200/80 p-5 shadow-sm space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">Dana Escrow Tertahan</span>
+            <span className="text-xs font-semibold text-slate-500">Uang Ditahan</span>
             <span className="p-2 rounded-xl bg-sky-50 text-[#0F4C81]">
               <CurrencyCircleDollar size={18} weight="duotone" />
             </span>
@@ -238,7 +238,7 @@ export default function SupportDashboardPage() {
           Pedoman Mediasi Otoritas Servio (SOP CS #12 Dispute Mediation)
         </h3>
         <p className="text-xs text-slate-600 leading-relaxed">
-          1. <strong>Karantina Escrow:</strong> Seluruh dana transaksi dibekukan secara otomatis saat komplain dibuka.<br />
+          1. <strong>Karantina Uang:</strong> Seluruh uang transaksi dibekukan secara otomatis saat komplain dibuka.<br />
           2. <strong>Audit Bukti 360°:</strong> Verifikasi foto Before vs After teknisi dan pembacaan multimeter.<br />
           3. <strong>Tripartite Dialogue:</strong> Beri batas waktu 24 jam bagi mitra untuk mengajukan solusi (Free Rework / Ganti Rugi).<br />
           4. <strong>Eksekusi Putusan:</strong> Putusan pengembalian dana (*Refund*) di-handoff otomatis ke Portal Finance.

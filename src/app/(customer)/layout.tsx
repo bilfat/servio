@@ -2,20 +2,70 @@
 
 import React from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AppShell } from "@/components/layout/AppShell";
 import { useActiveRole } from "@/context/RoleContext";
 import { Button } from "@/components/ui/Button";
 import { Lock, SignIn, UserSwitch, House } from "@phosphor-icons/react";
+import { getRoleDashboard, isOperationalRole } from "@/lib/roleNavigation";
 
 export default function CustomerLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { isPublicGuest, switchRole } = useActiveRole();
+  const { isPublicGuest, activeRole, switchRole } = useActiveRole();
   const pathname = usePathname();
+  const router = useRouter();
   const isPublicAllowed = pathname === "/support" || pathname?.startsWith("/support");
+
+  const isOperational = isOperationalRole(activeRole) && !isPublicGuest;
+
+  React.useEffect(() => {
+    if (isOperational) {
+      const dest = getRoleDashboard(activeRole);
+      router.replace(dest);
+    }
+  }, [isOperational, activeRole, router]);
+
+  if (isOperational) {
+    const dashboardUrl = getRoleDashboard(activeRole);
+    return (
+      <AppShell>
+        <div className="min-h-[70vh] flex items-center justify-center px-4 py-12">
+          <div className="max-w-md w-full bg-white rounded-2xl border border-neutral-light/60 p-8 shadow-sm text-center">
+            <div className="w-14 h-14 mx-auto mb-5 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center border border-sky-200/60 shadow-sm">
+              <Lock size={28} weight="duotone" />
+            </div>
+
+            <h2 className="text-xl font-bold text-neutral-dark mb-2">
+              Khusus Akun Pelanggan
+            </h2>
+            <p className="text-sm text-neutral mb-6 leading-relaxed">
+              Anda sedang aktif dengan peran <strong className="text-neutral-dark">{activeRole?.replace(/_/g, " ")}</strong>. 
+              Halaman ini diperuntukkan bagi pelanggan SERVIO. Mengalihkan ke dashboard kerja Anda...
+            </p>
+
+            <div className="flex flex-col gap-3">
+              <Link href={dashboardUrl}>
+                <Button variant="primary" className="w-full flex items-center justify-center gap-2">
+                  <span>Buka Dashboard {activeRole?.replace(/_/g, " ")}</span>
+                </Button>
+              </Link>
+              <Button
+                variant="outline"
+                className="w-full flex items-center justify-center gap-2"
+                onClick={() => switchRole("CUSTOMER")}
+              >
+                <UserSwitch size={18} weight="bold" />
+                <span>Beralih ke Akun Pelanggan</span>
+              </Button>
+            </div>
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
 
   if (isPublicGuest && !isPublicAllowed) {
     return (

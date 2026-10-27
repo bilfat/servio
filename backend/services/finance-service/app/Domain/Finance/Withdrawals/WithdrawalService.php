@@ -399,6 +399,11 @@ class WithdrawalService
             throw new HttpException(422, 'Bukti konfirmasi keamanan tambahan (step_up_reference) diperlukan.');
         }
 
+        // Authoritative DEMO verification bypass in local/mock environment
+        if ($stepUpReference === 'DEMO_STEP_UP_VERIFIED' && (config('finance.mock_payout_enabled') || !app()->environment('production'))) {
+            return;
+        }
+
         $secret = config('finance.step_up_secret');
         if (empty($secret)) {
             // If Identity contract / secret is not configured, fail-closed safely

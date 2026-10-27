@@ -332,7 +332,7 @@ export default function ContactUsPage() {
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-neutral-dark focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary shadow-xs transition font-medium"
                   >
                     <option value="SERVICE_ORDER">Pesanan Servis & Teknisi</option>
-                    <option value="PAYMENT_ESCROW">Pembayaran & Rekening Escrow</option>
+                    <option value="PAYMENT_ESCROW">Pembayaran & Uang Aman</option>
                     <option value="WARRANTY_CLAIM">Klaim Garansi Servio Protection</option>
                     <option value="PARTS_RETURN">Retur Suku Cadang / Pengiriman</option>
                     <option value="PARTNERSHIP">Kemitraan Teknisi / Merchant Toko</option>
@@ -460,7 +460,7 @@ export default function ContactUsPage() {
                   </span>
                 </div>
                 <div className="py-2.5 flex items-center justify-between">
-                  <span>Pencairan Rekening Escrow</span>
+                  <span>Pencairan Uang Tertahan</span>
                   <span className="font-bold text-neutral-dark bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full text-[11px]">
                     Instan Pasca BAST
                   </span>
@@ -505,7 +505,7 @@ export default function ContactUsPage() {
                   Pertanyaan Sering Diajukan
                 </h4>
                 <p className="text-[11px] text-neutral-slate">
-                  Ingin cek info garansi atau mekanisme escrow sebelum mengirim pesan?
+                  Ingin cek info garansi atau mekanisme uang aman sebelum mengirim pesan?
                 </p>
               </div>
               <Link

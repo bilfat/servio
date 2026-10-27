@@ -215,7 +215,7 @@ export default function QuotationDetailPage() {
                 className="px-6 py-2.5 rounded-xl bg-emerald-600 text-white font-display font-bold text-xs hover:bg-emerald-700 transition-all flex items-center gap-2 shadow-servio-xs active:scale-95"
               >
                 <CheckCircle size={16} weight="fill" />
-                <span>Terima Penawaran (Bayar Escrow)</span>
+                <span>Terima Penawaran (Bayar Aman)</span>
                 <ArrowRight size={14} weight="bold" />
               </button>
             </>
@@ -232,7 +232,7 @@ export default function QuotationDetailPage() {
                 onClick={() => router.push(`/payments/${quotation.orderId}`)}
                 className="px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold flex items-center gap-1.5 shadow-servio-xs"
               >
-                <span>Lanjut ke Pembayaran Escrow</span>
+                <span>Lanjut ke Pembayaran Aman</span>
                 <ArrowRight size={14} />
               </button>
             </div>

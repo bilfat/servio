@@ -68,7 +68,7 @@ export default function ContextualChatPage() {
           <div className="flex items-start gap-2.5">
             <ShieldCheck size={18} weight="fill" className="text-amber-600 shrink-0 mt-0.5" />
             <p className="leading-relaxed text-[11px]">
-              <strong>Keamanan Transaksi:</strong> Jangan pernah melakukan transfer dana di luar sistem rekening Escrow resmi Servio. Seluruh komunikasi dalam thread ini diawasi demi keamanan garansi Anda.
+              <strong>Keamanan Transaksi:</strong> Jangan pernah melakukan transfer dana di luar sistem pembayaran resmi Servio. Seluruh komunikasi dalam thread ini diawasi demi keamanan garansi Anda.
             </p>
           </div>
           <button

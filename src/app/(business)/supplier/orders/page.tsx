@@ -201,7 +201,7 @@ function SupplierOrdersContent() {
             </div>
 
             <div className="flex items-center gap-2">
-              <Link href="/business/supplier/inventory">
+              <Link href="/supplier/inventory">
                 <Button variant="outline" size="sm" className="flex items-center gap-1.5 text-xs">
                   <Warehouse size={16} />
                   <span>Cek Inventori Gudang</span>

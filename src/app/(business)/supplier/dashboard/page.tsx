@@ -162,7 +162,7 @@ function SupplierDashboardContent() {
             </div>
 
             <div className="flex items-center gap-2">
-              <Link href="/business/supplier/products">
+              <Link href="/supplier/products">
                 <Button variant="primary" size="md" className="flex items-center gap-1.5">
                   <Package size={16} weight="bold" />
                   <span>Katalog Grosir B2B</span>
@@ -283,7 +283,7 @@ function SupplierDashboardContent() {
         {/* Quick Operations Shortcuts */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Link
-            href="/business/supplier/products"
+            href="/supplier/products"
             className="p-4 bg-white rounded-2xl border border-slate-200 hover:border-primary/40 hover:bg-slate-50/80 transition-all flex items-center justify-between group"
           >
             <div className="flex items-center gap-3">
@@ -299,7 +299,7 @@ function SupplierDashboardContent() {
           </Link>
 
           <Link
-            href="/business/supplier/inventory"
+            href="/supplier/inventory"
             className="p-4 bg-white rounded-2xl border border-slate-200 hover:border-primary/40 hover:bg-slate-50/80 transition-all flex items-center justify-between group"
           >
             <div className="flex items-center gap-3">
@@ -315,7 +315,7 @@ function SupplierDashboardContent() {
           </Link>
 
           <Link
-            href="/business/supplier/fulfillment"
+            href="/supplier/fulfillment"
             className="p-4 bg-white rounded-2xl border border-slate-200 hover:border-primary/40 hover:bg-slate-50/80 transition-all flex items-center justify-between group"
           >
             <div className="flex items-center gap-3">
@@ -331,7 +331,7 @@ function SupplierDashboardContent() {
           </Link>
 
           <Link
-            href="/business/supplier/shipping"
+            href="/supplier/shipping"
             className="p-4 bg-white rounded-2xl border border-slate-200 hover:border-primary/40 hover:bg-slate-50/80 transition-all flex items-center justify-between group"
           >
             <div className="flex items-center gap-3">
@@ -365,7 +365,7 @@ function SupplierDashboardContent() {
             </div>
 
             <div className="flex items-center gap-3">
-              <Link href="/business/supplier/orders">
+              <Link href="/supplier/orders">
                 <Button variant="outline" size="sm" className="flex items-center gap-1.5 text-xs text-primary border-primary/30 hover:bg-primary/5">
                   <ClipboardText size={14} weight="bold" />
                   <span>Buka Workspace Pesanan B2B</span>
@@ -589,7 +589,7 @@ function SupplierDashboardContent() {
                             <span>Konfirmasi PO</span>
                           </Button>
                         ) : (
-                          <Link href="/business/supplier/fulfillment">
+                          <Link href="/supplier/fulfillment">
                             <Button variant="outline" size="sm" className="text-xs">
                               Cek Logistik
                             </Button>
@@ -615,7 +615,7 @@ function SupplierDashboardContent() {
                 Stok palet dan tiering diskon minimum order quantity (MOQ)
               </p>
             </div>
-            <Link href="/business/supplier/products">
+            <Link href="/supplier/products">
               <span className="text-xs font-semibold text-primary hover:underline flex items-center gap-1">
                 Kelola Semua Produk <ArrowRight size={12} />
               </span>

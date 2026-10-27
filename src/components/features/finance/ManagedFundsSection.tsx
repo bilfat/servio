@@ -33,8 +33,8 @@ export function ManagedFundsSection({
         <Info size={20} weight="fill" className="text-amber-600 shrink-0 mt-0.5" />
         <div className="text-xs leading-relaxed">
           <span className="font-bold">Prinsip Akuntansi Finansial SERVIO:</span> Dana yang tertera pada bagian ini merupakan{" "}
-          <strong>Dana Transaksi & Kewajiban yang Dikelola (Managed Funds)</strong> — mencakup dana escrow, hak settlement mitra, dan saldo dompet refund customer.{" "}
-          <strong className="underline">DILARANG menjumlahkan metrik ini ke dalam Platform Revenue</strong>, karena dana ini bukan pendapatan milik SERVIO melainkan dana titipan transaksi.
+          <strong>Dana Transaksi &amp; Kewajiban yang Dikelola</strong> — mencakup uang ditahan, hak saldo mitra, dan saldo dompet pengembalian pelanggan.{" "}
+          <strong className="underline">DILARANG menjumlahkan metrik ini ke dalam Pendapatan Platform</strong>, karena dana ini bukan pendapatan milik SERVIO melainkan dana titipan transaksi.
         </div>
       </div>
 
@@ -45,7 +45,7 @@ export function ManagedFundsSection({
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Volume GMV Transaksi
+                Total Nilai Transaksi (GMV)
               </span>
               <span className="p-2 rounded-xl bg-slate-100 text-slate-700">
                 <ArrowsLeftRight size={18} weight="bold" />
@@ -66,12 +66,12 @@ export function ManagedFundsSection({
           </div>
         </div>
 
-        {/* 2. Saldo Escrow Penampung Aktif */}
+        {/* 2. Saldo Uang Penampung Aktif */}
         <div className="bg-gradient-to-br from-slate-900 to-[#0F4C81] text-white rounded-3xl p-5 shadow-xs flex flex-col justify-between">
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-sky-200 uppercase tracking-wider">
-                Dana Escrow Aktif
+                Uang Ditahan Aktif
               </span>
               <span className="p-2 rounded-xl bg-white/10 text-emerald-300">
                 <Bank size={18} weight="fill" />
@@ -81,7 +81,7 @@ export function ManagedFundsSection({
               Rp {managedFunds.activeEscrowBalance.toLocaleString("id-ID")}
             </div>
             <p className="text-[11px] text-sky-100/80">
-              Dana penampung transaksi yang belum selesai/dikonfirmasi
+              Uang penampung transaksi yang belum selesai/dikonfirmasi
             </p>
           </div>
           <div className="pt-3 mt-3 border-t border-white/15 flex items-center justify-between text-[11px]">
@@ -95,7 +95,7 @@ export function ManagedFundsSection({
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Settlement Toko Mitra
+                Hak Saldo Toko Mitra
               </span>
               <span className="p-2 rounded-xl bg-purple-50 text-purple-700">
                 <HandCoins size={18} weight="bold" />
@@ -122,7 +122,7 @@ export function ManagedFundsSection({
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Settlement Jasa Bengkel
+                Hak Saldo Jasa Bengkel
               </span>
               <span className="p-2 rounded-xl bg-emerald-50 text-emerald-700">
                 <ShieldCheck size={18} weight="bold" />
@@ -146,7 +146,7 @@ export function ManagedFundsSection({
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Saldo S-Pay Customer
+                Saldo S-Pay Pelanggan
               </span>
               <span className="p-2 rounded-xl bg-rose-50 text-rose-700">
                 <Receipt size={18} weight="bold" />
@@ -156,12 +156,12 @@ export function ManagedFundsSection({
               Rp {managedFunds.spayCustomerRefundBalance.toLocaleString("id-ID")}
             </div>
             <p className="text-[11px] text-slate-500">
-              Saldo refund resmi customer (dapat ditarik ke rekening pribadi)
+              Saldo pengembalian resmi pelanggan (dapat ditarik ke rekening pribadi)
             </p>
           </div>
           <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
             <span className="text-slate-400">Kewajiban Belum Terdanai:</span>
-            <span className="font-bold text-emerald-700">Rp 0 (100% Backed)</span>
+            <span className="font-bold text-emerald-700">Rp 0 (100% Terjamin)</span>
           </div>
         </div>
 
@@ -170,7 +170,7 @@ export function ManagedFundsSection({
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Pencairan Sukses (Payout)
+                Pencairan Sukses (Penarikan)
               </span>
               <span className="p-2 rounded-xl bg-sky-50 text-[#0F4C81]">
                 <Bank size={18} weight="bold" />
@@ -180,11 +180,11 @@ export function ManagedFundsSection({
               Rp {managedFunds.totalWithdrawnToBank.toLocaleString("id-ID")}
             </div>
             <p className="text-[11px] text-slate-500">
-              Telah ditransfer ke rekening bank via BI-FAST / Batch Payout
+              Telah ditransfer ke rekening bank via BI-FAST / Pencairan Massal
             </p>
           </div>
           <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between text-[11px]">
-            <span className="text-slate-400">Antrean Batch Payout:</span>
+            <span className="text-slate-400">Antrean Pencairan Dana:</span>
             <span className="font-mono font-bold text-amber-600">
               Rp {managedFunds.pendingWithdrawalBatch.toLocaleString("id-ID")}
             </span>
@@ -206,15 +206,15 @@ export function ManagedFundsSection({
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/70">
-              <span className="text-slate-500 text-[11px] block">Tingkat Match Rekonsiliasi</span>
+              <span className="text-slate-500 text-[11px] block">Tingkat Kesesuaian Rekonsiliasi</span>
               <span className="text-base font-bold text-emerald-700 font-mono mt-0.5 block">
                 {healthMetrics.reconciliationMatchRate}%
               </span>
-              <span className="text-[10px] text-slate-400">148 matched gateway</span>
+              <span className="text-[10px] text-slate-400">148 cocok dengan gateway</span>
             </div>
 
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/70">
-              <span className="text-slate-500 text-[11px] block">Selisih Discrepancy</span>
+              <span className="text-slate-500 text-[11px] block">Selisih Rekonsiliasi</span>
               <span className="text-base font-bold text-amber-700 font-mono mt-0.5 block">
                 Rp {healthMetrics.reconciliationDiscrepancyAmount.toLocaleString("id-ID")}
               </span>
@@ -222,7 +222,7 @@ export function ManagedFundsSection({
             </div>
 
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/70">
-              <span className="text-slate-500 text-[11px] block">Antrean Refund CS</span>
+              <span className="text-slate-500 text-[11px] block">Antrean Pengembalian CS</span>
               <span className="text-base font-bold text-slate-900 font-mono mt-0.5 block">
                 {healthMetrics.outstandingRefundCount} Kasus
               </span>
@@ -230,7 +230,7 @@ export function ManagedFundsSection({
             </div>
 
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/70">
-              <span className="text-slate-500 text-[11px] block">Batch Payout Siap Rilis</span>
+              <span className="text-slate-500 text-[11px] block">Pencairan Massal Siap Rilis</span>
               <span className="text-base font-bold text-indigo-700 font-mono mt-0.5 block">
                 {healthMetrics.pendingPayoutBatchCount} Batch
               </span>

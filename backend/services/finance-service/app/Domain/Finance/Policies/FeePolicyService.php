@@ -124,7 +124,15 @@ class FeePolicyService
 
         $nextVersionNo = (int) $group->versions()->max('version_no') + 1;
 
-        return DB::transaction(function () use ($group, $nextVersionNo, $changeReason, $targets, $actorUserId) {
+        return DB::transaction(function () use ($group, $nextVersionNo, $changeReason, $targets, $actorUserId, $data) {
+            if (!empty($data['name']) || !empty($data['display_name'])) {
+                $group->display_name = trim($data['name'] ?? $data['display_name']);
+            }
+            if (isset($data['description'])) {
+                $group->description = trim($data['description']);
+            }
+            $group->save();
+
             $version = FeePolicyVersion::create([
                 'group_id' => $group->id,
                 'version_no' => $nextVersionNo,
@@ -158,6 +166,31 @@ class FeePolicyService
                 'targets_count' => count($targets),
             ];
         });
+    }
+
+    public function updateGroup(string $groupId, array $data, string $actorUserId): FeePolicyGroup
+    {
+        $group = $this->getPolicy($groupId);
+
+        if (!empty($data['name']) || !empty($data['display_name'])) {
+            $group->display_name = trim($data['name'] ?? $data['display_name']);
+        }
+        if (isset($data['description'])) {
+            $group->description = trim($data['description']);
+        }
+        $group->save();
+
+        FinanceAuditLog::create([
+            'actor_user_id' => $actorUserId,
+            'actor_service' => 'finance-service',
+            'action' => 'FEE_POLICY_NAME_UPDATED',
+            'subject_type' => 'FeePolicyGroup',
+            'subject_id' => $group->id,
+            'result' => 'SUCCESS',
+            'after_state' => ['display_name' => $group->display_name],
+        ]);
+
+        return $group->load(['versions.targets']);
     }
 
     public function updateDraft(string $versionId, array $data, string $actorUserId): FeePolicyVersion

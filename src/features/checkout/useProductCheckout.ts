@@ -1,75 +1,142 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { CartStoreGroup } from "@/types/domain";
-import { cartApi, productOrdersApi, profileApi, ApiAddress } from "@/lib/servioApi";
-import { orderBarangStore } from "@/features/order-barang/orderBarangStore";
-
-export interface CourierOption {
-  id: string;
-  name: string;
-  service: string;
-  cost: number;
-  estimatedDays: string;
-}
-
-export const AVAILABLE_COURIERS: CourierOption[] = [
-  { id: "jne-reg", name: "JNE", service: "Reguler", cost: 15000, estimatedDays: "2-3 Hari" },
-  { id: "sicepat-best", name: "SiCepat", service: "BEST (Besok Sampai)", cost: 18000, estimatedDays: "1-2 Hari" },
-  { id: "gojek-instant", name: "GoSend", service: "Instant Kurir", cost: 30000, estimatedDays: "3 Jam" },
-];
+import { profileApi, financeApi, ApiAddress } from "@/lib/servioApi";
+import {
+  orderBarangApi,
+  CheckoutQuoteResponse,
+  MerchantQuoteBreakdown,
+  CheckoutCreatedResponse,
+  CustomerFeePolicyInfo,
+} from "@/lib/orderBarangApi";
 
 export interface DeliveryAddressForm {
+  id?: string;
+  label?: string;
   recipientName: string;
   phone: string;
   street: string;
+  village?: string;
+  district?: string;
   city: string;
+  province?: string;
   postalCode: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  isDefault?: boolean;
 }
 
-export function useProductCheckout(initialGroups: CartStoreGroup[] = []) {
-  const [selectedCourier, setSelectedCourier] = useState<CourierOption>(AVAILABLE_COURIERS[0]);
+export function useProductCheckout(
+  cartGroups: CartStoreGroup[] = [],
+  selectedItemIds: string[] = []
+) {
   const [savedAddresses, setSavedAddresses] = useState<ApiAddress[]>([]);
   const [isLoadingAddresses, setIsLoadingAddresses] = useState(false);
+  const [selectedAddressId, setSelectedAddressId] = useState<string>("");
   const [deliveryAddress, setDeliveryAddress] = useState<DeliveryAddressForm>({
+    label: "Rumah Utama",
     recipientName: "Ahmad Pratama",
     phone: "0812-9988-1122",
     street: "Gedung BEI Tower 2 Lt. 14, Jl. Jend. Sudirman Kav. 52-53",
+    village: "Senayan",
+    district: "Kebayoran Baru",
     city: "Jakarta Selatan",
+    province: "DKI Jakarta",
     postalCode: "12190",
+    latitude: -6.2235,
+    longitude: 106.8088,
+    isDefault: true,
   });
-  const [isInsuranceEnabled, setIsInsuranceEnabled] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [validationIssues, setValidationIssues] = useState<string[]>([]);
-  const [serverBreakdown, setServerBreakdown] = useState<{
-    itemsSubtotal: number;
-    shippingFee: number;
-    platformFee: number;
-    taxAmount: number;
-    discountAmount: number;
-    grandTotal: number;
-  } | null>(null);
 
-  // Load customer authoritative addresses from profileApi
+  const [merchantNotes, setMerchantNotes] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingQuote, setIsLoadingQuote] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [dependencyBlockMessage, setDependencyBlockMessage] = useState<string | null>(null);
+
+  // Authoritative quote from 05A backend
+  const [serverQuote, setServerQuote] = useState<CheckoutQuoteResponse | null>(null);
+
+  // Active customer fee policy from CEO Platform Policies (Modul 06 Finance)
+  const [activeFeePolicy, setActiveFeePolicy] = useState<CustomerFeePolicyInfo | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchActiveFeePolicy() {
+      try {
+        const res = await financeApi.policies.getActiveCustomerFee();
+        if (res && res.data && isMounted) {
+          setActiveFeePolicy(res.data);
+        }
+      } catch (err) {
+        console.warn("Could not load active customer fee policy directly:", err);
+      }
+    }
+    fetchActiveFeePolicy();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (serverQuote?.customer_fee_policy) {
+      setActiveFeePolicy(serverQuote.customer_fee_policy);
+    }
+  }, [serverQuote]);
+
+  // Map any productId, composite, or cartItemId to backend CartItem IDs
+  const resolvedCartItemIds = useMemo(() => {
+    if (!selectedItemIds || selectedItemIds.length === 0) return [];
+    const list: string[] = [];
+    cartGroups.forEach((g) => {
+      g.items.forEach((it) => {
+        const isSelected =
+          (it.cartItemId && selectedItemIds.includes(it.cartItemId)) ||
+          (it.productId && selectedItemIds.includes(it.productId)) ||
+          (it.productId && it.variantId && selectedItemIds.includes(`${it.productId}_${it.variantId}`));
+        if (isSelected && it.cartItemId && !list.includes(it.cartItemId)) {
+          list.push(it.cartItemId);
+        }
+      });
+    });
+    return list.length > 0 ? list : selectedItemIds;
+  }, [cartGroups, selectedItemIds]);
+
+  // Load customer authoritative addresses from Identity Service
   useEffect(() => {
     let isMounted = true;
     async function fetchUserAddresses() {
       setIsLoadingAddresses(true);
       try {
         const res = await profileApi.getAddresses();
-        if (res.data && res.data.length > 0 && isMounted) {
-          setSavedAddresses(res.data);
-          const defaultAddr = res.data.find((a) => a.isDefault) || res.data[0];
+        const addrs = (res.data as ApiAddress[]) || [];
+        if (addrs.length > 0 && isMounted) {
+          setSavedAddresses(addrs);
+          const defaultAddr = addrs.find((a) => a.isDefault) || addrs[0];
+          setSelectedAddressId(defaultAddr.id);
           setDeliveryAddress({
+            id: defaultAddr.id,
+            label: defaultAddr.label || "Rumah",
             recipientName: defaultAddr.recipientName || "Ahmad Pratama",
             phone: defaultAddr.phone || "0812-9988-1122",
             street: defaultAddr.addressLine,
+            village: defaultAddr.village || "",
+            district: defaultAddr.district || "",
             city: defaultAddr.city || "Jakarta Selatan",
+            province: defaultAddr.province || "",
             postalCode: defaultAddr.postalCode || "12190",
+            latitude: defaultAddr.latitude,
+            longitude: defaultAddr.longitude,
+            isDefault: defaultAddr.isDefault,
           });
+        } else if (isMounted) {
+          // If no address registered in Identity Service
+          setSelectedAddressId("addr-default-1");
         }
       } catch (err) {
-        console.warn("Could not load user addresses, using standard address:", err);
+        console.warn("Could not load user addresses, using fallback:", err);
+        if (isMounted) setSelectedAddressId("addr-default-1");
       } finally {
         if (isMounted) setIsLoadingAddresses(false);
       }
@@ -81,50 +148,129 @@ export function useProductCheckout(initialGroups: CartStoreGroup[] = []) {
   }, []);
 
   const selectSavedAddress = useCallback((addr: ApiAddress) => {
+    setSelectedAddressId(addr.id);
     setDeliveryAddress({
+      id: addr.id,
+      label: addr.label || "Rumah",
       recipientName: addr.recipientName || "Pelanggan",
       phone: addr.phone || "0812-9988-1122",
       street: addr.addressLine,
+      village: addr.village || "",
+      district: addr.district || "",
       city: addr.city || "Jakarta Selatan",
+      province: addr.province || "",
       postalCode: addr.postalCode || "12190",
+      latitude: addr.latitude,
+      longitude: addr.longitude,
+      isDefault: addr.isDefault,
     });
   }, []);
 
-  // Server-side authoritative checkout preview recalculation
-  const refreshPreview = useCallback(async () => {
+  // Update note for specific merchant
+  const setMerchantNote = useCallback((merchantId: string, note: string) => {
+    setMerchantNotes((prev) => ({
+      ...prev,
+      [merchantId]: note,
+    }));
+  }, []);
+
+  // Authoritative quote request from order-barang backend
+  const refreshQuote = useCallback(async () => {
+    if (!selectedAddressId || selectedItemIds.length === 0) return;
+
+    setIsLoadingQuote(true);
+    setQuoteError(null);
+    setDependencyBlockMessage(null);
+
     try {
-      const res = await cartApi.checkoutPreview({ courierCode: selectedCourier.id });
-      if (res.data?.isValid && res.data?.breakdown) {
-        setValidationIssues([]);
-        setServerBreakdown({
-          itemsSubtotal: res.data.breakdown.itemsSubtotal,
-          shippingFee: res.data.breakdown.shippingFee,
-          platformFee: res.data.breakdown.platformFee,
-          taxAmount: res.data.breakdown.taxAmount,
-          discountAmount: res.data.breakdown.discountAmount,
-          grandTotal: res.data.breakdown.grandTotal,
-        });
-      } else if (res.data?.issues) {
-        setValidationIssues(res.data.issues);
+      const payload: {
+        address_id: string;
+        cart_item_ids?: string[];
+        merchant_notes?: Record<string, string>;
+      } = {
+        address_id: selectedAddressId,
+        merchant_notes: merchantNotes,
+      };
+
+      if (resolvedCartItemIds && resolvedCartItemIds.length > 0) {
+        payload.cart_item_ids = resolvedCartItemIds;
       }
-    } catch {
-      // Keep existing estimate
+
+      const res = await orderBarangApi.customer.previewQuote(payload);
+      if (res.data) {
+        setServerQuote(res.data);
+      }
+    } catch (err: any) {
+      const msg = err?.message || "Gagal menghitung tarif pengiriman dan rincian checkout.";
+      if (
+        msg.includes("PENDING_PRODUCT_CONTRACT") ||
+        err?.code === "PENDING_PRODUCT_CONTRACT" ||
+        msg.includes("reservasi stok")
+      ) {
+        setDependencyBlockMessage(
+          "Reservasi stok katalog eksternal belum tersedia (PENDING_PRODUCT_CONTRACT). Pembayaran ditahan demi integritas data pesanan."
+        );
+      } else {
+        setQuoteError(msg);
+      }
+    } finally {
+      setIsLoadingQuote(false);
     }
-  }, [selectedCourier.id]);
+  }, [selectedAddressId, selectedItemIds, resolvedCartItemIds, merchantNotes]);
 
   useEffect(() => {
-    refreshPreview();
-  }, [refreshPreview]);
+    if (selectedAddressId) {
+      refreshQuote();
+    }
+  }, [selectedAddressId, refreshQuote]);
 
-  const itemsSubtotal = serverBreakdown ? serverBreakdown.itemsSubtotal : initialGroups.reduce((acc, g) => acc + g.subtotal, 0);
-  const shippingCost = serverBreakdown ? serverBreakdown.shippingFee : selectedCourier.cost * Math.max(1, initialGroups.length);
-  const insuranceCost = isInsuranceEnabled ? Math.round(itemsSubtotal * 0.005) : 0;
-  const platformFee = serverBreakdown ? serverBreakdown.platformFee : 2500;
-  const taxAmount = serverBreakdown ? serverBreakdown.taxAmount : 0;
-  const discountAmount = serverBreakdown ? serverBreakdown.discountAmount : 0;
-  const grandTotal = serverBreakdown
-    ? serverBreakdown.grandTotal + insuranceCost
-    : itemsSubtotal + shippingCost + insuranceCost + platformFee + taxAmount - discountAmount;
+  // Fallback estimates if backend quote is loading
+  const rawSubtotal = useMemo(() => {
+    return cartGroups.reduce((acc, g) => {
+      const activeItems = g.items.filter((it) => {
+        if (!selectedItemIds || selectedItemIds.length === 0) return false;
+        return (
+          (it.cartItemId && selectedItemIds.includes(it.cartItemId)) ||
+          (it.productId && selectedItemIds.includes(it.productId)) ||
+          (it.productId && it.variantId && selectedItemIds.includes(`${it.productId}_${it.variantId}`))
+        );
+      });
+      return acc + activeItems.reduce((s, it) => s + (it.unitPriceSnapshot ?? it.unitPrice) * it.quantity, 0);
+    }, 0);
+  }, [cartGroups, selectedItemIds]);
+
+  const itemsSubtotal = serverQuote
+    ? (serverQuote.total_products_subtotal_idr ?? (serverQuote as any).product_subtotal_idr ?? rawSubtotal)
+    : rawSubtotal;
+  const shippingCost = serverQuote
+    ? (serverQuote.total_shipping_fee_idr ?? (serverQuote as any).shipping_total_idr ?? 0)
+    : 0;
+
+  const effectiveFeePolicy = serverQuote?.customer_fee_policy || activeFeePolicy;
+
+  const customerAppFee = useMemo(() => {
+    if (serverQuote?.customer_app_fee_idr !== undefined && serverQuote.customer_app_fee_idr !== null) {
+      return serverQuote.customer_app_fee_idr;
+    }
+    if (effectiveFeePolicy) {
+      if (effectiveFeePolicy.fee_type === "FIXED") {
+        return effectiveFeePolicy.fixed_amount_idr ?? 0;
+      }
+      if (effectiveFeePolicy.fee_type === "PERCENTAGE") {
+        const rate = effectiveFeePolicy.percentage_rate ?? 0;
+        return Math.round((itemsSubtotal * rate) / 100);
+      }
+    }
+    return 2500;
+  }, [serverQuote, effectiveFeePolicy, itemsSubtotal]);
+
+  const feePolicyName = effectiveFeePolicy?.policy_name || "Biaya Layanan Aplikasi";
+  const taxAmount = serverQuote ? (serverQuote.tax_idr ?? 0) : 0;
+  const grandTotal = serverQuote
+    ? (serverQuote.customer_grand_total_idr ??
+        (serverQuote as any).estimated_grand_total_idr ??
+        itemsSubtotal + shippingCost + customerAppFee + taxAmount)
+    : itemsSubtotal + shippingCost + customerAppFee + taxAmount;
 
   const validateForm = (): { isValid: boolean; error?: string } => {
     if (!deliveryAddress.recipientName.trim()) {
@@ -136,10 +282,15 @@ export function useProductCheckout(initialGroups: CartStoreGroup[] = []) {
     if (!deliveryAddress.street.trim()) {
       return { isValid: false, error: "Alamat pengiriman wajib diisi." };
     }
+    if (dependencyBlockMessage) {
+      return { isValid: false, error: dependencyBlockMessage };
+    }
     return { isValid: true };
   };
 
-  const submitOrder = async () => {
+  const submitOrder = async (
+    paymentMethod: string = "QRIS"
+  ): Promise<{ checkoutGroupId: string; orderCount: number }> => {
     const val = validateForm();
     if (!val.isValid) {
       throw new Error(val.error);
@@ -147,68 +298,44 @@ export function useProductCheckout(initialGroups: CartStoreGroup[] = []) {
 
     setIsSubmitting(true);
     try {
-      // Phase 05A Frontend-Only Mock Store Creation
-      const mockCheckoutItems = (initialGroups.length > 0 ? initialGroups : []).map((g) => ({
-        merchantId: g.merchantId,
-        merchantName: g.merchantName,
-        items: g.items.map((it) => ({
-          productId: it.productId,
-          variantId: it.variantId,
-          variantName: (it as any).variantName,
-          title: it.productTitle,
-          thumbnailUrl: it.thumbnailUrl,
-          unitPrice: it.unitPrice,
-          quantity: it.quantity,
-          subtotal: it.unitPrice * it.quantity,
-        })),
-        shippingFee: (g as any).shippingFee || 12000,
-        distanceKm: (g as any).distanceKm || 3.5,
-      }));
+      const idempotencyKey = `chk-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
-      const { checkoutGroup, orders } = orderBarangStore.createCheckoutGroup({
-        cartGroups: (mockCheckoutItems.length > 0
-          ? mockCheckoutItems
-          : [
-              {
-                merchantId: "merch-sinar-ac",
-                merchantName: "Toko Sinar AC Glodok",
-                items: [
-                  {
-                    productId: "prod-cap-01",
-                    title: "Kapasitor AC Split 25 uF",
-                    variantName: "25 uF",
-                    price: 45000,
-                    quantity: 2,
-                  },
-                ],
-                shippingFee: 12000,
-                distanceKm: 3.5,
-              },
-            ]) as any,
-        recipientAddress: {
-          id: "ADDR-CUST-ACTIVE",
-          recipientName: deliveryAddress.recipientName,
-          phone: deliveryAddress.phone,
-          fullAddress: deliveryAddress.street,
-          street: deliveryAddress.street,
-          city: deliveryAddress.city || "Kota Jakarta Selatan",
-          postalCode: deliveryAddress.postalCode || "12190",
-          notes: "Dekat pos satpam",
+      const res = await orderBarangApi.customer.createCheckout(
+        {
+          address_id: selectedAddressId || "addr-default-1",
+          cart_item_ids: resolvedCartItemIds.length > 0 ? resolvedCartItemIds : undefined,
+          merchant_notes: merchantNotes,
         },
-        paymentMethod: "VIRTUAL_ACCOUNT",
-        selectedBank: "BCA",
-      });
+        idempotencyKey
+      );
 
-      setIsSubmitting(false);
+      const created = res.data as CheckoutCreatedResponse;
+      const checkoutGroupId = (created as any)?.checkout_group_id || created?.id;
+      if (!checkoutGroupId) {
+        throw new Error("Gagal membuat CheckoutGroup pada server.");
+      }
+
+      // Automatically request payment intent for the CheckoutGroup with customer's chosen method
+      try {
+        await orderBarangApi.customer.createPaymentIntent(checkoutGroupId, paymentMethod as any);
+      } catch (e) {
+        console.warn("Auto payment intent creation deferred to payment page:", e);
+      }
+
       return {
-        orderId: orders[0]?.id || checkoutGroup.orderIds[0],
-        paymentIntentId: checkoutGroup.id,
-        totalPaid: checkoutGroup.grandTotal,
-        courier: selectedCourier.name,
+        checkoutGroupId,
+        orderCount: (created as any)?.merchant_orders?.length || created?.orders?.length || 1,
       };
     } catch (err: any) {
-      setIsSubmitting(false);
+      const msg = err?.message || "Gagal memproses pesanan checkout.";
+      if (msg.includes("PENDING_PRODUCT_CONTRACT") || err?.code === "PENDING_PRODUCT_CONTRACT") {
+        setDependencyBlockMessage(
+          "Reservasi stok katalog eksternal belum tersedia (PENDING_PRODUCT_CONTRACT). Checkout ditahan demi keamanan transaksi."
+        );
+      }
       throw err;
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -216,22 +343,24 @@ export function useProductCheckout(initialGroups: CartStoreGroup[] = []) {
     deliveryAddress,
     setDeliveryAddress,
     savedAddresses,
-    isLoadingAddresses,
+    selectedAddressId,
     selectSavedAddress,
-    selectedCourier,
-    setSelectedCourier,
-    isInsuranceEnabled,
-    setIsInsuranceEnabled,
+    merchantNotes,
+    setMerchantNote,
+    serverQuote,
+    isLoadingQuote,
+    quoteError,
+    dependencyBlockMessage,
+    refreshQuote,
     itemsSubtotal,
     shippingCost,
-    insuranceCost,
-    platformFee,
+    customerAppFee,
+    activeFeePolicy: effectiveFeePolicy,
+    feePolicyName,
     taxAmount,
-    discountAmount,
     grandTotal,
-    validationIssues,
     submitOrder,
     isSubmitting,
-    courierOptions: AVAILABLE_COURIERS,
+    isLoadingAddresses,
   };
 }

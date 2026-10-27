@@ -242,6 +242,67 @@ export async function reverseGeocodeLocation(lat: number, lng: number): Promise<
 }
 
 /**
+ * Forward geocode address string into latitude & longitude coordinates.
+ * Uses Nominatim OpenStreetMap with timeout and fallback centroid heuristics.
+ */
+export async function forwardGeocodeAddress(
+  addressQuery: string,
+  cityHint?: string,
+  provinceHint?: string
+): Promise<{ latitude: number; longitude: number } | null> {
+  const q = addressQuery?.trim();
+  if (!q && !cityHint) return null;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+    const parts = [q, cityHint, provinceHint, "Indonesia"].filter(Boolean).join(", ");
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+      parts
+    )}&limit=1&countrycodes=id`;
+
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json",
+      },
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        return {
+          latitude: Number(parseFloat(data[0].lat).toFixed(6)),
+          longitude: Number(parseFloat(data[0].lon).toFixed(6)),
+        };
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  // Centroid fallback if city is known
+  const c = (cityHint || "").toLowerCase();
+  if (c.includes("selatan")) return { latitude: -6.2615, longitude: 106.8106 };
+  if (c.includes("pusat")) return { latitude: -6.1805, longitude: 106.8284 };
+  if (c.includes("barat")) return { latitude: -6.1683, longitude: 106.7588 };
+  if (c.includes("utara")) return { latitude: -6.1384, longitude: 106.864 };
+  if (c.includes("timur")) return { latitude: -6.225, longitude: 106.9004 };
+  if (c.includes("jakarta")) return { latitude: -6.2088, longitude: 106.8456 };
+  if (c.includes("bandung")) return { latitude: -6.9175, longitude: 107.6191 };
+  if (c.includes("surabaya")) return { latitude: -7.2575, longitude: 112.7521 };
+  if (c.includes("semarang")) return { latitude: -6.9932, longitude: 110.4203 };
+  if (c.includes("tangerang")) return { latitude: -6.1783, longitude: 106.6319 };
+  if (c.includes("bekasi")) return { latitude: -6.2383, longitude: 106.9756 };
+  if (c.includes("depok")) return { latitude: -6.4025, longitude: 106.7942 };
+  if (c.includes("bogor")) return { latitude: -6.5971, longitude: 106.806 };
+
+  return null;
+}
+
+/**
  * Request user's current GPS position via browser Geolocation API
  */
 export function getCurrentGpsPosition(
@@ -317,3 +378,44 @@ export function formatStoreDistance(
   const km = 1.1 + (positive % 48) / 10;
   return `${km.toFixed(1)} km`;
 }
+
+/**
+ * Known official partner merchants and their exact store coordinates
+ * aligned with backend order-barang-service Delivery Setting database.
+ */
+export const KNOWN_MERCHANT_COORDINATES: Record<
+  string,
+  { lat: number; lng: number; city: string; district?: string; name?: string }
+> = {
+  // Sinar AC & Sparepart Glodok
+  "0c1467e7-af68-4b26-ae84-daa41d51aed0": {
+    lat: -6.1805,
+    lng: 106.8284,
+    city: "Jakarta Pusat",
+    district: "Senen",
+    name: "Sinar AC & Sparepart Glodok",
+  },
+};
+
+/**
+ * City center coordinates for fallbacks when exact merchant coordinates are not provided by API
+ */
+export const CITY_CENTROIDS: Record<string, { lat: number; lng: number }> = {
+  "jakarta pusat": { lat: -6.1805, lng: 106.8284 },
+  "jakarta selatan": { lat: -6.2297, lng: 106.8075 },
+  "jakarta barat": { lat: -6.1683, lng: 106.7588 },
+  "jakarta timur": { lat: -6.225, lng: 106.9004 },
+  "jakarta utara": { lat: -6.1214, lng: 106.8837 },
+  "tangerang": { lat: -6.1783, lng: 106.6319 },
+  "tangerang selatan": { lat: -6.2888, lng: 106.7179 },
+  "depok": { lat: -6.4025, lng: 106.7942 },
+  "bekasi": { lat: -6.2383, lng: 106.9756 },
+  "bogor": { lat: -6.5971, lng: 106.806 },
+  "bandung": { lat: -6.9175, lng: 107.6191 },
+  "surabaya": { lat: -7.2575, lng: 112.7521 },
+  "semarang": { lat: -6.9667, lng: 110.4167 },
+  "yogyakarta": { lat: -7.7956, lng: 110.3695 },
+  "medan": { lat: 3.5952, lng: 98.6722 },
+  "denpasar": { lat: -8.6705, lng: 115.2126 },
+};
+

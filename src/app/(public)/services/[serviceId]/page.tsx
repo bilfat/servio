@@ -335,7 +335,7 @@ export default function ServiceDetailPage() {
               <div className="pt-2 border-t border-sky-100 flex items-center gap-1.5 text-[11px] text-slate-600">
                 <ShieldCheck size={14} weight="fill" className="text-emerald-600 shrink-0" />
                 <span>
-                  <strong className="text-slate-800">Proteksi Pembayaran Escrow:</strong> Dana Anda disimpan aman oleh sistem dan baru diteruskan ke mitra setelah pekerjaan tuntas dan Anda verifikasi.
+                  <strong className="text-slate-800">Proteksi Uang Aman:</strong> Dana Anda disimpan aman oleh sistem dan baru diteruskan ke mitra setelah pekerjaan tuntas dan Anda verifikasi.
                 </span>
               </div>
             </div>
@@ -492,7 +492,7 @@ export default function ServiceDetailPage() {
             <div className="pt-3 border-t border-slate-100 space-y-2 text-xs text-slate-600">
               <div className="flex items-center gap-2">
                 <ShieldCheck size={16} weight="fill" className="text-emerald-600 shrink-0" />
-                <span>Proteksi Escrow Servio: Dana Aman 100%</span>
+                <span>Proteksi Uang Aman Servio: 100% Aman</span>
               </div>
               <div className="flex items-center gap-2">
                 <CheckCircle size={16} weight="fill" className="text-primary shrink-0" />
@@ -563,7 +563,7 @@ export default function ServiceDetailPage() {
             <div className="p-3 rounded-2xl bg-slate-100/80 border border-slate-200/80 space-y-1">
               <div className="flex items-center gap-2">
                 <span className="w-5 h-5 rounded-md bg-slate-800 text-white font-display font-black text-[10px] flex items-center justify-center shrink-0">4</span>
-                <h4 className="text-xs font-bold text-slate-900 truncate">Uji Coba &amp; Escrow</h4>
+                <h4 className="text-xs font-bold text-slate-900 truncate">Uji Coba &amp; Rilis Dana</h4>
               </div>
               <p className="text-[11px] text-slate-600 line-clamp-2 leading-tight">
                 Hasil dites tuntas, verifikasi selesai, lalu dana rilis ke mitra.
@@ -573,7 +573,7 @@ export default function ServiceDetailPage() {
 
           <div className="pt-2 border-t border-slate-100 flex items-center gap-1.5 text-[11px] text-slate-500">
             <ShieldCheck size={14} weight="fill" className="text-emerald-600 shrink-0" />
-            <span>Seluruh tahapan diproteksi sistem escrow &amp; garansi Servio.</span>
+            <span>Seluruh tahapan diproteksi jaminan uang aman &amp; garansi Servio.</span>
           </div>
         </div>
 

@@ -21,6 +21,8 @@ Route::prefix('v1/finance')->group(function () {
         ->middleware('finance.auth');
 
     // Fee Policies (CEO & Finance Ops)
+    Route::get('/policies/active-customer-fee', [FeePolicyController::class, 'activeCustomerFee']);
+
     Route::post('/policies', [FeePolicyController::class, 'store'])
         ->middleware(['finance.auth', 'finance.role:CEO_PRODUCT_OWNER', 'finance.idempotency']);
 
@@ -29,6 +31,9 @@ Route::prefix('v1/finance')->group(function () {
 
     Route::get('/policies/{group_id}', [FeePolicyController::class, 'show'])
         ->middleware(['finance.auth', 'finance.role:CEO_PRODUCT_OWNER,FINANCE_PAYMENT_OPS,ADMIN_OPERATIONS']);
+
+    Route::put('/policies/{group_id}', [FeePolicyController::class, 'updateGroup'])
+        ->middleware(['finance.auth', 'finance.role:CEO_PRODUCT_OWNER']);
 
     Route::post('/policies/{group_id}/publish', [FeePolicyController::class, 'publish'])
         ->middleware(['finance.auth', 'finance.role:CEO_PRODUCT_OWNER', 'finance.idempotency']);

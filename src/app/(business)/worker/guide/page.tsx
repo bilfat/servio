@@ -333,7 +333,7 @@ const GUIDE_STEPS: GuideStep[] = [
       "Teknisi HANYA mengajukan penyelesaian (Submit Proof / PROOF_SUBMITTED).",
       "Teknisi BUKAN pemilik penyelesaian transaksi keuangan akhir (Final Financial Completion).",
       "Setelah tombol ditekan, tanggung jawab operasional teknisi lapangan telah tuntas.",
-      "Alur selanjutnya berpindah ke konfirmasi pelanggan, pelepasan escrow, dan aktivasi garansi resmi secara otomatis.",
+      "Alur selanjutnya berpindah ke konfirmasi pelanggan, pelepasan uang, dan aktivasi garansi resmi secara otomatis.",
     ],
     action:
       "Tekan tombol 'Unggah Bukti Pengerjaan & SOP'. Masukkan foto Before/After, parameter suhu dan ampere, mintakan tanda tangan serah terima, lalu tekan 'Kirim Bukti & Ajukan Selesai'.",
@@ -341,7 +341,7 @@ const GUIDE_STEPS: GuideStep[] = [
       "Dilarang menandatangani tanda tangan digital atas nama pelanggan sendiri.",
       "Dilarang mengunggah foto palsu atau foto dari pekerjaan servis lain.",
     ],
-    nextStep: "Layanan Selesai di Sisi Teknisi — Sistem memproses Konfirmasi & Escrow.",
+    nextStep: "Layanan Selesai di Sisi Teknisi — Sistem memproses Konfirmasi & Pelepasan Uang.",
     aftermath:
       "Lembar kerja teknisi dikunci resmi. Teknisi dapat kembali ke dashboard untuk mengambil tugas berikutnya.",
     tip: "Tunjukkan parameter suhu dingin termometer digital kepada pelanggan sebelum berpamitan dengan sopan.",
@@ -452,7 +452,7 @@ export default function WorkerGuidePage() {
             <span className="text-sky-300">→</span>
             <span className="px-2 py-0.5 rounded bg-sky-400/30 text-sky-100">Konfirmasi Pelanggan</span>
             <span className="text-sky-300">→</span>
-            <span className="px-2 py-0.5 rounded bg-emerald-400 text-slate-950 font-bold">Escrow &amp; Garansi</span>
+            <span className="px-2 py-0.5 rounded bg-emerald-400 text-slate-950 font-bold">Uang Aman &amp; Garansi</span>
           </div>
         </div>
       </div>
@@ -510,7 +510,7 @@ export default function WorkerGuidePage() {
             }`}
           >
             <SealCheck size={16} weight={activeTab === "POST_SERVICE" ? "fill" : "bold"} />
-            <span>Garansi &amp; Escrow</span>
+            <span>Garansi &amp; Uang Aman</span>
           </button>
         </div>
 
@@ -1125,10 +1125,10 @@ export default function WorkerGuidePage() {
                 <HandCoins size={20} weight="bold" />
               </div>
               <h3 className="text-sm font-bold font-display text-slate-900">
-                2. Pembayaran &amp; Pelepasan Rekening Escrow
+                2. Pembayaran &amp; Pelepasan Uang
               </h3>
               <p className="text-slate-600 text-[11px] leading-relaxed">
-                Dana pembayaran jasa pelanggan yang diamankan di rekening penampungan bersama (escrow) SERVIO akan secara otomatis dicairkan ke saldo pendapatan Provider dan bagi hasil Teknisi. Teknisi tidak perlu menagih pembayaran langsung di luar sistem.
+                Dana pembayaran jasa pelanggan yang diamankan di rekening penampungan uang aman SERVIO akan secara otomatis dicairkan ke saldo pendapatan Provider dan bagi hasil Teknisi. Teknisi tidak perlu menagih pembayaran langsung di luar sistem.
               </p>
             </div>
 

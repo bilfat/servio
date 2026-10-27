@@ -68,12 +68,16 @@ export function AppShell({ children }: AppShellProps) {
     pathname?.startsWith("/completion") ||
     pathname?.startsWith("/proof") ||
     pathname?.startsWith("/checkout") ||
+    pathname?.startsWith("/payments") ||
     pathname?.startsWith("/returns/new") ||
     pathname?.startsWith("/products") ||
     pathname?.startsWith("/services") ||
     pathname?.startsWith("/merchants") ||
     pathname?.startsWith("/providers") ||
     pathname?.startsWith("/warranties") ||
+    pathname?.startsWith("/orders/products/") ||
+    pathname === "/cart" ||
+    pathname?.startsWith("/cart") ||
     pathname?.startsWith("/chat");
 
   const isChatRoute = pathname?.startsWith("/chat");

@@ -9,10 +9,12 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('internal/v1/finance')->middleware('finance.internal')->group(function () {
     // 05A Checkout quote & payment intent creation
+    Route::get('/active-customer-fee', [\App\Http\Controllers\FeePolicyController::class, 'activeCustomerFee']);
     Route::post('/checkout-quotes', [InternalCheckoutController::class, 'createQuote']);
     Route::post('/checkouts/{checkout_group_id}/payment-intents', [InternalCheckoutController::class, 'createPaymentIntent']);
     Route::get('/checkouts/{checkout_group_id}', [InternalCheckoutController::class, 'showCheckout']);
     Route::get('/payments/{payment_id}', [InternalCheckoutController::class, 'showPayment']);
+    Route::post('/payments/{payment_id}/void', [InternalCheckoutController::class, 'voidPaymentIntent']);
 
     // 05A Cancellation refund
     Route::post('/refunds/order-cancellations', [InternalRefundController::class, 'processCancellationRefund']);
@@ -23,4 +25,5 @@ Route::prefix('internal/v1/finance')->middleware('finance.internal')->group(func
 
     // Matured held funds release trigger (120-hour elapsed)
     Route::post('/held-funds/process-matured', [InternalOrderEventController::class, 'processMaturedFunds']);
+    Route::get('/held-funds/by-order/{merchant_order_id}', [InternalOrderEventController::class, 'showHeldFundByOrder']);
 });

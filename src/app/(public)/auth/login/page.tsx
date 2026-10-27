@@ -80,7 +80,7 @@ const DEV_ROLE_ACCOUNTS: DevRoleOption[] = [
   },
   {
     role: "FINANCE_PAYMENT_OPS",
-    label: "Finance & Escrow",
+    label: "Finance & Arus Uang",
     name: "Hendrik Wijaya",
     email: "finance@servio.id",
     password: "12345678",

@@ -362,8 +362,8 @@ export default function SupplierProfilePage() {
         title="Profil &amp; Legalitas Distributor Principal B2B"
         description="Data identitas badan hukum perseroan, sertifikat keagenan resmi, armada distribusi, dan ketentuan kerja sama suplai grosir."
         breadcrumbs={[
-          { label: "Dashboard Suplai", href: "/business/supplier/dashboard" },
-          { label: "Profil Distributor", href: "/business/supplier/profile" },
+          { label: "Dashboard Suplai", href: "/supplier/dashboard" },
+          { label: "Profil Distributor", href: "/supplier/profile" },
         ]}
       />
 

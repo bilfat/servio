@@ -37,7 +37,7 @@ export function GlobalStatesShowcase() {
       {/* Processing Overlay Demo */}
       <ProcessingOverlay
         isProcessing={isProcessing}
-        message="Memverifikasi Transaksi Escrow..."
+        message="Memverifikasi Transaksi Pembayaran Aman..."
         subMessage="Sistem sedang mengamankan pembayaran Anda ke rekening tampung Servio Protection."
       />
 
@@ -117,7 +117,7 @@ export function GlobalStatesShowcase() {
             <PermissionDenied
               requiredRole="FINANCE_PAYMENT_OPS"
               requiredPermission="MANAGE:FINANCE_OPS"
-              message="Halaman rekonsiliasi dan pencairan dana escrow hanya dapat diakses oleh tim Finance & Payment Operations."
+              message="Halaman rekonsiliasi dan pencairan uang hanya dapat diakses oleh tim Finance & Payment Operations."
             />
           </div>
         )}
@@ -227,7 +227,7 @@ export function GlobalStatesShowcase() {
             </h3>
             <CountdownState
               initialSeconds={90}
-              label="Batas Pembayaran Escrow (Demo 90 Detik)"
+              label="Batas Pembayaran Aman (Demo 90 Detik)"
               onExpire={() => console.log("Countdown expired")}
               onRenew={() => alert("Pesanan diperbarui kembali.")}
             />

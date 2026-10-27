@@ -25,8 +25,10 @@ import {
   MapPin,
 } from "@phosphor-icons/react";
 import { productsApi, productCompatibilitiesApi } from "@/lib/servioApi";
+import { orderBarangApi } from "@/lib/orderBarangApi";
 import { ApiProduct, ApiProductVariant, ApiProductCompatibility, getProductMediaUrl } from "@/types/domain";
 import { useCart } from "@/features/cart/useCart";
+import { triggerFlyToCart } from "@/components/feedback/FlyToCart";
 import { formatRupiah } from "@/components/data-display/PriceBreakdown";
 import { useActiveLocation } from "@/context/LocationContext";
 
@@ -52,12 +54,47 @@ export default function ProductDetailPage() {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState<"CART" | "BUY" | "SELECT">("CART");
 
-  // Delivery availability evaluation based on active location and merchant city
-  const merchantCity = product?.merchant?.city || product?.merchantCity || "Jakarta Selatan";
-  const deliveryCheck = useMemo(() => {
-    return checkDeliveryAvailability(merchantCity);
-  }, [checkDeliveryAvailability, merchantCity]);
-  const isDeliverable = deliveryCheck.isDeliverable;
+  // Delivery availability evaluation based on active location and backend delivery settings
+  const [backendDelivery, setBackendDelivery] = useState<{
+    is_deliverable: boolean;
+    distance_km: number;
+    maximum_distance_km: number;
+    is_enabled: boolean;
+    origin_city?: string;
+    reason?: string | null;
+  } | null>(null);
+
+  const merchantCity = backendDelivery?.origin_city || product?.merchant?.city || product?.merchantCity || "Jakarta Pusat";
+
+  useEffect(() => {
+    const orgId = product?.merchantOrganizationId || product?.merchant?.id;
+    if (!orgId) return;
+
+    orderBarangApi.public
+      .checkDelivery({
+        merchant_org_id: orgId,
+        dest_lat: activeLocation.latitude,
+        dest_lng: activeLocation.longitude,
+        dest_city: activeLocation.city,
+      })
+      .then((res) => {
+        if (res.data) {
+          setBackendDelivery(res.data);
+        }
+      })
+      .catch(() => { });
+  }, [
+    product?.merchantOrganizationId,
+    product?.merchant?.id,
+    activeLocation.latitude,
+    activeLocation.longitude,
+    activeLocation.city,
+  ]);
+
+  const isDeliverable = backendDelivery ? backendDelivery.is_deliverable : true;
+  const distanceKm = backendDelivery ? backendDelivery.distance_km : null;
+  const maxRadiusKm = backendDelivery ? backendDelivery.maximum_distance_km : 25;
+  const deliveryReason = backendDelivery?.reason;
 
   // Multi-image Carousel: General media first, then variant-specific media
   const allSlides = useMemo(() => {
@@ -75,9 +112,9 @@ export default function ProductDetailPage() {
     // 1. General Media first (Default view for guests & before variant is selected)
     const generalList = Array.isArray(product.media)
       ? product.media.filter((m: any) => {
-          if (typeof m === "string") return true;
-          return m.scope === "GENERAL" || (!m.variantId && !m.variant_id && m.scope !== "VARIANT");
-        })
+        if (typeof m === "string") return true;
+        return m.scope === "GENERAL" || (!m.variantId && !m.variant_id && m.scope !== "VARIANT");
+      })
       : [];
 
     if (generalList.length > 0) {
@@ -168,33 +205,44 @@ export default function ProductDetailPage() {
     if (!productId) return;
     try {
       setLoading(true);
-      const res = await productsApi.get(productId);
-      const prod = res.data;
-      setProduct(prod || null);
-      if (prod?.variants && prod.variants.length > 0) {
-        setSelectedVariant(prod.variants[0]);
+
+      // Solusi 1: Fetch Product Detail and Catalog Recommendations concurrently in parallel!
+      const [detailSettled, listSettled] = await Promise.allSettled([
+        productsApi.get(productId),
+        productsApi.list({ limit: 12 }),
+      ]);
+
+      let prod: ApiProduct | null = null;
+      if (detailSettled.status === "fulfilled" && detailSettled.value?.data) {
+        prod = detailSettled.value.data;
+        setProduct(prod);
+        if (prod.variants && prod.variants.length > 0) {
+          setSelectedVariant(prod.variants[0]);
+          // Load compatibilities asynchronously for first variant
+          productCompatibilitiesApi
+            .list(prod.productId, prod.variants[0].variantId)
+            .then((compRes) => setCompatibilities(compRes.data || []))
+            .catch(() => setCompatibilities([]));
+        } else {
+          setSelectedVariant(null);
+        }
       } else {
-        setSelectedVariant(null);
-      }
-      setLoading(false);
-
-      // Load compatibilities if product has default variant or first variant
-      if (prod?.variants && prod.variants.length > 0) {
-        productCompatibilitiesApi
-          .list(prod.productId, prod.variants[0].variantId)
-          .then((compRes) => setCompatibilities(compRes.data || []))
-          .catch(() => setCompatibilities([]));
+        setProduct(null);
       }
 
-      // Load catalog recommendations: include products from other merchants
-      try {
-        const listRes = await productsApi.list({ limit: 12 });
-        const allOthers = (listRes.data || []).filter((p) => p.productId !== prod?.productId);
+      if (listSettled.status === "fulfilled" && listSettled.value?.data) {
+        const allOthers = (listSettled.value.data || []).filter(
+          (p) => p.productId !== (prod?.productId || productId)
+        );
         setRelatedProducts(allOthers);
-      } catch {
-        const fallback = (prod?.relatedProducts || []).filter((p) => p.productId !== prod?.productId);
+      } else {
+        const fallback = (prod?.relatedProducts || []).filter(
+          (p) => p.productId !== (prod?.productId || productId)
+        );
         setRelatedProducts(fallback);
       }
+
+      setLoading(false);
     } catch (err: unknown) {
       console.error("Failed to load product detail:", err);
       setLoading(false);
@@ -289,7 +337,7 @@ export default function ProductDetailPage() {
     if (!product) return;
 
     if (!isDeliverable) {
-      setToastMessage(`Pengiriman tidak tersedia: Toko ini hanya melayani pengiriman dalam kota (${merchantCity}).`);
+      setToastMessage(deliveryReason || `Pengiriman tidak tersedia: Jarak ke lokasi Anda (${distanceKm || ""} km) melebihi batas radius toko (${maxRadiusKm} km).`);
       setTimeout(() => setToastMessage(null), 4000);
       return;
     }
@@ -305,6 +353,34 @@ export default function ProductDetailPage() {
     const effectiveVariant = selectedVariant || (product.variants?.[0] ?? null);
     if (!effectiveVariant) return;
 
+    // 1. INSTANTLY trigger 3D Fly-to-Cart animation and toast feedback (0ms delay!)
+    const imgElem = document.getElementById("product-main-image");
+    const btnElem = document.getElementById("btn-add-to-cart");
+    let sourceElem = imgElem;
+    if (imgElem) {
+      const rect = imgElem.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > window.innerHeight) {
+        sourceElem = btnElem;
+      }
+    } else {
+      sourceElem = btnElem;
+    }
+
+    const activeImageUrl =
+      allSlides[currentSlideIndex]?.url ||
+      allSlides[0]?.url ||
+      getProductMediaUrl(product.media) ||
+      "/brand/logo.png";
+
+    triggerFlyToCart({
+      sourceElement: sourceElem,
+      imageUrl: activeImageUrl,
+    });
+
+    setToastMessage(`${quantity}x "${product.name} (${effectiveVariant.name})" berhasil masuk ke keranjang!`);
+    setTimeout(() => setToastMessage(null), 3500);
+
+    // 2. Concurrently execute backend cart addition in background
     try {
       await addItem(
         {
@@ -316,13 +392,12 @@ export default function ProductDetailPage() {
           merchantId: product.merchantOrganizationId || "MERCH-DEFAULT",
           merchantName: product.merchantName || product.providerName || "Toko Mitra SERVIO",
           variantId: effectiveVariant.variantId,
+          thumbnailUrl: allSlides.find((s) => s.variantId === effectiveVariant.variantId)?.url || allSlides[0]?.url,
         } as any,
         quantity,
         undefined,
         effectiveVariant.variantId
       );
-      setToastMessage(`${quantity}x "${product.name} (${effectiveVariant.name})" berhasil masuk ke keranjang!`);
-      setTimeout(() => setToastMessage(null), 3500);
     } catch (err: unknown) {
       const error = err as { status?: number; message?: string };
       if (error?.status === 401 || error?.message?.includes("Unauthenticated")) {
@@ -338,7 +413,7 @@ export default function ProductDetailPage() {
     if (!product) return;
 
     if (!isDeliverable) {
-      setToastMessage(`Pengiriman tidak tersedia: Toko ini hanya melayani pengiriman dalam kota (${merchantCity}).`);
+      setToastMessage(deliveryReason || `Pengiriman tidak tersedia: Jarak ke lokasi Anda (${distanceKm || ""} km) melebihi batas radius toko (${maxRadiusKm} km).`);
       setTimeout(() => setToastMessage(null), 4000);
       return;
     }
@@ -365,16 +440,30 @@ export default function ProductDetailPage() {
           merchantId: product.merchantOrganizationId || "MERCH-DEFAULT",
           merchantName: product.merchantName || product.providerName || "Toko Mitra SERVIO",
           variantId: effectiveVariant.variantId,
+          thumbnailUrl: allSlides.find((s) => s.variantId === effectiveVariant.variantId)?.url || allSlides[0]?.url,
         } as any,
         quantity,
         undefined,
         effectiveVariant.variantId
       );
-      router.push("/checkout/products");
+      const targetItemId = effectiveVariant.variantId
+        ? `${product.productId}_${effectiveVariant.variantId}`
+        : product.productId;
+
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("servio_selected_cart_items_v1", JSON.stringify([targetItemId, product.productId]));
+        } catch {}
+      }
+
+      router.push(`/checkout/products?from=detail&productId=${product.productId}&items=${encodeURIComponent(targetItemId)}`);
     } catch (err: unknown) {
       const error = err as { status?: number; message?: string };
       if (error?.status === 401 || error?.message?.includes("Unauthenticated")) {
-        router.push(`/auth/login?returnUrl=/checkout/products`);
+        const targetItemId = effectiveVariant?.variantId
+          ? `${product.productId}_${effectiveVariant.variantId}`
+          : product.productId;
+        router.push(`/auth/login?returnUrl=${encodeURIComponent(`/checkout/products?from=detail&productId=${product.productId}&items=${encodeURIComponent(targetItemId)}`)}`);
       } else {
         setToastMessage(error?.message || "Gagal melanjutkan proses pembelian langsung.");
         setTimeout(() => setToastMessage(null), 4000);
@@ -478,6 +567,7 @@ export default function ProductDetailPage() {
                         className="w-full h-full shrink-0 relative p-6 flex items-center justify-center bg-white/40"
                       >
                         <img
+                          id={idx === currentSlideIndex ? "product-main-image" : undefined}
                           src={slide.url}
                           alt={slide.variantName ? `${product.name} - ${slide.variantName}` : product.name}
                           className="w-full h-full object-contain hover:scale-105 transition-transform duration-300"
@@ -561,13 +651,12 @@ export default function ProductDetailPage() {
                           key={slide.id || idx}
                           type="button"
                           onClick={() => goToSlide(idx)}
-                          className={`h-2.5 transition-all duration-300 rounded-full cursor-pointer ${
-                            isActive
-                              ? "w-7 bg-[#0F4C81] shadow-md ring-2 ring-white/70"
-                              : slide.scope === "VARIANT"
+                          className={`h-2.5 transition-all duration-300 rounded-full cursor-pointer ${isActive
+                            ? "w-7 bg-[#0F4C81] shadow-md ring-2 ring-white/70"
+                            : slide.scope === "VARIANT"
                               ? "w-2.5 bg-sky-300 hover:bg-sky-400 ring-1 ring-white/50"
                               : "w-2.5 bg-slate-300 hover:bg-slate-400 ring-1 ring-white/50"
-                          }`}
+                            }`}
                           title={
                             slide.variantName
                               ? `Foto Varian: ${slide.variantName}`
@@ -590,11 +679,10 @@ export default function ProductDetailPage() {
                         key={slide.id || idx}
                         type="button"
                         onClick={() => goToSlide(idx)}
-                        className={`w-14 h-14 rounded-xl border-2 overflow-hidden bg-white shrink-0 transition-all cursor-pointer relative group ${
-                          isSelected
-                            ? "border-[#0F4C81] scale-105 shadow-sm ring-2 ring-[#0F4C81]/25"
-                            : "border-slate-200/90 opacity-70 hover:opacity-100 hover:border-slate-300"
-                        }`}
+                        className={`w-14 h-14 rounded-xl border-2 overflow-hidden bg-white shrink-0 transition-all cursor-pointer relative group ${isSelected
+                          ? "border-[#0F4C81] scale-105 shadow-sm ring-2 ring-[#0F4C81]/25"
+                          : "border-slate-200/90 opacity-70 hover:opacity-100 hover:border-slate-300"
+                          }`}
                         title={slide.variantName ? `Varian: ${slide.variantName}` : `Foto Umum ${idx + 1}`}
                       >
                         <img src={slide.url} alt={`Thumbnail ${idx + 1}`} className="w-full h-full object-cover" />
@@ -709,84 +797,45 @@ export default function ProductDetailPage() {
                   </Link>
                 </div>
 
-                <div className="flex items-center gap-2 pt-1.5 border-t border-slate-100 text-[11px] text-slate-500">
-                  <MapPin size={13} className="text-rose-500 shrink-0" weight="fill" />
-                  <span>Lokasi Toko: <strong className="text-slate-800">{merchantCity}</strong></span>
-                  {product.merchant?.district && (
-                    <span className="text-slate-400">({product.merchant.district})</span>
-                  )}
-                  {isDeliverable && (
-                    <span className="ml-auto font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[10px]">
-                      📍 {getStoreDistance(product.merchant || { city: merchantCity, name: merchantStoreName, id: product.merchantOrganizationId })}
+                <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 text-[11px] text-slate-500">
+                  <div className="flex items-center gap-1.5">
+                    <MapPin size={13} className="text-rose-500 shrink-0" weight="fill" />
+                    <span>Lokasi Toko: <strong className="text-slate-800">{merchantCity}</strong></span>
+                    {product.merchant?.district && (
+                      <span className="text-slate-400">({product.merchant.district})</span>
+                    )}
+                  </div>
+                  {distanceKm != null && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                      📍 {distanceKm} km
                     </span>
                   )}
                 </div>
               </div>
 
-              {/* Delivery Scope Notice (LUAR KOTA TIDAK BISA vs SEKOTA BISA) */}
-              {!isDeliverable ? (
-                /* OUT-OF-CITY RESTRICTION CARD */
-                <div className="p-4 rounded-2xl bg-gradient-to-r from-rose-50 via-amber-50/50 to-rose-50 border-2 border-rose-300 text-slate-900 space-y-3 shadow-xs animate-in fade-in">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-2.5">
-                      <WarningCircle size={22} className="text-rose-600 shrink-0 mt-0.5" weight="fill" />
-                      <div>
-                        <h3 className="text-xs sm:text-sm font-bold text-rose-950 font-heading">
-                          Pengiriman Tidak Tersedia ke Lokasi Anda
-                        </h3>
-                        <p className="text-xs text-rose-900/90 leading-relaxed mt-0.5">
-                          Toko ini berlokasi di <strong>{deliveryCheck.merchantCity}</strong> dan saat ini <strong>hanya melayani pengiriman dalam kota</strong>.
-                        </p>
-                        <p className="text-[11px] text-slate-600 mt-1">
-                          Lokasi Anda saat ini terdeteksi di: <strong className="text-slate-900">{deliveryCheck.userCity}</strong>
-                        </p>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={openLocationModal}
-                      className="px-3 py-1.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 text-[11px] font-bold border border-rose-300 transition shrink-0 shadow-2xs cursor-pointer"
-                    >
-                      Ubah Alamat
-                    </button>
-                  </div>
-
-                  <div className="text-[11px] text-rose-900/90 bg-white/90 p-2.5 rounded-xl border border-rose-200/80 flex items-center gap-2">
-                    <Storefront size={15} className="text-rose-600 shrink-0" />
-                    <span>Silakan ubah alamat pengerjaan Anda atau cari suku cadang serupa dari mitra toko terdekat di kota Anda.</span>
+              {/* Delivery Scope Notice: Calculated by Backend & Merchant Delivery Settings */}
+              {isDeliverable ? (
+                /* DELIVERABLE CARD */
+                <div className="p-3.5 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-slate-900 shadow-xs animate-in fade-in">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle size={18} className="text-emerald-600 shrink-0" weight="fill" />
+                    <span className="text-xs sm:text-sm font-semibold text-emerald-950 font-heading">
+                      Pengiriman tersedia (jarak toko ke lokasi Anda: <strong className="font-bold text-emerald-900">{distanceKm != null ? `${distanceKm} km` : "..."}</strong>)
+                    </span>
                   </div>
                 </div>
               ) : (
-                /* IN-CITY LOCAL OPTIONS CARD */
-                <div className="p-3.5 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-slate-900 space-y-2 shadow-xs animate-in fade-in">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle size={18} className="text-emerald-600 shrink-0" weight="fill" />
-                      <span className="text-xs font-bold text-emerald-950 font-heading">
-                        Pengiriman Sekota Tersedia ke {deliveryCheck.userCity} ({getStoreDistance(product.merchant || { city: merchantCity, name: merchantStoreName, id: product.merchantOrganizationId })})
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={openLocationModal}
-                      className="text-[11px] text-emerald-800 hover:text-emerald-900 font-bold underline cursor-pointer"
-                    >
-                      Ganti Lokasi
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px] pt-1">
-                    <div className="flex items-center gap-1.5 p-2 bg-white rounded-xl border border-emerald-100 text-emerald-900 font-medium">
-                      <Truck size={14} className="text-emerald-600 shrink-0" weight="bold" />
-                      <span>Instan (2-3 Jam)</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 p-2 bg-white rounded-xl border border-emerald-100 text-emerald-900 font-medium">
-                      <Package size={14} className="text-emerald-600 shrink-0" weight="bold" />
-                      <span>Kurir Sameday</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 p-2 bg-white rounded-xl border border-emerald-100 text-emerald-900 font-medium col-span-2 sm:col-span-1">
-                      <Storefront size={14} className="text-emerald-600 shrink-0" weight="bold" />
-                      <span>Ambil di Toko</span>
+                /* OUT-OF-RANGE / NOT DELIVERABLE CARD */
+                <div className="p-3.5 rounded-2xl bg-rose-50/80 border border-rose-200 text-slate-900 shadow-xs animate-in fade-in">
+                  <div className="flex items-start gap-2.5">
+                    <WarningCircle size={18} className="text-rose-600 shrink-0 mt-0.5" weight="fill" />
+                    <div className="space-y-0.5">
+                      <p className="text-xs sm:text-sm font-bold text-rose-950 font-heading">
+                        Pengiriman Tidak Tersedia
+                      </p>
+                      <p className="text-xs text-rose-900/90 leading-relaxed">
+                        {deliveryReason || `Jarak toko ke lokasi Anda (${distanceKm != null ? `${distanceKm} km` : "..."}) di luar batas radius pengiriman toko (${maxRadiusKm} km).`}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -817,11 +866,10 @@ export default function ProductDetailPage() {
                         key={v.variantId}
                         type="button"
                         onClick={() => handleSelectVariant(v)}
-                        className={`px-3 py-2 rounded-xl text-xs font-semibold transition border text-left cursor-pointer ${
-                          isSelected
-                            ? "bg-[#0F4C81] text-white border-[#0F4C81] shadow-md ring-2 ring-[#0F4C81]/30 font-bold scale-[1.02]"
-                            : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300"
-                        }`}
+                        className={`px-3 py-2 rounded-xl text-xs font-semibold transition border text-left cursor-pointer ${isSelected
+                          ? "bg-[#0F4C81] text-white border-[#0F4C81] shadow-md ring-2 ring-[#0F4C81]/30 font-bold scale-[1.02]"
+                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300"
+                          }`}
                       >
                         <div className="flex items-center gap-1.5">
                           {isSelected && <CheckCircle size={13} weight="fill" className="text-sky-300" />}
@@ -866,16 +914,16 @@ export default function ProductDetailPage() {
               {/* Desktop Action Buttons: Compact, Clean Horizontal Row */}
               <div className="hidden md:flex items-center gap-3 pt-3">
                 <button
+                  id="btn-add-to-cart"
                   type="button"
                   disabled={isOutOfStock || !isDeliverable}
                   onClick={handleAddToCart}
-                  className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs cursor-pointer ${
-                    !isDeliverable
-                      ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-80"
-                      : isOutOfStock
+                  className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs cursor-pointer ${!isDeliverable
+                    ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-80"
+                    : isOutOfStock
                       ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-80"
                       : "bg-[#0F4C81] hover:bg-[#0B3860] text-white shadow-xs"
-                  }`}
+                    }`}
                   title={!isDeliverable ? `Toko ini hanya melayani pengiriman di area ${merchantCity}` : undefined}
                 >
                   <ShoppingCart size={16} weight="bold" className="shrink-0" />
@@ -885,13 +933,12 @@ export default function ProductDetailPage() {
                   type="button"
                   disabled={isOutOfStock || !isDeliverable}
                   onClick={handleBuyNow}
-                  className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center shadow-xs cursor-pointer ${
-                    !isDeliverable
-                      ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-80"
-                      : isOutOfStock
+                  className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition flex items-center justify-center shadow-xs cursor-pointer ${!isDeliverable
+                    ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-80"
+                    : isOutOfStock
                       ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-80"
                       : "bg-[#F43F5E] hover:bg-[#E11D48] text-white shadow-xs"
-                  }`}
+                    }`}
                   title={!isDeliverable ? `Toko ini hanya melayani pengiriman di area ${merchantCity}` : undefined}
                 >
                   <span>{!isDeliverable ? "Tidak Bisa Dikirim" : "Beli Langsung"}</span>
@@ -966,8 +1013,8 @@ export default function ProductDetailPage() {
                     {(product as any).warrantyPolicy.type === "MANUFACTURER"
                       ? "Garansi Resmi Pabrikan"
                       : (product as any).warrantyPolicy.type === "STORE_ONLY"
-                      ? "Garansi Toko Mitra"
-                      : "Garansi Toko & Pabrik"}
+                        ? "Garansi Toko Mitra"
+                        : "Garansi Toko & Pabrik"}
                   </span>
                 </div>
                 <p className="text-[11px] text-emerald-900 leading-relaxed">
@@ -998,8 +1045,8 @@ export default function ProductDetailPage() {
             activeCatalogTab === "SAME_STORE"
               ? sameStoreProducts
               : activeCatalogTab === "OTHER_MERCHANTS"
-              ? otherMerchantProducts
-              : relatedProducts;
+                ? otherMerchantProducts
+                : relatedProducts;
 
           return (
             <div className="pt-6 space-y-4">
@@ -1018,11 +1065,10 @@ export default function ProductDetailPage() {
                   <button
                     type="button"
                     onClick={() => setActiveCatalogTab("ALL")}
-                    className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${
-                      activeCatalogTab === "ALL"
-                        ? "bg-white text-[#0F4C81] shadow-2xs font-bold"
-                        : "text-slate-600 hover:text-slate-900"
-                    }`}
+                    className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${activeCatalogTab === "ALL"
+                      ? "bg-white text-[#0F4C81] shadow-2xs font-bold"
+                      : "text-slate-600 hover:text-slate-900"
+                      }`}
                   >
                     Semua ({relatedProducts.length})
                   </button>
@@ -1030,11 +1076,10 @@ export default function ProductDetailPage() {
                     <button
                       type="button"
                       onClick={() => setActiveCatalogTab("SAME_STORE")}
-                      className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${
-                        activeCatalogTab === "SAME_STORE"
-                          ? "bg-white text-[#0F4C81] shadow-2xs font-bold"
-                          : "text-slate-600 hover:text-slate-900"
-                      }`}
+                      className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${activeCatalogTab === "SAME_STORE"
+                        ? "bg-white text-[#0F4C81] shadow-2xs font-bold"
+                        : "text-slate-600 hover:text-slate-900"
+                        }`}
                     >
                       Toko Ini ({sameStoreProducts.length})
                     </button>
@@ -1043,11 +1088,10 @@ export default function ProductDetailPage() {
                     <button
                       type="button"
                       onClick={() => setActiveCatalogTab("OTHER_MERCHANTS")}
-                      className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${
-                        activeCatalogTab === "OTHER_MERCHANTS"
-                          ? "bg-white text-[#0F4C81] shadow-2xs font-bold"
-                          : "text-slate-600 hover:text-slate-900"
-                      }`}
+                      className={`px-3 py-1 rounded-lg font-semibold transition cursor-pointer ${activeCatalogTab === "OTHER_MERCHANTS"
+                        ? "bg-white text-[#0F4C81] shadow-2xs font-bold"
+                        : "text-slate-600 hover:text-slate-900"
+                        }`}
                     >
                       Merchant Lain ({otherMerchantProducts.length})
                     </button>
@@ -1250,11 +1294,10 @@ export default function ProductDetailPage() {
                         key={v.variantId}
                         type="button"
                         onClick={() => handleSelectVariant(v)}
-                        className={`px-3 py-2 rounded-xl text-xs font-semibold transition border text-left cursor-pointer ${
-                          isSelected
-                            ? "bg-[#0F4C81] text-white border-[#0F4C81] shadow-xs font-bold"
-                            : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                        }`}
+                        className={`px-3 py-2 rounded-xl text-xs font-semibold transition border text-left cursor-pointer ${isSelected
+                          ? "bg-[#0F4C81] text-white border-[#0F4C81] shadow-xs font-bold"
+                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                          }`}
                       >
                         <div className="font-bold flex items-center gap-1">
                           {isSelected && <CheckCircle size={12} weight="fill" className="text-sky-300" />}
@@ -1307,7 +1350,7 @@ export default function ProductDetailPage() {
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-xs text-rose-950 font-bold p-2.5 rounded-xl bg-rose-50 border border-rose-200">
                     <WarningCircle size={18} className="text-rose-600 shrink-0" weight="fill" />
-                    <span>Tidak dapat dikirim ke wilayah {deliveryCheck.userCity}</span>
+                    <span>{deliveryReason || `Tidak dapat dikirim (di luar radius toko ${maxRadiusKm} km)`}</span>
                   </div>
                   <button
                     type="button"

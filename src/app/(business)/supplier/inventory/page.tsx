@@ -372,7 +372,7 @@ export function SupplierInventoryContent() {
                 <Buildings size={16} weight="bold" />
                 <span>Kelola Gudang</span>
               </Button>
-              <Link href="/business/supplier/orders" className="shrink-0">
+              <Link href="/supplier/orders" className="shrink-0">
                 <Button variant="outline" size="sm" className="flex items-center gap-1.5 text-xs text-slate-700 whitespace-nowrap">
                   <ShoppingCart size={14} weight="bold" />
                   <span>Antrean PO B2B</span>
@@ -573,7 +573,7 @@ export function SupplierInventoryContent() {
                 </div>
               </div>
 
-              <Link href="/business/supplier/fulfillment" className="shrink-0">
+              <Link href="/supplier/fulfillment" className="shrink-0">
                 <Button variant="outline" size="sm" className="text-xs text-amber-800 border-amber-300 hover:bg-amber-100/50">
                   <span>Ke Fulfillment Kargo &rarr;</span>
                 </Button>

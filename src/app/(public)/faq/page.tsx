@@ -31,7 +31,7 @@ interface FaqItem {
 const FAQ_CATEGORIES = [
   { id: "ALL", label: "Semua Pertanyaan" },
   { id: "WARRANTY", label: "Garansi & Servio Protection" },
-  { id: "ESCROW", label: "Rekening Escrow & Pembayaran" },
+  { id: "ESCROW", label: "Jaminan Uang Aman & Pembayaran" },
   { id: "SERVICE", label: "Layanan & Teknisi" },
   { id: "PARTS", label: "Suku Cadang & Retur" },
   { id: "PARTNERS", label: "Verifikasi Mitra" },
@@ -63,9 +63,9 @@ const FAQS_DATA: FaqItem[] = [
   {
     id: "faq-e-1",
     category: "ESCROW",
-    question: "Apa itu Rekening Escrow Penampung dan bagaimana dana saya diamankan?",
+    question: "Bagaimana sistem penampungan uang aman bekerja dan bagaimana dana saya diamankan?",
     answer:
-      "Servio Escrow Protection adalah rekening penampung resmi terlisensi yang menahan dana pembayaran Anda saat order dibuat. Dana Anda 100% aman dan tidak akan pernah dicairkan kepada mitra teknisi atau merchant sebelum Anda memeriksa hasil pekerjaan dan menandatangani BAST Digital. Jika pekerjaan tidak tuntas atau dibatalkan sesuai ketentuan, dana dikembalikan langsung ke rekening Anda.",
+      "Servio memiliki sistem penampungan uang resmi terlisensi yang menahan uang pembayaran Anda saat order dibuat. Uang Anda 100% aman dan tidak akan pernah dicairkan kepada mitra teknisi atau merchant sebelum Anda memeriksa hasil pekerjaan dan menandatangani BAST Digital. Jika pekerjaan tidak tuntas atau dibatalkan sesuai ketentuan, uang dikembalikan langsung ke rekening Anda.",
     badge: "Anti-Tipu",
   },
   {
@@ -154,7 +154,7 @@ export default function FaqAndWarrantyPage() {
             FAQ & Garansi Resmi <span className="text-primary">Servio Protection</span>
           </h1>
           <p className="mt-4 text-sm sm:text-base text-neutral-slate max-w-2xl mx-auto leading-relaxed">
-            Ketahui hak perlindungan Anda, mekanisme rekening escrow anti-tipu, standar jaminan perbaikan 30–90 hari, dan prosedur klaim digital yang transparan.
+            Ketahui hak perlindungan Anda, mekanisme penampungan uang aman anti-tipu, standar jaminan perbaikan 30–90 hari, dan prosedur klaim digital yang transparan.
           </p>
 
           {/* Search Box */}
@@ -164,7 +164,7 @@ export default function FaqAndWarrantyPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari topik garansi, rekening escrow, retur sparepart, teknisi..."
+              placeholder="Cari topik garansi, uang aman, retur sparepart, teknisi..."
               className="w-full pl-12 pr-4 py-3.5 bg-white border border-slate-200 rounded-2xl text-xs sm:text-sm text-neutral-dark placeholder:text-neutral-muted focus:outline-none focus:ring-2 focus:ring-primary shadow-servio-sm transition-all"
             />
             {searchQuery && (
@@ -214,7 +214,7 @@ export default function FaqAndWarrantyPage() {
                 <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
                   <LockKey size={26} weight="duotone" />
                 </div>
-                <h3 className="font-bold text-sm text-neutral-dark">Rekening Escrow Aman</h3>
+                <h3 className="font-bold text-sm text-neutral-dark">Rekening Uang Aman</h3>
                 <p className="text-xs text-neutral-slate leading-relaxed">
                   Uang Anda ditampung di rekening aman. Teknisi baru dibayar setelah Anda puas dan menandatangani BAST.
                 </p>

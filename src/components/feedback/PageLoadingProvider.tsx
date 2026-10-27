@@ -6,7 +6,6 @@ import React, {
   useState,
   useEffect,
   useCallback,
-  useMemo,
   useRef,
 } from "react";
 import { usePathname } from "next/navigation";
@@ -33,9 +32,23 @@ export function usePageLoading() {
   return useContext(PageLoadingContext);
 }
 
-// 500ms: Durasi responsif dan cepat agar halaman segera interaktif tanpa jeda berlebih
-const DEFAULT_REFRESH_DURATION = 500;
-const DEFAULT_ROUTE_CHANGE_DURATION = 350;
+/**
+ * Top Progress Bar - High-tech, non-blocking 2.5px gradient line at top of viewport
+ * Like YouTube, GitHub & Vercel: Provides immediate visual feedback without blocking the screen
+ */
+function TopProgressBar({ active }: { active: boolean }) {
+  if (!active) return null;
+  return (
+    <div className="fixed top-0 left-0 right-0 h-[2.5px] z-[999999] pointer-events-none overflow-hidden">
+      <motion.div
+        initial={{ x: "-100%", width: "60%" }}
+        animate={{ x: ["-100%", "200%"] }}
+        transition={{ repeat: Infinity, duration: 0.65, ease: "easeInOut" }}
+        className="h-full bg-gradient-to-r from-[#0F4C81] via-sky-400 to-[#F43F5E] shadow-xs"
+      />
+    </div>
+  );
+}
 
 export function PageLoadingProvider({
   children,
@@ -43,149 +56,85 @@ export function PageLoadingProvider({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const [isLoading, setIsLoading] = useState(true);
+  const [isExplicitLoading, setIsExplicitLoading] = useState(false);
+  const [isNavigating, setIsNavigating] = useState(false);
   const [overrideMessage, setOverrideMessage] = useState<string | null>(null);
   const [overrideSubMessage, setOverrideSubMessage] = useState<string | null>(null);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const isInitialMount = useRef(true);
+  const prevPathname = useRef(pathname);
 
-  // Pemetaan pesan kontekstual berdasarkan rute halaman
-  const contextualInfo = useMemo(() => {
-    if (!pathname) {
-      return {
-        message: "Menyiapkan Layanan...",
-        subMessage: "Memuat ekosistem platform SERVIO",
-      };
-    }
-    if (pathname.startsWith("/ceo")) {
-      return {
-        message: "Menyiapkan Dashboard Eksekutif...",
-        subMessage: "Mengompilasi analitik makro dan tata kelola platform",
-      };
-    }
-    if (pathname.startsWith("/merchant")) {
-      return {
-        message: "Menyiapkan Workspace Bisnis...",
-        subMessage: "Memuat inventaris gudang dan operasional toko mitra",
-      };
-    }
-    if (pathname.startsWith("/supplier")) {
-      return {
-        message: "Menyiapkan Workspace Supplier...",
-        subMessage: "Memuat katalog suku cadang dan rantai pasok B2B",
-      };
-    }
-    if (pathname.startsWith("/ops") || pathname.startsWith("/admin")) {
-      return {
-        message: "Menyiapkan Pusat Kendali Operasi...",
-        subMessage: "Sinkronisasi audit trail dan antrean verifikasi platform",
-      };
-    }
-    if (pathname.startsWith("/provider") || pathname.startsWith("/technician")) {
-      return {
-        message: "Menyiapkan Workspace Teknisi...",
-        subMessage: "Sinkronisasi pesanan servis dan pembaruan jadwal",
-      };
-    }
-    if (pathname.startsWith("/dispatcher")) {
-      return {
-        message: "Menyiapkan Konsol Dispatcher...",
-        subMessage: "Sinkronisasi penugasan teknisi dan status tiket darurat",
-      };
-    }
-    if (pathname.startsWith("/finance")) {
-      return {
-        message: "Menyiapkan Portal Finansial...",
-        subMessage: "Rekonsiliasi dana escrow dan antrean pengembalian",
-      };
-    }
-    if (
-      pathname.startsWith("/customer") ||
-      pathname.startsWith("/pelanggan") ||
-      pathname.startsWith("/services") ||
-      pathname.startsWith("/catalog") ||
-      pathname.startsWith("/booking")
-    ) {
-      return {
-        message: "Menyiapkan Layanan...",
-        subMessage: "Lebih dari servis, menghadirkan hari yang lebih baik",
-      };
-    }
-    return {
-      message: "Menyiapkan Layanan...",
-      subMessage: "Memuat ekosistem platform SERVIO",
-    };
-  }, [pathname]);
-
-  // Efek 1: Saat halaman pertama kali di-refresh atau dibuka (Initial Page Load / Refresh)
-  // Menjaga tampilan loading tetap terlihat selama minimal 1.4 detik
+  // 1. Immediate visual feedback (0ms): Start top progress bar instantly when any internal link is clicked
   useEffect(() => {
-    timerRef.current = setTimeout(() => {
-      setIsLoading(false);
-      isInitialMount.current = false;
-    }, DEFAULT_REFRESH_DURATION);
-
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  // Efek 2: Saat navigasi rute berubah (Route Transition)
-  useEffect(() => {
-    if (isInitialMount.current) return;
-
-    setIsLoading(true);
-    if (timerRef.current) clearTimeout(timerRef.current);
-
-    timerRef.current = setTimeout(() => {
-      setIsLoading(false);
-      setOverrideMessage(null);
-      setOverrideSubMessage(null);
-    }, DEFAULT_ROUTE_CHANGE_DURATION);
-
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [pathname]);
-
-  // Efek 3: Intersep klik tautan internal agar loading langsung muncul tanpa jeda
-  useEffect(() => {
-    const handleLinkClick = (e: MouseEvent) => {
-      const anchor = (e.target as HTMLElement).closest("a");
+    const handleClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      const anchor = target?.closest("a");
       if (!anchor) return;
-      const href = anchor.getAttribute("href");
+
+      const rawHref = anchor.getAttribute("href");
+      if (!rawHref) return;
+
+      // Ignore hash links, external links, downloads, new tabs, mailto/tel
       if (
-        !href ||
-        href.startsWith("#") ||
-        href.startsWith("mailto:") ||
-        href.startsWith("tel:") ||
-        anchor.getAttribute("target") === "_blank" ||
-        e.ctrlKey ||
-        e.metaKey ||
-        e.shiftKey
+        rawHref.startsWith("#") ||
+        rawHref.startsWith("mailto:") ||
+        rawHref.startsWith("tel:") ||
+        anchor.target === "_blank" ||
+        anchor.hasAttribute("download")
       ) {
         return;
       }
-      if (href.startsWith("/") && href !== window.location.pathname) {
-        setIsLoading(true);
+
+      try {
+        const url = new URL(anchor.href, window.location.origin);
+        if (url.origin === window.location.origin) {
+          const currentUrl = new URL(window.location.href);
+          if (url.pathname !== currentUrl.pathname || url.search !== currentUrl.search) {
+            setIsNavigating(true);
+          }
+        }
+      } catch {
+        // Safe fallback
       }
     };
 
-    document.addEventListener("click", handleLinkClick);
-    return () => document.removeEventListener("click", handleLinkClick);
+    document.addEventListener("click", handleClick, { capture: true });
+    return () => {
+      document.removeEventListener("click", handleClick, { capture: true });
+    };
   }, []);
 
-  // Fungsi helper yang dapat dipanggil komponen mana pun
+  // 2. Clear progress bar as soon as target route renders
+  useEffect(() => {
+    if (prevPathname.current !== pathname) {
+      prevPathname.current = pathname;
+      const navTimer = setTimeout(() => {
+        setIsNavigating(false);
+      }, 100);
+
+      return () => clearTimeout(navTimer);
+    }
+  }, [pathname]);
+
+  // Safety fallback: if navigation takes longer than 6 seconds, hide progress bar
+  useEffect(() => {
+    if (!isNavigating) return;
+    const safetyTimer = setTimeout(() => {
+      setIsNavigating(false);
+    }, 6000);
+    return () => clearTimeout(safetyTimer);
+  }, [isNavigating]);
+
+  // Explicit loading trigger for heavy manual tasks (Auth login, payment submit, export)
   const showLoading = useCallback(
     (durationMs = 500, customMessage?: string, customSubMessage?: string) => {
       if (customMessage) setOverrideMessage(customMessage);
       if (customSubMessage) setOverrideSubMessage(customSubMessage);
-      setIsLoading(true);
+      setIsExplicitLoading(true);
 
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
-        setIsLoading(false);
+        setIsExplicitLoading(false);
         setOverrideMessage(null);
         setOverrideSubMessage(null);
       }, durationMs);
@@ -195,31 +144,35 @@ export function PageLoadingProvider({
 
   const hideLoading = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    setIsLoading(false);
+    setIsExplicitLoading(false);
     setOverrideMessage(null);
     setOverrideSubMessage(null);
   }, []);
 
-  const activeMessage = overrideMessage || contextualInfo.message;
-  const activeSubMessage = overrideSubMessage || contextualInfo.subMessage;
-
   return (
-    <PageLoadingContext.Provider value={{ showLoading, hideLoading, isLoading }}>
+    <PageLoadingContext.Provider
+      value={{ showLoading, hideLoading, isLoading: isExplicitLoading }}
+    >
+      {/* 1. Sleek Non-Blocking Top Progress Bar on Page Navigation */}
+      <TopProgressBar active={isNavigating} />
+
+      {/* 2. Main Page Content (Instant, Unblocked) */}
       {children}
 
+      {/* 3. Explicit Blocking Overlay ONLY when explicitly called */}
       <AnimatePresence>
-        {isLoading && (
+        {isExplicitLoading && (
           <motion.div
-            key="servio-global-loading-screen"
+            key="servio-explicit-loading-screen"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2, ease: "easeInOut" }}
+            transition={{ duration: 0.15, ease: "easeInOut" }}
             className="fixed inset-0 z-[9999] pointer-events-auto"
           >
             <ServioLoadingScreen
-              message={activeMessage}
-              subMessage={activeSubMessage}
+              message={overrideMessage || "Menyiapkan Layanan..."}
+              subMessage={overrideSubMessage || "Memuat ekosistem platform SERVIO"}
               fullScreen
             />
           </motion.div>

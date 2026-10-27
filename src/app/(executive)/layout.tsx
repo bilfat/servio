@@ -26,7 +26,8 @@ export default function ExecutiveLayout({ children }: { children: React.ReactNod
     user.activeRole === "CEO_PRODUCT_OWNER" ||
     Boolean(user.availableRoles?.includes("CEO_PRODUCT_OWNER"));
 
-  if (isLoadingAuth) {
+  // Only block with ServioLoadingScreen on initial cold boot when user context is not yet loaded
+  if (isLoadingAuth && (!user || user.id === "guest")) {
     return (
       <AppShell>
         <ServioLoadingScreen

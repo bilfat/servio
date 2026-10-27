@@ -22,7 +22,6 @@ import {
   WarningCircle,
   Info,
   ClockCounterClockwise,
-  Storefront,
   X,
 } from "@phosphor-icons/react";
 import { useOrderBarang } from "@/features/order-barang/hooks/useOrderBarang";
@@ -40,16 +39,12 @@ import { EmptyState } from "@/components/feedback/EmptyState";
 import { Toast } from "@/components/feedback/Toast";
 import { formatDateTimeIndo } from "@/features/order-barang/helpers";
 
-type MerchantTab = "MASUK" | "DIPROSES" | "DIKIRIM" | "SELESAI" | "BATAL";
+type MerchantTab = "BELUM_BAYAR" | "MASUK" | "DIPROSES" | "DIKIRIM" | "TIBA" | "SELESAI" | "BATAL";
 
 function MerchantOrdersContent() {
   const {
     merchantOrders,
     merchantOrdersByTab,
-    activeMerchant,
-    activeMerchantId,
-    merchants,
-    switchMerchantContext,
     merchantProcessOrder,
     merchantPackOrder,
     merchantSetupDelivery,
@@ -60,10 +55,47 @@ function MerchantOrdersContent() {
     respondCancellation,
     cancelOperationalMerchantOrder,
     currentTime,
+    isLoadingBackend,
+    hasLoadedBackend,
+    syncBackendOrders,
   } = useOrderBarang();
 
   const [activeTab, setActiveTab] = useState<MerchantTab>("MASUK");
+  const [diprosesSubFilter, setDiprosesSubFilter] = useState<"ALL" | "PENDING_DECISION">("ALL");
   const [searchQuery, setSearchQuery] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(false);
+
+  React.useEffect(() => {
+    if (merchantOrders.length === 0 && !hasLoadedBackend) {
+      setInitialLoading(true);
+      const timer = setTimeout(() => {
+        setInitialLoading(false);
+      }, 150);
+      return () => clearTimeout(timer);
+    } else {
+      setInitialLoading(false);
+    }
+  }, [merchantOrders.length, hasLoadedBackend]);
+
+  const handleTabChange = (tabId: MerchantTab) => {
+    if (tabId === activeTab) return;
+    setActiveTab(tabId);
+  };
+
+  const handleRefreshData = async () => {
+    setIsRefreshing(true);
+    try {
+      await syncBackendOrders();
+      setToastMessage("Data pesanan berhasil dimuat ulang.");
+      setToastType("success");
+    } catch {
+      setToastMessage("Gagal memuat ulang data pesanan.");
+      setToastType("error");
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Modals state
   const [selectedOrderForDetail, setSelectedOrderForDetail] = useState<MockMerchantOrder | null>(null);
@@ -73,12 +105,19 @@ function MerchantOrdersContent() {
   const [selectedOrderForCancellation, setSelectedOrderForCancellation] = useState<MockMerchantOrder | null>(null);
   const [selectedOrderForOperationalCancel, setSelectedOrderForOperationalCancel] = useState<MockMerchantOrder | null>(null);
   const [selectedOrderForProof, setSelectedOrderForProof] = useState<MockMerchantOrder | null>(null);
+  const [previewProofPhoto, setPreviewProofPhoto] = useState<string | null>(null);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<"success" | "error" | "warning">("success");
 
   // Tab configurations
   const tabs: { id: MerchantTab; label: string; count: number; alert?: boolean }[] = [
+    {
+      id: "BELUM_BAYAR",
+      label: "Belum Bayar",
+      count: merchantOrdersByTab.BELUM_BAYAR?.length || 0,
+      alert: false,
+    },
     {
       id: "MASUK",
       label: "Masuk",
@@ -98,6 +137,12 @@ function MerchantOrdersContent() {
       alert: merchantOrdersByTab.DIKIRIM.some((o) => o.delivery.deliveryStatus === "FAILED"),
     },
     {
+      id: "TIBA",
+      label: "Tiba di Tujuan",
+      count: merchantOrdersByTab.TIBA.length,
+      alert: merchantOrdersByTab.TIBA.length > 0,
+    },
+    {
       id: "SELESAI",
       label: "Selesai",
       count: merchantOrdersByTab.SELESAI.length,
@@ -109,9 +154,16 @@ function MerchantOrdersContent() {
     },
   ];
 
+  const pendingCancellationCount = useMemo(() => {
+    return merchantOrdersByTab.DIPROSES.filter((o) => o.cancellationRequest?.status === "PENDING").length;
+  }, [merchantOrdersByTab.DIPROSES]);
+
   // Filtered orders for current active tab
   const currentOrders = useMemo(() => {
-    const list = merchantOrdersByTab[activeTab] || [];
+    let list = merchantOrdersByTab[activeTab] || [];
+    if (activeTab === "DIPROSES" && diprosesSubFilter === "PENDING_DECISION") {
+      list = list.filter((o) => o.cancellationRequest?.status === "PENDING");
+    }
     if (!searchQuery.trim()) return list;
     const q = searchQuery.toLowerCase();
     return list.filter(
@@ -121,7 +173,7 @@ function MerchantOrdersContent() {
         (o.delivery.trackingNumber || "").toLowerCase().includes(q) ||
         o.items.some((it) => it.title.toLowerCase().includes(q))
     );
-  }, [merchantOrdersByTab, activeTab, searchQuery]);
+  }, [merchantOrdersByTab, activeTab, diprosesSubFilter, searchQuery]);
 
   return (
     <div className="w-full pb-16 font-body space-y-3.5">
@@ -134,39 +186,31 @@ function MerchantOrdersContent() {
                 <ClipboardText size={18} weight="bold" />
               </span>
               <h1 className="text-lg sm:text-xl font-bold text-slate-900 font-heading">
-                Pesanan Masuk Toko
+                Pesanan Toko
               </h1>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Kelola pemenuhan pesanan suku cadang toko, konfirmasi pesanan lunas, pengemasan, dan pilihan kurir lokal.
+              Kelola pemenuhan pesanan toko, konfirmasi pesanan lunas, pengemasan, dan pilihan kurir pengiriman.
             </p>
           </div>
 
-          {/* Active Merchant Context Switcher */}
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-2 flex items-center gap-2">
-              <Storefront size={17} className="text-blue-600 shrink-0" />
-              <div>
-                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block leading-tight">
-                  Toko Aktif (Merchant Scope):
-                </span>
-                <select
-                  value={activeMerchantId}
-                  onChange={(e) => switchMerchantContext(e.target.value)}
-                  className="text-xs font-bold text-slate-900 bg-transparent focus:outline-none cursor-pointer"
-                >
-                  {Object.values(merchants).map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name} ({m.city})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={handleRefreshData}
+              disabled={isLoadingBackend || isRefreshing}
+              className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition flex items-center gap-2 shadow-2xs shrink-0 cursor-pointer disabled:opacity-60"
+              title="Muat ulang data pesanan toko dari server"
+            >
+              <ArrowsClockwise
+                size={15}
+                className={`text-blue-600 ${(isLoadingBackend || isRefreshing) ? "animate-spin" : ""}`}
+              />
+              <span>{(isLoadingBackend || isRefreshing) ? "Memuat Data..." : "Muat Data"}</span>
+            </button>
             <Link
               href="/merchant/shipping-settings"
-              className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 transition flex items-center gap-1.5 shadow-2xs shrink-0 cursor-pointer"
+              className="px-3.5 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-bold text-slate-700 transition flex items-center gap-1.5 shadow-2xs shrink-0 cursor-pointer"
             >
               <Truck size={15} className="text-blue-600" />
               <span>Pengaturan Ongkir</span>
@@ -182,7 +226,7 @@ function MerchantOrdersContent() {
               <button
                 key={tab.id}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => handleTabChange(tab.id)}
                 className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1.5 border cursor-pointer ${
                   isActive
                     ? tab.alert
@@ -207,6 +251,42 @@ function MerchantOrdersContent() {
             );
           })}
         </div>
+
+        {/* Subtabs for DIPROSES: Menunggu Keputusan Pembatalan */}
+        {activeTab === "DIPROSES" && (
+          <div className="flex items-center gap-2 pt-2 pb-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setDiprosesSubFilter("ALL")}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                diprosesSubFilter === "ALL"
+                  ? "bg-slate-900 text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              Semua Diproses ({merchantOrdersByTab.DIPROSES.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setDiprosesSubFilter("PENDING_DECISION")}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                diprosesSubFilter === "PENDING_DECISION"
+                  ? "bg-amber-600 text-white"
+                  : pendingCancellationCount > 0
+                  ? "bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              <WarningCircle size={14} weight="bold" />
+              <span>Menunggu Keputusan Pembatalan</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                diprosesSubFilter === "PENDING_DECISION" ? "bg-amber-800 text-white" : "bg-amber-200 text-amber-900"
+              }`}>
+                {pendingCancellationCount}
+              </span>
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="w-full px-4 sm:px-6 py-3 space-y-3">
@@ -237,23 +317,83 @@ function MerchantOrdersContent() {
         </div>
 
         {/* Content List of Orders */}
-        {currentOrders.length === 0 ? (
+        {(initialLoading || (isLoadingBackend && !hasLoadedBackend) || isRefreshing) ? (
+          <div className="space-y-3 animate-fade-in">
+            {/* Loading Indicator Banner */}
+            <div className="flex items-center justify-between gap-2 p-3 bg-blue-50/80 border border-blue-200/80 rounded-2xl text-xs text-blue-900 shadow-2xs">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-xl bg-blue-100 flex items-center justify-center text-blue-700 shrink-0">
+                  <ArrowsClockwise size={15} className="animate-spin text-blue-600" />
+                </div>
+                <div>
+                  <span className="font-bold text-slate-900 block leading-tight">Memuat Data Pesanan Toko</span>
+                  <span className="text-[11px] text-slate-500">Sinkronisasi status pesanan dan transaksi terkini dari server...</span>
+                </div>
+              </div>
+              <span className="text-[10px] font-mono font-bold bg-white px-2.5 py-1 rounded-lg border border-blue-100 text-blue-600 shadow-3xs shrink-0">
+                Memuat Data...
+              </span>
+            </div>
+
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="bg-white rounded-2xl border border-slate-200/80 p-4 sm:p-5 animate-pulse space-y-3.5 shadow-2xs"
+              >
+                <div className="flex justify-between items-center pb-2.5 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <div className="h-4 w-28 bg-slate-200 rounded-md" />
+                    <div className="h-4 w-16 bg-slate-100 rounded-md" />
+                  </div>
+                  <div className="h-5 w-24 bg-slate-200 rounded-full" />
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-14 h-14 rounded-xl bg-slate-200 shrink-0" />
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    <div className="h-4 w-2/5 bg-slate-200 rounded-md" />
+                    <div className="h-3 w-1/4 bg-slate-100 rounded-md" />
+                  </div>
+                  <div className="h-4 w-20 bg-slate-200 rounded-md shrink-0" />
+                </div>
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+                  <div className="h-3 w-40 bg-slate-100 rounded-md" />
+                  <div className="h-8 w-24 bg-slate-200 rounded-xl" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : currentOrders.length === 0 ? (
           <EmptyState
             title="Tidak Ada Pesanan pada Tab Ini"
             description={
               searchQuery
                 ? "Tidak ditemukan pesanan yang sesuai dengan kata kunci pencarian Anda."
+                : activeTab === "BELUM_BAYAR"
+                ? "Belum ada pesanan yang sedang menunggu pembayaran customer."
                 : activeTab === "MASUK"
                 ? "Belum ada pesanan lunas baru yang menunggu diproses."
                 : activeTab === "DIPROSES"
                 ? "Tidak ada pesanan yang sedang dipersiapkan atau menunggu pengiriman."
                 : activeTab === "DIKIRIM"
                 ? "Tidak ada pesanan yang sedang berada dalam perjalanan kurir."
+                : activeTab === "TIBA"
+                ? "Belum ada pesanan yang tiba di tujuan dan menunggu konfirmasi penerimaan pelanggan."
                 : activeTab === "SELESAI"
                 ? "Belum ada riwayat pesanan yang telah selesai diserahterimakan."
                 : activeTab === "BATAL"
                 ? "Tidak ada pesanan toko yang dibatalkan."
                 : "Belum ada pesanan masuk untuk toko ini."
+            }
+            action={
+              <button
+                type="button"
+                onClick={handleRefreshData}
+                disabled={isLoadingBackend || isRefreshing}
+                className="px-4 py-2 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 text-xs font-bold transition flex items-center gap-2 shadow-2xs cursor-pointer disabled:opacity-60"
+              >
+                <ArrowsClockwise size={14} className={(isLoadingBackend || isRefreshing) ? "animate-spin" : ""} />
+                <span>{(isLoadingBackend || isRefreshing) ? "Memuat Data..." : "Periksa & Muat Ulang Data"}</span>
+              </button>
             }
           />
         ) : (
@@ -266,6 +406,7 @@ function MerchantOrdersContent() {
                 onViewDetail={(ord) => setSelectedOrderForDetail(ord)}
                 onStartProcessing={(ord) => {
                   merchantProcessOrder(ord.id);
+                  setActiveTab("DIPROSES");
                   setToastMessage(`Pesanan #${ord.orderNumber} mulai diproses (pindah ke tab Diproses).`);
                   setToastType("success");
                 }}
@@ -303,18 +444,21 @@ function MerchantOrdersContent() {
           courierName,
           courierPhone,
           trackingNumber,
+          trackingUrl,
           deliveryNotes
         ) => {
           merchantSetupDelivery(orderId, {
-            method: courierMethod,
+            courierMethod,
             provider: courierProvider,
             courierName,
             courierPhone,
-            trackingUrl: trackingNumber,
-            deliveryNote: deliveryNotes,
+            trackingReference: trackingNumber,
+            trackingUrl: trackingUrl,
+            deliveryNotes,
           });
           merchantStartDelivery(orderId);
           setSelectedOrderForDelivery(null);
+          setActiveTab("DIKIRIM");
           setToastMessage("Pengiriman telah dimulai! Pesanan kini berada di tab Dikirim.");
           setToastType("success");
         }}
@@ -324,10 +468,11 @@ function MerchantOrdersContent() {
         order={selectedOrderForRecordDelivered}
         isOpen={!!selectedOrderForRecordDelivered}
         onClose={() => setSelectedOrderForRecordDelivered(null)}
-        onConfirm={(orderId, receivedBy, notes) => {
-          merchantConfirmDelivered(orderId, { receivedBy, note: notes });
+        onConfirm={(orderId, receivedBy, proofType, notes, photoUrl) => {
+          merchantConfirmDelivered(orderId, receivedBy, proofType, notes, photoUrl);
           setSelectedOrderForRecordDelivered(null);
-          setToastMessage("Penerimaan barang berhasil dicatat! Menunggu konfirmasi pelanggan (48 jam auto-selesai).");
+          setActiveTab("TIBA");
+          setToastMessage("Penerimaan barang berhasil dicatat! Pesanan berpindah ke tab 'Tiba di Tujuan' menunggu konfirmasi pelanggan.");
           setToastType("success");
         }}
       />
@@ -349,9 +494,10 @@ function MerchantOrdersContent() {
         isOpen={!!selectedOrderForCancellation}
         onClose={() => setSelectedOrderForCancellation(null)}
         onDecision={(orderId, approved, rejectionReason) => {
-          respondCancellation(orderId, approved ? "APPROVE" : "REJECT", rejectionReason);
+          respondCancellation(orderId, approved ? "APPROVED" : "REJECTED", rejectionReason);
           setSelectedOrderForCancellation(null);
           if (approved) {
+            setActiveTab("BATAL");
             setToastMessage("Pengajuan pembatalan disetujui. Pesanan dibatalkan & refund 100% diproses.");
             setToastType("success");
           } else {
@@ -368,6 +514,7 @@ function MerchantOrdersContent() {
         onConfirm={(orderId, reason) => {
           cancelOperationalMerchantOrder(orderId, reason);
           setSelectedOrderForOperationalCancel(null);
+          setActiveTab("BATAL");
           setToastMessage("Pesanan berhasil dibatalkan. Pelanggan akan menerima refund penuh 100%.");
           setToastType("success");
         }}
@@ -377,40 +524,70 @@ function MerchantOrdersContent() {
         order={selectedOrderForDetail}
         isOpen={!!selectedOrderForDetail}
         onClose={() => setSelectedOrderForDetail(null)}
+        currentTime={currentTime}
+        onStartProcessing={(o) => {
+          merchantProcessOrder(o.id);
+          setActiveTab("DIPROSES");
+          setToastMessage(`Pesanan #${o.orderNumber} sedang diproses.`);
+          setToastType("success");
+        }}
+        onCancelOperational={(o) => setSelectedOrderForOperationalCancel(o)}
+        onPackOrder={(o) => {
+          merchantPackOrder(o.id);
+          setToastMessage(`Pesanan #${o.orderNumber} selesai dikemas. Siap kirim!`);
+          setToastType("success");
+        }}
+        onConfigureDelivery={(o) => setSelectedOrderForDelivery(o)}
+        onRespondCancellation={(o) => setSelectedOrderForCancellation(o)}
+        onRecordDelivered={(o) => setSelectedOrderForRecordDelivered(o)}
+        onMarkDeliveryFailed={(o) => setSelectedOrderForFailed(o)}
+        onRetryDelivery={(o) => setSelectedOrderForDelivery(o)}
+        onViewProof={(o) => setSelectedOrderForProof(o)}
       />
 
-      {/* Proof of Delivery Summary Modal */}
+      {/* Proof of Delivery Summary Modal (4 Items Saved & Displayed) */}
       {selectedOrderForProof && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-white/85 backdrop-blur-md animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl border border-slate-200/90 max-h-[92vh] overflow-y-auto">
             <div className="flex items-start justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center">
-                  <CheckCircle size={22} weight="bold" />
+                <div className="w-10 h-10 rounded-2xl bg-teal-100 text-teal-700 flex items-center justify-center shrink-0">
+                  <CheckCircle size={24} weight="bold" />
                 </div>
                 <div>
-                  <h3 className="font-display font-bold text-sm text-slate-900">
-                    Bukti Serah Terima Paket
+                  <h3 className="font-display font-bold text-base text-slate-900">
+                    Bukti Serah Terima Paket (POD)
                   </h3>
-                  <p className="text-xs text-slate-500">#{selectedOrderForProof.orderNumber}</p>
+                  <p className="text-xs text-slate-500">#{selectedOrderForProof.orderNumber} • 4 Item Tersimpan di Database</p>
                 </div>
               </div>
               <button
                 onClick={() => setSelectedOrderForProof(null)}
-                className="p-1 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                className="p-1 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Penerima yang Sah:</span>
-                <span className="font-bold text-slate-900">
-                  {selectedOrderForProof.delivery.recipientReceivedBy || selectedOrderForProof.shippingAddressSnapshot.recipientName}
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 text-xs">
+              {/* Item 1: Nama Penerima */}
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">1. Nama Penerima Barang:</span>
+                <span className="font-bold text-slate-900 text-sm">
+                  {selectedOrderForProof.delivery.recipientReceivedBy || selectedOrderForProof.delivery.deliveredToName || selectedOrderForProof.shippingAddressSnapshot.recipientName}
                 </span>
               </div>
-              <div className="flex justify-between">
+
+              {/* Item 2: Hubungan / Jenis Bukti */}
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">2. Hubungan / Jenis Bukti:</span>
+                <span className="font-semibold text-slate-800 bg-teal-50 px-2 py-0.5 rounded text-[11px] text-teal-800 border border-teal-200">
+                  {selectedOrderForProof.delivery.proofType || "Foto Serah Terima Paket"}
+                </span>
+              </div>
+
+              {/* Waktu Penyerahan */}
+              <div className="flex justify-between items-center">
                 <span className="text-slate-500">Waktu Penyerahan:</span>
                 <span className="font-mono text-slate-700">
                   {selectedOrderForProof.delivery.deliveredAt
@@ -418,25 +595,108 @@ function MerchantOrdersContent() {
                     : "Baru saja"}
                 </span>
               </div>
+
+              {/* Item 3: Catatan Penyerahan */}
               {selectedOrderForProof.delivery.deliveredNotes && (
                 <div className="pt-2 border-t border-slate-200">
-                  <span className="text-[10px] font-bold uppercase text-slate-400 block mb-0.5">Catatan Penyerahan:</span>
-                  <p className="text-slate-700 italic">&ldquo;{selectedOrderForProof.delivery.deliveredNotes}&rdquo;</p>
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block mb-0.5">3. Catatan Penyerahan:</span>
+                  <p className="text-slate-800 italic bg-white p-2.5 rounded-xl border border-slate-200/80">
+                    &ldquo;{selectedOrderForProof.delivery.deliveredNotes}&rdquo;
+                  </p>
                 </div>
               )}
+
+              {/* Item 4: Foto Bukti Paket */}
+              <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                <span className="text-[10px] font-bold uppercase text-slate-400 block">4. Foto Bukti Paket Sampai:</span>
+                {selectedOrderForProof.delivery.proofPhotoUrl ? (
+                  <div className="space-y-1.5">
+                    <div
+                      onClick={() => setPreviewProofPhoto(selectedOrderForProof.delivery.proofPhotoUrl || null)}
+                      className="group relative rounded-2xl overflow-hidden border border-slate-200 bg-white cursor-pointer hover:border-teal-400 transition"
+                      title="Klik untuk memperbesar foto bukti"
+                    >
+                      <img
+                        src={selectedOrderForProof.delivery.proofPhotoUrl}
+                        alt="Bukti Serah Terima"
+                        className="w-full h-44 object-cover group-hover:scale-102 transition duration-300"
+                      />
+                      <div className="absolute inset-0 bg-slate-900/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-bold gap-1.5 backdrop-blur-[1px]">
+                        <Eye size={18} weight="bold" />
+                        <span>Klik untuk Perbesar Gambar</span>
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-500 italic">
+                      * Klik foto di atas untuk membuka popup gambar berukuran penuh.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] flex items-center gap-1.5">
+                    <Info size={14} weight="bold" className="text-amber-700 shrink-0" />
+                    <span>Foto bukti fisik tidak dilampirkan oleh kurir saat konfirmasi.</span>
+                  </div>
+                )}
+              </div>
             </div>
 
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              Catatan: Pesanan DELIVERED akan selesai otomatis (COMPLETED) setelah 48 jam jika tidak ada komplain yang diajukan oleh pelanggan.
+              Catatan: Ke-4 item di atas tersimpan dalam database pesanan dan ditampilkan langsung kepada pelanggan di halaman detail pesanan. Pesanan akan otomatis selesai (COMPLETED) setelah 48 jam jika tidak ada komplain.
             </p>
 
             <div className="flex justify-end pt-2">
               <button
                 type="button"
                 onClick={() => setSelectedOrderForProof(null)}
-                className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition"
+                className="px-5 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition cursor-pointer"
               >
-                Tutup
+                Tutup Bukti Penyerahan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox Popup: Perbesar Gambar Bukti Paket Sampai */}
+      {previewProofPhoto && (
+        <div
+          className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-white/90 backdrop-blur-md animate-fade-in"
+          onClick={() => setPreviewProofPhoto(null)}
+        >
+          <div
+            className="bg-white rounded-3xl max-w-2xl w-full p-4 sm:p-5 shadow-2xl border border-slate-200/90 space-y-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <CheckCircle size={18} weight="bold" className="text-teal-600" />
+                <span className="font-bold text-slate-900 text-xs">
+                  Foto Bukti Serah Terima Paket (Proof of Delivery / POD)
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewProofPhoto(null)}
+                className="p-1 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="rounded-2xl overflow-hidden bg-slate-50 border border-slate-200 flex items-center justify-center max-h-[75vh]">
+              <img
+                src={previewProofPhoto}
+                alt="Foto Bukti Paket Sampai"
+                className="w-full h-auto max-h-[75vh] object-contain"
+              />
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => setPreviewProofPhoto(null)}
+                className="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition cursor-pointer"
+              >
+                Tutup Gambar
               </button>
             </div>
           </div>

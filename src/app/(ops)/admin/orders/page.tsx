@@ -22,6 +22,8 @@ import {
 } from "@phosphor-icons/react";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { AdminProductOrdersTab } from "@/features/admin/components/AdminProductOrdersTab";
+import { AdminOrderCounts, orderBarangApi } from "@/lib/orderBarangApi";
 
 export default function AdminGlobalOrdersPage() {
   const {
@@ -51,10 +53,24 @@ export default function AdminGlobalOrdersPage() {
   const [interventionAction, setInterventionAction] = useState<"FORCE_COMPLETE" | "CANCEL_PENALTY">("FORCE_COMPLETE");
   const [interventionReason, setInterventionReason] = useState<string>("");
 
+  // Real backend Product Orders counts
+  const [productCounts, setProductCounts] = useState<AdminOrderCounts | null>(null);
+
+  React.useEffect(() => {
+    orderBarangApi.admin
+      .getOrderCounts()
+      .then((res) => {
+        if (res.data) setProductCounts(res.data);
+      })
+      .catch((err) => {
+        console.warn("Failed to fetch initial product order counts:", err);
+      });
+  }, []);
+
   // Tab counts
   const tabCounts = {
     SERVICE: serviceOrders.length,
-    PRODUCT: merchantOrders.length,
+    PRODUCT: productCounts ? productCounts.total : 0,
     B2B_PO: b2bPurchaseOrders.length,
     BOOKING: bookings.length,
   };
@@ -165,7 +181,7 @@ export default function AdminGlobalOrdersPage() {
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="neutral" size="md">
-              Total {serviceOrders.length + merchantOrders.length + b2bPurchaseOrders.length + bookings.length} Transaksi Terdaftar
+              Total {serviceOrders.length + (productCounts?.total ?? tabCounts.PRODUCT) + b2bPurchaseOrders.length + bookings.length} Transaksi Terdaftar
             </Badge>
           </div>
         </div>
@@ -282,170 +298,116 @@ export default function AdminGlobalOrdersPage() {
         </button>
       </div>
 
-      {/* Search & Status Filter */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
-        <div className="flex flex-col md:flex-row items-center gap-4">
-          <div className="relative flex-1 w-full">
-            <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder={`Cari dalam kanal ${orderTypeTab} (nomor referensi, pelanggan, mitra)...`}
-              value={orderSearchQuery}
-              onChange={(e) => setOrderSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-            />
+      {/* Tab Content */}
+      {orderTypeTab === "PRODUCT" ? (
+        <AdminProductOrdersTab onCountsUpdated={setProductCounts} />
+      ) : (
+        <>
+          {/* Search & Status Filter */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+            <div className="flex flex-col md:flex-row items-center gap-4">
+              <div className="relative flex-1 w-full">
+                <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder={`Cari dalam kanal ${orderTypeTab} (nomor referensi, pelanggan, mitra)...`}
+                  value={orderSearchQuery}
+                  onChange={(e) => setOrderSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <SlidersHorizontal size={16} className="text-slate-400" />
+                <select
+                  value={orderStatusFilter}
+                  onChange={(e) => setOrderStatusFilter(e.target.value)}
+                  className="text-xs py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 font-medium"
+                >
+                  <option value="ALL">Semua Status Kanal</option>
+                  {orderTypeTab === "SERVICE" && (
+                    <>
+                      <option value="BOOKED">BOOKED</option>
+                      <option value="IN_PROGRESS">IN_PROGRESS</option>
+                      <option value="COMPLETED">COMPLETED</option>
+                      <option value="CANCELLED">CANCELLED</option>
+                    </>
+                  )}
+                  {orderTypeTab === "B2B_PO" && (
+                    <>
+                      <option value="SUBMITTED">SUBMITTED</option>
+                      <option value="CONFIRMED">CONFIRMED</option>
+                      <option value="PROCESSING">PROCESSING</option>
+                      <option value="SHIPPED">SHIPPED</option>
+                      <option value="DELIVERED">DELIVERED</option>
+                      <option value="RECONCILED">RECONCILED</option>
+                    </>
+                  )}
+                  {orderTypeTab === "BOOKING" && (
+                    <>
+                      <option value="PENDING_CONFIRMATION">PENDING_CONFIRMATION</option>
+                      <option value="ACCEPTED">ACCEPTED</option>
+                      <option value="CONVERTED_TO_ORDER">CONVERTED_TO_ORDER</option>
+                    </>
+                  )}
+                </select>
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 w-full md:w-auto">
-            <SlidersHorizontal size={16} className="text-slate-400" />
-            <select
-              value={orderStatusFilter}
-              onChange={(e) => setOrderStatusFilter(e.target.value)}
-              className="text-xs py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 font-medium"
-            >
-              <option value="ALL">Semua Status Kanal</option>
+          {/* Main Table per Tab */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
               {orderTypeTab === "SERVICE" && (
-                <>
-                  <option value="BOOKED">BOOKED</option>
-                  <option value="IN_PROGRESS">IN_PROGRESS</option>
-                  <option value="COMPLETED">COMPLETED</option>
-                  <option value="CANCELLED">CANCELLED</option>
-                </>
+                <table className="w-full text-left text-xs text-slate-600">
+                  <thead className="bg-slate-50 text-slate-700 font-bold uppercase tracking-wider border-b border-slate-200">
+                    <tr>
+                      <th className="px-5 py-3">ID &amp; Layanan</th>
+                      <th className="px-4 py-3">Pelanggan</th>
+                      <th className="px-4 py-3">Mitra Provider</th>
+                      <th className="px-4 py-3">Total Uang</th>
+                      <th className="px-4 py-3">Status Layanan</th>
+                      <th className="px-5 py-3 text-right">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredServiceOrders.map((o) => (
+                      <tr key={o.id} className="hover:bg-slate-50/70">
+                        <td className="px-5 py-3.5">
+                          <span className="font-mono font-bold text-slate-900">{o.id}</span>
+                          <p className="font-semibold text-slate-800 line-clamp-1">{o.serviceTitle}</p>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className="font-bold text-slate-800">{o.customerName}</span>
+                          <p className="text-[11px] text-slate-400">{o.customerPhone}</p>
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className="font-bold text-slate-800">{o.providerName}</span>
+                          <p className="text-[11px] text-indigo-600">{o.assignedWorker?.name || "Belum ditugaskan"}</p>
+                        </td>
+                        <td className="px-4 py-3.5 font-mono font-bold text-slate-900">
+                          Rp {o.pricing.totalAmount.toLocaleString("id-ID")}
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <Badge variant={o.status === "COMPLETED" ? "success" : o.status === "IN_PROGRESS" ? "primary" : "neutral"} size="sm">
+                            {o.statusLabel || o.status}
+                          </Badge>
+                        </td>
+                        <td className="px-5 py-3.5 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Button variant="secondary" size="sm" onClick={() => setSelectedEntity({ type: "SERVICE", data: o })}>
+                              <Eye size={12} className="mr-1" /> Detail
+                            </Button>
+                            <Button variant="primary" size="sm" onClick={() => handleOpenIntervention("SERVICE", o)} className="bg-indigo-600 text-white">
+                              Intervensi
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               )}
-              {orderTypeTab === "PRODUCT" && (
-                <>
-                  <option value="PAID">PAID (Siap Kemas)</option>
-                  <option value="PROCESSING">PROCESSING (Dalam Kemas)</option>
-                  <option value="SHIPPED">SHIPPED (Dalam Pengiriman)</option>
-                  <option value="DELIVERED">DELIVERED (Diterima)</option>
-                </>
-              )}
-              {orderTypeTab === "B2B_PO" && (
-                <>
-                  <option value="SUBMITTED">SUBMITTED</option>
-                  <option value="CONFIRMED">CONFIRMED</option>
-                  <option value="PROCESSING">PROCESSING</option>
-                  <option value="SHIPPED">SHIPPED</option>
-                  <option value="DELIVERED">DELIVERED</option>
-                  <option value="RECONCILED">RECONCILED</option>
-                </>
-              )}
-              {orderTypeTab === "BOOKING" && (
-                <>
-                  <option value="PENDING_CONFIRMATION">PENDING_CONFIRMATION</option>
-                  <option value="ACCEPTED">ACCEPTED</option>
-                  <option value="CONVERTED_TO_ORDER">CONVERTED_TO_ORDER</option>
-                </>
-              )}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Table per Tab */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          {orderTypeTab === "SERVICE" && (
-            <table className="w-full text-left text-xs text-slate-600">
-              <thead className="bg-slate-50 text-slate-700 font-bold uppercase tracking-wider border-b border-slate-200">
-                <tr>
-                  <th className="px-5 py-3">ID &amp; Layanan</th>
-                  <th className="px-4 py-3">Pelanggan</th>
-                  <th className="px-4 py-3">Mitra Provider</th>
-                  <th className="px-4 py-3">Total Escrow</th>
-                  <th className="px-4 py-3">Status Layanan</th>
-                  <th className="px-5 py-3 text-right">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredServiceOrders.map((o) => (
-                  <tr key={o.id} className="hover:bg-slate-50/70">
-                    <td className="px-5 py-3.5">
-                      <span className="font-mono font-bold text-slate-900">{o.id}</span>
-                      <p className="font-semibold text-slate-800 line-clamp-1">{o.serviceTitle}</p>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className="font-bold text-slate-800">{o.customerName}</span>
-                      <p className="text-[11px] text-slate-400">{o.customerPhone}</p>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className="font-bold text-slate-800">{o.providerName}</span>
-                      <p className="text-[11px] text-indigo-600">{o.assignedWorker?.name || "Belum ditugaskan"}</p>
-                    </td>
-                    <td className="px-4 py-3.5 font-mono font-bold text-slate-900">
-                      Rp {o.pricing.totalAmount.toLocaleString("id-ID")}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <Badge variant={o.status === "COMPLETED" ? "success" : o.status === "IN_PROGRESS" ? "primary" : "neutral"} size="sm">
-                        {o.statusLabel || o.status}
-                      </Badge>
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <Button variant="secondary" size="sm" onClick={() => setSelectedEntity({ type: "SERVICE", data: o })}>
-                          <Eye size={12} className="mr-1" /> Detail
-                        </Button>
-                        <Button variant="primary" size="sm" onClick={() => handleOpenIntervention("SERVICE", o)} className="bg-indigo-600 text-white">
-                          Intervensi
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          {orderTypeTab === "PRODUCT" && (
-            <table className="w-full text-left text-xs text-slate-600">
-              <thead className="bg-slate-50 text-slate-700 font-bold uppercase tracking-wider border-b border-slate-200">
-                <tr>
-                  <th className="px-5 py-3">No. Order &amp; Item</th>
-                  <th className="px-4 py-3">Pembeli &amp; Alamat</th>
-                  <th className="px-4 py-3">Total Transaksi</th>
-                  <th className="px-4 py-3">Kurir &amp; Resi</th>
-                  <th className="px-4 py-3">Status Pesanan</th>
-                  <th className="px-5 py-3 text-right">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredProductOrders.map((o) => (
-                  <tr key={o.id} className="hover:bg-slate-50/70">
-                    <td className="px-5 py-3.5">
-                      <span className="font-mono font-bold text-slate-900">{o.orderNumber}</span>
-                      <p className="text-[11px] text-slate-600 line-clamp-1">{o.items.map((i) => `${i.title} (${i.quantity}x)`).join(", ")}</p>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className="font-bold text-slate-800">{o.customerName}</span>
-                      <p className="text-[11px] text-slate-400 line-clamp-1">{o.shippingAddress}</p>
-                    </td>
-                    <td className="px-4 py-3.5 font-mono font-bold text-slate-900">
-                      Rp {o.totalAmount.toLocaleString("id-ID")}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className="font-bold text-slate-700">{o.courierName || "Standar Kurir"}</span>
-                      <p className="font-mono text-[10px] text-slate-400">{o.trackingNumber || "Menunggu Resi"}</p>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <Badge variant={o.status === "DELIVERED" ? "success" : o.status === "SHIPPED" ? "primary" : "warning"} size="sm">
-                        {o.status}
-                      </Badge>
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <Button variant="secondary" size="sm" onClick={() => setSelectedEntity({ type: "PRODUCT", data: o })}>
-                          <Eye size={12} className="mr-1" /> Detail
-                        </Button>
-                        <Button variant="primary" size="sm" onClick={() => handleOpenIntervention("PRODUCT", o)} className="bg-indigo-600 text-white">
-                          Intervensi
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
 
           {orderTypeTab === "B2B_PO" && (
             <table className="w-full text-left text-xs text-slate-600">
@@ -553,6 +515,8 @@ export default function AdminGlobalOrdersPage() {
           )}
         </div>
       </div>
+    </>
+  )}
 
       {/* Detail Modal */}
       {selectedEntity && !showInterventionModal && (

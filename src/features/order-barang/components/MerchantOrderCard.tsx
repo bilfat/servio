@@ -52,8 +52,23 @@ export function MerchantOrderCard({
   const isCancellationPending = order.cancellationRequest?.status === "PENDING";
   const isDeliveryFailed = order.delivery.deliveryStatus === "FAILED";
 
+  const isUnpaid = order.status === "PAYMENT_PENDING" || order.status === "CREATED";
+  const createdAtTime = new Date(order.createdAt).getTime();
+  const expiresAtTime = createdAtTime + 6 * 3600 * 1000;
+  const diffMs = Math.max(0, expiresAtTime - (currentTime?.getTime() || Date.now()));
+  const isExpired = diffMs <= 0;
+  const isUnpaidAndExpired = isUnpaid && isExpired;
+  const effectiveStatus = (order.status === "CANCELLED" || isUnpaidAndExpired) ? "CANCELLED" : order.status;
+
   const getStatusBadge = () => {
-    switch (order.status) {
+    switch (effectiveStatus) {
+      case "PAYMENT_PENDING":
+      case "CREATED":
+        return {
+          label: "Menunggu Pembayaran",
+          colorClass: "bg-amber-50 text-amber-800 border-amber-300",
+          dotClass: "bg-amber-500",
+        };
       case "CONFIRMED":
         return {
           label: "Pesanan Baru Masuk",
@@ -94,19 +109,19 @@ export function MerchantOrderCard({
         };
       case "DELIVERED":
         return {
-          label: "Telah Diserahkan (DELIVERED)",
+          label: "Tiba di Tujuan",
           colorClass: "bg-teal-50 text-teal-700 border-teal-300",
           dotClass: "bg-teal-500",
         };
       case "COMPLETED":
         return {
-          label: "Selesai (COMPLETED)",
+          label: "Pesanan Selesai",
           colorClass: "bg-emerald-50 text-emerald-700 border-emerald-300",
           dotClass: "bg-emerald-500",
         };
       case "CANCELLED":
         return {
-          label: "Dibatalkan (CANCELLED)",
+          label: "Dibatalkan",
           colorClass: "bg-rose-50 text-rose-700 border-rose-300",
           dotClass: "bg-rose-500",
         };
@@ -120,6 +135,12 @@ export function MerchantOrderCard({
   };
 
   const badge = getStatusBadge();
+  const hours = Math.floor(diffMs / (1000 * 60 * 60));
+  const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+  const countdownFormatted = isExpired
+    ? "Waktu Habis"
+    : `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 
   return (
     <div
@@ -145,10 +166,16 @@ export function MerchantOrderCard({
           )}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
           <span className="text-[11px] text-slate-400">
             {formatDateTimeIndo(order.createdAt)}
           </span>
+          {isUnpaid && !isExpired && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-300">
+              <Clock size={12} weight="bold" className="text-amber-700 animate-pulse" />
+              <span>Sisa Waktu: {countdownFormatted}</span>
+            </span>
+          )}
           <span
             className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${badge.colorClass}`}
           >
@@ -206,12 +233,12 @@ export function MerchantOrderCard({
       {order.status === "DELIVERED" && (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="p-2.5 rounded-xl bg-teal-50 border border-teal-200 text-teal-950 text-xs flex items-center justify-between gap-2"
+          className="p-2.5 rounded-xl bg-teal-50 border border-teal-200 text-teal-950 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2"
         >
           <div className="flex items-center gap-2">
             <CheckCircle size={15} weight="fill" className="text-teal-600 shrink-0" />
             <span className="text-[11px] text-teal-900">
-              Barang Telah Diserahkan kepada <strong>{order.delivery.recipientReceivedBy || order.shippingAddressSnapshot.recipientName}</strong>.
+              Barang Telah Tiba di Tujuan (Diterima oleh <strong>{order.delivery.recipientReceivedBy || order.delivery.deliveredToName || order.shippingAddressSnapshot.recipientName}</strong>). Menunggu konfirmasi pembeli.
             </span>
           </div>
           <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-teal-200 text-teal-900 shrink-0">
@@ -248,7 +275,7 @@ export function MerchantOrderCard({
             </p>
             <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
               <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-100">
-                Jarak: ~{order.delivery.distanceKm} km
+                Jarak: ~{order.delivery.distanceKm ?? order.simulatedDistanceKm ?? 2.5} km
               </span>
               <span className="text-[10px] text-slate-500">
                 • {order.delivery.provider === "GOSEND" || order.delivery.method === "THIRD_PARTY" ? "GoSend Instant" : "Kurir Toko Internal"}
@@ -261,12 +288,21 @@ export function MerchantOrderCard({
         <div className="lg:col-span-4 border-t lg:border-t-0 lg:border-l border-slate-100 lg:pl-3 pt-2 lg:pt-0">
           {order.items.slice(0, 1).map((item, idx) => (
             <div key={idx} className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-200 overflow-hidden flex items-center justify-center shrink-0">
-                {item.thumbnailUrl ? (
-                  <img src={item.thumbnailUrl} alt={item.title} className="w-full h-full object-cover" />
-                ) : (
+              <div className="w-8 h-8 rounded-lg bg-slate-50 border border-slate-200 overflow-hidden flex items-center justify-center shrink-0 relative">
+                {item.thumbnailUrl && item.thumbnailUrl !== "/brand/logo.png" ? (
+                  <img
+                    src={item.thumbnailUrl}
+                    alt={item.title}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.classList.add("hidden");
+                      e.currentTarget.nextElementSibling?.classList.remove("hidden");
+                    }}
+                  />
+                ) : null}
+                <div className={`${item.thumbnailUrl && item.thumbnailUrl !== "/brand/logo.png" ? "hidden" : "flex"} items-center justify-center`}>
                   <Package size={16} className="text-slate-400" />
-                )}
+                </div>
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-bold text-slate-900 truncate leading-snug">{item.title}</p>
@@ -296,125 +332,166 @@ export function MerchantOrderCard({
             className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* TAB MASUK: CONFIRMED */}
-            {order.status === "CONFIRMED" && (
-              <>
+            {/* TAB BELUM BAYAR: PAYMENT_PENDING / CREATED (Not Expired) */}
+            {isUnpaid && !isExpired ? (
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <span className="text-[10px] text-slate-500 bg-slate-50 px-2 py-1 rounded-md border border-slate-200">
+                  Belum dapat diproses sebelum pembayaran berhasil
+                </span>
                 <button
                   type="button"
-                  onClick={() => onCancelOperational(order)}
-                  className="px-2.5 py-1.5 rounded-lg border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 text-[11px] font-bold transition cursor-pointer"
+                  onClick={() => onViewDetail(order)}
+                  className="px-3 py-1.5 rounded-lg bg-[#0F4C81] hover:bg-sky-800 text-white text-xs font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer"
                 >
-                  Tolak
+                  <Eye size={13} weight="bold" />
+                  <span>Lihat Detail</span>
                 </button>
+              </div>
+            ) : (isUnpaidAndExpired || order.status === "CANCELLED") ? (
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <span className="text-[11px] text-rose-600 font-semibold bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200">
+                  Alasan: {order.cancellationReason || "Belum menyelesaikan pembayaran"}
+                </span>
                 <button
                   type="button"
-                  onClick={() => onStartProcessing(order)}
-                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-2xs flex items-center gap-1 cursor-pointer"
+                  onClick={() => onViewDetail(order)}
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
                 >
-                  <Package size={13} weight="bold" />
-                  <span>Proses</span>
+                  <Eye size={13} weight="bold" />
+                  <span>Detail</span>
                 </button>
-              </>
-            )}
-
-            {/* TAB DIPROSES: PROCESSING */}
-            {order.status === "PROCESSING" && (
+              </div>
+            ) : (
               <>
-                {isCancellationPending ? (
-                  <button
-                    type="button"
-                    onClick={() => onRespondCancellation(order)}
-                    className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-                  >
-                    <WarningCircle size={13} weight="bold" />
-                    <span>Respon Batal</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => onPackOrder(order)}
-                    className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-2xs flex items-center gap-1 cursor-pointer"
-                  >
-                    <CheckCircle size={13} weight="bold" />
-                    <span>Tandai Selesai Dikemas</span>
-                  </button>
-                )}
-              </>
-            )}
-
-            {/* TAB DIPROSES: PACKED */}
-            {order.status === "PACKED" && (
-              <button
-                type="button"
-                onClick={() => onConfigureDelivery(order)}
-                className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition shadow-2xs flex items-center gap-1 cursor-pointer"
-              >
-                <Truck size={13} weight="bold" />
-                <span>Atur Kurir</span>
-              </button>
-            )}
-
-            {/* TAB DIKIRIM: DELIVERING */}
-            {order.status === "DELIVERING" && (
-              <>
-                {isDeliveryFailed ? (
-                  <button
-                    type="button"
-                    onClick={() => onRetryDelivery(order)}
-                    className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition cursor-pointer"
-                  >
-                    Kirim Ulang
-                  </button>
-                ) : (
+                {/* TAB MASUK: CONFIRMED */}
+                {order.status === "CONFIRMED" && (
                   <>
                     <button
                       type="button"
-                      onClick={() => onMarkDeliveryFailed(order)}
-                      className="px-2.5 py-1.5 rounded-lg border border-rose-200 bg-white hover:bg-rose-50 text-rose-700 text-[11px] font-bold transition cursor-pointer"
+                      onClick={() => onCancelOperational(order)}
+                      className="px-2.5 py-1.5 rounded-lg border border-rose-200 bg-white hover:bg-rose-50 text-rose-600 text-[11px] font-bold transition cursor-pointer"
                     >
-                      Gagal
+                      Tolak
                     </button>
                     <button
                       type="button"
-                      onClick={() => onRecordDelivered(order)}
-                      className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition shadow-2xs flex items-center gap-1 cursor-pointer"
+                      onClick={() => onStartProcessing(order)}
+                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-2xs flex items-center gap-1 cursor-pointer"
                     >
-                      <CheckCircle size={13} weight="bold" />
-                      <span>Diterima</span>
+                      <Package size={13} weight="bold" />
+                      <span>Proses</span>
                     </button>
                   </>
                 )}
+
+                {/* TAB DIPROSES: PROCESSING */}
+                {order.status === "PROCESSING" && (
+                  <>
+                    {isCancellationPending ? (
+                      <button
+                        type="button"
+                        onClick={() => onRespondCancellation(order)}
+                        className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <WarningCircle size={13} weight="bold" />
+                        <span>Respon Batal</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onPackOrder(order)}
+                        className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition shadow-2xs flex items-center gap-1 cursor-pointer"
+                      >
+                        <CheckCircle size={13} weight="bold" />
+                        <span>Tandai Selesai Dikemas</span>
+                      </button>
+                    )}
+                  </>
+                )}
+
+                {/* TAB DIPROSES: PACKED */}
+                {order.status === "PACKED" && (
+                  <button
+                    type="button"
+                    onClick={() => onConfigureDelivery(order)}
+                    className="px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition shadow-2xs flex items-center gap-1 cursor-pointer"
+                  >
+                    <Truck size={13} weight="bold" />
+                    <span>Atur Kurir</span>
+                  </button>
+                )}
+
+                {/* TAB DIKIRIM: DELIVERING */}
+                {order.status === "DELIVERING" && (
+                  <>
+                    {isDeliveryFailed ? (
+                      <button
+                        type="button"
+                        onClick={() => onRetryDelivery(order)}
+                        className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition cursor-pointer"
+                      >
+                        Kirim Ulang
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onMarkDeliveryFailed(order)}
+                          className="px-2.5 py-1.5 rounded-lg border border-rose-200 bg-white hover:bg-rose-50 text-rose-700 text-[11px] font-bold transition cursor-pointer"
+                        >
+                          Gagal
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onRecordDelivered(order)}
+                          className="px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition shadow-2xs flex items-center gap-1 cursor-pointer"
+                        >
+                          <CheckCircle size={13} weight="bold" />
+                          <span>Diterima</span>
+                        </button>
+                      </>
+                    )}
+                  </>
+                )}
+
+                {/* TAB TIBA: DELIVERED */}
+                {order.status === "DELIVERED" && (
+                  <button
+                    type="button"
+                    onClick={() => onViewProof(order)}
+                    className="px-3 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <Eye size={14} weight="bold" />
+                    <span>Lihat Bukti</span>
+                  </button>
+                )}
+
+                {/* TAB SELESAI */}
+                {order.status === "COMPLETED" && (
+                  <span className="text-[10px] text-emerald-700 font-bold px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200">
+                    Selesai
+                  </span>
+                )}
+
+                {/* TAB BELUM BAYAR */}
+                {(order.status === "CREATED" || order.status === "PAYMENT_PENDING") && (
+                  <span className="text-[11px] text-amber-800 font-medium px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-1.5">
+                    <Clock size={13} weight="bold" className="text-amber-600 animate-pulse" />
+                    <span>Menunggu Pembayaran</span>
+                  </span>
+                )}
+
+                {/* Detail Link */}
+                <button
+                  type="button"
+                  onClick={() => onViewDetail(order)}
+                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Detail</span>
+                  <ArrowRight size={12} weight="bold" />
+                </button>
               </>
             )}
-
-            {/* TAB DIKIRIM: DELIVERED */}
-            {order.status === "DELIVERED" && (
-              <button
-                type="button"
-                onClick={() => onViewProof(order)}
-                className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
-              >
-                <Eye size={13} weight="bold" />
-                <span>Bukti</span>
-              </button>
-            )}
-
-            {/* TAB SELESAI */}
-            {order.status === "COMPLETED" && (
-              <span className="text-[10px] text-emerald-700 font-bold px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200">
-                Selesai
-              </span>
-            )}
-
-            {/* Detail Link */}
-            <button
-              type="button"
-              onClick={() => onViewDetail(order)}
-              className="px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-            >
-              <span>Detail</span>
-              <ArrowRight size={12} weight="bold" />
-            </button>
           </div>
         </div>
       </div>

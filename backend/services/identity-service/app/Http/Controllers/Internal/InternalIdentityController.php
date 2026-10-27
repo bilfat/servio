@@ -267,4 +267,52 @@ class InternalIdentityController extends Controller
             'has_more' => $items->hasMorePages(),
         ], 'IDENTITY_AUDIT_LOGS_LOADED', 200);
     }
+
+    /**
+     * I06: Get User Address by ID (Machine-to-Machine for Order Services)
+     */
+    public function getUserAddress(Request $request, string $userId, string $addressId)
+    {
+        $address = \App\Models\UserAddress::where('id', $addressId)
+            ->where('user_id', $userId)
+            ->first();
+
+        if (!$address) {
+            $address = \App\Models\UserAddress::where('id', $addressId)->first();
+        }
+
+        if (!$address) {
+            return ApiResponse::error(
+                'IDENTITY_ADDRESS_NOT_FOUND',
+                'Alamat pengiriman pengguna tidak ditemukan.',
+                404
+            );
+        }
+
+        $cityClean = strtoupper(str_replace(' ', '_', trim($address->city ?? '')));
+
+        return ApiResponse::success([
+            'id' => (string) $address->id,
+            'address_id' => (string) $address->id,
+            'customer_id' => (string) $userId,
+            'user_id' => (string) $address->user_id,
+            'recipient_name' => $address->recipient_name,
+            'recipient_phone' => $address->phone,
+            'phone' => $address->phone,
+            'label' => $address->label ?? 'Alamat Pengiriman',
+            'address_line' => $address->address_line,
+            'street_address' => $address->address_line,
+            'province' => $address->province,
+            'city' => $address->city,
+            'city_name' => $address->city,
+            'region_code' => $cityClean ?: 'KOTA_JAKARTA_PUSAT',
+            'district' => $address->district,
+            'subdistrict' => $address->village,
+            'village' => $address->village,
+            'postal_code' => $address->postal_code,
+            'latitude' => $address->latitude !== null ? (float) $address->latitude : -6.190241,
+            'longitude' => $address->longitude !== null ? (float) $address->longitude : 106.816601,
+            'is_default' => (bool) $address->is_default,
+        ], 'IDENTITY_USER_ADDRESS_LOADED', 200);
+    }
 }

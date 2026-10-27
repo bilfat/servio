@@ -32,8 +32,11 @@ class PaymentVerificationService
         ?string $actorUserId = null
     ): PaymentIntent {
         $outcome = strtoupper($outcome);
+        if ($outcome === 'PAID') {
+            $outcome = 'SUCCESS';
+        }
         if (!in_array($outcome, ['SUCCESS', 'FAILED'], true)) {
-            throw new HttpException(422, 'Outcome simulator hanya boleh SUCCESS atau FAILED.');
+            throw new HttpException(422, 'Outcome simulator hanya boleh SUCCESS, PAID, atau FAILED.');
         }
 
         if (empty($providerEventId) || trim($providerEventId) === '') {
@@ -290,6 +293,13 @@ class PaymentVerificationService
 
         if ($isExpired) {
             throw new HttpException(410, $expiredMessage ?? 'Pembayaran ditolak: tagihan telah kedaluwarsa.');
+        }
+
+        // Post-commit: dispatch outbox event immediately to Order 05A
+        try {
+            app(\App\Domain\Finance\Integration\OutboxDispatcherService::class)->dispatchPendingEvents();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("PaymentVerificationService: Post-commit outbox dispatch deferred: " . $e->getMessage());
         }
 
         return $intent;

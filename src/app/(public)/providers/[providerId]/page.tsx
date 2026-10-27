@@ -214,7 +214,7 @@ export default function ProviderStorefrontPage() {
 
   // Filter & sort services
   const filteredServices = useMemo(() => {
-    let result = services.filter((s) => {
+    const result = services.filter((s) => {
       if (activeCategoryTab !== "ALL" && s.category?.id !== activeCategoryTab) {
         return false;
       }
@@ -403,7 +403,7 @@ export default function ProviderStorefrontPage() {
                   <ShieldCheck size={15} weight="fill" className="text-emerald-400" />
                   <span>100% Aman</span>
                 </div>
-                <div className="text-[10px] text-slate-300 mt-0.5">SERVIO Escrow</div>
+                <div className="text-[10px] text-slate-300 mt-0.5">Uang Aman</div>
               </div>
 
               {/* Verified Badge */}
@@ -564,9 +564,9 @@ export default function ProviderStorefrontPage() {
               <div className="flex items-start gap-2.5">
                 <ShieldCheck size={16} className="text-emerald-600 shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-bold text-slate-900 text-xs">Standar Pengerjaan &amp; Escrow</div>
+                  <div className="font-bold text-slate-900 text-xs">Standar Pengerjaan &amp; Uang Aman</div>
                   <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                    Pengerjaan dilakukan oleh teknisi resmi terverifikasi dengan jaminan pembayaran aman via sistem Escrow Servio.
+                    Pengerjaan dilakukan oleh teknisi resmi terverifikasi dengan jaminan pembayaran aman via sistem uang aman Servio.
                   </div>
                 </div>
               </div>
@@ -810,9 +810,9 @@ export default function ProviderStorefrontPage() {
                     <Sparkle size={18} weight="duotone" />
                   </div>
                   <div>
-                    <h4 className="text-xs font-bold text-slate-900 font-display">Proteksi Pembayaran Escrow</h4>
+                    <h4 className="text-xs font-bold text-slate-900 font-display">Proteksi Uang Aman</h4>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
-                      Dana Anda aman di escrow dan hanya diteruskan setelah pekerjaan selesai dan Anda puas.
+                      Uang Anda aman ditahan dan hanya diteruskan setelah pekerjaan selesai dan Anda puas.
                     </p>
                   </div>
                 </div>

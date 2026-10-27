@@ -311,7 +311,7 @@ export default function ProviderOrdersListPage() {
                       Rp {(order.pricing?.totalAmount || 0).toLocaleString("id-ID")}
                     </span>
                     <span className="block text-[10px] text-emerald-600 font-semibold">
-                      {order.isEscrowLocked ? "Escrow Diamankan" : "Escrow Selesai"}
+                      {order.isEscrowLocked ? "Uang Diamankan" : "Uang Selesai"}
                     </span>
                   </div>
                 </div>

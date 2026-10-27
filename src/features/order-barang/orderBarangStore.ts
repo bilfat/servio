@@ -112,20 +112,40 @@ class OrderBarangStore {
       const savedMerchant = localStorage.getItem(STORAGE_KEY_MERCHANT);
       const savedOffset = localStorage.getItem(STORAGE_KEY_OFFSET);
 
-      this.orders = (savedOrders ? JSON.parse(savedOrders) : [...INITIAL_ORDERS]).map((o: any) => this.normalizeOrder(o));
-      this.checkoutGroups = savedGroups
-        ? JSON.parse(savedGroups)
-        : [...INITIAL_CHECKOUT_GROUPS];
+      const rawOrders = savedOrders ? JSON.parse(savedOrders) : [];
+      const cleanOrders = Array.isArray(rawOrders)
+        ? rawOrders.filter((o: any) => {
+            const num = String(o?.orderNumber || "");
+            const id = String(o?.id || "");
+            return !num.startsWith("ORD-MC-2026-") && !num.startsWith("ORD-SC-") && !id.startsWith("ORD-MC-") && !id.startsWith("ORD-SC-");
+          })
+        : [];
+      this.orders = cleanOrders.map((o: any) => this.normalizeOrder(o));
+      localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(this.orders));
+
+      const rawGroups = savedGroups ? JSON.parse(savedGroups) : [];
+      const cleanGroups = Array.isArray(rawGroups)
+        ? rawGroups.filter((g: any) => {
+            const gid = String(g?.id || "");
+            const gnum = String(g?.checkoutGroupNumber || "");
+            return !gid.startsWith("CHK-GRP-") && !gnum.startsWith("CHK-2026-");
+          })
+        : [];
+      this.checkoutGroups = cleanGroups;
+      localStorage.setItem(STORAGE_KEY_GROUPS, JSON.stringify(this.checkoutGroups));
+
       this.shippingSettings = savedShipping
         ? JSON.parse(savedShipping)
         : { ...INITIAL_SHIPPING_SETTINGS };
       this.activeMerchantId = savedMerchant || "merch-jaya-motor";
       this.timeOffsetMinutes = savedOffset ? parseInt(savedOffset, 10) : 0;
       this.initialized = true;
+      this.checkAndExpireOrders();
     } catch {
-      this.orders = INITIAL_ORDERS.map((o) => this.normalizeOrder(o));
-      this.checkoutGroups = [...INITIAL_CHECKOUT_GROUPS];
+      this.orders = [];
+      this.checkoutGroups = [];
       this.shippingSettings = { ...INITIAL_SHIPPING_SETTINGS };
+      this.checkAndExpireOrders();
     }
   }
 
@@ -172,21 +192,102 @@ class OrderBarangStore {
     return this.timeOffsetMinutes;
   }
 
+  // Automatically expire unpaid orders after 6 hours window and mark them CANCELLED
+  public checkAndExpireOrders(): boolean {
+    const now = this.getNow();
+    const nowMs = now.getTime();
+    const nowIso = now.toISOString();
+    let hasChanges = false;
+
+    // Check orders
+    this.orders = this.orders.map((order) => {
+      if (order.status === "CREATED" || order.status === "PAYMENT_PENDING") {
+        const createdAtTime = new Date(order.createdAt).getTime();
+        const expiresAtTime = createdAtTime + 6 * 3600 * 1000;
+        if (nowMs >= expiresAtTime) {
+          hasChanges = true;
+          return {
+            ...order,
+            status: "CANCELLED" as const,
+            paymentStatus: "EXPIRED" as const,
+            payment: {
+              ...(order.payment || {}),
+              status: "EXPIRED" as const,
+              totalAmount: order.totalAmount,
+              method: order.paymentMethod || "QRIS",
+            },
+            refundStatus: "NOT_REQUIRED" as const,
+            refundAmount: 0,
+            cancelledAt: order.cancelledAt || nowIso,
+            cancelledBy: "SYSTEM" as const,
+            cancellationReason: "Belum menyelesaikan pembayaran",
+            cancellationDetails: {
+              reason: "Belum menyelesaikan pembayaran",
+              actor: "SISTEM",
+            },
+            updatedAt: nowIso,
+            timeline: [
+              ...order.timeline.filter((t) => t.step !== "CANCELLED" && t.step !== "cancel"),
+              {
+                step: "CANCELLED",
+                title: "Pesanan Dibatalkan Otomatis",
+                description: "Belum menyelesaikan pembayaran hingga batas waktu 6 jam berakhir.",
+                timestamp: nowIso,
+                isCompleted: true,
+                isCurrent: true,
+              },
+            ],
+          };
+        }
+      }
+      return order;
+    });
+
+    // Check checkout groups
+    this.checkoutGroups = this.checkoutGroups.map((group) => {
+      if (group.paymentStatus === "PENDING") {
+        const createdAtTime = new Date(group.createdAt).getTime();
+        const expiresAtTime = group.expiresAt
+          ? new Date(group.expiresAt).getTime()
+          : createdAtTime + 6 * 3600 * 1000;
+        if (nowMs >= expiresAtTime) {
+          hasChanges = true;
+          return {
+            ...group,
+            paymentStatus: "EXPIRED" as const,
+            isExpired: true,
+          };
+        }
+      }
+      return group;
+    });
+
+    if (hasChanges) {
+      this.save();
+    }
+
+    return hasChanges;
+  }
+
   // Getters
   public getOrders(): MockMerchantOrder[] {
+    this.checkAndExpireOrders();
     return this.orders.map((o) => this.normalizeOrder(o));
   }
 
   public getOrderById(id: string): MockMerchantOrder | undefined {
+    this.checkAndExpireOrders();
     const o = this.orders.find((o) => o.id === id || o.orderNumber === id);
     return o ? this.normalizeOrder(o) : undefined;
   }
 
   public getCheckoutGroups(): MockCheckoutGroup[] {
+    this.checkAndExpireOrders();
     return [...this.checkoutGroups];
   }
 
   public getCheckoutGroupById(id: string): MockCheckoutGroup | undefined {
+    this.checkAndExpireOrders();
     return this.checkoutGroups.find(
       (g) => g.id === id || g.checkoutGroupNumber === id
     );
@@ -516,15 +617,38 @@ class OrderBarangStore {
     group.isExpired = true;
 
     this.orders = this.orders.map((order) => {
-      if (order.checkoutGroupId === checkoutGroupId && order.status === "PAYMENT_PENDING") {
+      if (order.checkoutGroupId === checkoutGroupId && (order.status === "PAYMENT_PENDING" || order.status === "CREATED")) {
         return {
           ...order,
           status: "CANCELLED",
           paymentStatus: "EXPIRED",
+          payment: {
+            ...(order.payment || {}),
+            status: "EXPIRED",
+            totalAmount: order.totalAmount,
+            method: order.paymentMethod || "QRIS",
+          },
+          refundStatus: "NOT_REQUIRED",
+          refundAmount: 0,
           cancelledAt: nowIso,
           cancelledBy: "SYSTEM",
-          cancellationReason: "Batas waktu pembayaran 6 jam telah berakhir.",
+          cancellationReason: "Belum menyelesaikan pembayaran",
+          cancellationDetails: {
+            reason: "Belum menyelesaikan pembayaran",
+            actor: "SISTEM",
+          },
           updatedAt: nowIso,
+          timeline: [
+            ...order.timeline.filter((t) => t.step !== "CANCELLED" && t.step !== "cancel"),
+            {
+              step: "CANCELLED",
+              title: "Pesanan Dibatalkan Otomatis",
+              description: "Belum menyelesaikan pembayaran hingga batas waktu 6 jam berakhir.",
+              timestamp: nowIso,
+              isCompleted: true,
+              isCurrent: true,
+            },
+          ],
         };
       }
       return order;
@@ -1214,22 +1338,8 @@ class OrderBarangStore {
       return o;
     });
 
-    // Check payment expiry for PENDING checkout groups (6 hours)
-    this.checkoutGroups = this.checkoutGroups.map((group) => {
-      if (
-        group.paymentStatus === "PENDING" &&
-        new Date(group.expiresAt).getTime() <= now.getTime()
-      ) {
-        return {
-          ...group,
-          paymentStatus: "EXPIRED",
-          isExpired: true,
-        };
-      }
-      return group;
-    });
-
-    this.save();
+    // Check payment expiry for PENDING checkout groups & orders (6 hours)
+    this.checkAndExpireOrders();
   }
 
   // 21. RESET DEMO DATA
