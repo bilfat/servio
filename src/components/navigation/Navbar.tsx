@@ -12,6 +12,7 @@ import { useActiveLocation } from "@/context/LocationContext";
 import { CATEGORY_ICON_MAP } from "@/config/navigation";
 import { UserRole } from "@/types/auth";
 import { getRoleDashboard, getRoleProfileUrl } from "@/lib/roleNavigation";
+import { useWorkerPhoto } from "@/features/worker/workerPhotoHelper";
 import {
   MagnifyingGlass,
   Bell,
@@ -51,6 +52,11 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
   const [optimisticCartCount, setOptimisticCartCount] = useState<number | null>(null);
   const pendingCountRef = useRef<number | null>(null);
   const isFlightActiveRef = useRef<boolean>(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Sync optimistic count when backend totalItemCount arrives, unless flight animation is currently active
   useEffect(() => {
@@ -217,9 +223,13 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
     : rawActiveRole;
 
   // On operational dashboard routes, never treat as public guest
-  const isPublicGuest = isOperationalRoute ? false : rawIsPublicGuest;
-  const isCustomer = activeRole === "CUSTOMER" && !isPublicGuest;
+  const isPublicGuest = !mounted ? true : (isOperationalRoute ? false : rawIsPublicGuest);
+  const isCustomer = mounted && activeRole === "CUSTOMER" && !isPublicGuest;
   const isDashboardRole = isOperationalRoute;
+
+  const liveWorkerPhoto = useWorkerPhoto();
+  const isWorker = activeRole === "WORKER_TECHNICIAN";
+  const userPhoto = (isWorker ? liveWorkerPhoto : null) || user.avatar || user.personalProfile?.avatar || (user.avatarUrl && user.avatarUrl !== "/brand/logo.png" ? user.avatarUrl : null);
 
   // Filter service categories dynamically from canonical taxonomy API
   const repo = useDomainRepository();
@@ -977,10 +987,10 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
                     className="flex items-center gap-2 pl-2 border-l border-slate-200 min-h-[44px] text-left group focus:outline-none"
                   >
                     <div className="w-8 h-8 rounded-full bg-primary text-white font-bold flex items-center justify-center text-xs shadow-sm ring-2 ring-transparent group-hover:ring-primary/20 transition-all overflow-hidden shrink-0">
-                      {user.avatar || (user.personalProfile?.avatar) || (user.avatarUrl && user.avatarUrl !== "/brand/logo.png") ? (
+                      {userPhoto ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={user.avatar || user.personalProfile?.avatar || user.avatarUrl}
+                          src={userPhoto}
                           alt={user.name}
                           className="w-full h-full object-cover"
                         />
@@ -1002,10 +1012,10 @@ export function Navbar({ onToggleSidebar, isMobileSidebarOpen, cartCount, hideSi
                     <div className="absolute top-full right-0 mt-2 w-56 rounded-2xl bg-white border border-slate-200 shadow-servio-lg p-2 space-y-1 z-50 animate-in fade-in zoom-in-95 duration-150">
                       <div className="px-3 py-2 border-b border-slate-100 flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-full bg-primary text-white font-bold flex items-center justify-center text-xs shadow-sm overflow-hidden shrink-0">
-                          {user.avatar || (user.personalProfile?.avatar) || (user.avatarUrl && user.avatarUrl !== "/brand/logo.png") ? (
+                          {userPhoto ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
-                              src={user.avatar || user.personalProfile?.avatar || user.avatarUrl}
+                              src={userPhoto}
                               alt={user.name}
                               className="w-full h-full object-cover"
                             />

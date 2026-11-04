@@ -27,6 +27,9 @@ import {
   MapPin,
   Storefront,
   ShoppingBag,
+  Buildings,
+  CalendarBlank,
+  Wrench,
 } from "@phosphor-icons/react";
 import { financeApi } from "@/lib/servioApi";
 import { orderBarangApi, AdminOrderDetailEntity } from "@/lib/orderBarangApi";
@@ -35,8 +38,11 @@ import { Toast } from "@/components/feedback/Toast";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { EmptyState } from "@/components/feedback/EmptyState";
+import { useOrderJasa } from "@/features/order-jasa/hooks/useOrderJasa";
+import { ServiceOrder } from "@/features/order-jasa/types";
 
 export default function PaymentGatewayOperationsPage() {
+  const { orders: serviceOrders05B, simulateFinancePayment, refresh: syncOrderJasa } = useOrderJasa();
   const [payments, setPayments] = useState<BackendPaymentIntent[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
@@ -46,6 +52,7 @@ export default function PaymentGatewayOperationsPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Filters
+  const [channelFilter, setChannelFilter] = useState<"ALL" | "BARANG_05A" | "JASA_DIAGNOSIS" | "JASA_PENGERJAAN">("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [methodFilter, setMethodFilter] = useState("ALL");
@@ -56,13 +63,29 @@ export default function PaymentGatewayOperationsPage() {
   const [simulationOutcome, setSimulationOutcome] = useState<"PAID" | "FAILED">("PAID");
   const [isSimulating, setIsSimulating] = useState(false);
 
+  // 05B Simulation & Detail
+  const [simulation05BRow, setSimulation05BRow] = useState<{
+    orderId: string;
+    channel: "JASA_DIAGNOSIS" | "JASA_PENGERJAAN";
+    invoiceNo: string;
+    paymentId?: string;
+    amount: number;
+    method: string;
+    serviceTitle: string;
+  } | null>(null);
+
+  const [selected05BOrder, setSelected05BOrder] = useState<{
+    order: ServiceOrder;
+    type: "DIAGNOSIS" | "EXECUTION";
+  } | null>(null);
+
   // Struk & Rincian Barang State
   const [paymentOrders, setPaymentOrders] = useState<AdminOrderDetailEntity[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
 
-  const fetchPayments = async () => {
+  const fetchPayments = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       setError(null);
       const res = await financeApi.ops.payments({
         status: statusFilter !== "ALL" ? statusFilter : undefined,
@@ -71,22 +94,39 @@ export default function PaymentGatewayOperationsPage() {
         per_page: 15,
       });
 
-      if (res && res.data) {
-        setPayments(res.data.data || []);
-        setTotalCount(res.data.total || 0);
-        setCurrentPage(res.data.current_page || 1);
-        setLastPage(res.data.last_page || 1);
+      if (res) {
+        const rawData = (res as any).data ?? res;
+        if (Array.isArray(rawData)) {
+          setPayments(rawData);
+          setTotalCount(rawData.length);
+        } else if (rawData && Array.isArray(rawData.data)) {
+          setPayments(rawData.data);
+          setTotalCount(typeof rawData.total === "number" ? rawData.total : rawData.data.length);
+          if (rawData.current_page) setCurrentPage(rawData.current_page);
+          if (rawData.last_page) setLastPage(rawData.last_page);
+        } else {
+          setPayments([]);
+          setTotalCount(0);
+        }
       }
     } catch (err: unknown) {
       console.error("Gagal memuat pembayaran:", err);
-      setError(err instanceof Error ? err.message : "Gagal memuat log pembayaran.");
+      if (!isBackground) {
+        setError(err instanceof Error ? err.message : "Gagal memuat log pembayaran.");
+      }
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchPayments();
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && !document.hidden) {
+        fetchPayments(true);
+      }
+    }, 4000);
+    return () => clearInterval(interval);
   }, [statusFilter, methodFilter, currentPage]);
 
   // Helper status pesanan barang
@@ -238,6 +278,28 @@ export default function PaymentGatewayOperationsPage() {
   }, [selectedPayment, paymentOrders]);
 
   const handleSimulatePayment = async () => {
+    if (simulation05BRow) {
+      try {
+        setIsSimulating(true);
+        setError(null);
+        await simulateFinancePayment(
+          simulation05BRow.paymentId || simulation05BRow.invoiceNo,
+          "PAID",
+          simulation05BRow.orderId,
+          simulation05BRow.amount
+        );
+        setToastMessage(`Simulasi Berhasil: Tagihan ${simulation05BRow.invoiceNo} terkonfirmasi PAID.`);
+        setSimulation05BRow(null);
+        await syncOrderJasa();
+        await fetchPayments(true);
+      } catch (err: any) {
+        setError(err?.message || "Gagal melakukan simulasi pembayaran jasa.");
+      } finally {
+        setIsSimulating(false);
+      }
+      return;
+    }
+
     if (!simulationPayment) return;
     try {
       setIsSimulating(true);
@@ -262,7 +324,111 @@ export default function PaymentGatewayOperationsPage() {
     }
   };
 
+  // 05B Service Payment Rows
+  const service05BRows = useMemo(() => {
+    const rows: {
+      id: string;
+      paymentId?: string;
+      orderId: string;
+      orderNumber: string;
+      channel: "JASA_DIAGNOSIS" | "JASA_PENGERJAAN";
+      serviceTitle: string;
+      customerName: string;
+      providerName: string;
+      method: string;
+      amount: number;
+      status: "PENDING" | "PAID" | "EXPIRED" | "OVERDUE" | "CANCELLED";
+      expiresAt: string;
+      paidAt?: string;
+      createdAt: string;
+      rawOrder: ServiceOrder;
+    }[] = [];
+
+    serviceOrders05B.forEach((order) => {
+      const rawTitle = order.serviceSnapshot?.title || "";
+      const isBadTitle =
+        !rawTitle ||
+        rawTitle.toLowerCase().includes("service offering") ||
+        /[0-9a-f]{8}-[0-9a-f]{4}/i.test(rawTitle);
+      const cleanServiceTitle = isBadTitle
+        ? "Cuci dan Servis AC Split Bergaransi Mandiri Teknik"
+        : rawTitle;
+
+      // 1. Diagnosis Payment
+      if (order.paymentSummary.diagnosisPayment && order.paymentSummary.diagnosisPayment.amount > 0) {
+        const dp = order.paymentSummary.diagnosisPayment;
+        rows.push({
+          id: dp.invoiceNo,
+          paymentId: dp.paymentId || dp.invoiceNo,
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          channel: "JASA_DIAGNOSIS",
+          serviceTitle: cleanServiceTitle,
+          customerName: order.customerName,
+          providerName: order.providerName,
+          method: dp.method,
+          amount: dp.amount,
+          status: dp.status,
+          expiresAt: dp.expiresAt,
+          paidAt: dp.paidAt,
+          createdAt: order.createdAt,
+          rawOrder: order,
+        });
+      }
+
+      // 2. Execution Payment
+      if (order.paymentSummary.executionPayment) {
+        const ep = order.paymentSummary.executionPayment;
+        rows.push({
+          id: ep.invoiceNo,
+          paymentId: ep.paymentId || ep.invoiceNo,
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          channel: "JASA_PENGERJAAN",
+          serviceTitle: cleanServiceTitle,
+          customerName: order.customerName,
+          providerName: order.providerName,
+          method: ep.method,
+          amount: ep.amount,
+          status: ep.status,
+          expiresAt: ep.expiresAt,
+          paidAt: ep.paidAt,
+          createdAt: order.createdAt,
+          rawOrder: order,
+        });
+      }
+    });
+
+    return rows;
+  }, [serviceOrders05B]);
+
+  const filtered05BRows = useMemo(() => {
+    return service05BRows.filter((row) => {
+      if (channelFilter === "BARANG_05A") return false;
+      if (channelFilter === "JASA_DIAGNOSIS" && row.channel !== "JASA_DIAGNOSIS") return false;
+      if (channelFilter === "JASA_PENGERJAAN" && row.channel !== "JASA_PENGERJAAN") return false;
+
+      if (statusFilter !== "ALL" && row.status !== statusFilter) return false;
+      if (methodFilter !== "ALL" && !row.method.includes(methodFilter)) return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const matchesId = row.id.toLowerCase().includes(q);
+        const matchesOrder = row.orderNumber.toLowerCase().includes(q);
+        const matchesCustomer = row.customerName.toLowerCase().includes(q);
+        const matchesProvider = row.providerName.toLowerCase().includes(q);
+        const matchesService = row.serviceTitle.toLowerCase().includes(q);
+        if (!matchesId && !matchesOrder && !matchesCustomer && !matchesProvider && !matchesService) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [service05BRows, channelFilter, statusFilter, methodFilter, searchQuery]);
+
   const filteredPayments = useMemo(() => {
+    if (channelFilter === "JASA_DIAGNOSIS" || channelFilter === "JASA_PENGERJAAN") return [];
     if (!searchQuery.trim()) return payments;
     const q = searchQuery.toLowerCase();
     return payments.filter(
@@ -272,7 +438,7 @@ export default function PaymentGatewayOperationsPage() {
         (p.checkout?.checkout_group_id && p.checkout.checkout_group_id.toLowerCase().includes(q)) ||
         (p.provider_reference && p.provider_reference.toLowerCase().includes(q))
     );
-  }, [payments, searchQuery]);
+  }, [payments, searchQuery, channelFilter]);
 
   return (
     <div className="space-y-6 pb-16 font-body text-left">
@@ -301,12 +467,12 @@ export default function PaymentGatewayOperationsPage() {
 
         <div className="flex items-center gap-2">
           <span className="text-xs font-bold px-3 py-2 rounded-2xl bg-slate-100 text-slate-700">
-            Total {totalCount} Transaksi
+            Total {totalCount + service05BRows.length} Transaksi
           </span>
           <Button
             variant="outline"
             size="sm"
-            onClick={fetchPayments}
+            onClick={() => fetchPayments(false)}
             disabled={loading}
             className="rounded-2xl border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold"
           >
@@ -314,6 +480,47 @@ export default function PaymentGatewayOperationsPage() {
             Segarkan
           </Button>
         </div>
+      </div>
+
+      {/* CHANNEL FILTER TABS (SECTION 22) */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none text-xs font-bold">
+        {[
+          { id: "ALL" as const, label: "Semua Transaksi", count: totalCount + service05BRows.length },
+          { id: "BARANG_05A" as const, label: "Order Barang 05A", count: totalCount },
+          {
+            id: "JASA_DIAGNOSIS" as const,
+            label: "Order Jasa — Diagnosis (05B)",
+            count: service05BRows.filter((r) => r.channel === "JASA_DIAGNOSIS").length,
+          },
+          {
+            id: "JASA_PENGERJAAN" as const,
+            label: "Order Jasa — Pengerjaan (05B)",
+            count: service05BRows.filter((r) => r.channel === "JASA_PENGERJAAN").length,
+          },
+        ].map((tab) => {
+          const isActive = channelFilter === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setChannelFilter(tab.id)}
+              className={`px-4 py-2.5 rounded-xl whitespace-nowrap transition flex items-center gap-2 shrink-0 ${
+                isActive
+                  ? "bg-[#0F4C81] text-white shadow-servio-xs"
+                  : "bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              <span>{tab.label}</span>
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${
+                  isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Filter and Search Bar */}
@@ -373,7 +580,7 @@ export default function PaymentGatewayOperationsPage() {
             <ArrowsClockwise className="w-8 h-8 animate-spin text-[#0F4C81]" />
             <p className="text-xs font-medium text-slate-500">Memuat log transaksi pembayaran...</p>
           </div>
-        ) : filteredPayments.length === 0 ? (
+        ) : (filteredPayments.length === 0 && filtered05BRows.length === 0) ? (
           <div className="p-16 text-center">
             <EmptyState
               title="Tidak Ada Transaksi Pembayaran"
@@ -394,6 +601,111 @@ export default function PaymentGatewayOperationsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
+                {/* 1. 05B Service Order Transaction Rows */}
+                {filtered05BRows.map((row) => (
+                  <tr key={row.id} className="hover:bg-sky-50/40 transition-colors bg-sky-50/15">
+                    <td className="py-4 px-5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-bold text-slate-900">{row.id}</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-sky-100 text-[#0F4C81]">
+                          05B JASA
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-500 font-mono block">
+                        Mitra: {row.providerName}
+                      </span>
+                    </td>
+
+                    <td className="py-4 px-4 font-mono text-[11px] text-slate-700">
+                      <div className="font-bold text-slate-800">#{row.orderNumber}</div>
+                      <span className="text-[10px] text-slate-500 block truncate max-w-xs">
+                        {row.serviceTitle} ({row.customerName})
+                      </span>
+                      <span className="text-[9px] font-semibold text-sky-700">
+                        {row.channel === "JASA_DIAGNOSIS" ? "Biaya Diagnosis" : "Biaya Pengerjaan"}
+                      </span>
+                    </td>
+
+                    <td className="py-4 px-4">
+                      <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                        {row.method === "QRIS" ? (
+                          <QrCode className="w-4 h-4 text-[#0F4C81]" />
+                        ) : (
+                          <CreditCard className="w-4 h-4 text-emerald-700" />
+                        )}
+                        <span>{row.method}</span>
+                      </div>
+                    </td>
+
+                    <td className="py-4 px-4 font-mono font-bold text-slate-900">
+                      Rp {row.amount.toLocaleString("id-ID")}
+                    </td>
+
+                    <td className="py-4 px-4">
+                      <span
+                        className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase ${
+                          row.status === "PAID"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : row.status === "PENDING"
+                            ? "bg-amber-100 text-amber-800"
+                            : row.status === "OVERDUE"
+                            ? "bg-rose-100 text-rose-800"
+                            : "bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {row.status}
+                      </span>
+                      <div className="text-[10px] text-slate-400">
+                        {row.paidAt
+                          ? `Lunas: ${row.paidAt}`
+                          : `Batas: ${new Date(row.expiresAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })} WIB`}
+                      </div>
+                    </td>
+
+                    <td className="py-4 px-5 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setSelected05BOrder({
+                              order: row.rawOrder,
+                              type: row.channel === "JASA_DIAGNOSIS" ? "DIAGNOSIS" : "EXECUTION",
+                            })
+                          }
+                          className="text-xs text-slate-700 hover:bg-slate-100 rounded-xl"
+                        >
+                          <Eye className="w-3.5 h-3.5 mr-1" />
+                          Rincian
+                        </Button>
+
+                        {row.status === "PENDING" && (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() =>
+                              setSimulation05BRow({
+                                orderId: row.orderId,
+                                channel: row.channel,
+                                invoiceNo: row.id,
+                                paymentId: (row as any).paymentId,
+                                amount: row.amount,
+                                method: row.method,
+                                serviceTitle: row.serviceTitle,
+                              })
+                            }
+                            className="text-xs bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-xs"
+                          >
+                            <PlayCircle className="w-3.5 h-3.5 mr-1" weight="bold" />
+                            Simulasi
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+
+                {/* 2. Existing 05A Product Transaction Rows */}
                 {filteredPayments.map((payment) => (
                   <tr key={payment.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="py-4 px-5">
@@ -956,6 +1268,462 @@ export default function PaymentGatewayOperationsPage() {
           </div>
         )}
       </Modal>
-    </div>
+
+      {/* 05B Simulation Modal */}
+      <Modal
+          isOpen={!!simulation05BRow}
+          onClose={() => !isSimulating && setSimulation05BRow(null)}
+          title="Simulasi Pembayaran Jasa 05B (MOCK DEV)"
+          size="md"
+        >
+          {simulation05BRow && (
+            <div className="space-y-4 text-left font-body text-xs">
+              <div className="p-3.5 rounded-2xl bg-sky-50 border border-sky-200 text-sky-950 leading-relaxed">
+                <strong>Simulasi Khusus Demo 05B:</strong> Konfirmasi pembayaran tagihan jasa tanpa mutasi backend nyata. Mutasi langsung disinkronkan secara live ke Customer, Worker, Provider, dan Admin.
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">No. Tagihan:</span>
+                  <span className="font-mono font-bold text-slate-900">{simulation05BRow.invoiceNo}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Jenis Pembayaran:</span>
+                  <span className="font-bold text-[#0F4C81]">
+                    {simulation05BRow.channel === "JASA_DIAGNOSIS" ? "Biaya Diagnosis Murni" : "Biaya Pengerjaan Final"}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Layanan:</span>
+                  <span className="font-semibold text-slate-800">{simulation05BRow.serviceTitle}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Nominal:</span>
+                  <span className="font-bold text-slate-900">
+                    Rp {simulation05BRow.amount.toLocaleString("id-ID")}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isSimulating}
+                  onClick={() => setSimulation05BRow(null)}
+                  className="rounded-xl text-xs"
+                >
+                  Batal
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={isSimulating}
+                  onClick={handleSimulatePayment}
+                  className="rounded-xl text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                >
+                  {isSimulating ? "Memproses..." : "Simulasi Pembayaran Berhasil (PAID)"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </Modal>
+
+        {/* =========================================================================
+            MODAL: Struk Rincian Tagihan & Pembayaran Jasa 05B (Resmi & Lengkap)
+           ========================================================================= */}
+        <Modal
+          isOpen={!!selected05BOrder}
+          onClose={() => setSelected05BOrder(null)}
+          title={
+            <div className="flex items-center gap-2.5 text-left">
+              <div className="w-9 h-9 rounded-xl bg-[#0F4C81]/10 flex items-center justify-center text-[#0F4C81] shrink-0">
+                <Receipt className="w-5 h-5" weight="bold" />
+              </div>
+              <div>
+                <h3 className="text-base font-black font-display text-slate-900 leading-tight">
+                  Struk Rincian Tagihan &amp; Pembayaran Jasa
+                </h3>
+                <p className="text-[11px] text-slate-400 font-normal">
+                  Rincian transaksi pembayaran, proteksi dana escrow, dan struk pesanan jasa
+                </p>
+              </div>
+            </div>
+          }
+          size="2xl"
+        >
+          {selected05BOrder && (() => {
+            const order = selected05BOrder.order;
+            const isDiagnosis = selected05BOrder.type === "DIAGNOSIS";
+            const payment = isDiagnosis
+              ? order.paymentSummary.diagnosisPayment
+              : order.paymentSummary.executionPayment;
+
+            const paymentId = payment?.invoiceNo || (isDiagnosis ? `INV-DIAG-${order.orderNumber}` : `INV-EXEC-${order.orderNumber}`);
+            const paymentStatus = payment?.status || (isDiagnosis
+              ? (order.subStatus === "DIAGNOSIS_PENDING" ? "PENDING" : "PAID")
+              : (order.subStatus === "WORK_FINISHED" || order.subStatus === "EXECUTION_PENDING" ? "PENDING" : "PAID"));
+
+            const paymentMethod = payment?.method || (isDiagnosis ? "QRIS" : "BCA_VA");
+            const paymentAmount = payment?.amount ?? (isDiagnosis ? 50000 : (order.diagnosis?.costBreakdown?.grandTotal ?? 0));
+            const issuedAt = order.createdAt;
+            const paidAt = payment?.paidAt;
+            const expiresAt = payment?.expiresAt;
+
+            return (
+              <div id="finance-service-receipt-area" className="space-y-4 text-left font-body text-xs">
+                {/* Kartu Struk Digital Modern */}
+                <div className="bg-slate-50/70 border border-slate-200/90 rounded-2xl p-4 sm:p-6 space-y-4 shadow-xs">
+                  {/* Header Struk: Brand, Payment ID, Status & Metode */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3.5 border-b border-slate-200 gap-3">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-display font-black text-slate-900 text-base tracking-wide">
+                          SERVIO
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 tracking-wider">
+                          STRUK DIGITAL RESMI
+                        </span>
+                      </div>
+                      <div className="font-mono text-xs text-slate-600 mt-1">
+                        No. Tagihan: <strong className="text-slate-900 font-bold">{paymentId}</strong>
+                      </div>
+                      <div className="font-mono text-[10px] text-slate-400">
+                        No. Order Layanan: #{order.orderNumber}
+                      </div>
+                    </div>
+
+                    <div className="flex sm:flex-col items-end justify-between sm:justify-center">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-black inline-flex items-center gap-1.5 border shadow-2xs ${
+                          paymentStatus === "PAID"
+                            ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                            : paymentStatus === "PENDING"
+                            ? "bg-amber-50 text-amber-800 border-amber-300"
+                            : paymentStatus === "OVERDUE"
+                            ? "bg-rose-50 text-rose-800 border-rose-300"
+                            : "bg-slate-100 text-slate-700 border-slate-300"
+                        }`}
+                      >
+                        {paymentStatus === "PAID" && <CheckCircle className="w-3.5 h-3.5" weight="fill" />}
+                        {paymentStatus === "PENDING" && <Clock className="w-3.5 h-3.5" weight="fill" />}
+                        {paymentStatus}
+                      </span>
+                      <span className="text-[11px] text-slate-500 mt-1 font-mono">
+                        Metode: <strong className="text-slate-800">{paymentMethod}</strong> (SERVIO ESCROW)
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Timestamp & Batas Waktu */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-3 rounded-xl bg-white border border-slate-200/80 text-[11px] text-slate-600">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Waktu Diterbitkan:</span>
+                      <span className="font-mono font-medium text-slate-800">
+                        {issuedAt ? new Date(issuedAt).toLocaleString("id-ID") : "-"}
+                      </span>
+                    </div>
+                    {paidAt ? (
+                      <div className="flex items-center justify-between">
+                        <span className="text-emerald-700 font-semibold">Waktu Terverifikasi LUNAS:</span>
+                        <span className="font-mono font-bold text-emerald-800">
+                          {new Date(paidAt).toLocaleString("id-ID")}
+                        </span>
+                      </div>
+                    ) : expiresAt ? (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Batas Kedaluwarsa:</span>
+                        <span className="font-mono text-slate-700">
+                          {new Date(expiresAt).toLocaleString("id-ID")}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Kategori Tagihan:</span>
+                        <span className="font-semibold text-primary">
+                          {isDiagnosis ? "Biaya Diagnosis Awal" : "Pelunasan Pengerjaan"}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Pelanggan & Alamat Lokasi Pengerjaan */}
+                  <div className="p-3.5 rounded-xl bg-white border border-slate-200/80 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                      <MapPin className="w-4 h-4 text-[#0F4C81]" weight="bold" />
+                      <span>Pelanggan &amp; Alamat Lokasi Pengerjaan</span>
+                    </div>
+                    <div className="text-xs text-slate-700">
+                      <span className="font-bold text-slate-900">{order.addressSnapshot.recipientName || order.customerName}</span>
+                      {order.addressSnapshot.phone && (
+                        <span className="text-slate-500 ml-2 font-mono text-[11px]">({order.addressSnapshot.phone})</span>
+                      )}
+                      <span className="ml-2 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                        Lokasi Servis
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      {order.addressSnapshot.fullAddress}, {order.addressSnapshot.city}
+                    </p>
+                    {order.addressSnapshot.notes && (
+                      <div className="text-[10px] text-slate-400 italic">
+                        Catatan Akses: {order.addressSnapshot.notes}
+                      </div>
+                    )}
+                    <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-600">
+                      <div className="flex items-center gap-1.5">
+                        <CalendarBlank className="w-3.5 h-3.5 text-primary" weight="bold" />
+                        <span>Jadwal Kunjungan: <strong className="text-slate-800">{order.schedule.date}</strong></span>
+                      </div>
+                      <div className="flex items-center gap-1 font-mono">
+                        <Clock className="w-3 h-3 text-slate-400" />
+                        <span>{order.schedule.timeSlot}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Rincian Layanan & Pekerjaan yang Dipesan (Struk Jasa) */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+                        <Wrench className="w-4 h-4 text-[#0F4C81]" weight="bold" />
+                        <span>Rincian Layanan &amp; Pekerjaan (Struk Jasa)</span>
+                      </div>
+                      <span className="text-[11px] text-slate-500 font-medium">
+                        1 Layanan Jasa Terstandar
+                      </span>
+                    </div>
+
+                    <div className="rounded-2xl bg-white border border-slate-200/90 p-4 space-y-3 shadow-2xs">
+                      {/* Info Mitra Provider */}
+                      <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <Buildings className="w-4 h-4 text-emerald-700 shrink-0" weight="bold" />
+                          <span className="font-bold text-slate-900 text-xs">{order.providerName}</span>
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            • {order.addressSnapshot.city}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[10px] text-slate-400">
+                            #{order.orderNumber}
+                          </span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 border border-sky-200">
+                            {order.serviceSnapshot.subcategoryName}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Card Info Layanan Utama */}
+                      <div className="flex items-center gap-3.5 p-2.5 rounded-xl bg-slate-50/60 border border-slate-100">
+                        <div className="w-14 h-14 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden relative">
+                          {order.serviceSnapshot.thumbnailUrl ? (
+                            <img
+                              src={order.serviceSnapshot.thumbnailUrl}
+                              alt={order.serviceSnapshot.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <Wrench className="w-6 h-6 text-slate-400" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-bold text-slate-900 text-xs truncate">
+                            {order.serviceSnapshot.title}
+                          </h4>
+                          <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-[10px] text-slate-500">
+                            <span className="px-1.5 py-0.2 rounded bg-slate-200 font-semibold text-slate-700">
+                              {order.serviceSnapshot.serviceMode === "HOME_SERVICE" ? "Kunjungan ke Rumah" : "Bengkel / Workshop"}
+                            </span>
+                            <span>Garansi 30 Hari Servio</span>
+                          </div>
+                          <div className="mt-1 text-[11px] text-slate-600 line-clamp-1">
+                            <strong>Keluhan:</strong> {order.complaint.description}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Rincian Item Pekerjaan & Suku Cadang */}
+                      <div className="space-y-2 pt-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                          Item Rincian Biaya:
+                        </span>
+
+                        {isDiagnosis ? (
+                          <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-50/50 border border-amber-100 text-xs">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                                <Wrench className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <span className="font-bold text-slate-900 block">Biaya Survei Diagnostik Standar</span>
+                                <span className="text-[10px] text-slate-500">1x Pemeriksaan menyeluruh &amp; diagnosa unit di lokasi</span>
+                              </div>
+                            </div>
+                            <span className="font-mono font-bold text-slate-900 text-xs">
+                              Rp {paymentAmount.toLocaleString("id-ID")}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {order.diagnosis?.costBreakdown?.workItems && order.diagnosis.costBreakdown.workItems.length > 0 ? (
+                              order.diagnosis.costBreakdown.workItems.map((wi, i) => (
+                                <div key={wi.id || i} className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100 text-xs">
+                                  <div>
+                                    <span className="font-bold text-slate-900 block">{wi.title}</span>
+                                    <span className="text-[10px] text-slate-500">Jasa Teknisi Perbaikan</span>
+                                  </div>
+                                  <span className="font-mono font-bold text-slate-900">
+                                    Rp {wi.subtotal.toLocaleString("id-ID")}
+                                  </span>
+                                </div>
+                              ))
+                            ) : null}
+
+                            {order.diagnosis?.costBreakdown?.spareparts && order.diagnosis.costBreakdown.spareparts.length > 0 ? (
+                              order.diagnosis.costBreakdown.spareparts.map((sp, i) => (
+                                <div key={sp.id || i} className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100 text-xs">
+                                  <div>
+                                    <span className="font-bold text-slate-900 block">{sp.name}</span>
+                                    <span className="text-[10px] text-slate-500">{sp.qty}x @ Rp {(sp.unitPrice || 0).toLocaleString("id-ID")}</span>
+                                  </div>
+                                  <span className="font-mono font-bold text-slate-900">
+                                    Rp {sp.subtotal.toLocaleString("id-ID")}
+                                  </span>
+                                </div>
+                              ))
+                            ) : null}
+
+                            {(!order.diagnosis?.costBreakdown?.workItems || order.diagnosis.costBreakdown.workItems.length === 0) &&
+                             (!order.diagnosis?.costBreakdown?.spareparts || order.diagnosis.costBreakdown.spareparts.length === 0) && (
+                              <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-xs">
+                                <div>
+                                  <span className="font-bold text-slate-900 block">Pelunasan Pengerjaan Teknis</span>
+                                  <span className="text-[10px] text-slate-500">Tindakan perbaikan dan pengujian unit</span>
+                                </div>
+                                <span className="font-mono font-bold text-slate-900">
+                                  Rp {paymentAmount.toLocaleString("id-ID")}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Subtotal Mitra */}
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] text-slate-500">
+                          <span>Subtotal Tagihan Mitra Jasa:</span>
+                          <span className="font-bold text-slate-800">
+                            Rp {paymentAmount.toLocaleString("id-ID")}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Garis Dashed Khas Struk Belanja */}
+                  <div className="relative py-1">
+                    <div className="border-t-2 border-dashed border-slate-300" />
+                  </div>
+
+                  {/* Rincian Kalkulasi Pembayaran (Receipt Breakdown) */}
+                  <div className="space-y-2 p-4 rounded-xl bg-white border border-slate-200/80 text-xs">
+                    {isDiagnosis ? (
+                      <>
+                        <div className="flex justify-between text-slate-600">
+                          <span>Biaya Survei Diagnostik:</span>
+                          <strong className="text-slate-900 font-mono">
+                            Rp {paymentAmount.toLocaleString("id-ID")}
+                          </strong>
+                        </div>
+                        <div className="flex justify-between text-slate-600">
+                          <span>Biaya Layanan Aplikasi:</span>
+                          <strong className="text-emerald-700 font-mono">Rp 0 (Bebas Biaya Platform)</strong>
+                        </div>
+                        <div className="flex justify-between text-slate-600">
+                          <span>Pajak (PPN):</span>
+                          <strong className="text-slate-900 font-mono">Rp 0</strong>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex justify-between text-slate-600">
+                          <span>Subtotal Jasa Teknisi:</span>
+                          <strong className="text-slate-900 font-mono">
+                            Rp {(order.diagnosis?.costBreakdown?.workTotal ?? paymentAmount).toLocaleString("id-ID")}
+                          </strong>
+                        </div>
+                        {(order.diagnosis?.costBreakdown?.sparepartTotal || 0) > 0 && (
+                          <div className="flex justify-between text-slate-600">
+                            <span>Subtotal Suku Cadang:</span>
+                            <strong className="text-slate-900 font-mono">
+                              Rp {order.diagnosis!.costBreakdown.sparepartTotal.toLocaleString("id-ID")}
+                            </strong>
+                          </div>
+                        )}
+                        <div className="flex justify-between text-slate-600">
+                          <span>Biaya Layanan Platform:</span>
+                          <strong className="text-slate-900 font-mono">Rp 0</strong>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Garis Total Tagihan */}
+                    <div className="border-t border-slate-200 pt-3 mt-2 flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-black text-slate-900 block uppercase tracking-wider">
+                          Total Nominal Tagihan
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          Status: {paymentStatus} • Metode: {paymentMethod}
+                        </span>
+                      </div>
+                      <span className="text-xl font-black text-[#0F4C81] font-mono">
+                        Rp {paymentAmount.toLocaleString("id-ID")}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Proteksi Rekening Escrow Platform */}
+                  <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-start gap-2.5 text-[11px] text-emerald-950">
+                    <ShieldCheck className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" weight="fill" />
+                    <div className="space-y-0.5">
+                      <strong className="font-bold text-emerald-900 block">
+                        Proteksi Rekening Escrow Platform SERVIO
+                      </strong>
+                      <p className="text-emerald-800/90 leading-relaxed text-[11px]">
+                        {isDiagnosis
+                          ? "Dana biaya survei diagnosis diamankan di rekening escrow resmi SERVIO. Mitra hanya berhak atas dana setelah teknisi terverifikasi hadir di lokasi dan menyerahkan hasil diagnosa unit kepada pelanggan."
+                          : "Seluruh dana pelunasan perbaikan diamankan di rekening penampung resmi SERVIO. Dana baru akan diteruskan dan dicairkan ke saldo mitra teknisi/bengkel secara otomatis setelah hasil pekerjaan diverifikasi selesai dan dilindungi garansi 30 hari Servio."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tombol Aksi Modal */}
+                <div className="flex items-center justify-between pt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.print()}
+                    className="rounded-xl text-xs font-bold border-slate-200 text-slate-700 hover:bg-slate-50 flex items-center gap-1.5"
+                  >
+                    <Printer className="w-4 h-4 text-slate-600" />
+                    <span>Cetak Struk</span>
+                  </Button>
+
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => setSelected05BOrder(null)}
+                    className="rounded-xl text-xs font-bold bg-[#0F4C81] hover:bg-[#0d3f6c] text-white px-6"
+                  >
+                    Tutup
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </Modal>
+      </div>
   );
 }

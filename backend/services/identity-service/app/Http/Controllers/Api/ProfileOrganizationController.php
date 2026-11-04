@@ -864,6 +864,308 @@ class ProfileOrganizationController extends Controller
     }
 
     /**
+     * Get Organization Coverage Settings (Radius & Service Areas)
+     */
+    public function getCoverage(Request $request, string $id)
+    {
+        $user = Auth::user();
+        $org = Organization::with('profile')->find($id);
+
+        if (!$org) {
+            return ApiResponse::error('IDENTITY_RESOURCE_NOT_FOUND', 'Organisasi tidak ditemukan.', 404);
+        }
+
+        $isMember = Membership::where('user_id', $user->id)
+            ->where('organization_id', $org->id)
+            ->where('status', 'ACTIVE')
+            ->exists();
+
+        if (!$isMember && !$user->hasPermission('identity.organization.manage') && !$user->hasPermission('identity.account.read_scoped')) {
+            return ApiResponse::error('IDENTITY_PERMISSION_DENIED', 'Akses ditolak.', 403);
+        }
+
+        $prof = $org->profile;
+        $areaData = $prof?->service_area_json;
+        if (is_string($areaData)) {
+            $areaData = json_decode($areaData, true);
+        }
+
+        $radius = 15;
+        $serviceAreas = [
+            ['type' => 'CITY', 'code' => 'TEBETPANCO', 'name' => 'Tebet & Pancoran (Jakarta Selatan)'],
+            ['type' => 'CITY', 'code' => 'KEBAYORAN', 'name' => 'Kebayoran Baru & Gandaria'],
+            ['type' => 'CITY', 'code' => 'MAMPANGPRAP', 'name' => 'Mampang Prapatan & Kuningan'],
+            ['type' => 'CITY', 'code' => 'PASARMINGG', 'name' => 'Pasar Minggu & Kalibata'],
+            ['type' => 'CITY', 'code' => 'JATINEGARA', 'name' => 'Jatinegara & Matraman (Jakarta Timur)'],
+        ];
+
+        if (is_array($areaData)) {
+            if (isset($areaData['coverageRadiusKm'])) {
+                $radius = (int) $areaData['coverageRadiusKm'];
+            } elseif (isset($areaData['radius_km'])) {
+                $radius = (int) $areaData['radius_km'];
+            }
+
+            if (!empty($areaData['serviceAreas']) && is_array($areaData['serviceAreas'])) {
+                $serviceAreas = array_map(function ($a) {
+                    if (is_string($a)) {
+                        return [
+                            'type' => 'CITY',
+                            'code' => strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $a), 0, 10)),
+                            'name' => $a,
+                        ];
+                    }
+                    return [
+                        'type' => $a['type'] ?? 'CITY',
+                        'code' => $a['code'] ?? strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $a['name'] ?? ''), 0, 10)),
+                        'name' => $a['name'] ?? ($a['code'] ?? 'Wilayah Layanan'),
+                        'province' => $a['province'] ?? null,
+                    ];
+                }, $areaData['serviceAreas']);
+            } elseif (!empty($areaData['areas'])) {
+                if (is_string($areaData['areas'])) {
+                    $parts = array_map('trim', explode(',', $areaData['areas']));
+                    $serviceAreas = array_map(fn($p) => [
+                        'type' => 'CITY',
+                        'code' => strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $p), 0, 10)),
+                        'name' => $p,
+                    ], array_filter($parts));
+                } elseif (is_array($areaData['areas'])) {
+                    $serviceAreas = array_map(fn($p) => [
+                        'type' => 'CITY',
+                        'code' => strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', (string)$p), 0, 10)),
+                        'name' => (string)$p,
+                    ], $areaData['areas']);
+                }
+            }
+        }
+
+        $addr = $prof?->address_json;
+        if (is_string($addr)) {
+            $addr = json_decode($addr, true);
+        }
+        $workshopAddress = is_array($addr) ? ($addr['address'] ?? $addr['street_address'] ?? null) : null;
+        $lat = is_array($addr) ? ($addr['lat'] ?? $addr['latitude'] ?? -6.2361) : -6.2361;
+        $lng = is_array($addr) ? ($addr['lng'] ?? $addr['longitude'] ?? 106.8522) : 106.8522;
+        $coverageMode = (is_array($areaData) && isset($areaData['coverageMode'])) ? $areaData['coverageMode'] : ((is_array($areaData) && isset($areaData['mode'])) ? $areaData['mode'] : 'HYBRID');
+
+        return ApiResponse::success([
+            'coverageMode' => $coverageMode,
+            'coverageRadiusKm' => $radius,
+            'serviceAreas' => $serviceAreas,
+            'status' => 'COVERED',
+            'workshop' => [
+                'name' => $prof?->display_name ?? $prof?->legal_name ?? 'Bengkel Servis Pusat Mitra',
+                'address' => $workshopAddress ?: 'Jl. Tebet Raya No. 42, Tebet Barat, Jakarta Selatan 12810',
+                'lat' => (float)$lat,
+                'lng' => (float)$lng,
+            ],
+        ], 'IDENTITY_ORG_COVERAGE_LOADED', 200);
+    }
+
+    /**
+     * Update Organization Coverage Settings (Radius & Service Areas)
+     */
+    public function updateCoverage(Request $request, string $id)
+    {
+        $user = Auth::user();
+        $org = Organization::find($id);
+
+        if (!$org) {
+            return ApiResponse::error('IDENTITY_RESOURCE_NOT_FOUND', 'Organisasi tidak ditemukan.', 404);
+        }
+
+        $isMember = Membership::where('user_id', $user->id)
+            ->where('organization_id', $org->id)
+            ->where('status', 'ACTIVE')
+            ->exists();
+
+        if (!$isMember && !$user->hasPermission('identity.organization.manage')) {
+            return ApiResponse::error('IDENTITY_PERMISSION_DENIED', 'Akses ditolak.', 403);
+        }
+
+        $validated = $request->validate([
+            'coverageMode' => 'nullable|string|in:HYBRID,RADIUS_ONLY,CITY_ONLY',
+            'mode' => 'nullable|string|in:HYBRID,RADIUS_ONLY,CITY_ONLY',
+            'coverageRadiusKm' => 'nullable|numeric|min:1|max:200',
+            'radius_km' => 'nullable|numeric|min:1|max:200',
+            'serviceAreas' => 'nullable|array',
+            'areas' => 'nullable',
+        ]);
+
+        $radius = (int) ($validated['coverageRadiusKm'] ?? $validated['radius_km'] ?? 15);
+        $mode = $validated['coverageMode'] ?? $validated['mode'] ?? 'HYBRID';
+        $rawAreas = $validated['serviceAreas'] ?? $validated['areas'] ?? [];
+
+        $serviceAreas = [];
+        if (is_array($rawAreas)) {
+            foreach ($rawAreas as $a) {
+                if (is_string($a)) {
+                    $serviceAreas[] = [
+                        'type' => 'CITY',
+                        'code' => strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $a), 0, 10)),
+                        'name' => $a,
+                    ];
+                } elseif (is_array($a)) {
+                    $serviceAreas[] = [
+                        'type' => $a['type'] ?? 'CITY',
+                        'code' => $a['code'] ?? strtoupper(substr(preg_replace('/[^A-Za-z0-9]/', '', $a['name'] ?? ''), 0, 10)),
+                        'name' => $a['name'] ?? ($a['code'] ?? 'Wilayah Layanan'),
+                        'province' => $a['province'] ?? null,
+                    ];
+                }
+            }
+        }
+
+        $prof = $org->profile ?? new OrganizationProfile(['organization_id' => $org->id]);
+        $areaNames = array_map(fn($a) => $a['name'], $serviceAreas);
+
+        $prof->service_area_json = [
+            'coverageMode' => $mode,
+            'coverageRadiusKm' => $radius,
+            'radius_km' => $radius,
+            'serviceAreas' => $serviceAreas,
+            'areas' => implode(', ', $areaNames),
+        ];
+        $prof->save();
+
+        try {
+            $offeringIds = DB::connection('mysql')->table('servio_service_db.service_offerings')
+                ->where('provider_organization_id', $org->id)
+                ->pluck('id');
+
+            foreach ($offeringIds as $offId) {
+                foreach ($serviceAreas as $city) {
+                    $cCode = $city['code'] ?? null;
+                    $cName = $city['name'] ?? $cCode;
+                    if ($cCode) {
+                        $exists = DB::connection('mysql')->table('servio_service_db.service_coverage_cities')
+                            ->where('offering_id', $offId)
+                            ->where('city_code', $cCode)
+                            ->exists();
+                        if (!$exists) {
+                            DB::connection('mysql')->table('servio_service_db.service_coverage_cities')->insert([
+                                'id' => (string) \Illuminate\Support\Str::uuid(),
+                                'offering_id' => $offId,
+                                'city_code' => $cCode,
+                                'city_label_snapshot' => $cName,
+                                'created_at' => now(),
+                                'updated_at' => now(),
+                            ]);
+                        }
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // Non-blocking sync
+        }
+
+        AuditService::log($user->id, 'IDENTITY_ORG_COVERAGE_UPDATED', 'organization_profile', $org->id, 'SUCCESS', [
+            'coverageRadiusKm' => $radius,
+            'areas_count' => count($serviceAreas),
+        ]);
+
+        return ApiResponse::success([
+            'coverageMode' => $mode,
+            'coverageRadiusKm' => $radius,
+            'serviceAreas' => $serviceAreas,
+            'status' => 'COVERED',
+        ], 'Cakupan area & radius layanan berhasil disimpan ke sistem!', 200);
+    }
+
+    /**
+     * Get Organization Operational Schedule
+     */
+    public function getSchedule(Request $request, string $id)
+    {
+        $user = Auth::user();
+        $org = Organization::with('profile')->find($id);
+
+        if (!$org) {
+            return ApiResponse::error('IDENTITY_RESOURCE_NOT_FOUND', 'Organisasi tidak ditemukan.', 404);
+        }
+
+        $prof = $org->profile;
+        $hoursData = $prof?->operational_hours_json;
+        if (is_string($hoursData)) {
+            $hoursData = json_decode($hoursData, true);
+        }
+
+        $defaultDays = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+        $weeklyHours = [];
+
+        if (is_array($hoursData) && !empty($hoursData['weeklyHours'])) {
+            $weeklyHours = $hoursData['weeklyHours'];
+        } else {
+            foreach ($defaultDays as $d) {
+                $isOpen = $d !== 'SUN';
+                $weeklyHours[] = [
+                    'day' => $d,
+                    'isOpen' => $isOpen,
+                    'windows' => $isOpen ? [['start' => '08:00', 'end' => '18:00']] : [],
+                ];
+            }
+        }
+
+        return ApiResponse::success([
+            'ownerType' => 'ORGANIZATION',
+            'ownerId' => $org->id,
+            'timezone' => $hoursData['timezone'] ?? 'Asia/Jakarta',
+            'weeklyHours' => $weeklyHours,
+            'exceptions' => $hoursData['exceptions'] ?? [],
+        ], 'IDENTITY_ORG_SCHEDULE_LOADED', 200);
+    }
+
+    /**
+     * Update Organization Operational Schedule
+     */
+    public function updateSchedule(Request $request, string $id)
+    {
+        $user = Auth::user();
+        $org = Organization::find($id);
+
+        if (!$org) {
+            return ApiResponse::error('IDENTITY_RESOURCE_NOT_FOUND', 'Organisasi tidak ditemukan.', 404);
+        }
+
+        $isMember = Membership::where('user_id', $user->id)
+            ->where('organization_id', $org->id)
+            ->where('status', 'ACTIVE')
+            ->exists();
+
+        if (!$isMember && !$user->hasPermission('identity.organization.manage')) {
+            return ApiResponse::error('IDENTITY_PERMISSION_DENIED', 'Akses ditolak.', 403);
+        }
+
+        $validated = $request->validate([
+            'timezone' => 'nullable|string',
+            'weeklyHours' => 'nullable|array',
+            'exceptions' => 'nullable|array',
+        ]);
+
+        $prof = $org->profile ?? new OrganizationProfile(['organization_id' => $org->id]);
+        $prof->operational_hours_json = [
+            'timezone' => $validated['timezone'] ?? 'Asia/Jakarta',
+            'weeklyHours' => $validated['weeklyHours'] ?? [],
+            'exceptions' => $validated['exceptions'] ?? [],
+            'work_days' => 'Senin - Sabtu',
+            'open_time' => '08:00',
+            'close_time' => '18:00',
+        ];
+        $prof->save();
+
+        AuditService::log($user->id, 'IDENTITY_ORG_SCHEDULE_UPDATED', 'organization_profile', $org->id, 'SUCCESS');
+
+        return ApiResponse::success([
+            'ownerType' => 'ORGANIZATION',
+            'ownerId' => $org->id,
+            'timezone' => $validated['timezone'] ?? 'Asia/Jakarta',
+            'weeklyHours' => $validated['weeklyHours'] ?? [],
+            'exceptions' => $validated['exceptions'] ?? [],
+        ], 'Jam operasional bengkel berhasil disimpan ke server!', 200);
+    }
+
+    /**
      * P08: Get Organization Memberships
      */
     public function organizationMemberships(Request $request, string $id)
@@ -957,8 +1259,9 @@ class ProfileOrganizationController extends Controller
         ]);
 
         $file = $request->file('file');
-        $path = $file->store('public/avatars');
-        $publicUrl = Storage::url($path);
+        $filename = $file->hashName();
+        $path = $file->storeAs('avatars', $filename, 'public');
+        $publicUrl = '/storage/avatars/' . $filename;
 
         $profile = $user->profile ?? new UserProfile(['user_id' => $user->id]);
         $profile->photo_path = $publicUrl;

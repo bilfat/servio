@@ -347,7 +347,25 @@ export default function VendorPayoutOperationsPage() {
                       return (
                         <tr key={withdrawal.id} className="hover:bg-slate-50/60 transition-colors">
                           <td className="py-4 px-5">
-                            <div className="font-mono font-bold text-slate-900">{withdrawal.id}</div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold text-slate-900">{withdrawal.id}</span>
+                              {withdrawal.spay_account?.owner_external_id === "0740d857-b665-4191-aaf5-d7dd3611dc1d" ||
+                              withdrawal.spay_account?.owner_external_id === "087c97b7-2c46-4b97-ba35-1177dd72ba3a" ||
+                              withdrawal.bank_destination?.owner_external_id === "0740d857-b665-4191-aaf5-d7dd3611dc1d" ||
+                              withdrawal.bank_destination?.owner_external_id === "087c97b7-2c46-4b97-ba35-1177dd72ba3a" ? (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                  Mitra Jasa
+                                </span>
+                              ) : withdrawal.spay_account?.owner_type === "MERCHANT_ORGANIZATION" ? (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  Mitra Toko
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-50 text-slate-600 border border-slate-200">
+                                  Customer
+                                </span>
+                              )}
+                            </div>
                             <span className="text-[10px] text-slate-400 font-mono">
                               User: {withdrawal.requested_by_user_id}
                             </span>

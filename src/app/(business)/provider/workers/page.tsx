@@ -30,6 +30,9 @@ import {
   SpinnerGap,
   Clock,
   ArrowsClockwise,
+  FileText,
+  ArrowSquareOut,
+  Receipt,
 } from "@phosphor-icons/react";
 import { useProviderOperations } from "@/features/provider/useProviderOperations";
 import { useDomainRepository } from "@/lib/repository/domainRepository";
@@ -41,6 +44,48 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/feedback/EmptyState";
 import { Toast } from "@/components/feedback/Toast";
+import { useOrderJasa } from "@/features/order-jasa/hooks/useOrderJasa";
+import { TechnicianRecapItem } from "@/features/order-jasa/types";
+
+function formatRupiah(amount: number): string {
+  return `Rp ${new Intl.NumberFormat("id-ID").format(Math.max(0, Math.round(amount || 0)))}`;
+}
+
+function formatDateTime(dateStr?: string | null): string {
+  if (!dateStr) return "-";
+  try {
+    const d = new Date(dateStr);
+    return (
+      new Intl.DateTimeFormat("id-ID", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Asia/Jakarta",
+      }).format(d) + " WIB"
+    );
+  } catch {
+    return dateStr;
+  }
+}
+
+const MONTH_OPTIONS = [
+  { value: 1, label: "Januari" },
+  { value: 2, label: "Februari" },
+  { value: 3, label: "Maret" },
+  { value: 4, label: "April" },
+  { value: 5, label: "Mei" },
+  { value: 6, label: "Juni" },
+  { value: 7, label: "Juli" },
+  { value: 8, label: "Agustus" },
+  { value: 9, label: "September" },
+  { value: 10, label: "Oktober" },
+  { value: 11, label: "November" },
+  { value: 12, label: "Desember" },
+];
+
+const YEAR_OPTIONS = [2025, 2026, 2027];
 
 // Avatar preset options for technician identity
 const AVATAR_PRESETS = [
@@ -465,8 +510,44 @@ export default function ProviderWorkersPage() {
   const providerName = user.organizationName || user.name || "PT Servio Mandiri Teknik";
 
   const { workers, updateWorkerStatus, addWorker, setWorkerCapabilities } = useProviderOperations();
+  const [activeTab, setActiveTab] = useUrlQueryState<"DIRECTORY" | "RECAP">("tab", "DIRECTORY");
   const [searchQuery, setSearchQuery] = useUrlQueryState<string>("search", "");
   const [filterStatus, setFilterStatus] = useUrlQueryState<"ALL" | "ONLINE" | "OFFLINE">("status", "ALL");
+
+  // Technician Monthly Recap State (Prompt 10)
+  const nowJakarta = useMemo(() => {
+    return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Jakarta" }));
+  }, []);
+
+  const [selectedMonth, setSelectedMonth] = useState<number>(nowJakarta.getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState<number>(nowJakarta.getFullYear());
+  const [recapSearchQuery, setRecapSearchQuery] = useState<string>("");
+  const [selectedRecapTech, setSelectedRecapTech] = useState<TechnicianRecapItem | null>(null);
+
+  const {
+    technicianRecap,
+    isRecapLoading,
+    recapError,
+    fetchTechnicianRecap,
+  } = useOrderJasa();
+
+  useEffect(() => {
+    if (activeTab === "RECAP") {
+      fetchTechnicianRecap(selectedMonth, selectedYear, recapSearchQuery);
+    }
+  }, [activeTab, selectedMonth, selectedYear, fetchTechnicianRecap]);
+
+  const filteredRecapTechnicians = useMemo(() => {
+    if (!technicianRecap?.technicians) return [];
+    if (!recapSearchQuery.trim()) return technicianRecap.technicians;
+    const q = recapSearchQuery.toLowerCase().trim();
+    return technicianRecap.technicians.filter((t) => {
+      return (
+        t.name.toLowerCase().includes(q) ||
+        (t.employee_id && t.employee_id.toLowerCase().includes(q))
+      );
+    });
+  }, [technicianRecap, recapSearchQuery]);
 
   // API Master Services loaded from Laravel REST API + MongoDB Local
   const [apiMasterServices, setApiMasterServices] = useState<ApiProviderMasterService[]>([]);
@@ -960,6 +1041,51 @@ export default function ProviderWorkersPage() {
         </div>
       </div>
 
+      {/* 2 Primary Tabs: Daftar Personel vs Rekap Pekerjaan (Prompt 10) */}
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+        <button
+          type="button"
+          onClick={() => setActiveTab("DIRECTORY")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === "DIRECTORY"
+              ? "bg-[#0F4C81] text-white shadow-servio-xs"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+          }`}
+        >
+          <UsersThree size={16} weight={activeTab === "DIRECTORY" ? "bold" : "regular"} />
+          <span>Daftar Personel</span>
+          <span
+            className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+              activeTab === "DIRECTORY" ? "bg-white/20 text-white" : "bg-white text-slate-600 border border-slate-200"
+            }`}
+          >
+            {workersList.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("RECAP")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === "RECAP"
+              ? "bg-[#0F4C81] text-white shadow-servio-xs"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900"
+          }`}
+        >
+          <FileText size={16} weight={activeTab === "RECAP" ? "bold" : "regular"} />
+          <span>Rekap Pekerjaan</span>
+          <span
+            className={`text-[9px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+              activeTab === "RECAP" ? "bg-emerald-500 text-white" : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+            }`}
+          >
+            Bulanan
+          </span>
+        </button>
+      </div>
+
+      {activeTab === "DIRECTORY" && (
+        <>
       {/* Competency Workforce Linkage Banner */}
       <div className="bg-sky-50/70 rounded-2xl border border-sky-200/80 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
         <div className="flex items-center gap-2.5">
@@ -1303,6 +1429,256 @@ export default function ProviderWorkersPage() {
               </div>
             );
           })}
+        </div>
+      )}
+        </>
+      )}
+
+      {/* REKAP PEKERJAAN TAB (Prompt 10) */}
+      {activeTab === "RECAP" && (
+        <div className="space-y-6">
+          {/* Disclaimer / Business Guardrail Banner */}
+          <div className="bg-sky-50 border border-sky-200 rounded-2xl p-4 flex items-start gap-3">
+            <Info size={20} className="text-[#0F4C81] shrink-0 mt-0.5" weight="bold" />
+            <div className="text-xs text-slate-700 space-y-1">
+              <p className="font-bold text-[#0F4C81]">Laporan Rekap Produktivitas Teknisi Lapangan</p>
+              <p className="text-slate-600 leading-relaxed">
+                Menyajikan akumulasi pesanan yang diselesaikan teknisi (pengerjaan tuntas) dan diagnosis berbayar pada order yang batal (hak bersih diagnosis mitra).
+                Laporan ini murni sebagai bahan evaluasi produktivitas kerja dan <strong>bukan sistem penggajian (payroll)</strong>.
+                SERVIO tidak memotong gaji atau saldo S-Pay untuk payroll teknisi.
+              </p>
+            </div>
+          </div>
+
+          {/* Period Selector & Filter Bar */}
+          <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-servio-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                <CalendarBlank size={16} className="text-slate-500" />
+                <span className="text-xs font-semibold text-slate-600">Bulan:</span>
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                  className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                >
+                  {MONTH_OPTIONS.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                <span className="text-xs font-semibold text-slate-600">Tahun:</span>
+                <select
+                  value={selectedYear}
+                  onChange={(e) => setSelectedYear(Number(e.target.value))}
+                  className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                >
+                  {YEAR_OPTIONS.map((y) => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fetchTechnicianRecap(selectedMonth, selectedYear, recapSearchQuery)}
+                disabled={isRecapLoading}
+                className="flex items-center gap-1.5 border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl py-1.5 text-xs"
+                title="Muat ulang rekap data dari database"
+              >
+                <ArrowsClockwise size={14} className={isRecapLoading ? "animate-spin" : ""} />
+                <span>Refresh</span>
+              </Button>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative flex-1 md:max-w-xs">
+              <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Cari nama teknisi / ID karyawan..."
+                value={recapSearchQuery}
+                onChange={(e) => setRecapSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
+              />
+              {recapSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setRecapSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 4 Summary Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-servio-xs">
+              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
+                Total Teknisi
+              </span>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-2xl font-bold font-heading text-slate-900">
+                  {technicianRecap?.summary.total_technicians ?? 0}
+                </span>
+                <span className="text-xs text-slate-500 font-medium">Personel</span>
+              </div>
+              <span className="text-[11px] text-slate-400 mt-1 block">Terdaftar pada organisasi</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-servio-xs">
+              <span className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider block">
+                Pengerjaan Selesai
+              </span>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-2xl font-bold font-heading text-emerald-700">
+                  {technicianRecap?.summary.total_completed_count ?? 0}
+                </span>
+                <span className="text-xs text-emerald-600 font-medium">Order Tuntas</span>
+              </div>
+              <span className="text-[11px] text-slate-400 mt-1 block">Telah dibayar & terkonfirmasi</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-servio-xs">
+              <span className="text-[11px] font-semibold text-amber-700 uppercase tracking-wider block">
+                Diagnosis Selesai
+              </span>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-2xl font-bold font-heading text-amber-700">
+                  {technicianRecap?.summary.total_diagnosis_only_count ?? 0}
+                </span>
+                <span className="text-xs text-amber-600 font-medium">Order Batal</span>
+              </div>
+              <span className="text-[11px] text-slate-400 mt-1 block">Diagnosis sah (tidak dilanjutkan)</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-servio-xs">
+              <span className="text-[11px] font-semibold text-[#0F4C81] uppercase tracking-wider block">
+                Total Nilai Layanan
+              </span>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-xl font-bold font-heading text-[#0F4C81]">
+                  {formatRupiah(technicianRecap?.summary.total_work_value ?? 0)}
+                </span>
+              </div>
+              <span className="text-[11px] text-slate-400 mt-1 block">Akumulasi nilai pekerjaan periode ini</span>
+            </div>
+          </div>
+
+          {/* Table of Technicians Recap */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-servio-xs overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">Rekap Pekerjaan per Teknisi</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Periode: {technicianRecap?.period.month_name || "Bulan Ini"} {technicianRecap?.period.year || selectedYear} (WIB)
+                </p>
+              </div>
+              <span className="text-xs text-slate-400">
+                {filteredRecapTechnicians.length} dari {technicianRecap?.technicians.length ?? 0} teknisi
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                    <th className="py-3 px-4 w-12 text-center">No</th>
+                    <th className="py-3 px-4">Teknisi</th>
+                    <th className="py-3 px-4 text-center">Pengerjaan Selesai</th>
+                    <th className="py-3 px-4 text-center">Diagnosis Selesai</th>
+                    <th className="py-3 px-4 text-center">Total Aktivitas</th>
+                    <th className="py-3 px-4 text-right">Total Nilai Layanan</th>
+                    <th className="py-3 px-4 text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {isRecapLoading && !technicianRecap ? (
+                    <tr>
+                      <td colSpan={7} className="py-12 text-center text-slate-400">
+                        <SpinnerGap size={24} className="animate-spin mx-auto mb-2 text-[#0F4C81]" />
+                        <span>Memuat rekap data teknisi...</span>
+                      </td>
+                    </tr>
+                  ) : filteredRecapTechnicians.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-12 text-center text-slate-400">
+                        <p className="font-semibold text-slate-600">Tidak ada data teknisi yang sesuai</p>
+                        <p className="text-xs mt-1 text-slate-400">
+                          {recapSearchQuery
+                            ? `Tidak ada teknisi dengan kata kunci "${recapSearchQuery}".`
+                            : "Belum ada teknisi yang memiliki aktivitas pada periode ini."}
+                        </p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredRecapTechnicians.map((tech, idx) => (
+                      <tr key={tech.worker_id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3.5 px-4 text-center font-bold text-slate-400">{idx + 1}</td>
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#0F4C81] to-sky-600 flex items-center justify-center text-white font-bold text-xs shadow-2xs shrink-0 overflow-hidden border border-slate-200">
+                              {tech.photo_url ? (
+                                <img src={tech.photo_url} alt={tech.name} className="w-full h-full object-cover" />
+                              ) : (
+                                (tech.name || "TK").slice(0, 2).toUpperCase()
+                              )}
+                            </div>
+                            <div>
+                              <p className="font-bold text-slate-900 text-xs">{tech.name}</p>
+                              <p className="text-[11px] text-slate-500 font-mono">
+                                {tech.employee_id ? tech.employee_id : "ID: -"}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <CheckCircle size={13} weight="bold" />
+                            <span>{tech.completed_count}</span>
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                            <span>{tech.diagnosis_only_count}</span>
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-800">
+                            <span>{tech.total_activities}</span>
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <span className="font-bold text-slate-900 text-sm">
+                            {formatRupiah(tech.total_work_value)}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setSelectedRecapTech(tech)}
+                            className="flex items-center gap-1.5 mx-auto border-slate-200 hover:border-[#0F4C81] text-[#0F4C81] font-semibold text-xs py-1 px-3 rounded-xl"
+                          >
+                            <Eye size={14} />
+                            <span>Lihat Rincian</span>
+                          </Button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1790,6 +2166,142 @@ export default function ProviderWorkersPage() {
                 size="sm"
                 onClick={() => setSelectedWorkerDetail(null)}
                 className="bg-[#0F4C81] text-white hover:bg-sky-900 ml-auto"
+              >
+                Tutup
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal Detail Rekap Pekerjaan Teknisi (Prompt 10) */}
+      <Modal
+        isOpen={Boolean(selectedRecapTech)}
+        onClose={() => setSelectedRecapTech(null)}
+        title={`Rincian Pekerjaan Teknisi — ${selectedRecapTech?.name || ""}`}
+      >
+        {selectedRecapTech && (
+          <div className="space-y-4 text-xs font-body">
+            {/* Header teknisi info */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#0F4C81] to-sky-600 flex items-center justify-center text-white font-bold text-sm shadow-2xs shrink-0 overflow-hidden border border-slate-200">
+                  {selectedRecapTech.photo_url ? (
+                    <img src={selectedRecapTech.photo_url} alt={selectedRecapTech.name} className="w-full h-full object-cover" />
+                  ) : (
+                    (selectedRecapTech.name || "TK").slice(0, 2).toUpperCase()
+                  )}
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">{selectedRecapTech.name}</h3>
+                  <div className="flex items-center gap-2 text-slate-500 text-[11px] mt-0.5">
+                    <span>ID: {selectedRecapTech.employee_id || "-"}</span>
+                    <span>•</span>
+                    <span className="font-semibold text-[#0F4C81]">
+                      Periode: {technicianRecap?.period.month_name} {technicianRecap?.period.year}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl text-center">
+                  <span className="text-[10px] text-emerald-600 block uppercase font-bold">Pengerjaan</span>
+                  <span className="text-sm font-bold text-emerald-700">{selectedRecapTech.completed_count}</span>
+                </div>
+                <div className="bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl text-center">
+                  <span className="text-[10px] text-amber-600 block uppercase font-bold">Diagnosis</span>
+                  <span className="text-sm font-bold text-amber-700">{selectedRecapTech.diagnosis_only_count}</span>
+                </div>
+                <div className="bg-sky-50 border border-sky-200 px-3 py-1.5 rounded-xl text-center">
+                  <span className="text-[10px] text-sky-600 block uppercase font-bold">Total Nilai</span>
+                  <span className="text-sm font-bold text-[#0F4C81]">{formatRupiah(selectedRecapTech.total_work_value)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* List of Orders */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                  Daftar Order yang Dikerjakan ({selectedRecapTech.orders.length})
+                </h4>
+                <span className="text-[11px] text-slate-400">Urut berdasarkan tanggal penyelesaian</span>
+              </div>
+
+              {selectedRecapTech.orders.length === 0 ? (
+                <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-slate-500">
+                  <p className="font-semibold">Tidak ada order selesai pada periode ini</p>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Teknisi belum menyelesaikan pengerjaan atau diagnosis berbayar di bulan {technicianRecap?.period.month_name} {technicianRecap?.period.year}.
+                  </p>
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                        <th className="py-2.5 px-3">No. Order & Layanan</th>
+                        <th className="py-2.5 px-3">Tanggal</th>
+                        <th className="py-2.5 px-3">Kategori Aktivitas</th>
+                        <th className="py-2.5 px-3 text-right">Nilai Layanan</th>
+                        <th className="py-2.5 px-3 text-center">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {selectedRecapTech.orders.map((ord) => (
+                        <tr key={ord.order_id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3 px-3">
+                            <p className="font-bold text-slate-900 font-mono text-[11px]">{ord.order_no}</p>
+                            <p className="text-slate-600 text-[11px] truncate max-w-xs">{ord.service_title}</p>
+                          </td>
+                          <td className="py-3 px-3 text-slate-600 text-[11px] whitespace-nowrap">
+                            {formatDateTime(ord.completion_date)}
+                          </td>
+                          <td className="py-3 px-3">
+                            {ord.activity_type === "EXECUTION_COMPLETED" ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <CheckCircle size={12} weight="bold" />
+                                <span>Pengerjaan Selesai</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                <span>Diagnosis Selesai (Batal)</span>
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <p className="font-bold text-slate-900 text-xs">{formatRupiah(ord.order_value)}</p>
+                            <p className="text-[10px] text-slate-400">
+                              {ord.activity_type === "EXECUTION_COMPLETED"
+                                ? `Jasa: ${formatRupiah(ord.labor_fee)} • Part: ${formatRupiah(ord.parts_fee)}`
+                                : "Hak Diagnosis Sah"}
+                            </p>
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <Link
+                              href={`/provider/orders/${ord.order_id}`}
+                              target="_blank"
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-[#0F4C81] hover:underline hover:text-sky-800"
+                            >
+                              <span>Detail</span>
+                              <ArrowSquareOut size={12} weight="bold" />
+                            </Link>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-3 border-t border-slate-200 flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelectedRecapTech(null)}
+                className="bg-[#0F4C81] text-white hover:bg-sky-900 font-bold"
               >
                 Tutup
               </Button>

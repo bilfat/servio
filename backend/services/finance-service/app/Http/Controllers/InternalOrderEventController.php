@@ -152,5 +152,54 @@ class InternalOrderEventController extends Controller
             'hold_reason_code' => $heldFund->hold_reason_code,
         ]);
     }
+
+    /**
+     * Release matured held fund for a specific merchant order ID.
+     * Enforces individual per-order eligibility: status must be HELD (not HOLD_BLOCKED),
+     * and eligible_release_at must be reached (120h).
+     */
+    public function releaseHeldFundByOrder(string $merchantOrderId): JsonResponse
+    {
+        $allocation = PaymentAllocation::where('merchant_order_id', $merchantOrderId)->first();
+        if (!$allocation) {
+            return ApiResponse::error('ALLOCATION_NOT_FOUND', "Alokasi pembayaran untuk pesanan {$merchantOrderId} tidak ditemukan.", 404);
+        }
+
+        /** @var \App\Models\HeldOrderFund|null $heldFund */
+        $heldFund = \App\Models\HeldOrderFund::where('payment_allocation_id', $allocation->id)->first();
+        if (!$heldFund) {
+            return ApiResponse::error('HELD_FUND_NOT_FOUND', "Dana tertahan untuk pesanan {$merchantOrderId} belum tersedia.", 404);
+        }
+
+        if ($heldFund->status === 'RELEASED_TO_SPAY') {
+            return ApiResponse::success([
+                'id' => $heldFund->id,
+                'merchant_order_id' => $merchantOrderId,
+                'status' => 'RELEASED_TO_SPAY',
+                'released_at' => $heldFund->released_at?->toIso8601String(),
+                'message' => 'Dana sudah dicairkan sebelumnya.',
+            ]);
+        }
+
+        if ($heldFund->status === 'HOLD_BLOCKED') {
+            return ApiResponse::error('HELD_FUND_BLOCKED', 'Dana tertahan sedang dalam status HOLD/dispute aktif dan tidak dapat dicairkan.', 422);
+        }
+
+        if (empty($heldFund->eligible_release_at) || now()->lt($heldFund->eligible_release_at)) {
+            return ApiResponse::error('HELD_FUND_NOT_MATURED', 'Masa penahanan dana 120 jam belum terpenuhi.', 422);
+        }
+
+        $released = $this->heldFundService->releaseSingleFund($heldFund->id);
+        if (!$released) {
+            return ApiResponse::error('RELEASE_FAILED', 'Gagal memproses pencairan dana tertahan.', 500);
+        }
+
+        return ApiResponse::success([
+            'id' => $heldFund->id,
+            'merchant_order_id' => $merchantOrderId,
+            'status' => 'RELEASED_TO_SPAY',
+            'released_at' => now()->toIso8601String(),
+        ], 'Dana tertahan berhasil dicairkan ke S-Pay Merchant.');
+    }
 }
 

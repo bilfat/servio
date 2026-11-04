@@ -222,19 +222,27 @@ export interface ActiveFeePolicyItem {
 // CANONICAL FINANCE V3 BACKEND CONTRACTS (MODUL 06)
 // ============================================================================
 
-export type FeePolicyCode = "CUSTOMER_PRODUCT_APP_FEE" | "MERCHANT_PRODUCT_COMMISSION";
+export type FeePolicyCode =
+  | "CUSTOMER_PRODUCT_APP_FEE"
+  | "MERCHANT_PRODUCT_COMMISSION"
+  | "CUSTOMER_SERVICE_APP_FEE"
+  | "PROVIDER_SERVICE_COMMISSION";
 
 export interface FeePolicyTargetModel {
   id: string;
   version_id: string;
   policy_code: FeePolicyCode;
-  scope: "PRODUCT";
-  payer_type: "CUSTOMER" | "MERCHANT";
+  scope: "PRODUCT" | "SERVICE";
+  payer_type: "CUSTOMER" | "MERCHANT" | "PROVIDER";
   fee_type: "FIXED" | "PERCENTAGE";
   fixed_amount_idr?: number | null;
   percentage_rate?: number | null;
-  charge_scope: "CHECKOUT" | "MERCHANT_ORDER";
-  calculation_base: "CHECKOUT_ELIGIBLE_SUBTOTAL" | "MERCHANT_PRODUCT_SUBTOTAL";
+  charge_scope: "CHECKOUT" | "MERCHANT_ORDER" | "SERVICE_ORDER";
+  calculation_base:
+    | "CHECKOUT_ELIGIBLE_SUBTOTAL"
+    | "MERCHANT_PRODUCT_SUBTOTAL"
+    | "SERVICE_ORDER_TOTAL"
+    | "SERVICE_TOTAL";
   rounding_method?: string;
   min_fee_idr?: number | null;
   max_fee_idr?: number | null;
@@ -275,10 +283,13 @@ export interface FeePolicyGroupModel {
 export interface BackendRevenueOverview {
   customer_product_app_fee_idr: number;
   merchant_product_commission_idr: number;
+  customer_service_app_fee_idr?: number;
+  provider_service_commission_idr?: number;
   total_collected_fee_idr: number;
   mock_payment_volume_idr: number;
   held_liability_idr: number;
   merchant_payable_idr: number;
+  provider_payable_idr?: number;
   customer_refund_liability_idr: number;
   provider_service_fee: string;
   accounting_status: string;
@@ -343,9 +354,18 @@ export interface BackendWithdrawalRequest {
   failure_code?: string | null;
   bank_destination?: {
     id: string;
+    owner_type?: string;
+    owner_external_id?: string;
     bank_name: string;
     account_number_masked: string;
     account_holder_name: string;
+  };
+  spay_account?: {
+    id: string;
+    owner_type: string;
+    owner_external_id: string;
+    available_idr: number;
+    withdrawal_locked_idr: number;
   };
 }
 

@@ -75,7 +75,7 @@ class AuthenticatedActor
 
     public function isProvider(): bool
     {
-        return $this->role === 'SERVICE_PROVIDER';
+        return $this->role === 'SERVICE_PROVIDER' || $this->role === 'PROVIDER';
     }
 
     public function isWorker(): bool

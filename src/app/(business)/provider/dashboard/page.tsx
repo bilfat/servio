@@ -340,7 +340,7 @@ export default function ProviderDashboardPage() {
         <SPayBalanceCard
           balance={spaySummary.withdrawableBalance}
           ownerType="SERVICE_PROVIDER"
-          organizationName="Bengkel Sejuk Sentosa AC"
+          organizationName={spaySummary.organizationName || "PT Servio Mandiri Teknik"}
           subtitle="Settlement Hak Pendapatan Jasa"
           detailHref="/provider/spay"
           isBalanceVisible={isBalanceVisible}
@@ -541,10 +541,10 @@ export default function ProviderDashboardPage() {
               </h2>
             </div>
             <Link
-              href="/provider/bookings"
+              href="/provider/orders"
               className="text-xs font-bold text-[#0F4C81] hover:underline flex items-center gap-1"
             >
-              Kelola Antrean
+              Kelola Order
               <ArrowRight size={13} />
             </Link>
           </div>
@@ -569,7 +569,7 @@ export default function ProviderDashboardPage() {
 
                 <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200/70">
                   <Link
-                    href={`/provider/bookings`}
+                    href={`/provider/orders`}
                     className="px-3 py-1.5 rounded-xl bg-[#0F4C81] text-white hover:bg-[#0d3f6b] text-xs font-bold transition"
                   >
                     Respon &amp; Tugaskan Teknisi

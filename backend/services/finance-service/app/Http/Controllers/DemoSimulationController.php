@@ -28,7 +28,7 @@ class DemoSimulationController extends Controller
             paymentId: $paymentId,
             outcome: $data['outcome'],
             providerEventId: $data['provider_event_id'],
-            reportedAmountIdr: (int) $data['reported_amount_idr'],
+            reportedAmountIdr: isset($data['reported_amount_idr']) && $data['reported_amount_idr'] !== null ? (int) $data['reported_amount_idr'] : null,
             actorUserId: $actor?->actorId ?? 'DEMO_OPERATOR'
         );
 

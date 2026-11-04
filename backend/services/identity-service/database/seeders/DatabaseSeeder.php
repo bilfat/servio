@@ -223,11 +223,11 @@ class DatabaseSeeder extends Seeder
                 'nib' => '9120005544332',
             ],
             'WORKER_TECHNICIAN' => [
-                'name' => 'Bambang Sudirman',
-                'email' => 'worker@servio.id',
+                'name' => 'Ahmad Teknisi',
+                'email' => 'ahmad.teknisi@servio.id',
                 'phone' => '+628196677889',
                 'password' => $defaultPassword,
-                'employee_id' => 'WRK-001',
+                'employee_id' => 'SMT-AHMAD-RWS',
                 'role' => 'WORKER_TECHNICIAN',
             ],
             'CUSTOMER_SUPPORT' => [

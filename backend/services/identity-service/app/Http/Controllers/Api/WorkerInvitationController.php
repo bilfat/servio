@@ -72,6 +72,11 @@ class WorkerInvitationController extends Controller
                     'workerCode' => $empId,
                     'email' => $m->user?->email,
                     'phone' => $m->user?->phone_e164,
+                    'avatar' => $profile?->photo_path,
+                    'avatarUrl' => $profile?->photo_path,
+                    'avatar_url' => $profile?->photo_path,
+                    'photo' => $profile?->photo_path,
+                    'photo_url' => $profile?->photo_path,
                     'status' => $m->status,
                     'active' => $m->status === 'ACTIVE',
                     'role' => 'WORKER_TECHNICIAN',
@@ -129,11 +134,77 @@ class WorkerInvitationController extends Controller
             'workerCode' => $empId,
             'email' => $worker->user?->email,
             'phone' => $worker->user?->phone_e164,
+            'avatar' => $profile?->photo_path,
+            'avatarUrl' => $profile?->photo_path,
+            'avatar_url' => $profile?->photo_path,
+            'photo' => $profile?->photo_path,
+            'photo_url' => $profile?->photo_path,
             'status' => $worker->status,
             'active' => $worker->status === 'ACTIVE',
             'role' => 'WORKER_TECHNICIAN',
             'started_at' => $worker->started_at?->toIso8601String(),
         ], 'IDENTITY_WORKER_LOADED', 200);
+    }
+
+    /**
+     * W02B: Update Worker Profile & Attributes
+     */
+    public function updateWorker(Request $request, string $membershipId)
+    {
+        $user = Auth::user();
+        $providerMembership = Membership::where('user_id', $user->id)
+            ->where('kind', 'OWNER')
+            ->where('status', 'ACTIVE')
+            ->first();
+
+        $worker = Membership::where('id', $membershipId)
+            ->where('organization_id', $providerMembership?->organization_id)
+            ->where('kind', 'WORKER')
+            ->with(['user.profile'])
+            ->first();
+
+        if (!$worker) {
+            $worker = Membership::where('user_id', $membershipId)
+                ->where('organization_id', $providerMembership?->organization_id)
+                ->where('kind', 'WORKER')
+                ->with(['user.profile'])
+                ->first();
+        }
+
+        if (!$worker) {
+            return ApiResponse::error('IDENTITY_RESOURCE_NOT_FOUND', 'Teknisi tidak ditemukan pada bengkel Anda.', 404);
+        }
+
+        $profile = $worker->user?->profile;
+        if (($request->has('fullName') || $request->has('name')) && $profile) {
+            $profile->display_name = $request->input('fullName') ?? $request->input('name');
+            $profile->save();
+        }
+        if ($request->has('employeeId') && $profile) {
+            $profile->employee_id = $request->input('employeeId');
+            $profile->save();
+        }
+        if ($request->has('status')) {
+            $worker->status = $request->input('status');
+            $worker->save();
+        }
+
+        $empId = $profile?->employee_id ?? 'WRK-001';
+
+        return ApiResponse::success([
+            'id' => $worker->id,
+            'workerId' => $worker->id,
+            'membership_id' => $worker->id,
+            'user_id' => $worker->user_id,
+            'userId' => $worker->user_id,
+            'fullName' => $profile?->display_name ?? 'Teknisi',
+            'display_name' => $profile?->display_name,
+            'employeeId' => $empId,
+            'employee_id' => $empId,
+            'status' => $worker->status,
+            'active' => $worker->status === 'ACTIVE',
+            'role' => 'WORKER_TECHNICIAN',
+        ], 'IDENTITY_WORKER_UPDATED', 200);
     }
 
     /**

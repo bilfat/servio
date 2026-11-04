@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { ServiceOffering, ServiceMode, BookingRequest } from "@/types/domain";
 import { serviceOrderApi } from "@/lib/servioApi";
 
@@ -38,43 +38,60 @@ export function useBookingWizard(initialService?: ServiceOffering) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createdBooking, setCreatedBooking] = useState<BookingRequest | null>(null);
 
-  const setService = (service: ServiceOffering) => {
-    setState((prev) => ({
-      ...prev,
-      service,
-      serviceMode: service.serviceModes[0] || "HOME_SERVICE",
-    }));
-  };
+  const setService = useCallback((service: ServiceOffering) => {
+    setState((prev) => {
+      if (prev.service?.id === service.id) return prev;
+      return {
+        ...prev,
+        service,
+        serviceMode: service.serviceModes[0] || "HOME_SERVICE",
+      };
+    });
+  }, []);
 
-  const setSchedule = (date: string, timeSlot: string) => {
-    setState((prev) => ({
-      ...prev,
-      scheduledDate: date,
-      scheduledTimeSlot: timeSlot,
-    }));
-  };
+  const setSchedule = useCallback((date: string, timeSlot: string) => {
+    setState((prev) => {
+      if (prev.scheduledDate === date && prev.scheduledTimeSlot === timeSlot) {
+        return prev;
+      }
+      return {
+        ...prev,
+        scheduledDate: date,
+        scheduledTimeSlot: timeSlot,
+      };
+    });
+  }, []);
 
-  const setAddress = (address: { street: string; city: string; notes?: string }) => {
-    setState((prev) => ({
-      ...prev,
-      address,
-    }));
-  };
+  const setAddress = useCallback((address: { street: string; city: string; notes?: string }) => {
+    setState((prev) => {
+      if (
+        prev.address.street === address.street &&
+        prev.address.city === address.city &&
+        prev.address.notes === address.notes
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        address,
+      };
+    });
+  }, []);
 
-  const setCustomFields = (values: Record<string, string | number | boolean>) => {
+  const setCustomFields = useCallback((values: Record<string, string | number | boolean>) => {
     setState((prev) => ({
       ...prev,
       customFieldValues: values,
     }));
-  };
+  }, []);
 
-  const nextStep = () => {
+  const nextStep = useCallback(() => {
     setState((prev) => ({ ...prev, step: Math.min(prev.step + 1, 4) }));
-  };
+  }, []);
 
-  const prevStep = () => {
+  const prevStep = useCallback(() => {
     setState((prev) => ({ ...prev, step: Math.max(prev.step - 1, 1) }));
-  };
+  }, []);
 
   const submitBooking = async (): Promise<BookingRequest> => {
     setIsSubmitting(true);

@@ -17,6 +17,7 @@ import {
   PencilSimpleLine,
   LockKey,
   Wrench,
+  Check,
 } from "@phosphor-icons/react";
 import { financeApi } from "@/lib/servioApi";
 import {
@@ -102,8 +103,17 @@ export default function CeoPlatformPoliciesPage() {
     setShowCreateModal(true);
   };
 
-  // Target Mode: BOTH | CUSTOMER_ONLY | MERCHANT_ONLY
-  const [targetScopeMode, setTargetScopeMode] = useState<"BOTH" | "CUSTOMER_ONLY" | "MERCHANT_ONLY">("BOTH");
+  // Target Selection Multi-Select: ("CUSTOMER" | "MERCHANT" | "PROVIDER")[]
+  const [selectedTargets, setSelectedTargets] = useState<Array<"CUSTOMER" | "MERCHANT" | "PROVIDER">>([
+    "CUSTOMER",
+    "MERCHANT",
+  ]);
+
+  const toggleTarget = (target: "CUSTOMER" | "MERCHANT" | "PROVIDER") => {
+    setSelectedTargets((prev) =>
+      prev.includes(target) ? prev.filter((t) => t !== target) : [...prev, target]
+    );
+  };
 
   // Target 1: Customer Product App Fee (Once per checkout)
   const [customerFeeType, setCustomerFeeType] = useState<"FIXED" | "PERCENTAGE">("FIXED");
@@ -115,6 +125,11 @@ export default function CeoPlatformPoliciesPage() {
   const [merchantFeePercent, setMerchantFeePercent] = useState<number>(5.0);
   const [merchantFeeAmount, setMerchantFeeAmount] = useState<number>(5000);
 
+  // Target 3: Mitra Jasa Commission (Per service order 05B)
+  const [providerFeeType, setProviderFeeType] = useState<"FIXED" | "PERCENTAGE">("PERCENTAGE");
+  const [providerFeePercent, setProviderFeePercent] = useState<number>(10.0);
+  const [providerFeeAmount, setProviderFeeAmount] = useState<number>(10000);
+
   // Publish Form States
   const [publishMode, setPublishMode] = useState<"IMMEDIATE" | "SCHEDULED">("IMMEDIATE");
   const [publishEffectiveDate, setPublishEffectiveDate] = useState<string>("");
@@ -123,13 +138,26 @@ export default function CeoPlatformPoliciesPage() {
   const [revisionReason, setRevisionReason] = useState("");
   const [revPolicyName, setRevPolicyName] = useState("");
   const [revPolicyDescription, setRevPolicyDescription] = useState("");
-  const [revTargetScopeMode, setRevTargetScopeMode] = useState<"BOTH" | "CUSTOMER_ONLY" | "MERCHANT_ONLY">("BOTH");
+  const [revSelectedTargets, setRevSelectedTargets] = useState<Array<"CUSTOMER" | "MERCHANT" | "PROVIDER">>([
+    "CUSTOMER",
+    "MERCHANT",
+  ]);
+
+  const toggleRevTarget = (target: "CUSTOMER" | "MERCHANT" | "PROVIDER") => {
+    setRevSelectedTargets((prev) =>
+      prev.includes(target) ? prev.filter((t) => t !== target) : [...prev, target]
+    );
+  };
+
   const [revCustomerFeeType, setRevCustomerFeeType] = useState<"FIXED" | "PERCENTAGE">("FIXED");
   const [revCustomerAmount, setRevCustomerAmount] = useState<number>(3000);
   const [revCustomerPercent, setRevCustomerPercent] = useState<number>(1.0);
   const [revMerchantFeeType, setRevMerchantFeeType] = useState<"FIXED" | "PERCENTAGE">("PERCENTAGE");
   const [revMerchantPercent, setRevMerchantPercent] = useState<number>(5.0);
   const [revMerchantAmount, setRevMerchantAmount] = useState<number>(5000);
+  const [revProviderFeeType, setRevProviderFeeType] = useState<"FIXED" | "PERCENTAGE">("PERCENTAGE");
+  const [revProviderFeePercent, setRevProviderFeePercent] = useState<number>(10.0);
+  const [revProviderFeeAmount, setRevProviderFeeAmount] = useState<number>(10000);
 
   // Status Feedback
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -235,7 +263,7 @@ export default function CeoPlatformPoliciesPage() {
 
       const targetsPayload: any[] = [];
 
-      if (targetScopeMode === "BOTH" || targetScopeMode === "CUSTOMER_ONLY") {
+      if (selectedTargets.includes("CUSTOMER")) {
         targetsPayload.push({
           policy_code: "CUSTOMER_PRODUCT_APP_FEE",
           scope: "PRODUCT",
@@ -248,7 +276,7 @@ export default function CeoPlatformPoliciesPage() {
         });
       }
 
-      if (targetScopeMode === "BOTH" || targetScopeMode === "MERCHANT_ONLY") {
+      if (selectedTargets.includes("MERCHANT")) {
         targetsPayload.push({
           policy_code: "MERCHANT_PRODUCT_COMMISSION",
           scope: "PRODUCT",
@@ -261,8 +289,21 @@ export default function CeoPlatformPoliciesPage() {
         });
       }
 
+      if (selectedTargets.includes("PROVIDER")) {
+        targetsPayload.push({
+          policy_code: "PROVIDER_SERVICE_COMMISSION",
+          scope: "SERVICE",
+          payer_type: "PROVIDER",
+          fee_type: providerFeeType,
+          fixed_amount_idr: providerFeeType === "FIXED" ? providerFeeAmount : null,
+          percentage_rate: providerFeeType === "PERCENTAGE" ? providerFeePercent : null,
+          charge_scope: "SERVICE_ORDER",
+          calculation_base: "SERVICE_ORDER_TOTAL",
+        });
+      }
+
       if (targetsPayload.length === 0) {
-        throw new Error("Pilih minimal satu target penerapan biaya (Pelanggan atau Merchant).");
+        throw new Error("Pilih minimal satu target penerapan biaya (Pelanggan, Merchant, atau Mitra Jasa).");
       }
 
       const res = await financeApi.policies.create({
@@ -351,7 +392,7 @@ export default function CeoPlatformPoliciesPage() {
 
       const targetsPayload: any[] = [];
 
-      if (revTargetScopeMode === "BOTH" || revTargetScopeMode === "CUSTOMER_ONLY") {
+      if (revSelectedTargets.includes("CUSTOMER")) {
         targetsPayload.push({
           policy_code: "CUSTOMER_PRODUCT_APP_FEE",
           scope: "PRODUCT",
@@ -364,7 +405,7 @@ export default function CeoPlatformPoliciesPage() {
         });
       }
 
-      if (revTargetScopeMode === "BOTH" || revTargetScopeMode === "MERCHANT_ONLY") {
+      if (revSelectedTargets.includes("MERCHANT")) {
         targetsPayload.push({
           policy_code: "MERCHANT_PRODUCT_COMMISSION",
           scope: "PRODUCT",
@@ -377,8 +418,21 @@ export default function CeoPlatformPoliciesPage() {
         });
       }
 
+      if (revSelectedTargets.includes("PROVIDER")) {
+        targetsPayload.push({
+          policy_code: "PROVIDER_SERVICE_COMMISSION",
+          scope: "SERVICE",
+          payer_type: "PROVIDER",
+          fee_type: revProviderFeeType,
+          fixed_amount_idr: revProviderFeeType === "FIXED" ? revProviderFeeAmount : null,
+          percentage_rate: revProviderFeeType === "PERCENTAGE" ? revProviderFeePercent : null,
+          charge_scope: "SERVICE_ORDER",
+          calculation_base: "SERVICE_ORDER_TOTAL",
+        });
+      }
+
       if (targetsPayload.length === 0) {
-        throw new Error("Pilih minimal satu target penerapan biaya (Pelanggan atau Merchant).");
+        throw new Error("Pilih minimal satu target penerapan biaya (Pelanggan, Merchant, atau Mitra Jasa).");
       }
 
       const res = await financeApi.policies.createRevision(selectedForRevision.group.id, {
@@ -435,7 +489,7 @@ export default function CeoPlatformPoliciesPage() {
     }
   };
 
-  // Open Revision Modal with auto-detection of existing targets
+  // Open Revision Modal with auto-detection of existing targets (multi-target mapping)
   const openRevisionModal = (item: FlatVersionItem) => {
     setSelectedForRevision(item);
     setRevisionReason(`Revisi tarif dari v${item.version.version_no}`);
@@ -443,18 +497,35 @@ export default function CeoPlatformPoliciesPage() {
     setRevPolicyDescription(item.group.description || "");
 
     const targets = item.version.targets || [];
-    const custTarget = targets.find((t) => t.policy_code === "CUSTOMER_PRODUCT_APP_FEE");
-    const merchTarget = targets.find((t) => t.policy_code === "MERCHANT_PRODUCT_COMMISSION");
+    const custTarget = targets.find(
+      (t) =>
+        t.policy_code === "CUSTOMER_PRODUCT_APP_FEE" ||
+        t.policy_code === "CUSTOMER_SERVICE_APP_FEE" ||
+        t.payer_type === "CUSTOMER"
+    );
+    const merchTarget = targets.find(
+      (t) =>
+        t.policy_code === "MERCHANT_PRODUCT_COMMISSION" ||
+        (t.payer_type === "MERCHANT" && t.scope === "PRODUCT")
+    );
+    const provTarget = targets.find(
+      (t) =>
+        t.policy_code === "PROVIDER_SERVICE_COMMISSION" ||
+        t.payer_type === "PROVIDER" ||
+        (t.scope === "SERVICE" && t.payer_type !== "CUSTOMER")
+    );
 
-    if (custTarget && merchTarget) {
-      setRevTargetScopeMode("BOTH");
-    } else if (custTarget && !merchTarget) {
-      setRevTargetScopeMode("CUSTOMER_ONLY");
-    } else if (!custTarget && merchTarget) {
-      setRevTargetScopeMode("MERCHANT_ONLY");
-    } else {
-      setRevTargetScopeMode("BOTH");
+    // Otomatis petakan target yang aktif: jika dulu BOTH, maka terpilih CUSTOMER dan MERCHANT
+    const initialTargets: Array<"CUSTOMER" | "MERCHANT" | "PROVIDER"> = [];
+    if (custTarget) initialTargets.push("CUSTOMER");
+    if (merchTarget) initialTargets.push("MERCHANT");
+    if (provTarget) initialTargets.push("PROVIDER");
+
+    if (initialTargets.length === 0) {
+      initialTargets.push("CUSTOMER", "MERCHANT");
     }
+
+    setRevSelectedTargets(initialTargets);
 
     if (custTarget) {
       setRevCustomerFeeType(custTarget.fee_type === "PERCENTAGE" ? "PERCENTAGE" : "FIXED");
@@ -480,6 +551,19 @@ export default function CeoPlatformPoliciesPage() {
       setRevMerchantFeeType("PERCENTAGE");
       setRevMerchantPercent(5.0);
       setRevMerchantAmount(5000);
+    }
+
+    if (provTarget) {
+      setRevProviderFeeType(provTarget.fee_type === "FIXED" ? "FIXED" : "PERCENTAGE");
+      if (provTarget.fee_type === "FIXED") {
+        setRevProviderFeeAmount(Number(provTarget.fixed_amount_idr) || 10000);
+      } else {
+        setRevProviderFeePercent(Number(provTarget.percentage_rate) || 10.0);
+      }
+    } else {
+      setRevProviderFeeType("PERCENTAGE");
+      setRevProviderFeePercent(10.0);
+      setRevProviderFeeAmount(10000);
     }
 
     setShowRevisionModal(true);
@@ -758,6 +842,7 @@ export default function CeoPlatformPoliciesPage() {
                   <th className="py-3.5 px-5">Nama Aturan & Versi</th>
                   <th className="py-3.5 px-4">Untuk Customer</th>
                   <th className="py-3.5 px-4">Untuk Merchant</th>
+                  <th className="py-3.5 px-4">Untuk Mitra Jasa</th>
                   <th className="py-3.5 px-4">Status & Efektif</th>
                   <th className="py-3.5 px-4">Alasan Pembaruan</th>
                   <th className="py-3.5 px-5 text-right">Aksi</th>
@@ -767,10 +852,21 @@ export default function CeoPlatformPoliciesPage() {
                 {filteredVersions.map(({ group, version }) => {
                   const targets = version.targets || [];
                   const customerTarget = targets.find(
-                    (t) => t.policy_code === "CUSTOMER_PRODUCT_APP_FEE"
+                    (t) =>
+                      t.policy_code === "CUSTOMER_PRODUCT_APP_FEE" ||
+                      t.policy_code === "CUSTOMER_SERVICE_APP_FEE" ||
+                      t.payer_type === "CUSTOMER"
                   );
                   const merchantTarget = targets.find(
-                    (t) => t.policy_code === "MERCHANT_PRODUCT_COMMISSION"
+                    (t) =>
+                      t.policy_code === "MERCHANT_PRODUCT_COMMISSION" ||
+                      (t.payer_type === "MERCHANT" && t.scope === "PRODUCT")
+                  );
+                  const providerTarget = targets.find(
+                    (t) =>
+                      t.policy_code === "PROVIDER_SERVICE_COMMISSION" ||
+                      t.payer_type === "PROVIDER" ||
+                      (t.scope === "SERVICE" && t.payer_type !== "CUSTOMER")
                   );
 
                   return (
@@ -829,6 +925,30 @@ export default function CeoPlatformPoliciesPage() {
                             </div>
                             <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
                               Komisi Penjualan Per Toko
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 text-[10px] font-semibold">
+                            — Bebas Komisi
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="py-4 px-4">
+                        {providerTarget ? (
+                          <div>
+                            <div className="font-extrabold text-slate-800 flex items-center gap-1.5">
+                              <span>
+                                {providerTarget.fee_type === "PERCENTAGE"
+                                  ? `${providerTarget.percentage_rate || 0}%`
+                                  : `Rp ${(providerTarget.fixed_amount_idr || 0).toLocaleString("id-ID")}`}
+                              </span>
+                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-violet-50 text-violet-700 border border-violet-100">
+                                {providerTarget.fee_type === "PERCENTAGE" ? "%" : "Rp"}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
+                              Komisi Pesanan Jasa (05B)
                             </span>
                           </div>
                         ) : (
@@ -949,7 +1069,7 @@ export default function CeoPlatformPoliciesPage() {
       >
         <div className="space-y-6 text-left font-body">
           <p className="text-xs text-slate-500 leading-relaxed">
-            Form ini menetapkan aturan kebijakan komisi dan biaya aplikasi multi-target untuk transaksi <strong>Order Barang 05A</strong>. Anda dapat memilih apakah biaya dikenakan kepada Pembeli saja, Toko Merchant saja, atau Keduanya sekaligus.
+            Form ini menetapkan aturan kebijakan komisi dan biaya aplikasi multi-target untuk transaksi <strong>Produk Barang (05A)</strong> maupun <strong>Layanan Jasa (05B)</strong>. Anda dapat memilih satu atau beberapa target penerapan biaya sekaligus (Pelanggan, Merchant Toko, dan Mitra Jasa).
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1014,124 +1134,119 @@ export default function CeoPlatformPoliciesPage() {
             />
           </div>
 
-          {/* Target Penerapan Biaya (4 Pilihan Card termasuk Layanan Jasa Terkunci) */}
+          {/* Target Penerapan Biaya (Multi-Select: Pelanggan, Merchant, Mitra Jasa) */}
           <div>
-            <label className="block text-xs font-bold text-slate-800 mb-2">
-              Target Penerapan Biaya <span className="text-rose-500">*</span>
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-bold text-slate-800">
+                Target Penerapan Biaya (Bisa Pilih Lebih dari 1) <span className="text-rose-500">*</span>
+              </label>
+              <span className="text-[11px] font-semibold text-slate-500">
+                {selectedTargets.length} target dipilih
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {/* Target 1: Pelanggan */}
               <button
                 type="button"
-                onClick={() => setTargetScopeMode("CUSTOMER_ONLY")}
-                className={`p-3 rounded-2xl border text-left transition-all flex flex-col gap-1.5 ${
-                  targetScopeMode === "CUSTOMER_ONLY"
-                    ? "border-[#0F4C81] bg-sky-50/70 ring-2 ring-[#0F4C81]/20"
+                onClick={() => toggleTarget("CUSTOMER")}
+                className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col gap-2 ${
+                  selectedTargets.includes("CUSTOMER")
+                    ? "border-[#0F4C81] bg-sky-50/70 ring-2 ring-[#0F4C81]/20 shadow-xs"
                     : "border-slate-200 hover:border-slate-300 bg-white"
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <Receipt
-                    className={`w-4 h-4 ${targetScopeMode === "CUSTOMER_ONLY" ? "text-[#0F4C81]" : "text-slate-500"}`}
+                    className={`w-5 h-5 ${selectedTargets.includes("CUSTOMER") ? "text-[#0F4C81]" : "text-slate-500"}`}
                     weight="duotone"
                   />
                   <span
-                    className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                      targetScopeMode === "CUSTOMER_ONLY" ? "border-[#0F4C81] bg-[#0F4C81]" : "border-slate-300"
+                    className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                      selectedTargets.includes("CUSTOMER") ? "border-[#0F4C81] bg-[#0F4C81] text-white" : "border-slate-300 bg-white"
                     }`}
                   >
-                    {targetScopeMode === "CUSTOMER_ONLY" && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    {selectedTargets.includes("CUSTOMER") && <Check className="w-3 h-3 text-white" weight="bold" />}
                   </span>
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-900">Pelanggan Saja</p>
-                  <p className="text-[10px] text-slate-500">Biaya aplikasi per checkout</p>
+                  <p className="text-xs font-bold text-slate-900">Pelanggan</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Biaya aplikasi per transaksi checkout</p>
                 </div>
               </button>
 
+              {/* Target 2: Merchant Toko */}
               <button
                 type="button"
-                onClick={() => setTargetScopeMode("MERCHANT_ONLY")}
-                className={`p-3 rounded-2xl border text-left transition-all flex flex-col gap-1.5 ${
-                  targetScopeMode === "MERCHANT_ONLY"
-                    ? "border-[#0F4C81] bg-sky-50/70 ring-2 ring-[#0F4C81]/20"
+                onClick={() => toggleTarget("MERCHANT")}
+                className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col gap-2 ${
+                  selectedTargets.includes("MERCHANT")
+                    ? "border-[#0F4C81] bg-sky-50/70 ring-2 ring-[#0F4C81]/20 shadow-xs"
                     : "border-slate-200 hover:border-slate-300 bg-white"
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <Storefront
-                    className={`w-4 h-4 ${targetScopeMode === "MERCHANT_ONLY" ? "text-[#0F4C81]" : "text-slate-500"}`}
+                    className={`w-5 h-5 ${selectedTargets.includes("MERCHANT") ? "text-[#0F4C81]" : "text-slate-500"}`}
                     weight="duotone"
                   />
                   <span
-                    className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                      targetScopeMode === "MERCHANT_ONLY" ? "border-[#0F4C81] bg-[#0F4C81]" : "border-slate-300"
+                    className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                      selectedTargets.includes("MERCHANT") ? "border-[#0F4C81] bg-[#0F4C81] text-white" : "border-slate-300 bg-white"
                     }`}
                   >
-                    {targetScopeMode === "MERCHANT_ONLY" && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    {selectedTargets.includes("MERCHANT") && <Check className="w-3 h-3 text-white" weight="bold" />}
                   </span>
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-900">Merchant Saja</p>
-                  <p className="text-[10px] text-slate-500">Komisi toko pesanan barang</p>
+                  <p className="text-xs font-bold text-slate-900">Merchant Toko</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Komisi toko pesanan barang (05A)</p>
                 </div>
               </button>
 
+              {/* Target 3: Mitra Jasa */}
               <button
                 type="button"
-                onClick={() => setTargetScopeMode("BOTH")}
-                className={`p-3 rounded-2xl border text-left transition-all flex flex-col gap-1.5 ${
-                  targetScopeMode === "BOTH"
-                    ? "border-[#0F4C81] bg-sky-50/70 ring-2 ring-[#0F4C81]/20"
+                onClick={() => toggleTarget("PROVIDER")}
+                className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col gap-2 ${
+                  selectedTargets.includes("PROVIDER")
+                    ? "border-[#0F4C81] bg-sky-50/70 ring-2 ring-[#0F4C81]/20 shadow-xs"
                     : "border-slate-200 hover:border-slate-300 bg-white"
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <Sparkle
-                    className={`w-4 h-4 ${targetScopeMode === "BOTH" ? "text-[#0F4C81]" : "text-slate-500"}`}
+                  <Wrench
+                    className={`w-5 h-5 ${selectedTargets.includes("PROVIDER") ? "text-[#0F4C81]" : "text-slate-500"}`}
                     weight="duotone"
                   />
                   <span
-                    className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                      targetScopeMode === "BOTH" ? "border-[#0F4C81] bg-[#0F4C81]" : "border-slate-300"
+                    className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                      selectedTargets.includes("PROVIDER") ? "border-[#0F4C81] bg-[#0F4C81] text-white" : "border-slate-300 bg-white"
                     }`}
                   >
-                    {targetScopeMode === "BOTH" && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    {selectedTargets.includes("PROVIDER") && <Check className="w-3 h-3 text-white" weight="bold" />}
                   </span>
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-900">Keduanya Sekaligus</p>
-                  <p className="text-[10px] text-slate-500">Pelanggan & komisi toko</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-bold text-slate-900">Mitra Jasa</p>
+                    <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full">
+                      Fase 05B
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Komisi mitra pesanan jasa (05B)</p>
                 </div>
               </button>
-
-              <div
-                className="p-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 text-left flex flex-col gap-1.5 opacity-70 cursor-not-allowed select-none"
-                title="Layanan Jasa telah disiapkan di skema database (CUSTOMER_SERVICE_APP_FEE & PROVIDER_SERVICE_COMMISSION). Saat ini terkunci khusus fase Order Barang 05A."
-              >
-                <div className="flex items-center justify-between">
-                  <Wrench className="w-4 h-4 text-slate-400" weight="duotone" />
-                  <span className="text-[9px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded-full flex items-center gap-1">
-                    <LockKey className="w-3 h-3" weight="bold" /> Terkunci (Fase Jasa)
-                  </span>
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-700">Mitra Jasa</p>
-                  <p className="text-[10px] text-slate-400 leading-tight">
-                    Komisi jasa & booking mekanik (DB siap, aktif fase jasa)
-                  </p>
-                </div>
-              </div>
             </div>
           </div>
 
           {/* Section Target 1: Customer Product App Fee */}
-          {(targetScopeMode === "BOTH" || targetScopeMode === "CUSTOMER_ONLY") && (
+          {selectedTargets.includes("CUSTOMER") && (
             <div className="p-4 rounded-2xl border border-sky-100 bg-sky-50/40 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Receipt className="w-5 h-5 text-[#0F4C81]" weight="duotone" />
                   <h4 className="text-xs font-black text-slate-900">
-                    Target 1: Biaya Aplikasi Customer (Barang 05A)
+                    Target 1: Biaya Aplikasi Customer (Barang & Jasa)
                   </h4>
                 </div>
                 <span className="text-[10px] font-bold text-sky-800 bg-sky-100 px-2 py-0.5 rounded-full">
@@ -1219,7 +1334,7 @@ export default function CeoPlatformPoliciesPage() {
           )}
 
           {/* Section Target 2: Merchant Product Commission */}
-          {(targetScopeMode === "BOTH" || targetScopeMode === "MERCHANT_ONLY") && (
+          {selectedTargets.includes("MERCHANT") && (
             <div className="p-4 rounded-2xl border border-emerald-100 bg-emerald-50/40 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -1303,6 +1418,100 @@ export default function CeoPlatformPoliciesPage() {
                         value={merchantFeeAmount}
                         onChange={(e) => setMerchantFeeAmount(Number(e.target.value))}
                         placeholder="Contoh: 5000"
+                        className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 font-mono bg-white focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Section Target 3: Mitra Jasa Commission */}
+          {selectedTargets.includes("PROVIDER") && (
+            <div className="p-4 rounded-2xl border border-violet-100 bg-violet-50/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Wrench className="w-5 h-5 text-violet-700" weight="duotone" />
+                  <h4 className="text-xs font-black text-slate-900">
+                    Target 3: Komisi Penjualan Mitra Jasa (Layanan Jasa 05B)
+                  </h4>
+                </div>
+                <span className="text-[10px] font-bold text-violet-800 bg-violet-100 px-2 py-0.5 rounded-full">
+                  Per Order Jasa
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-normal">
+                Dipotong langsung dari hak pencairan dana pengerjaan teknisi/mitra jasa saat order jasa diselesaikan (COMPLETED).
+              </p>
+
+              <div className="space-y-3 pt-1">
+                {/* Format Switch: % vs Rp */}
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1.5">
+                    Format Penerapan Komisi
+                  </label>
+                  <div className="inline-flex p-1 bg-slate-200/70 rounded-xl gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setProviderFeeType("PERCENTAGE")}
+                      className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                        providerFeeType === "PERCENTAGE"
+                          ? "bg-white text-slate-900 shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      Persentase (%)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setProviderFeeType("FIXED")}
+                      className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                        providerFeeType === "FIXED"
+                          ? "bg-white text-slate-900 shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      Nominal Tetap (Rp)
+                    </button>
+                  </div>
+                </div>
+
+                {/* Input Fields */}
+                {providerFeeType === "PERCENTAGE" ? (
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Persentase Komisi Jasa (%)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step={0.5}
+                        value={providerFeePercent}
+                        onChange={(e) => setProviderFeePercent(Number(e.target.value))}
+                        placeholder="Contoh: 10.0"
+                        className="w-full pl-3 pr-8 py-1.5 text-xs rounded-xl border border-slate-200 font-mono bg-white focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20"
+                      />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                        %
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Nominal Tetap (Rp)
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                        Rp
+                      </span>
+                      <input
+                        type="number"
+                        step={1000}
+                        value={providerFeeAmount}
+                        onChange={(e) => setProviderFeeAmount(Number(e.target.value))}
+                        placeholder="Contoh: 10000"
                         className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 font-mono bg-white focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20"
                       />
                     </div>
@@ -1433,7 +1642,7 @@ export default function CeoPlatformPoliciesPage() {
       >
         <div className="space-y-5 text-left font-body">
           <p className="text-xs text-slate-600">
-            Revisi ini akan membuat versi <strong>DRAFT</strong> baru dari grup <strong>{selectedForRevision?.group.display_name}</strong>. Anda dapat mengubah nama aturan biaya, sasaran target (Pelanggan/Merchant), serta mengganti besaran format perhitungan (Rupiah atau Persentase).
+            Revisi ini akan membuat versi <strong>DRAFT</strong> baru dari grup <strong>{selectedForRevision?.group.display_name}</strong>. Anda dapat mengubah nama aturan biaya, sasaran target multi-peran (Pelanggan, Merchant, Mitra Jasa), serta mengganti besaran format perhitungan (Rupiah atau Persentase).
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1470,118 +1679,113 @@ export default function CeoPlatformPoliciesPage() {
             </div>
           </div>
 
-          {/* Target Scope Selector di Revisi */}
+          {/* Target Scope Selector di Revisi (Multi-Select: Pelanggan, Merchant, Mitra Jasa) */}
           <div>
-            <label className="block text-xs font-bold text-slate-800 mb-2">
-              Target Penerapan Revisi <span className="text-rose-500">*</span>
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-bold text-slate-800">
+                Target Penerapan Revisi (Bisa Pilih Lebih dari 1) <span className="text-rose-500">*</span>
+              </label>
+              <span className="text-[11px] font-semibold text-slate-500">
+                {revSelectedTargets.length} target dipilih
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {/* Target 1: Pelanggan */}
               <button
                 type="button"
-                onClick={() => setRevTargetScopeMode("CUSTOMER_ONLY")}
-                className={`p-3 rounded-2xl border text-left transition-all flex flex-col gap-1.5 ${
-                  revTargetScopeMode === "CUSTOMER_ONLY"
-                    ? "border-[#0F4C81] bg-sky-50/70 ring-2 ring-[#0F4C81]/20"
+                onClick={() => toggleRevTarget("CUSTOMER")}
+                className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col gap-2 ${
+                  revSelectedTargets.includes("CUSTOMER")
+                    ? "border-[#0F4C81] bg-sky-50/70 ring-2 ring-[#0F4C81]/20 shadow-xs"
                     : "border-slate-200 hover:border-slate-300 bg-white"
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <Receipt
-                    className={`w-4 h-4 ${revTargetScopeMode === "CUSTOMER_ONLY" ? "text-[#0F4C81]" : "text-slate-500"}`}
+                    className={`w-5 h-5 ${revSelectedTargets.includes("CUSTOMER") ? "text-[#0F4C81]" : "text-slate-500"}`}
                     weight="duotone"
                   />
                   <span
-                    className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                      revTargetScopeMode === "CUSTOMER_ONLY" ? "border-[#0F4C81] bg-[#0F4C81]" : "border-slate-300"
+                    className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                      revSelectedTargets.includes("CUSTOMER") ? "border-[#0F4C81] bg-[#0F4C81] text-white" : "border-slate-300 bg-white"
                     }`}
                   >
-                    {revTargetScopeMode === "CUSTOMER_ONLY" && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    {revSelectedTargets.includes("CUSTOMER") && <Check className="w-3 h-3 text-white" weight="bold" />}
                   </span>
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-900">Pelanggan Saja</p>
-                  <p className="text-[10px] text-slate-500">Biaya aplikasi per checkout</p>
+                  <p className="text-xs font-bold text-slate-900">Pelanggan</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Biaya aplikasi per transaksi checkout</p>
                 </div>
               </button>
 
+              {/* Target 2: Merchant Toko */}
               <button
                 type="button"
-                onClick={() => setRevTargetScopeMode("MERCHANT_ONLY")}
-                className={`p-3 rounded-2xl border text-left transition-all flex flex-col gap-1.5 ${
-                  revTargetScopeMode === "MERCHANT_ONLY"
-                    ? "border-[#0F4C81] bg-sky-50/70 ring-2 ring-[#0F4C81]/20"
+                onClick={() => toggleRevTarget("MERCHANT")}
+                className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col gap-2 ${
+                  revSelectedTargets.includes("MERCHANT")
+                    ? "border-[#0F4C81] bg-sky-50/70 ring-2 ring-[#0F4C81]/20 shadow-xs"
                     : "border-slate-200 hover:border-slate-300 bg-white"
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <Storefront
-                    className={`w-4 h-4 ${revTargetScopeMode === "MERCHANT_ONLY" ? "text-[#0F4C81]" : "text-slate-500"}`}
+                    className={`w-5 h-5 ${revSelectedTargets.includes("MERCHANT") ? "text-[#0F4C81]" : "text-slate-500"}`}
                     weight="duotone"
                   />
                   <span
-                    className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                      revTargetScopeMode === "MERCHANT_ONLY" ? "border-[#0F4C81] bg-[#0F4C81]" : "border-slate-300"
+                    className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                      revSelectedTargets.includes("MERCHANT") ? "border-[#0F4C81] bg-[#0F4C81] text-white" : "border-slate-300 bg-white"
                     }`}
                   >
-                    {revTargetScopeMode === "MERCHANT_ONLY" && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    {revSelectedTargets.includes("MERCHANT") && <Check className="w-3 h-3 text-white" weight="bold" />}
                   </span>
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-900">Merchant Saja</p>
-                  <p className="text-[10px] text-slate-500">Komisi toko pesanan barang</p>
+                  <p className="text-xs font-bold text-slate-900">Merchant Toko</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Komisi toko pesanan barang (05A)</p>
                 </div>
               </button>
 
+              {/* Target 3: Mitra Jasa */}
               <button
                 type="button"
-                onClick={() => setRevTargetScopeMode("BOTH")}
-                className={`p-3 rounded-2xl border text-left transition-all flex flex-col gap-1.5 ${
-                  revTargetScopeMode === "BOTH"
-                    ? "border-[#0F4C81] bg-sky-50/70 ring-2 ring-[#0F4C81]/20"
+                onClick={() => toggleRevTarget("PROVIDER")}
+                className={`p-3.5 rounded-2xl border text-left transition-all flex flex-col gap-2 ${
+                  revSelectedTargets.includes("PROVIDER")
+                    ? "border-[#0F4C81] bg-sky-50/70 ring-2 ring-[#0F4C81]/20 shadow-xs"
                     : "border-slate-200 hover:border-slate-300 bg-white"
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <Sparkle
-                    className={`w-4 h-4 ${revTargetScopeMode === "BOTH" ? "text-[#0F4C81]" : "text-slate-500"}`}
+                  <Wrench
+                    className={`w-5 h-5 ${revSelectedTargets.includes("PROVIDER") ? "text-[#0F4C81]" : "text-slate-500"}`}
                     weight="duotone"
                   />
                   <span
-                    className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
-                      revTargetScopeMode === "BOTH" ? "border-[#0F4C81] bg-[#0F4C81]" : "border-slate-300"
+                    className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                      revSelectedTargets.includes("PROVIDER") ? "border-[#0F4C81] bg-[#0F4C81] text-white" : "border-slate-300 bg-white"
                     }`}
                   >
-                    {revTargetScopeMode === "BOTH" && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                    {revSelectedTargets.includes("PROVIDER") && <Check className="w-3 h-3 text-white" weight="bold" />}
                   </span>
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-slate-900">Keduanya Sekaligus</p>
-                  <p className="text-[10px] text-slate-500">Pelanggan & komisi toko</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-bold text-slate-900">Mitra Jasa</p>
+                    <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full">
+                      Fase 05B
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Komisi mitra pesanan jasa (05B)</p>
                 </div>
               </button>
-
-              <div
-                className="p-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 text-left flex flex-col gap-1.5 opacity-70 cursor-not-allowed select-none"
-                title="Layanan Jasa telah disiapkan di skema database (CUSTOMER_SERVICE_APP_FEE & PROVIDER_SERVICE_COMMISSION). Saat ini terkunci khusus fase Order Barang 05A."
-              >
-                <div className="flex items-center justify-between">
-                  <Wrench className="w-4 h-4 text-slate-400" weight="duotone" />
-                  <span className="text-[9px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded-full flex items-center gap-1">
-                    <LockKey className="w-3 h-3" weight="bold" /> Terkunci (Fase Jasa)
-                  </span>
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-slate-700">Mitra Jasa</p>
-                  <p className="text-[10px] text-slate-400 leading-tight">
-                    Komisi jasa & booking mekanik (DB siap, aktif fase jasa)
-                  </p>
-                </div>
-              </div>
             </div>
           </div>
 
           {/* Revisi Target 1: Customer Fee */}
-          {(revTargetScopeMode === "BOTH" || revTargetScopeMode === "CUSTOMER_ONLY") && (
+          {revSelectedTargets.includes("CUSTOMER") && (
             <div className="p-4 rounded-2xl border border-sky-100 bg-sky-50/40 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -1657,13 +1861,13 @@ export default function CeoPlatformPoliciesPage() {
           )}
 
           {/* Revisi Target 2: Merchant Commission */}
-          {(revTargetScopeMode === "BOTH" || revTargetScopeMode === "MERCHANT_ONLY") && (
+          {revSelectedTargets.includes("MERCHANT") && (
             <div className="p-4 rounded-2xl border border-emerald-100 bg-emerald-50/40 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Storefront className="w-5 h-5 text-emerald-700" weight="duotone" />
                   <h4 className="text-xs font-black text-slate-900">
-                    Revisi Komisi Toko Merchant
+                    Revisi Komisi Toko Merchant (Barang 05A)
                   </h4>
                 </div>
                 <div className="inline-flex p-0.5 bg-slate-200/70 rounded-lg gap-1">
@@ -1724,6 +1928,82 @@ export default function CeoPlatformPoliciesPage() {
                       step={1000}
                       value={revMerchantAmount}
                       onChange={(e) => setRevMerchantAmount(Number(e.target.value))}
+                      className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 font-mono bg-white"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Revisi Target 3: Mitra Jasa Commission */}
+          {revSelectedTargets.includes("PROVIDER") && (
+            <div className="p-4 rounded-2xl border border-violet-100 bg-violet-50/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Wrench className="w-5 h-5 text-violet-700" weight="duotone" />
+                  <h4 className="text-xs font-black text-slate-900">
+                    Revisi Komisi Mitra Jasa (Layanan Jasa 05B)
+                  </h4>
+                </div>
+                <div className="inline-flex p-0.5 bg-slate-200/70 rounded-lg gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setRevProviderFeeType("PERCENTAGE")}
+                    className={`px-2.5 py-0.5 text-[11px] font-bold rounded transition-all ${
+                      revProviderFeeType === "PERCENTAGE"
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Persentase (%)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRevProviderFeeType("FIXED")}
+                    className={`px-2.5 py-0.5 text-[11px] font-bold rounded transition-all ${
+                      revProviderFeeType === "FIXED"
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    Nominal Tetap (Rp)
+                  </button>
+                </div>
+              </div>
+
+              {revProviderFeeType === "PERCENTAGE" ? (
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Persentase Komisi Jasa (%)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step={0.5}
+                      value={revProviderFeePercent}
+                      onChange={(e) => setRevProviderFeePercent(Number(e.target.value))}
+                      className="w-full pl-3 pr-8 py-1.5 text-xs rounded-xl border border-slate-200 font-mono bg-white"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                      %
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Nominal Rupiah (Rp)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                      Rp
+                    </span>
+                    <input
+                      type="number"
+                      step={1000}
+                      value={revProviderFeeAmount}
+                      onChange={(e) => setRevProviderFeeAmount(Number(e.target.value))}
                       className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 font-mono bg-white"
                     />
                   </div>

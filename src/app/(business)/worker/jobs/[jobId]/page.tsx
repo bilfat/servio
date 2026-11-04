@@ -42,6 +42,8 @@ import { EmptyState } from "@/components/feedback/EmptyState";
 import { Toast } from "@/components/feedback/Toast";
 import { WorkerSparepartStation } from "@/components/features/worker/WorkerSparepartStation";
 import { WorkerDiagnosisDecisionWorkspace } from "@/components/features/worker/WorkerDiagnosisDecisionWorkspace";
+import { useOrderJasa } from "@/features/order-jasa/hooks/useOrderJasa";
+import { ServiceOrderDetailLayout } from "@/features/order-jasa/components/common/ServiceOrderDetailLayout";
 
 function generateMaterialId(): string {
   return `mat-${Date.now()}`;
@@ -49,9 +51,80 @@ function generateMaterialId(): string {
 
 export default function WorkerJobDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const rawJobId = params?.jobId as string;
 
+  const { orders: serviceOrders05B, fetchOrderById, isLoading } = useOrderJasa();
+  const order05B = serviceOrders05B.find(
+    (o) => o.id === rawJobId || o.orderNumber === rawJobId
+  );
+  const [asyncOrder05B, setAsyncOrder05B] = useState<any>(null);
+  const [isFetchingAsync, setIsFetchingAsync] = useState(false);
+
+  const [hasAttemptedFetch, setHasAttemptedFetch] = useState(false);
+
+  React.useEffect(() => {
+    if (!order05B && rawJobId && fetchOrderById) {
+      setIsFetchingAsync(true);
+      fetchOrderById(rawJobId)
+        .then((res: any) => {
+          if (res) setAsyncOrder05B(res);
+        })
+        .finally(() => {
+          setIsFetchingAsync(false);
+          setHasAttemptedFetch(true);
+        });
+    } else if (order05B) {
+      setHasAttemptedFetch(true);
+    }
+  }, [order05B, rawJobId, fetchOrderById]);
+
+  const active05B = order05B || asyncOrder05B;
+
+  if (active05B) {
+    return (
+      <ServiceOrderDetailLayout
+        order={active05B}
+        role="WORKER"
+        backHref="/worker/jobs"
+        onOrderUpdated={(updated) => setAsyncOrder05B(updated)}
+      />
+    );
+  }
+
+  if (isFetchingAsync || (isLoading && !hasAttemptedFetch)) {
+    return (
+      <div className="py-24 max-w-xl mx-auto flex flex-col items-center justify-center space-y-3">
+        <div className="w-9 h-9 border-4 border-[#0F4C81] border-t-transparent rounded-full animate-spin" />
+        <p className="text-xs text-slate-500 font-semibold">Memuat rincian tugas teknisi...</p>
+      </div>
+    );
+  }
+
+  const isLegacyMockId = rawJobId.startsWith("SRV-") || rawJobId.startsWith("SC-") || rawJobId.startsWith("WRK-");
+  if (isLegacyMockId) {
+    return <LegacyWorkerJobDetail rawJobId={rawJobId} />;
+  }
+
+  return (
+    <div className="py-16 max-w-lg mx-auto">
+      <EmptyState
+        title="Tugas Teknisi Tidak Ditemukan"
+        description={`Penugasan atau pesanan dengan ID "${rawJobId}" tidak ditemukan pada sistem.`}
+        action={
+          <Link
+            href="/worker/jobs"
+            className="px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition shadow-xs"
+          >
+            Kembali ke Pekerjaan Saya
+          </Link>
+        }
+      />
+    </div>
+  );
+}
+
+function LegacyWorkerJobDetail({ rawJobId }: { rawJobId: string }) {
+  const router = useRouter();
   const {
     jobs,
     updateJobStatus,

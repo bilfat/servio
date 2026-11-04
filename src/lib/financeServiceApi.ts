@@ -224,11 +224,21 @@ export const financeServiceApi = {
     },
 
     async getRefunds() {
-      return apiFetch<CustomerRefundItem[]>("/finance/me/refunds");
+      return apiFetch<CustomerRefundItem[]>("/finance/me/refunds", {
+        headers: {
+          "X-Actor-Role": "CUSTOMER",
+          "x-user-role": "CUSTOMER",
+        },
+      });
     },
 
     async getSpay() {
-      return apiFetch<CustomerSPayAccount>("/finance/spay/me");
+      return apiFetch<CustomerSPayAccount>("/finance/spay/me", {
+        headers: {
+          "X-Actor-Role": "CUSTOMER",
+          "x-user-role": "CUSTOMER",
+        },
+      });
     },
 
     async getSpayMovements(params?: { movement_type?: string; per_page?: number; page?: number }) {
@@ -238,7 +248,13 @@ export const financeServiceApi = {
       if (params?.page) q.append("page", String(params.page));
       const qs = q.toString();
       return apiFetch<{ data: SPayMovementEntity[]; total: number; current_page: number; last_page: number }>(
-        `/finance/spay/me/movements${qs ? `?${qs}` : ""}`
+        `/finance/spay/me/movements${qs ? `?${qs}` : ""}`,
+        {
+          headers: {
+            "X-Actor-Role": "CUSTOMER",
+            "x-user-role": "CUSTOMER",
+          },
+        }
       );
     },
   },

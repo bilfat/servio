@@ -368,6 +368,7 @@ export default function FinancePlatformPoliciesPage() {
                   <th className="py-3.5 px-5">Nama Aturan & Versi</th>
                   <th className="py-3.5 px-4">Untuk Customer</th>
                   <th className="py-3.5 px-4">Untuk Merchant</th>
+                  <th className="py-3.5 px-4">Untuk Mitra Jasa</th>
                   <th className="py-3.5 px-4">Status & Efektif</th>
                   <th className="py-3.5 px-4">Alasan Pembaruan</th>
                   <th className="py-3.5 px-5 text-right">Rincian</th>
@@ -377,10 +378,13 @@ export default function FinancePlatformPoliciesPage() {
                 {filteredVersions.map(({ group, version }) => {
                   const targets = version.targets || [];
                   const customerTarget = targets.find(
-                    (t) => t.policy_code === "CUSTOMER_PRODUCT_APP_FEE"
+                    (t) => t.policy_code === "CUSTOMER_PRODUCT_APP_FEE" || t.policy_code === "CUSTOMER_SERVICE_APP_FEE" || t.payer_type === "CUSTOMER"
                   );
                   const merchantTarget = targets.find(
-                    (t) => t.policy_code === "MERCHANT_PRODUCT_COMMISSION"
+                    (t) => t.policy_code === "MERCHANT_PRODUCT_COMMISSION" || t.payer_type === "MERCHANT"
+                  );
+                  const providerTarget = targets.find(
+                    (t) => t.policy_code === "PROVIDER_SERVICE_COMMISSION" || t.payer_type === "PROVIDER"
                   );
 
                   return (
@@ -436,6 +440,30 @@ export default function FinancePlatformPoliciesPage() {
                             </div>
                             <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
                               Komisi Penjualan Per Toko
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-500 text-[10px] font-semibold">
+                            — Bebas Komisi
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="py-4 px-4">
+                        {providerTarget ? (
+                          <div>
+                            <div className="font-extrabold text-slate-800 flex items-center gap-1.5">
+                              <span>
+                                {providerTarget.fee_type === "PERCENTAGE"
+                                  ? `${providerTarget.percentage_rate || 0}%`
+                                  : `Rp ${(providerTarget.fixed_amount_idr || 0).toLocaleString("id-ID")}`}
+                              </span>
+                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-violet-50 text-violet-700 border border-violet-100">
+                                {providerTarget.fee_type === "PERCENTAGE" ? "%" : "Rp"}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-medium block mt-0.5">
+                              Komisi Layanan Jasa (05B)
                             </span>
                           </div>
                         ) : (

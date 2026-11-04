@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -53,6 +53,12 @@ export function CustomerOrderCard({
 }: CustomerOrderCardProps) {
   const router = useRouter();
   const [isPhotoLightboxOpen, setIsPhotoLightboxOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      router.prefetch(`/orders/products/${order.id}`);
+    } catch {}
+  }, [order.id, router]);
 
   // Primary product snapshot
   const firstItem = order.items[0];
@@ -169,6 +175,11 @@ export function CustomerOrderCard({
   return (
     <div
       onClick={() => router.push(`/orders/products/${order.id}`)}
+      onMouseEnter={() => {
+        try {
+          router.prefetch(`/orders/products/${order.id}`);
+        } catch {}
+      }}
       className="glass-card p-5 sm:p-6 rounded-3xl border border-slate-200/80 hover:border-primary/40 transition-all flex flex-col justify-between space-y-4 cursor-pointer group bg-white shadow-servio-xs hover:shadow-servio-md"
     >
       {/* Top Header: Merchant, Order ID, Date & Badge */}
@@ -532,14 +543,20 @@ export function CustomerOrderCard({
               <>
                 <button
                   type="button"
-                  onClick={() => onCancelUnpaidCheckout(order)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onCancelUnpaidCheckout(order);
+                  }}
                   className="px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition cursor-pointer"
                 >
                   Batalkan Checkout
                 </button>
                 <button
                   type="button"
-                  onClick={() => onPayNow(order)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPayNow(order);
+                  }}
                   className="px-3.5 py-1.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition shadow-servio-xs flex items-center gap-1.5 cursor-pointer"
                 >
                   <CreditCard size={14} weight="bold" />
@@ -559,8 +576,11 @@ export function CustomerOrderCard({
             {order.status === "CONFIRMED" && (
               <button
                 type="button"
-                onClick={() => onCancelConfirmedOrder(order)}
-                className="px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCancelConfirmedOrder(order);
+                }}
+                className="px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition cursor-pointer"
               >
                 Batalkan Pesanan
               </button>
@@ -572,8 +592,11 @@ export function CustomerOrderCard({
                 {order.cancellationRequest?.status !== "PENDING" && (
                   <button
                     type="button"
-                    onClick={() => onRequestCancellation(order)}
-                    className="px-3 py-1.5 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold transition"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRequestCancellation(order);
+                    }}
+                    className="px-3 py-1.5 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold transition cursor-pointer"
                   >
                     Ajukan Pembatalan
                   </button>
@@ -603,6 +626,7 @@ export function CustomerOrderCard({
                           href={order.delivery.trackingUrl}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
                           className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
                         >
                           <ArrowSquareOut size={14} weight="bold" />
@@ -628,6 +652,7 @@ export function CustomerOrderCard({
                           href={`https://wa.me/${order.delivery.courierPhone.replace(/\D/g, "")}?text=Halo%20kurir,%20saya%20pelanggan%20pesanan%20${order.orderNumber}`}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
                           className="px-2.5 py-1 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
                           title="Hubungi nomor kurir pengantar"
                         >
@@ -640,14 +665,20 @@ export function CustomerOrderCard({
 
                   <button
                     type="button"
-                    onClick={() => onViewTracking(order)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onViewTracking(order);
+                    }}
                     className="px-2.5 py-1.5 rounded-xl text-slate-600 hover:bg-slate-100 text-xs font-medium cursor-pointer"
                   >
                     Riwayat
                   </button>
                   <button
                     type="button"
-                    onClick={() => onReportIssue(order)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReportIssue(order);
+                    }}
                     className="px-2 py-1.5 rounded-xl text-slate-500 hover:text-slate-800 text-xs font-medium cursor-pointer"
                   >
                     Kendala?
@@ -661,7 +692,10 @@ export function CustomerOrderCard({
               <>
                 <button
                   type="button"
-                  onClick={() => onConfirmDelivered(order)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onConfirmDelivered(order);
+                  }}
                   className="px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-bold transition shadow-sm flex items-center gap-1.5 cursor-pointer"
                 >
                   <CheckCircle size={15} weight="bold" />
@@ -669,7 +703,10 @@ export function CustomerOrderCard({
                 </button>
                 <button
                   type="button"
-                  onClick={() => onReportIssue(order)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReportIssue(order);
+                  }}
                   className="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold cursor-pointer"
                 >
                   Laporkan Kendala
@@ -682,16 +719,22 @@ export function CustomerOrderCard({
               <>
                 <button
                   type="button"
-                  onClick={() => onViewReceipt(order)}
-                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onViewReceipt(order);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition flex items-center gap-1 cursor-pointer"
                 >
                   <Receipt size={14} weight="bold" />
                   <span>Lihat Struk</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => router.push("/products")}
-                  className="px-3 py-1.5 rounded-xl bg-sky-50 text-primary border border-sky-200 hover:bg-sky-100 text-xs font-bold transition"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    router.push("/products");
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-sky-50 text-primary border border-sky-200 hover:bg-sky-100 text-xs font-bold transition cursor-pointer"
                 >
                   Beli Lagi
                 </button>
@@ -699,14 +742,15 @@ export function CustomerOrderCard({
             )}
 
             {/* Detail Navigation button */}
-            <button
-              type="button"
-              onClick={() => router.push(`/orders/products/${order.id}`)}
-              className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-neutral-dark text-xs font-bold transition flex items-center gap-1"
+            <Link
+              href={`/orders/products/${order.id}`}
+              prefetch={true}
+              onClick={(e) => e.stopPropagation()}
+              className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-neutral-dark text-xs font-bold transition flex items-center gap-1 cursor-pointer"
             >
               <span>Detail</span>
               <ArrowRight size={13} weight="bold" />
-            </button>
+            </Link>
           </div>
         </div>
       </div>

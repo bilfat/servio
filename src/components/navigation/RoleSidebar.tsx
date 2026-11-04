@@ -119,8 +119,11 @@ export function RoleSidebar({
               <p className="text-[10px] uppercase font-bold text-neutral-slate tracking-wider">
                 Workspace
               </p>
-              <p className="text-xs font-bold text-neutral-dark font-display truncate">
-                {user.organizationName || activeRole.replace(/_/g, " ")}
+              <p
+                className="text-xs font-bold text-neutral-dark font-display truncate"
+                suppressHydrationWarning
+              >
+                {user.organizationName || effectiveRole.replace(/_/g, " ")}
               </p>
             </div>
           ) : (
@@ -244,8 +247,12 @@ export function RoleSidebar({
           {!isCollapsed ? (
             <div className="space-y-2">
               <div className="space-y-0.5">
-                <p className="font-semibold text-neutral-dark truncate">{user.name}</p>
-                <p className="text-[10px] truncate text-neutral-slate">{user.email}</p>
+                <p className="font-semibold text-neutral-dark truncate" suppressHydrationWarning>
+                  {user.name}
+                </p>
+                <p className="text-[10px] truncate text-neutral-slate" suppressHydrationWarning>
+                  {user.email}
+                </p>
               </div>
               <button
                 type="button"
@@ -319,8 +326,11 @@ export function RoleSidebar({
                 <p className="text-[10px] uppercase font-bold text-neutral-slate tracking-wider">
                   Workspace
                 </p>
-                <p className="text-xs font-bold text-neutral-dark font-display truncate">
-                  {user.organizationName || activeRole.replace(/_/g, " ")}
+                <p
+                  className="text-xs font-bold text-neutral-dark font-display truncate"
+                  suppressHydrationWarning
+                >
+                  {user.organizationName || effectiveRole.replace(/_/g, " ")}
                 </p>
               </div>
               <button
@@ -437,11 +447,17 @@ export function RoleSidebar({
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="font-semibold text-xs text-neutral-dark truncate leading-tight">
+                  <p
+                    className="font-semibold text-xs text-neutral-dark truncate leading-tight"
+                    suppressHydrationWarning
+                  >
                     {user.name}
                   </p>
-                  <p className="text-[10px] text-neutral-slate capitalize leading-tight truncate">
-                    {activeRole.toLowerCase().replace(/_/g, " ")}
+                  <p
+                    className="text-[10px] text-neutral-slate capitalize leading-tight truncate"
+                    suppressHydrationWarning
+                  >
+                    {effectiveRole.toLowerCase().replace(/_/g, " ")}
                   </p>
                 </div>
               </div>

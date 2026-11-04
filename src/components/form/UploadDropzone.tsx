@@ -7,6 +7,7 @@ import {
   FilmStrip,
   Trash,
   CheckCircle,
+  WarningCircle,
 } from "@phosphor-icons/react";
 
 export interface UploadedFile {
@@ -23,6 +24,7 @@ export interface UploadDropzoneProps {
   helperText?: string;
   accept?: string;
   maxFiles?: number;
+  maxFileSizeMb?: number;
   files?: UploadedFile[];
   onFilesChange?: (files: UploadedFile[]) => void;
   disabled?: boolean;
@@ -30,36 +32,22 @@ export interface UploadDropzoneProps {
 
 export function UploadDropzone({
   label = "Unggah Bukti Foto / Video Kerusakan",
-  helperText = "Maksimal 5 berkas (JPG, PNG, MP4 hingga 25MB per berkas)",
-  accept = "image/*,video/*",
+  helperText = "Maksimal 5 berkas (JPG, PNG, WebP, MP4 hingga 10MB per berkas)",
+  accept = "image/jpeg,image/png,image/webp,video/mp4,video/quicktime",
   maxFiles = 5,
+  maxFileSizeMb = 10,
   files = [],
   onFilesChange,
   disabled = false,
 }: UploadDropzoneProps) {
   const [internalFiles, setInternalFiles] = useState<UploadedFile[]>(files);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const activeFiles = onFilesChange ? files : internalFiles;
 
-  const handleAddSampleFile = (type: "image" | "video") => {
-    if (activeFiles.length >= maxFiles) return;
-
-    const newId = `file-${Date.now()}`;
-    const newFile: UploadedFile = {
-      id: newId,
-      name:
-        type === "image"
-          ? `bukti_kondisi_ac_${activeFiles.length + 1}.jpg`
-          : `video_suara_bocor_${activeFiles.length + 1}.mp4`,
-      size: type === "image" ? "2.4 MB" : "14.8 MB",
-      type,
-      url: "/brand/logo.png",
-      progress: 100,
-    };
-
-    const nextList = [...activeFiles, newFile];
+  const updateFiles = (nextList: UploadedFile[]) => {
     if (onFilesChange) {
       onFilesChange(nextList);
     } else {
@@ -67,13 +55,60 @@ export function UploadDropzone({
     }
   };
 
-  const handleRemoveFile = (id: string) => {
-    const nextList = activeFiles.filter((f) => f.id !== id);
-    if (onFilesChange) {
-      onFilesChange(nextList);
-    } else {
-      setInternalFiles(nextList);
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const handleProcessFiles = (selectedFiles: FileList | File[]) => {
+    setUploadError(null);
+    const fileArray = Array.from(selectedFiles);
+    if (fileArray.length === 0) return;
+
+    const remainingSlots = maxFiles - activeFiles.length;
+    if (remainingSlots <= 0) {
+      setUploadError(`Batas maksimal ${maxFiles} berkas telah tercapai.`);
+      return;
     }
+
+    const filesToProcess = fileArray.slice(0, remainingSlots);
+    const maxSizeBytes = maxFileSizeMb * 1024 * 1024;
+
+    filesToProcess.forEach((file) => {
+      if (file.size > maxSizeBytes) {
+        setUploadError(`Berkas "${file.name}" (${formatFileSize(file.size)}) melebihi batas maksimal ${maxFileSizeMb}MB.`);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string;
+        const isVideo = file.type.startsWith("video/");
+        const newFile: UploadedFile = {
+          id: `file-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          name: file.name,
+          size: formatFileSize(file.size),
+          type: isVideo ? "video" : "image",
+          url: dataUrl || "",
+          progress: 100,
+        };
+
+        updateFiles([...activeFiles, newFile]);
+      };
+
+      reader.onerror = () => {
+        setUploadError(`Gagal membaca berkas "${file.name}". Silakan coba lagi.`);
+      };
+
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleRemoveFile = (id: string) => {
+    setUploadError(null);
+    const nextList = activeFiles.filter((f) => f.id !== id);
+    updateFiles(nextList);
   };
 
   return (
@@ -94,11 +129,13 @@ export function UploadDropzone({
         onDrop={(e) => {
           e.preventDefault();
           setIsDragOver(false);
-          if (!disabled) handleAddSampleFile("image");
+          if (!disabled && e.dataTransfer.files) {
+            handleProcessFiles(e.dataTransfer.files);
+          }
         }}
         onClick={() => {
           if (!disabled && fileInputRef.current) {
-            handleAddSampleFile("image");
+            fileInputRef.current.click();
           }
         }}
         className={`relative border-2 border-dashed rounded-2xl p-6 sm:p-8 text-center transition-all cursor-pointer flex flex-col items-center justify-center space-y-3 ${
@@ -114,32 +151,18 @@ export function UploadDropzone({
         <div className="space-y-1 max-w-sm">
           <p className="text-xs font-bold text-neutral-dark font-display">
             Tarik & lepas berkas foto/video di sini, atau{" "}
-            <span className="text-primary underline">klik untuk memilih</span>
+            <span className="text-primary underline font-extrabold">klik untuk memilih dari perangkat</span>
           </p>
           <p className="text-[11px] text-neutral-slate">{helperText}</p>
         </div>
 
-        <div className="flex items-center gap-2 pt-1">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleAddSampleFile("image");
-            }}
-            className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-neutral-dark text-[10px] font-semibold hover:bg-slate-50 shadow-servio-xs flex items-center gap-1"
-          >
-            <ImageIcon size={12} className="text-primary" /> + Simulasi Foto
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleAddSampleFile("video");
-            }}
-            className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-neutral-dark text-[10px] font-semibold hover:bg-slate-50 shadow-servio-xs flex items-center gap-1"
-          >
-            <FilmStrip size={12} className="text-secondary" /> + Simulasi Video
-          </button>
+        <div className="flex items-center gap-2 pt-1 text-[11px] text-slate-500 font-medium">
+          <span className="inline-flex items-center gap-1 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
+            <ImageIcon size={14} className="text-primary" /> Format: JPG, PNG, WebP
+          </span>
+          <span className="inline-flex items-center gap-1 bg-white px-2.5 py-1 rounded-lg border border-slate-200">
+            <FilmStrip size={14} className="text-secondary" /> Video: MP4 (Maks. {maxFileSizeMb}MB)
+          </span>
         </div>
 
         <input
@@ -147,34 +170,57 @@ export function UploadDropzone({
           type="file"
           accept={accept}
           multiple
+          onChange={(e) => {
+            if (e.target.files) {
+              handleProcessFiles(e.target.files);
+              e.target.value = ""; // Reset to allow re-upload of same file name
+            }
+          }}
           className="sr-only"
         />
       </div>
 
+      {/* File Size or Count Warning */}
+      {uploadError && (
+        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 flex items-center gap-2">
+          <WarningCircle size={16} weight="fill" className="shrink-0" />
+          <span>{uploadError}</span>
+        </div>
+      )}
+
       {/* Uploaded Files Preview List */}
       {activeFiles.length > 0 && (
         <div className="space-y-2 pt-1">
-          <div className="flex items-center justify-between text-[11px] text-neutral-slate">
+          <div className="flex items-center justify-between text-[11px] text-neutral-slate font-medium">
             <span>Berkas Terunggah ({activeFiles.length}/{maxFiles})</span>
+            <span className="text-emerald-600 font-semibold">Tersimpan dalam permohonan</span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {activeFiles.map((file) => {
               return (
                 <div
                   key={file.id}
-                  className="flex items-center justify-between p-3 rounded-xl bg-white border border-slate-200 shadow-servio-xs gap-3"
+                  className="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-200 shadow-servio-xs gap-3 transition-all hover:border-slate-300"
                 >
                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <div className="p-2 rounded-lg bg-sky text-primary shrink-0">
-                      {file.type === "image" ? (
-                        <ImageIcon size={18} weight="duotone" />
-                      ) : (
-                        <FilmStrip size={18} weight="duotone" />
-                      )}
-                    </div>
+                    {file.type === "image" && file.url ? (
+                      <img
+                        src={file.url}
+                        alt={file.name}
+                        className="w-12 h-12 rounded-lg object-cover border border-slate-200 shrink-0 bg-slate-100"
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-lg bg-sky text-primary flex items-center justify-center shrink-0">
+                        {file.type === "image" ? (
+                          <ImageIcon size={22} weight="duotone" />
+                        ) : (
+                          <FilmStrip size={22} weight="duotone" />
+                        )}
+                      </div>
+                    )}
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-semibold text-neutral-dark truncate">
+                      <p className="text-xs font-semibold text-neutral-dark truncate" title={file.name}>
                         {file.name}
                       </p>
                       <div className="flex items-center gap-2 mt-0.5">
@@ -190,8 +236,11 @@ export function UploadDropzone({
 
                   <button
                     type="button"
-                    onClick={() => handleRemoveFile(file.id)}
-                    className="p-1.5 rounded-lg text-neutral-slate hover:text-error hover:bg-rose-50 transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleRemoveFile(file.id);
+                    }}
+                    className="p-2 rounded-lg text-neutral-slate hover:text-rose-600 hover:bg-rose-50 transition-colors shrink-0"
                     title="Hapus berkas"
                     aria-label="Hapus berkas"
                   >

@@ -71,7 +71,7 @@ class OpsFinanceController extends Controller
 
     public function withdrawals(Request $request): JsonResponse
     {
-        $query = WithdrawalRequest::with('bankDestination')->latest();
+        $query = WithdrawalRequest::with(['bankDestination', 'spayAccount'])->latest();
 
         if ($status = $request->query('status')) {
             $query->where('status', $status);

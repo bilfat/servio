@@ -55,6 +55,54 @@ class InternalCheckoutController extends Controller
         ], 201);
     }
 
+    public function createServiceQuote(\Illuminate\Http\Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'checkout_group_id' => 'required|string|max:64',
+            'customer_id' => 'required|string|max:64',
+            'provider_org_id' => 'required|string|max:64',
+            'merchant_order_id' => 'required|string|max:64',
+            'purpose' => 'required|string|in:DIAGNOSIS,SERVICE_EXECUTION',
+            'labor_subtotal_idr' => 'required|integer|min:0',
+            'provider_part_subtotal_idr' => 'nullable|integer|min:0',
+            'currency' => 'nullable|string|size:3',
+        ]);
+
+        $checkout = $this->pricingService->quoteServiceCheckout($validated);
+
+        $allocations = $checkout->paymentAllocations->map(fn ($alloc) => [
+            'merchant_order_id' => $alloc->merchant_order_id,
+            'merchant_org_id' => $alloc->merchant_org_id,
+            'product_subtotal_idr' => $alloc->product_subtotal_idr,
+            'shipping_customer_idr' => $alloc->shipping_customer_idr,
+            'app_fee_allocated_idr' => $alloc->app_fee_allocated_idr,
+            'discount_allocated_idr' => $alloc->discount_allocated_idr,
+            'discount_bearer' => $alloc->fee_snapshot['discount_bearer'] ?? 'MERCHANT',
+            'customer_total_idr' => $alloc->customer_total_idr,
+            'merchant_commission_idr' => $alloc->merchant_commission_idr,
+            'merchant_fee_breakdown' => $alloc->fee_snapshot['merchant_fee_breakdown'] ?? [],
+            'merchant_net_entitlement_idr' => $alloc->merchant_net_entitlement_idr,
+        ]);
+
+        return ApiResponse::success([
+            'checkout_group_id' => $checkout->checkout_group_id,
+            'customer_id' => $checkout->customer_id,
+            'quote_status' => $checkout->status,
+            'currency' => $checkout->currency,
+            'product_subtotal_idr' => $checkout->product_subtotal_idr,
+            'labor_subtotal_idr' => (int) ($validated['labor_subtotal_idr'] ?? $checkout->product_subtotal_idr),
+            'provider_part_subtotal_idr' => (int) ($validated['provider_part_subtotal_idr'] ?? 0),
+            'shipping_total_idr' => 0,
+            'customer_application_fee_idr' => $checkout->customer_app_fee_idr,
+            'tax_total_idr' => 0,
+            'tax_status' => 'MOCK_FIXTURE',
+            'customer_total_idr' => $checkout->customer_payable_total_idr,
+            'allocations' => $allocations,
+            'policy_versions' => $checkout->pricing_policy_snapshot,
+            'payload_hash' => $checkout->checkout_payload_hash,
+        ], 201);
+    }
+
     public function createPaymentIntent(CreatePaymentIntentRequest $request, string $checkoutGroupId): JsonResponse
     {
         $data = $request->validated();
@@ -122,24 +170,24 @@ class InternalCheckoutController extends Controller
 
     public function voidPaymentIntent(\Illuminate\Http\Request $request, string $paymentId): JsonResponse
     {
-        $payment = PaymentIntent::where('id', $paymentId)->first();
-        if (!$payment) {
-            return ApiResponse::error('PAYMENT_NOT_FOUND', 'Data payment intent tidak ditemukan.', 404);
-        }
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($paymentId) {
+            $payment = PaymentIntent::where('id', $paymentId)->lockForUpdate()->first();
+            if (!$payment) {
+                return ApiResponse::error('PAYMENT_NOT_FOUND', 'Data payment intent tidak ditemukan.', 404);
+            }
 
-        if ($payment->status === 'PAID') {
-            return ApiResponse::error('PAYMENT_ALREADY_PAID', 'Pembayaran telah lunas dan tidak dapat di-void.', 409);
-        }
+            if ($payment->status === 'PAID') {
+                return ApiResponse::error('PAYMENT_ALREADY_PAID', 'Pembayaran telah lunas dan tidak dapat di-void.', 409);
+            }
 
-        if ($payment->status === 'VOIDED' || $payment->status === 'CANCELLED') {
-            return ApiResponse::success([
-                'payment_id' => $payment->id,
-                'status' => $payment->status,
-                'message' => 'Payment intent sudah dibatalkan sebelumnya.',
-            ]);
-        }
+            if ($payment->status === 'VOIDED' || $payment->status === 'CANCELLED') {
+                return ApiResponse::success([
+                    'payment_id' => $payment->id,
+                    'status' => $payment->status,
+                    'message' => 'Payment intent sudah dibatalkan sebelumnya.',
+                ]);
+            }
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($payment) {
             $payment->update([
                 'status' => 'CANCELLED',
                 'is_active' => false,
@@ -169,12 +217,12 @@ class InternalCheckoutController extends Controller
                 'result' => 'SUCCESS',
                 'after_state' => ['status' => 'CANCELLED'],
             ]);
-        });
 
-        return ApiResponse::success([
-            'payment_id' => $payment->id,
-            'status' => 'CANCELLED',
-            'message' => 'Payment intent berhasil di-void.',
-        ]);
+            return ApiResponse::success([
+                'payment_id' => $payment->id,
+                'status' => 'CANCELLED',
+                'message' => 'Payment intent berhasil di-void.',
+            ]);
+        });
     }
 }

@@ -25,6 +25,11 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [
       {
+        source: "/worker/schedule",
+        destination: "/worker/jobs",
+        permanent: false,
+      },
+      {
         source: "/provider/proof/:orderId",
         destination: "/provider/orders/:orderId",
         permanent: false,
@@ -110,11 +115,7 @@ const nextConfig: NextConfig = {
         source: "/api/v1/order-barang",
         destination: "http://127.0.0.1:8005/api/v1/order-barang",
       },
-      // Finance Service (Modul 06 - Port 8006)
-      {
-        source: "/api/v1/finance/:path*",
-        destination: "http://127.0.0.1:8006/api/v1/finance/:path*",
-      },
+
       // Category Service (Modul 02 - Port 8002)
       {
         source: "/api/v1/category-masters/:path*",
@@ -316,6 +317,15 @@ const nextConfig: NextConfig = {
       {
         source: "/api/v1/order-barang",
         destination: "http://127.0.0.1:8005/api/v1/order-barang",
+      },
+      // Order Jasa Service (Modul 05B - Port 8007)
+      {
+        source: "/api/v1/order-jasa/:path*",
+        destination: "http://127.0.0.1:8007/api/v1/order-jasa/:path*",
+      },
+      {
+        source: "/api/v1/order-jasa",
+        destination: "http://127.0.0.1:8007/api/v1/order-jasa",
       },
       // Identity Service (Modul 01 - Port 8001)
       {

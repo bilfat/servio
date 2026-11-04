@@ -205,14 +205,41 @@ class FeePolicyController extends Controller
 
     public function revenueOverview(Request $request): JsonResponse
     {
-        $appFeeCollected = (int) DB::table('payment_allocations')
+        $servicePredicate = function ($q) {
+            $q->where('payment_allocations.merchant_order_id', 'like', 'SO-%')
+              ->orWhere('payment_allocations.merchant_order_id', 'like', 'SRV%')
+              ->orWhere('payment_allocations.merchant_order_id', 'like', 'ORD-JASA%')
+              ->orWhere('payment_allocations.merchant_order_id', 'like', 'SERVICE%')
+              ->orWhere('payment_allocations.merchant_order_id', 'like', '%-diagnosis%')
+              ->orWhere('payment_allocations.merchant_order_id', 'like', '%-service_execution%');
+        };
+
+        // 1. Fee Aplikasi Pelanggan Barang (05A)
+        $customerProductFee = (int) DB::table('payment_allocations')
             ->join('payment_intents', 'payment_allocations.finance_checkout_id', '=', 'payment_intents.finance_checkout_id')
             ->where('payment_intents.status', 'PAID')
+            ->whereNot($servicePredicate)
             ->sum('payment_allocations.app_fee_allocated_idr');
 
-        $commissionCollected = (int) DB::table('payment_allocations')
+        // 2. Komisi Penjualan Toko Barang (05A)
+        $merchantProductCommission = (int) DB::table('payment_allocations')
             ->join('payment_intents', 'payment_allocations.finance_checkout_id', '=', 'payment_intents.finance_checkout_id')
             ->where('payment_intents.status', 'PAID')
+            ->whereNot($servicePredicate)
+            ->sum('payment_allocations.merchant_commission_idr');
+
+        // 3. Fee Aplikasi Pelanggan Jasa (05B)
+        $customerServiceFee = (int) DB::table('payment_allocations')
+            ->join('payment_intents', 'payment_allocations.finance_checkout_id', '=', 'payment_intents.finance_checkout_id')
+            ->where('payment_intents.status', 'PAID')
+            ->where($servicePredicate)
+            ->sum('payment_allocations.app_fee_allocated_idr');
+
+        // 4. Komisi Mitra Jasa (05B)
+        $providerCommission = (int) DB::table('payment_allocations')
+            ->join('payment_intents', 'payment_allocations.finance_checkout_id', '=', 'payment_intents.finance_checkout_id')
+            ->where('payment_intents.status', 'PAID')
+            ->where($servicePredicate)
             ->sum('payment_allocations.merchant_commission_idr');
 
         $paymentVolume = (int) DB::table('payment_intents')
@@ -223,8 +250,35 @@ class FeePolicyController extends Controller
             ->where('status', 'HELD')
             ->sum('merchant_entitlement_idr');
 
+        $serviceProviderOrgIds = DB::table('payment_allocations')
+            ->where($servicePredicate)
+            ->pluck('merchant_org_id')
+            ->unique()
+            ->filter()
+            ->values()
+            ->toArray();
+
+        $knownProviderOrgs = [
+            '0740d857-b665-4191-aaf5-d7dd3611dc1d', // PT Servio Mandiri Teknik
+            '087c97b7-2c46-4b97-ba35-1177dd72ba3a', // Bengkel Sejuk Sentosa AC
+        ];
+        $providerOrgIds = array_values(array_unique(array_merge($serviceProviderOrgIds, $knownProviderOrgs)));
+
+        // S-Pay Mitra Toko Tersedia (Barang 05A)
         $merchantPayable = (int) DB::table('spay_accounts')
             ->where('owner_type', 'MERCHANT_ORGANIZATION')
+            ->whereNotIn('owner_external_id', $providerOrgIds)
+            ->sum('available_idr');
+
+        // S-Pay Mitra Jasa Tersedia (Servis 05B)
+        $providerPayable = (int) DB::table('spay_accounts')
+            ->where(function ($q) use ($providerOrgIds) {
+                $q->whereIn('owner_type', ['PROVIDER_ORGANIZATION', 'PROVIDER', 'SERVICE_PROVIDER'])
+                  ->orWhere(function ($sub) use ($providerOrgIds) {
+                      $sub->where('owner_type', 'MERCHANT_ORGANIZATION')
+                          ->whereIn('owner_external_id', $providerOrgIds);
+                  });
+            })
             ->sum('available_idr');
 
         $customerRefundBalance = (int) DB::table('spay_accounts')
@@ -232,12 +286,15 @@ class FeePolicyController extends Controller
             ->sum('available_idr');
 
         return ApiResponse::success([
-            'customer_product_app_fee_idr' => $appFeeCollected,
-            'merchant_product_commission_idr' => $commissionCollected,
-            'total_collected_fee_idr' => $appFeeCollected + $commissionCollected,
+            'customer_product_app_fee_idr' => $customerProductFee,
+            'merchant_product_commission_idr' => $merchantProductCommission,
+            'customer_service_app_fee_idr' => $customerServiceFee,
+            'provider_service_commission_idr' => $providerCommission,
+            'total_collected_fee_idr' => $customerProductFee + $merchantProductCommission + $customerServiceFee + $providerCommission,
             'mock_payment_volume_idr' => $paymentVolume,
             'held_liability_idr' => $heldLiability,
             'merchant_payable_idr' => $merchantPayable,
+            'provider_payable_idr' => $providerPayable,
             'customer_refund_liability_idr' => $customerRefundBalance,
             'provider_service_fee' => 'NOT_IMPLEMENTED',
             'accounting_status' => 'PENDING_ACCOUNTING_POLICY',

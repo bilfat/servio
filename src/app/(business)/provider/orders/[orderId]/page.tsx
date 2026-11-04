@@ -38,11 +38,14 @@ import { useProviderOperations } from "@/features/provider/useProviderOperations
 import { useDomainRepository } from "@/lib/repository/domainRepository";
 import { Toast } from "@/components/feedback/Toast";
 import { Button } from "@/components/ui/Button";
+import { getStoredWorkerPhoto } from "@/features/worker/workerPhotoHelper";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { EmptyState } from "@/components/feedback/EmptyState";
 import { getAffiliateStatusBadgeInfo } from "@/lib/policy/affiliatePolicy";
 import { WorkerTechnician } from "@/types/domain";
+import { useOrderJasa } from "@/features/order-jasa/hooks/useOrderJasa";
+import { ServiceOrderDetailLayout } from "@/features/order-jasa/components/common/ServiceOrderDetailLayout";
 
 interface OrderWorkerEligibility {
   worker: WorkerTechnician;
@@ -52,9 +55,80 @@ interface OrderWorkerEligibility {
 
 export default function ProviderOrderDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const orderId = (params?.orderId as string) || "";
 
+  const { orders: serviceOrders05B, fetchOrderById, isLoading } = useOrderJasa();
+  const order05B = serviceOrders05B.find(
+    (o) => o.id === orderId || o.orderNumber === orderId
+  );
+  const [asyncOrder05B, setAsyncOrder05B] = useState<any>(null);
+  const [isFetchingAsync, setIsFetchingAsync] = useState(false);
+
+  const [hasAttemptedFetch, setHasAttemptedFetch] = useState(false);
+
+  React.useEffect(() => {
+    if (orderId && fetchOrderById) {
+      if (!order05B) {
+        setIsFetchingAsync(true);
+      }
+      fetchOrderById(orderId, true)
+        .then((res: any) => {
+          if (res) setAsyncOrder05B(res);
+        })
+        .finally(() => {
+          setIsFetchingAsync(false);
+          setHasAttemptedFetch(true);
+        });
+    }
+  }, [orderId, fetchOrderById]);
+
+  const active05B = asyncOrder05B || order05B;
+
+  if (active05B) {
+    return (
+      <ServiceOrderDetailLayout
+        order={active05B}
+        role="PROVIDER"
+        backHref="/provider/orders"
+        onOrderUpdated={(updated) => setAsyncOrder05B(updated)}
+      />
+    );
+  }
+
+  if (isFetchingAsync || (isLoading && !hasAttemptedFetch)) {
+    return (
+      <div className="py-24 max-w-xl mx-auto flex flex-col items-center justify-center space-y-3">
+        <div className="w-9 h-9 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        <p className="text-xs text-slate-500 font-semibold">Memuat rincian pesanan jasa...</p>
+      </div>
+    );
+  }
+
+  const isLegacyMockId = orderId.startsWith("SRV-") || orderId.startsWith("SC-");
+  if (isLegacyMockId) {
+    return <LegacyProviderOrderDetail orderId={orderId} />;
+  }
+
+  return (
+    <div className="py-16 max-w-lg mx-auto">
+      <EmptyState
+        title="Pesanan Jasa Tidak Ditemukan"
+        description={`Pesanan jasa dengan ID "${orderId}" tidak ditemukan pada sistem.`}
+        action={
+          <Link
+            href="/provider/orders"
+            className="px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition shadow-xs"
+          >
+            Kembali ke Daftar Pesanan
+          </Link>
+        }
+      />
+    </div>
+  );
+}
+
+function LegacyProviderOrderDetail({ orderId }: { orderId: string }) {
+  const router = useRouter();
   const { orders, authorizePriceAdjustment, verifyProofOfService, getOrderById } = useServiceOrder(orderId);
   const { workers } = useProviderOperations();
   const repo = useDomainRepository();
@@ -899,15 +973,31 @@ export default function ProviderOrderDetailPage() {
 
             {/* Technician Profile Card */}
             {foundOrder.assignedWorker && (
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1 mt-3">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Teknisi Bertugas
-                </span>
-                <p className="font-bold text-slate-900 text-sm">{foundOrder.assignedWorker.name}</p>
-                <p className="text-slate-500 font-mono">{foundOrder.assignedWorker.phone}</p>
-                <p className="text-[11px] text-emerald-700 font-semibold mt-1">
-                  Rating: ★ {foundOrder.assignedWorker.rating || "4.9"} (Teknisi Tersertifikasi)
-                </p>
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 flex items-center gap-3 mt-3">
+                {(() => {
+                  const photo = getStoredWorkerPhoto(foundOrder.assignedWorker.id) || (foundOrder.assignedWorker as any).avatarUrl || (foundOrder.assignedWorker as any).photo;
+                  return photo ? (
+                    <img
+                      src={photo}
+                      alt={foundOrder.assignedWorker.name}
+                      className="w-12 h-12 rounded-xl object-cover border border-slate-200 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-[#0F4C81] to-sky-600 flex items-center justify-center text-white font-bold text-sm shrink-0">
+                      {foundOrder.assignedWorker.name?.charAt(0) || "T"}
+                    </div>
+                  );
+                })()}
+                <div className="space-y-0.5 min-w-0 flex-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                    Teknisi Bertugas
+                  </span>
+                  <p className="font-bold text-slate-900 text-sm truncate">{foundOrder.assignedWorker.name}</p>
+                  <p className="text-slate-500 font-mono text-xs">{foundOrder.assignedWorker.phone}</p>
+                  <p className="text-[11px] text-emerald-700 font-semibold">
+                    Teknisi Tersertifikasi Servio
+                  </p>
+                </div>
               </div>
             )}
           </div>
@@ -1244,7 +1334,6 @@ export default function ProviderOrderDetailPage() {
                   {isEligible ? "✓ [Memenuhi] " : "✗ [Tidak Memenuhi] "}
                   {worker.name} — {worker.isOnline ? "Standby" : "Offline"}
                   {isEligible && matchedServiceName ? ` (Kompetensi: ${matchedServiceName})` : ""}
-                  {` (★ ${worker.rating || "4.9"})`}
                 </option>
               ))}
             </select>

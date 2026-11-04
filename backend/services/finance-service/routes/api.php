@@ -63,13 +63,13 @@ Route::prefix('v1/finance')->group(function () {
         ->middleware(['finance.auth', 'finance.role:CUSTOMER']);
 
     Route::get('/spay/organizations/{org_id}', [SPayController::class, 'organizationAccount'])
-        ->middleware(['finance.auth', 'finance.role:MERCHANT,FINANCE_PAYMENT_OPS']);
+        ->middleware(['finance.auth', 'finance.role:MERCHANT,SERVICE_PROVIDER,PROVIDER,FINANCE_PAYMENT_OPS']);
 
     Route::get('/spay/organizations/{org_id}/movements', [SPayController::class, 'organizationMovements'])
-        ->middleware(['finance.auth', 'finance.role:MERCHANT,FINANCE_PAYMENT_OPS']);
+        ->middleware(['finance.auth', 'finance.role:MERCHANT,SERVICE_PROVIDER,PROVIDER,FINANCE_PAYMENT_OPS']);
 
     Route::get('/held-funds', [SPayController::class, 'heldFunds'])
-        ->middleware(['finance.auth', 'finance.role:MERCHANT,FINANCE_PAYMENT_OPS']);
+        ->middleware(['finance.auth', 'finance.role:MERCHANT,SERVICE_PROVIDER,PROVIDER,FINANCE_PAYMENT_OPS']);
 
     // Bank Destinations
     Route::get('/bank-destinations', [BankDestinationController::class, 'index'])

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { RoleProvider } from "@/context/RoleContext";
 import { LocationProvider } from "@/context/LocationContext";
-import { LocationPickerModal } from "@/components/features/location/LocationPickerModal";
+import { LocationPickerModal } from "../components/features/location/LocationPickerModal";
 import { PageLoadingProvider } from "@/components/feedback/PageLoadingProvider";
 import { FlyToCartHost } from "@/components/feedback/FlyToCart";
 import { SPayProvider } from "@/features/spay/spay.frontend-provider";

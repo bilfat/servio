@@ -139,8 +139,8 @@ const DEV_ROLE_ACCOUNTS: DevRoleOption[] = [
   {
     role: "WORKER_TECHNICIAN",
     label: "Worker / Teknisi",
-    name: "Bambang Sudirman",
-    email: "worker@servio.id",
+    name: "Ahmad Teknisi",
+    email: "ahmad.teknisi@servio.id",
     password: "12345678",
     badge: "Teknisi",
     dest: "/worker/dashboard",

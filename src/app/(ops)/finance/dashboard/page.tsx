@@ -18,6 +18,7 @@ import {
   ArrowsClockwise,
   ClockCounterClockwise,
   X,
+  Wrench,
   ChartPie,
   ChartBar,
   ChartLineUp,
@@ -70,7 +71,7 @@ export default function FinanceDashboardPage() {
 
   // Interactive hover tooltip states for charts
   const [hoveredWaterfallIndex, setHoveredWaterfallIndex] = useState<number | null>(null);
-  const [hoveredDonutSegment, setHoveredDonutSegment] = useState<"CUST_FEE" | "MERCH_COMM" | null>(null);
+  const [hoveredDonutSegment, setHoveredDonutSegment] = useState<"CUST_FEE" | "MERCH_COMM" | "PROV_COMM" | null>(null);
 
   const fetchFinanceDashboardData = async () => {
     try {
@@ -113,6 +114,12 @@ export default function FinanceDashboardPage() {
 
   useEffect(() => {
     fetchFinanceDashboardData();
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && !document.hidden) {
+        fetchFinanceDashboardData();
+      }
+    }, 4500);
+    return () => clearInterval(interval);
   }, []);
 
   const handleRefresh = () => {
@@ -126,27 +133,31 @@ export default function FinanceDashboardPage() {
   const grossVolume = revenueData?.mock_payment_volume_idr || 0;
   const escrowHeld = revenueData?.held_liability_idr || 0;
   const merchantPayable = revenueData?.merchant_payable_idr || 0;
+  const providerPayable = revenueData?.provider_payable_idr || 0;
   const customerRefund = revenueData?.customer_refund_liability_idr || 0;
   const platformRevenue = revenueData?.total_collected_fee_idr || 0;
 
   // Safe Total for Cash Allocation Bar
   const safeTotalAlloc = Math.max(
     grossVolume,
-    escrowHeld + merchantPayable + customerRefund + platformRevenue,
+    escrowHeld + merchantPayable + providerPayable + customerRefund + platformRevenue,
     1
   );
 
   const escrowPct = Math.round((escrowHeld / safeTotalAlloc) * 100);
   const merchantPct = Math.round((merchantPayable / safeTotalAlloc) * 100);
+  const providerPct = Math.round((providerPayable / safeTotalAlloc) * 100);
   const refundPct = Math.round((customerRefund / safeTotalAlloc) * 100);
   const revenuePct = Math.round((platformRevenue / safeTotalAlloc) * 100);
 
-  // Revenue Streams Split
-  const custFee = revenueData?.customer_product_app_fee_idr || 0;
+  // Revenue Streams Split (Barang & Jasa)
+  const custFee = (revenueData?.customer_product_app_fee_idr || 0) + (revenueData?.customer_service_app_fee_idr || 0);
   const merchComm = revenueData?.merchant_product_commission_idr || 0;
-  const totalStream = Math.max(custFee + merchComm, 1);
+  const provComm = revenueData?.provider_service_commission_idr || 0;
+  const totalStream = Math.max(custFee + merchComm + provComm, 1);
   const custFeePct = Math.round((custFee / totalStream) * 100);
-  const merchCommPct = 100 - custFeePct;
+  const merchCommPct = Math.round((merchComm / totalStream) * 100);
+  const provCommPct = Math.max(0, 100 - custFeePct - merchCommPct);
 
   // Payments Status Funnel
   const paidCount = recentPayments.filter((p) => p.status === "PAID").length;
@@ -386,6 +397,15 @@ export default function FinanceDashboardPage() {
                           onMouseEnter={() => setHoveredWaterfallIndex(1)}
                           onMouseLeave={() => setHoveredWaterfallIndex(null)}
                         />
+                        {/* 2b. Provider Payable */}
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${Math.max(providerPct, 4)}%` }}
+                          transition={{ duration: 0.8, delay: 0.15, ease: "easeOut" }}
+                          className="h-full bg-violet-500 rounded-lg cursor-pointer hover:brightness-110 transition relative group"
+                          onMouseEnter={() => setHoveredWaterfallIndex(4)}
+                          onMouseLeave={() => setHoveredWaterfallIndex(null)}
+                        />
                         {/* 3. Customer Refund */}
                         <motion.div
                           initial={{ width: 0 }}
@@ -456,6 +476,31 @@ export default function FinanceDashboardPage() {
                         </p>
                         <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-1">
                           Hak toko yang telah tuntas masa tahan dan dapat dicairkan ke bank
+                        </p>
+                      </motion.div>
+
+                      {/* 2b. S-Pay Mitra Jasa Siap Tarik */}
+                      <motion.div
+                        whileHover={{ scale: 1.01 }}
+                        className={`p-3.5 rounded-2xl border transition ${hoveredWaterfallIndex === 4
+                          ? "bg-violet-50/80 border-violet-300 shadow-xs"
+                          : "bg-slate-50/70 border-slate-200/70"
+                          }`}
+                      >
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-violet-500 shrink-0" />
+                            S-Pay Mitra Jasa (Siap Tarik)
+                          </span>
+                          <span className="text-[10px] font-bold text-violet-800 px-1.5 py-0.5 rounded-full bg-violet-100">
+                            {providerPct}%
+                          </span>
+                        </div>
+                        <p className="text-base font-extrabold text-slate-900 font-display">
+                          {formatCurrency(providerPayable)}
+                        </p>
+                        <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-1">
+                          Hak mitra jasa servis (05B) tuntas pengerjaan yang siap dicairkan
                         </p>
                       </motion.div>
 
@@ -654,7 +699,31 @@ export default function FinanceDashboardPage() {
                             {formatCurrency(merchComm)}
                           </p>
                           <p className="text-[10px] text-slate-500">
-                            5% dari subtotal suku cadang mitra toko
+                            Komisi bagi hasil penjualan produk barang mitra toko (05A)
+                          </p>
+                        </motion.div>
+
+                        <motion.div
+                          whileHover={{ scale: 1.02 }}
+                          className={`p-2.5 rounded-xl border transition ${hoveredDonutSegment === "PROV_COMM"
+                            ? "bg-violet-50/80 border-violet-500"
+                            : "bg-slate-50 border-slate-200/60"
+                            }`}
+                        >
+                          <div className="flex items-center justify-between mb-0.5">
+                            <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full bg-violet-500 shrink-0" />
+                              Komisi Mitra Jasa
+                            </span>
+                            <span className="font-extrabold text-violet-700 font-mono">
+                              {provCommPct}%
+                            </span>
+                          </div>
+                          <p className="text-xs font-bold text-slate-900 font-mono">
+                            {formatCurrency(provComm)}
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            Bagi hasil resmi pesanan jasa servis terstandar (05B)
                           </p>
                         </motion.div>
                       </div>
@@ -1220,26 +1289,41 @@ export default function FinanceDashboardPage() {
                           if (!activeVer) return null;
 
                           const custTarget = activeVer?.targets?.find(
-                            (t) => t.policy_code === "CUSTOMER_PRODUCT_APP_FEE"
+                            (t) =>
+                              t.policy_code === "CUSTOMER_PRODUCT_APP_FEE" ||
+                              t.policy_code === "CUSTOMER_SERVICE_APP_FEE" ||
+                              t.payer_type === "CUSTOMER"
                           );
                           const merchTarget = activeVer?.targets?.find(
-                            (t) => t.policy_code === "MERCHANT_PRODUCT_COMMISSION"
+                            (t) =>
+                              t.policy_code === "MERCHANT_PRODUCT_COMMISSION" ||
+                              (t.payer_type === "MERCHANT" && t.scope === "PRODUCT")
+                          );
+                          const provTarget = activeVer?.targets?.find(
+                            (t) =>
+                              t.policy_code === "PROVIDER_SERVICE_COMMISSION" ||
+                              t.payer_type === "PROVIDER" ||
+                              (t.scope === "SERVICE" && t.payer_type !== "CUSTOMER")
                           );
 
                           const hasCustomer = !!custTarget;
                           const hasMerchant = !!merchTarget;
+                          const hasProvider = !!provTarget;
+                          const targetCount = (hasCustomer ? 1 : 0) + (hasMerchant ? 1 : 0) + (hasProvider ? 1 : 0);
 
-                          const isBoth = hasCustomer && hasMerchant;
-                          const isCustomerOnly = hasCustomer && !hasMerchant;
-                          const isMerchantOnly = !hasCustomer && hasMerchant;
-
-                          const custSubtotal = hasCustomer ? (revenueData?.customer_product_app_fee_idr ?? 0) : 0;
+                          const custSubtotal = hasCustomer
+                            ? (revenueData?.customer_product_app_fee_idr ?? 0) + (revenueData?.customer_service_app_fee_idr ?? 0)
+                            : 0;
                           const merchSubtotal = hasMerchant ? (revenueData?.merchant_product_commission_idr ?? 0) : 0;
-                          const totalSubtotal = custSubtotal + merchSubtotal;
+                          const provSubtotal = hasProvider ? (revenueData?.provider_service_commission_idr ?? 0) : 0;
+                          const totalSubtotal = custSubtotal + merchSubtotal + provSubtotal;
 
                           const paidCheckouts = recentPayments.filter((p) => p.status === "PAID").length;
                           const checkoutsCount = hasCustomer ? paidCheckouts : 0;
                           const ordersCount = hasMerchant ? paidCheckouts : 0;
+                          const providerOrdersCount = hasProvider
+                            ? (revenueData?.provider_service_commission_idr ? Math.max(1, Math.round((revenueData?.provider_service_commission_idr || 0) / 10000)) : 0)
+                            : 0;
 
                           return (
                             <div
@@ -1249,19 +1333,39 @@ export default function FinanceDashboardPage() {
                               <div className="space-y-1.5">
                                 <div className="flex items-center justify-between gap-2">
                                   <div className="flex items-center gap-1.5 flex-wrap">
-                                    {isBoth && (
+                                    {hasCustomer && hasMerchant && hasProvider && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                        Pelanggan, Toko & Jasa
+                                      </span>
+                                    )}
+                                    {hasCustomer && hasMerchant && !hasProvider && (
                                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
                                         Pelanggan & Toko
                                       </span>
                                     )}
-                                    {isCustomerOnly && (
+                                    {hasCustomer && hasProvider && !hasMerchant && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200">
+                                        Pelanggan & Mitra Jasa
+                                      </span>
+                                    )}
+                                    {hasMerchant && hasProvider && !hasCustomer && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-50 text-violet-700 border border-violet-200">
+                                        Toko & Mitra Jasa
+                                      </span>
+                                    )}
+                                    {hasCustomer && !hasMerchant && !hasProvider && (
                                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
                                         Khusus Pelanggan
                                       </span>
                                     )}
-                                    {isMerchantOnly && (
+                                    {hasMerchant && !hasCustomer && !hasProvider && (
                                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
                                         Khusus Mitra Toko
+                                      </span>
+                                    )}
+                                    {hasProvider && !hasCustomer && !hasMerchant && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-50 text-violet-700 border border-violet-200">
+                                        Khusus Mitra Jasa
                                       </span>
                                     )}
                                     <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800">
@@ -1279,7 +1383,29 @@ export default function FinanceDashboardPage() {
                                 </h3>
                               </div>
 
-                              {isMerchantOnly && (
+                              {/* Format Single Target */}
+                              {targetCount === 1 && hasProvider && (
+                                <div className="grid grid-cols-2 gap-3 p-3 rounded-xl bg-violet-50/60 border border-violet-100">
+                                  <div>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-violet-700 block">
+                                      Total Pesanan Jasa
+                                    </span>
+                                    <span className="text-lg font-black text-slate-900 mt-0.5 block">
+                                      {providerOrdersCount} Pesanan Jasa
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-violet-700 block">
+                                      Total Pendapatan
+                                    </span>
+                                    <span className="text-lg font-black text-emerald-800 mt-0.5 block">
+                                      {formatCurrency(provSubtotal)}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+
+                              {targetCount === 1 && hasMerchant && (
                                 <div className="grid grid-cols-2 gap-3 p-3 rounded-xl bg-purple-50/60 border border-purple-100">
                                   <div>
                                     <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 block">
@@ -1300,7 +1426,7 @@ export default function FinanceDashboardPage() {
                                 </div>
                               )}
 
-                              {isCustomerOnly && (
+                              {targetCount === 1 && hasCustomer && (
                                 <div className="grid grid-cols-2 gap-3 p-3 rounded-xl bg-rose-50/60 border border-rose-100">
                                   <div>
                                     <span className="text-[10px] font-bold uppercase tracking-wider text-rose-700 block">
@@ -1321,24 +1447,39 @@ export default function FinanceDashboardPage() {
                                 </div>
                               )}
 
-                              {isBoth && (
+                              {/* Format Multi-Target (2 atau 3 Target) */}
+                              {targetCount > 1 && (
                                 <div className="space-y-2">
-                                  <div className="grid grid-cols-2 gap-2 text-xs">
-                                    <div className="p-2.5 rounded-xl bg-rose-50/50 border border-rose-100">
-                                      <span className="text-[10px] font-bold text-rose-700 uppercase block">Pelanggan</span>
-                                      <span className="font-extrabold text-slate-900 block mt-0.5">{checkoutsCount} Transaksi</span>
-                                      <span className="text-[11px] font-black text-emerald-800 block mt-0.5">
-                                        {formatCurrency(custSubtotal)}
-                                      </span>
-                                    </div>
+                                  <div className={`grid ${targetCount === 3 ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-2"} gap-2 text-xs`}>
+                                    {hasCustomer && (
+                                      <div className="p-2.5 rounded-xl bg-rose-50/50 border border-rose-100">
+                                        <span className="text-[10px] font-bold text-rose-700 uppercase block">Pelanggan</span>
+                                        <span className="font-extrabold text-slate-900 block mt-0.5">{checkoutsCount} Transaksi</span>
+                                        <span className="text-[11px] font-black text-emerald-800 block mt-0.5">
+                                          {formatCurrency(custSubtotal)}
+                                        </span>
+                                      </div>
+                                    )}
 
-                                    <div className="p-2.5 rounded-xl bg-purple-50/50 border border-purple-100">
-                                      <span className="text-[10px] font-bold text-purple-700 uppercase block">Mitra Toko</span>
-                                      <span className="font-extrabold text-slate-900 block mt-0.5">{ordersCount} Pesanan</span>
-                                      <span className="text-[11px] font-black text-emerald-800 block mt-0.5">
-                                        {formatCurrency(merchSubtotal)}
-                                      </span>
-                                    </div>
+                                    {hasMerchant && (
+                                      <div className="p-2.5 rounded-xl bg-purple-50/50 border border-purple-100">
+                                        <span className="text-[10px] font-bold text-purple-700 uppercase block">Mitra Toko</span>
+                                        <span className="font-extrabold text-slate-900 block mt-0.5">{ordersCount} Pesanan</span>
+                                        <span className="text-[11px] font-black text-emerald-800 block mt-0.5">
+                                          {formatCurrency(merchSubtotal)}
+                                        </span>
+                                      </div>
+                                    )}
+
+                                    {hasProvider && (
+                                      <div className="p-2.5 rounded-xl bg-violet-50/50 border border-violet-100">
+                                        <span className="text-[10px] font-bold text-violet-700 uppercase block">Mitra Jasa</span>
+                                        <span className="font-extrabold text-slate-900 block mt-0.5">{providerOrdersCount} Pesanan Jasa</span>
+                                        <span className="text-[11px] font-black text-emerald-800 block mt-0.5">
+                                          {formatCurrency(provSubtotal)}
+                                        </span>
+                                      </div>
+                                    )}
                                   </div>
 
                                   <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs px-3">
@@ -1457,8 +1598,8 @@ export default function FinanceDashboardPage() {
               {/* SUB-TAB 3: DANA MITRA, PELANGGAN & PENCAIRAN */}
               {activeTab === "MANAGED_FUNDS" && (
                 <div className="space-y-8">
-                  {/* 3 Managed Funds Cards */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* 4 Managed Funds Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     {/* 1. Dana Ditahan */}
                     <div className="bg-white rounded-3xl border border-slate-200/90 p-5 sm:p-6 shadow-xs space-y-3">
                       <div className="flex items-center justify-between">
@@ -1499,7 +1640,27 @@ export default function FinanceDashboardPage() {
                       </div>
                     </div>
 
-                    {/* 3. S-Pay Pelanggan (Cadangan Refund) */}
+                    {/* 3. S-Pay Mitra Jasa Siap Tarik */}
+                    <div className="bg-white rounded-3xl border border-slate-200/90 p-5 sm:p-6 shadow-xs space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                          S-Pay Mitra Jasa Tersedia
+                        </span>
+                        <span className="p-2 rounded-xl bg-violet-50 text-violet-700">
+                          <Wrench size={20} weight="duotone" />
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-2xl font-black font-display text-violet-800 block">
+                          {formatCurrency(revenueData?.provider_payable_idr ?? 0)}
+                        </span>
+                        <span className="text-[11px] text-slate-400 mt-1 block">
+                          Saldo penyedia jasa servis (05B) yang sudah bebas kliring, siap dicairkan ke rekening bank.
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* 4. S-Pay Pelanggan (Cadangan Refund) */}
                     <div className="bg-white rounded-3xl border border-slate-200/90 p-5 sm:p-6 shadow-xs space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">

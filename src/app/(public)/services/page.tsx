@@ -147,14 +147,22 @@ function ServicesCatalogContent() {
     return () => clearTimeout(handler);
   }, [searchQuery]);
 
-  // Sync with activeLocation from Beranda if no manual URL query overrides
+  // Sync with activeLocation from modal/GPS or URL query
   useEffect(() => {
-    if (urlCity) {
+    if (activeLocation?.city) {
+      const code = resolveLocationToCityCode(activeLocation.city);
+      setSelectedCityCode(code);
+      if (typeof window !== "undefined") {
+        const sp = new URLSearchParams(window.location.search);
+        if (sp.get("city") !== code) {
+          sp.set("city", code);
+          router.replace(`/services?${sp.toString()}`, { scroll: false });
+        }
+      }
+    } else if (urlCity) {
       setSelectedCityCode(urlCity);
-    } else if (activeLocation?.city) {
-      setSelectedCityCode(resolveLocationToCityCode(activeLocation.city));
     }
-  }, [urlCity, activeLocation?.city]);
+  }, [urlCity, activeLocation?.city, router]);
 
   // Handle city change
   const handleCityChange = (newCode: string) => {
@@ -515,47 +523,33 @@ function ServicesCatalogContent() {
               )}
             </div>
 
-            {/* GPS Location Pill (Terhubung Langsung dari Home / Beranda) */}
-            <div className="flex flex-wrap items-center gap-2 self-end lg:self-auto shrink-0">
-              <button
-                type="button"
-                onClick={openLocationModal}
-                className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-[#0F4C81] border border-sky-200 text-xs font-semibold transition cursor-pointer shadow-2xs"
-                title="Titik GPS aktif terhubung dari Home / Beranda"
-              >
-                <div className="relative flex items-center justify-center">
-                  <MapPin
-                    size={16}
-                    weight="fill"
-                    className={activeLocation.isGps ? "text-emerald-600" : "text-[#0F4C81]"}
-                  />
-                  {activeLocation.isGps && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                  )}
-                </div>
-                <span className="truncate max-w-[150px]">
-                  {activeLocation.isGps ? "GPS: " : "Kirim ke: "}
-                  <strong>{activeLocation.city || activeCityName}</strong>
-                </span>
-                <span className="text-[10px] text-sky-700 underline font-bold">Ubah</span>
-              </button>
-
-              {/* Quick City Selector Dropdown */}
-              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 shadow-2xs">
-                <span className="text-[11px] font-semibold text-slate-500">Kota:</span>
-                <select
-                  value={selectedCityCode}
-                  onChange={(e) => handleCityChange(e.target.value)}
-                  className="text-xs font-bold text-primary bg-transparent focus:outline-none cursor-pointer"
-                >
-                  {OFFICIAL_CITIES.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.name} ({c.code})
-                    </option>
-                  ))}
-                </select>
+            {/* Single Service Location Control (Konsisten dengan Katalog Produk & Navbar) */}
+            <button
+              type="button"
+              onClick={openLocationModal}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200/90 hover:border-slate-300 transition cursor-pointer text-left shadow-2xs self-end lg:self-auto shrink-0"
+              title="Titik lokasi servis terhubung langsung dari GPS atau Alamat Anda. Klik untuk memilih kota atau mengubah lokasi."
+            >
+              <div className="relative flex items-center justify-center">
+                <MapPin
+                  size={16}
+                  weight="fill"
+                  className={activeLocation.isGps ? "text-emerald-600" : "text-[#0F4C81]"}
+                />
+                {activeLocation.isGps && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                )}
               </div>
-            </div>
+              <div className="flex items-baseline gap-1 text-xs">
+                <span className="text-[11px] text-slate-400 font-medium whitespace-nowrap">
+                  {activeLocation.isGps ? "GPS Servis:" : "Lokasi Servis:"}
+                </span>
+                <span className="font-bold text-slate-800 max-w-[140px] sm:max-w-[180px] truncate">
+                  {activeLocation.city || activeCityName}
+                </span>
+              </div>
+              <span className="text-[10px] text-[#0F4C81] underline font-bold ml-0.5">Ubah</span>
+            </button>
           </div>
 
           {/* ========================================================================= */}

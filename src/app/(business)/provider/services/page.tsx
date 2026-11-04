@@ -46,6 +46,7 @@ import {
   Power,
   Archive,
   ArrowCounterClockwise,
+  ArrowsClockwise,
   XCircle,
 } from "@phosphor-icons/react";
 import { ProviderMasterService, ProviderServiceMethod } from "@/types/domain";
@@ -92,6 +93,7 @@ export default function ProviderServiceOfferingsPage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("ALL");
+  const [selectedSubcategoryFilter, setSelectedSubcategoryFilter] = useState<string>("ALL");
   const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>("ALL");
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -497,18 +499,20 @@ export default function ProviderServiceOfferingsPage() {
   const myServices: ExtendedProviderMasterService[] = useMemo(() => {
     if (!isLoadingServices) {
       return apiServices.map((s: any) => {
-        const cat = apiCategories.find((c) => c.id === s.categoryId || c.id === s.service_definition?.category_id);
-        const sub = apiSubcategories.find((sc) => sc.id === s.subcategoryId || sc.id === s.service_definition?.subcategory_id);
+        const catId = s.categoryId || s.service_definition?.category_id || s.category_id || "";
+        const subId = s.subcategoryId || s.service_definition?.subcategory_id || s.subcategory_id || "";
+        const cat = apiCategories.find((c) => c.id?.toLowerCase() === catId?.toLowerCase());
+        const sub = apiSubcategories.find((sc) => sc.id?.toLowerCase() === subId?.toLowerCase());
 
         return {
           id: s.id || s._id,
           providerId: s.providerId || s.provider_organization_id || currentProviderId,
           providerName: s.providerName || currentProviderName,
           serviceDefinitionId: s.service_definition_id || s.service_definition?.id || "",
-          canonicalName: s.service_definition?.name || s.subcategoryName || "Canonical Jasa",
-          categoryId: s.categoryId || s.service_definition?.category_id || "",
-          categoryName: cat?.name || s.categoryName || s.service_definition?.category_name || "Kategori Layanan",
-          subcategoryId: s.subcategoryId || s.service_definition?.subcategory_id || "",
+          canonicalName: s.service_definition?.name || sub?.name || s.subcategoryName || "Canonical Jasa",
+          categoryId: catId,
+          categoryName: cat?.name || sub?.categoryName || s.categoryName || s.service_definition?.category_name || "Kategori Layanan",
+          subcategoryId: subId,
           subcategoryName: sub?.name || s.subcategoryName || s.service_definition?.name || "Jasa Layanan",
           name: s.display_name || s.name || "Layanan Jasa",
           description: s.description || "",
@@ -543,6 +547,65 @@ export default function ProviderServiceOfferingsPage() {
     return [];
   }, [isLoadingServices, apiServices, apiCategories, apiSubcategories, currentProviderId, currentProviderName]);
 
+  // Unique categories taken by provider in their catalog offerings
+  const takenCategories = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }>();
+    myServices.forEach((s) => {
+      const catId = s.categoryId || (s as any).rawOffering?.service_definition?.category_id;
+      if (catId) {
+        const catObj = apiCategories.find((c) => c.id?.toLowerCase() === catId?.toLowerCase());
+        const catName = catObj?.name || s.categoryName || catId;
+        if (!map.has(catId.toLowerCase())) {
+          map.set(catId.toLowerCase(), { id: catId, name: catName });
+        }
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [myServices, apiCategories]);
+
+  // Unique subcategories taken by provider in their catalog offerings (cascading based on category filter)
+  const takenSubcategories = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; categoryId: string }>();
+    myServices.forEach((s) => {
+      const catId = s.categoryId || (s as any).rawOffering?.service_definition?.category_id || "";
+      const subId = s.subcategoryId || (s as any).rawOffering?.service_definition?.subcategory_id;
+      if (subId) {
+        if (selectedCategoryFilter === "ALL" || catId.toLowerCase() === selectedCategoryFilter.toLowerCase()) {
+          const subObj = apiSubcategories.find((sc) => sc.id?.toLowerCase() === subId?.toLowerCase());
+          const subName = subObj?.name || s.subcategoryName || subId;
+          if (!map.has(subId.toLowerCase())) {
+            map.set(subId.toLowerCase(), { id: subId, name: subName, categoryId: catId });
+          }
+        }
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [myServices, selectedCategoryFilter, apiSubcategories]);
+
+  // Total unique categories & subcategories count across all offerings
+  const uniqueTakenCategoriesCount = useMemo(() => {
+    const set = new Set<string>();
+    myServices.forEach((s) => {
+      const catId = s.categoryId || (s as any).rawOffering?.service_definition?.category_id;
+      if (catId) set.add(catId.toLowerCase());
+    });
+    return set.size;
+  }, [myServices]);
+
+  const uniqueTakenSubcategoriesCount = useMemo(() => {
+    const set = new Set<string>();
+    myServices.forEach((s) => {
+      const subId = s.subcategoryId || (s as any).rawOffering?.service_definition?.subcategory_id;
+      if (subId) set.add(subId.toLowerCase());
+    });
+    return set.size;
+  }, [myServices]);
+
+  const handleCategoryFilterChange = (catId: string) => {
+    setSelectedCategoryFilter(catId);
+    setSelectedSubcategoryFilter("ALL");
+  };
+
   // Status counters
   const totalAllServicesCount = useMemo(() => myServices.length, [myServices]);
   const totalActiveServicesCount = useMemo(() => {
@@ -561,9 +624,18 @@ export default function ProviderServiceOfferingsPage() {
   const filteredServices = useMemo(() => {
     return myServices.filter((s) => {
       const matchesCategory =
-        selectedCategoryFilter === "ALL" || s.categoryId === selectedCategoryFilter;
+        selectedCategoryFilter === "ALL" ||
+        s.categoryId?.toLowerCase() === selectedCategoryFilter.toLowerCase() ||
+        (s as any).rawOffering?.service_definition?.category_id?.toLowerCase() === selectedCategoryFilter.toLowerCase();
+
+      const matchesSubcategory =
+        selectedSubcategoryFilter === "ALL" ||
+        s.subcategoryId?.toLowerCase() === selectedSubcategoryFilter.toLowerCase() ||
+        (s as any).rawOffering?.service_definition?.subcategory_id?.toLowerCase() === selectedSubcategoryFilter.toLowerCase();
+
       const matchesStatus =
         selectedStatusFilter === "ALL" || s.status === selectedStatusFilter;
+
       const q = searchQuery.toLowerCase();
       const matchesSearch =
         !q ||
@@ -572,9 +644,9 @@ export default function ProviderServiceOfferingsPage() {
         (s.categoryName || "").toLowerCase().includes(q) ||
         (s.subcategoryName || "").toLowerCase().includes(q);
 
-      return matchesCategory && matchesStatus && matchesSearch;
+      return matchesCategory && matchesSubcategory && matchesStatus && matchesSearch;
     });
-  }, [myServices, selectedCategoryFilter, selectedStatusFilter, searchQuery]);
+  }, [myServices, selectedCategoryFilter, selectedSubcategoryFilter, selectedStatusFilter, searchQuery]);
 
   const handleOpenAddModal = () => {
     const defaultCat = activeCategories[0]?.id || "";
@@ -1081,7 +1153,100 @@ export default function ProviderServiceOfferingsPage() {
           { label: "Mitra Bengkel", href: "/provider/dashboard" },
           { label: "Katalog Layanan", href: "/provider/services" },
         ]}
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => fetchCanonicalData()}
+              disabled={isLoadingServices}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition shadow-2xs cursor-pointer disabled:opacity-50"
+              title="Muat Ulang Data dari Server"
+            >
+              <ArrowsClockwise
+                size={15}
+                weight="bold"
+                className={isLoadingServices ? "animate-spin text-[#0F4C81]" : "text-slate-600"}
+              />
+              <span>{isLoadingServices ? "Memuat..." : "Muat Ulang Data"}</span>
+            </button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleOpenAddModal}
+              className="flex items-center gap-1.5 shadow-2xs"
+            >
+              <Plus size={16} weight="bold" />
+              <span>Tambah Layanan</span>
+            </Button>
+          </div>
+        }
       />
+
+      {/* 3-Card Summary Stats (Banyak Kategori Diambil, Subkategori Diambil, Total Layanan Aktif) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Kategori Diambil */}
+        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex items-center justify-between">
+          <div className="space-y-1">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              Kategori Diambil
+            </p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-display font-extrabold text-slate-900">
+                {uniqueTakenCategoriesCount}
+              </span>
+              <span className="text-xs text-slate-500 font-medium">Kategori</span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Diambil pada katalog penawaran Anda
+            </p>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-sky-50 text-[#0F4C81] flex items-center justify-center shrink-0">
+            <Folder size={22} weight="duotone" />
+          </div>
+        </div>
+
+        {/* Subkategori Diambil */}
+        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex items-center justify-between">
+          <div className="space-y-1">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              Subkategori Diambil
+            </p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-display font-extrabold text-slate-900">
+                {uniqueTakenSubcategoriesCount}
+              </span>
+              <span className="text-xs text-slate-500 font-medium">Subkategori</span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Cakupan spesialisasi pengerjaan jasa
+            </p>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+            <TreeStructure size={22} weight="duotone" />
+          </div>
+        </div>
+
+        {/* Total Layanan Aktif */}
+        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex items-center justify-between">
+          <div className="space-y-1">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              Total Layanan Aktif
+            </p>
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-display font-extrabold text-emerald-600">
+                {totalActiveServicesCount}
+              </span>
+              <span className="text-xs text-slate-500 font-medium">Layanan</span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Layanan berstatus aktif tayang ke publik
+            </p>
+          </div>
+          <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <Wrench size={22} weight="duotone" />
+          </div>
+        </div>
+      </div>
 
       {/* Auth Warning Banner */}
       {authWarning && (
@@ -1145,7 +1310,7 @@ export default function ProviderServiceOfferingsPage() {
         </div>
       )}
 
-      {/* Action and Search Bar with Status & Category Filters */}
+      {/* Action and Search Bar with Status, Category, and Subcategory Filters */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
         <div className="flex-1 relative">
           <MagnifyingGlass size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -1159,19 +1324,34 @@ export default function ProviderServiceOfferingsPage() {
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Kategori Filter (Only taken categories by provider) */}
           <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
             <Funnel size={15} />
             <span>Kategori:</span>
           </div>
           <select
             value={selectedCategoryFilter}
-            onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+            onChange={(e) => handleCategoryFilterChange(e.target.value)}
             className="text-xs py-2 px-3 rounded-xl border border-slate-200 bg-white font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
           >
-            <option value="ALL">Semua Kategori</option>
-            {activeCategories.map((c) => (
+            <option value="ALL">Semua Kategori ({takenCategories.length})</option>
+            {takenCategories.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
+              </option>
+            ))}
+          </select>
+
+          {/* Subkategori Filter (Only taken subcategories by provider, cascading) */}
+          <select
+            value={selectedSubcategoryFilter}
+            onChange={(e) => setSelectedSubcategoryFilter(e.target.value)}
+            className="text-xs py-2 px-3 rounded-xl border border-slate-200 bg-white font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+          >
+            <option value="ALL">Semua Subkategori ({takenSubcategories.length})</option>
+            {takenSubcategories.map((sc) => (
+              <option key={sc.id} value={sc.id}>
+                {sc.name}
               </option>
             ))}
           </select>

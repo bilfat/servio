@@ -162,7 +162,7 @@ function PaymentConfigurationContent() {
     setIsLoading(true);
     try {
       const res = await paymentConfigApi.getConfigurations();
-      const cfgData = res?.data as Record<string, { configuration?: Record<string, unknown> }> | undefined;
+      const cfgData = res?.data as unknown as Record<string, { configuration?: Record<string, unknown> }> | undefined;
       if (cfgData) {
         // Methods
         if (cfgData.PAYMENT_METHODS?.configuration?.methods) {
@@ -896,3 +896,4 @@ export default function PaymentConfigurationPage() {
     </Suspense>
   );
 }
+

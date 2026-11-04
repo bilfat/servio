@@ -242,7 +242,7 @@ class CheckoutPricingService
      *
      * @return array<string, mixed>
      */
-    protected function resolveActivePolicies(): array
+    protected function resolveActivePolicies(string $scope = 'PRODUCT'): array
     {
         $now = now();
 
@@ -259,6 +259,8 @@ class CheckoutPricingService
         $resolved = [
             'CUSTOMER_PRODUCT_APP_FEE' => null,
             'MERCHANT_PRODUCT_COMMISSION' => null,
+            'PROVIDER_SERVICE_COMMISSION' => null,
+            'CUSTOMER_SERVICE_APP_FEE' => null,
             'merchant_commission_targets' => [],
         ];
 
@@ -327,11 +329,209 @@ class CheckoutPricingService
             }
         }
 
-        // Require active CEO fee policies; reject if missing
-        if (empty($resolved['CUSTOMER_PRODUCT_APP_FEE']) || empty($resolved['merchant_commission_targets'])) {
-            throw new HttpException(422, 'Tidak ada kebijakan tarif CEO yang aktif dan berlaku untuk checkout ini.');
+        // Resolve Service targets if present across active versions
+        foreach ($activeVersions as $version) {
+            foreach ($version->targets as $target) {
+                if ($target->policy_code === 'PROVIDER_SERVICE_COMMISSION' || ($target->payer_type === 'PROVIDER' && $target->scope === 'SERVICE')) {
+                    if (empty($resolved['PROVIDER_SERVICE_COMMISSION'])) {
+                        $target->group_name = $version->group?->display_name ?? 'Komisi Platform Layanan Jasa';
+                        $target->group_slug = $version->group?->slug;
+                        $target->version_id = $version->id;
+                        $target->version_no = $version->version_no;
+                        $resolved['PROVIDER_SERVICE_COMMISSION'] = $target;
+                    }
+                }
+                if ($target->policy_code === 'CUSTOMER_SERVICE_APP_FEE' || ($target->payer_type === 'CUSTOMER' && $target->scope === 'SERVICE')) {
+                    if (empty($resolved['CUSTOMER_SERVICE_APP_FEE'])) {
+                        $target->group_name = $version->group?->display_name ?? 'Biaya Aplikasi Layanan Jasa';
+                        $target->group_slug = $version->group?->slug;
+                        $target->version_id = $version->id;
+                        $target->version_no = $version->version_no;
+                        $resolved['CUSTOMER_SERVICE_APP_FEE'] = $target;
+                    }
+                }
+            }
+        }
+
+        // Require active CEO fee policies for product checkout; reject if missing
+        if ($scope === 'PRODUCT') {
+            if (empty($resolved['CUSTOMER_PRODUCT_APP_FEE']) || empty($resolved['merchant_commission_targets'])) {
+                throw new HttpException(422, 'Tidak ada kebijakan tarif CEO yang aktif dan berlaku untuk checkout ini.');
+            }
         }
 
         return $resolved;
+    }
+
+    /**
+     * Additive extension: Quote service order checkout (05B Order Jasa)
+     * Handles DIAGNOSIS (fee exemption) and SERVICE_EXECUTION (authoritative CEO platform policy).
+     */
+    public function quoteServiceCheckout(array $payload): FinanceCheckout
+    {
+        $checkoutGroupId = (string) $payload['checkout_group_id'];
+        $customerId = (string) $payload['customer_id'];
+        $providerOrgId = (string) ($payload['provider_org_id'] ?? 'ORG-PROVIDER-01');
+        $merchantOrderId = (string) $payload['merchant_order_id'];
+        $purpose = strtoupper((string) ($payload['purpose'] ?? 'SERVICE_EXECUTION'));
+        $laborSubtotal = (int) ($payload['labor_subtotal_idr'] ?? $payload['amount_idr'] ?? 0);
+        $partsSubtotal = (int) ($payload['provider_part_subtotal_idr'] ?? 0);
+        $currency = (string) ($payload['currency'] ?? 'IDR');
+
+        $totalSubtotal = $laborSubtotal + $partsSubtotal;
+
+        $canonicalData = [
+            'checkout_group_id' => $checkoutGroupId,
+            'customer_id' => $customerId,
+            'provider_org_id' => $providerOrgId,
+            'merchant_order_id' => $merchantOrderId,
+            'purpose' => $purpose,
+            'labor_subtotal_idr' => $laborSubtotal,
+            'provider_part_subtotal_idr' => $partsSubtotal,
+        ];
+        $payloadHash = hash('sha256', json_encode($canonicalData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+
+        // Idempotency check
+        $existing = FinanceCheckout::where('checkout_group_id', $checkoutGroupId)->first();
+        if ($existing) {
+            if ($existing->checkout_payload_hash === $payloadHash) {
+                return $existing->load('paymentAllocations');
+            }
+            throw new HttpException(409, 'Checkout group telah terkunci dengan snapshot data berbeda.');
+        }
+
+        // Pricing Rules per Planning V2
+        $customerAppFee = 0;
+        $providerCommission = 0;
+        $merchantFeeBreakdown = [];
+        $policiesSnapshot = [];
+
+        if ($purpose === 'DIAGNOSIS') {
+            // Planning V2: Diagnosis bebas dari biaya kebijakan platform
+            $customerAppFee = 0;
+            $providerCommission = 0;
+        } else {
+            // SERVICE_EXECUTION: Pengerjaan menggunakan kebijakan CEO authoritative
+            try {
+                $policies = $this->resolveActivePolicies('SERVICE');
+                $appFeeTarget = $policies['CUSTOMER_SERVICE_APP_FEE'] ?? null;
+                $commissionTarget = $policies['PROVIDER_SERVICE_COMMISSION'] ?? null;
+
+                if ($appFeeTarget) {
+                    if ($appFeeTarget->fee_type === 'FIXED') {
+                        $customerAppFee = (int) ($appFeeTarget->fixed_amount_idr ?? 0);
+                    } elseif ($appFeeTarget->fee_type === 'PERCENTAGE') {
+                        $rate = (float) $appFeeTarget->percentage_rate;
+                        $customerAppFee = (int) round(($totalSubtotal * $rate) / 100);
+                    }
+                }
+
+                if ($commissionTarget) {
+                    if ($commissionTarget->fee_type === 'PERCENTAGE') {
+                        $cRate = (float) $commissionTarget->percentage_rate;
+                        $providerCommission = (int) round(($totalSubtotal * $cRate) / 100);
+                    } elseif ($commissionTarget->fee_type === 'FIXED') {
+                        $providerCommission = (int) ($commissionTarget->fixed_amount_idr ?? 0);
+                    }
+                    $merchantFeeBreakdown[] = [
+                        'name' => $commissionTarget->group_name ?? 'Komisi Platform Layanan Jasa',
+                        'fee_type' => $commissionTarget->fee_type,
+                        'rate' => $commissionTarget->percentage_rate,
+                        'fixed_amount_idr' => $commissionTarget->fixed_amount_idr,
+                        'amount_idr' => $providerCommission,
+                    ];
+                }
+
+                $policiesSnapshot = [
+                    'customer_app_fee_version' => $appFeeTarget?->version_no ?? $appFeeTarget?->version?->version_no ?? 1,
+                    'customer_app_fee_policy_name' => $appFeeTarget->group_name ?? 'Biaya Layanan Aplikasi',
+                    'customer_app_fee_policy_id' => $appFeeTarget?->id ?? null,
+                    'customer_app_fee_type' => $appFeeTarget?->fee_type ?? null,
+                    'customer_app_fee_rate' => $appFeeTarget?->percentage_rate ?? null,
+                    'customer_app_fee_fixed' => $appFeeTarget?->fixed_amount_idr ?? null,
+                    'customer_app_fee_amount' => $customerAppFee,
+                    'merchant_commission_version' => $commissionTarget?->version_no ?? $commissionTarget?->version?->version_no ?? 1,
+                    'provider_commission_policy_name' => $commissionTarget->group_name ?? 'Komisi Platform Layanan Jasa',
+                    'provider_commission_policy_id' => $commissionTarget?->id ?? null,
+                    'provider_commission_type' => $commissionTarget?->fee_type ?? null,
+                    'provider_commission_rate' => $commissionTarget?->percentage_rate ?? null,
+                    'provider_commission_fixed' => $commissionTarget?->fixed_amount_idr ?? null,
+                    'provider_commission_amount' => $providerCommission,
+                ];
+            } catch (\Throwable $e) {
+                // If fee policies are not yet published, fall back to pure pass-through
+                $customerAppFee = 0;
+                $providerCommission = 0;
+            }
+        }
+
+        $customerTotal = $totalSubtotal + $customerAppFee;
+        $providerNet = max(0, $totalSubtotal - $providerCommission);
+
+        return DB::transaction(function () use (
+            $checkoutGroupId,
+            $customerId,
+            $providerOrgId,
+            $merchantOrderId,
+            $purpose,
+            $totalSubtotal,
+            $laborSubtotal,
+            $partsSubtotal,
+            $customerAppFee,
+            $providerCommission,
+            $customerTotal,
+            $providerNet,
+            $currency,
+            $payloadHash,
+            $merchantFeeBreakdown,
+            $policiesSnapshot
+        ) {
+            $checkout = FinanceCheckout::create([
+                'checkout_group_id' => $checkoutGroupId,
+                'customer_id' => $customerId,
+                'currency' => $currency,
+                'status' => 'QUOTED',
+                'product_subtotal_idr' => $totalSubtotal,
+                'shipping_total_idr' => 0,
+                'customer_app_fee_idr' => $customerAppFee,
+                'customer_tax_total_idr' => 0,
+                'discount_total_idr' => 0,
+                'customer_payable_total_idr' => $customerTotal,
+                'pricing_policy_snapshot' => $policiesSnapshot,
+                'tax_snapshot' => [
+                    'status' => 'MOCK_FIXTURE',
+                    'tax_total_idr' => 0,
+                ],
+                'checkout_payload_hash' => $payloadHash,
+                'quote_revision' => 1,
+                'quoted_at' => now(),
+                'expires_at' => now()->addHours(6), // 6 hours payment expiration
+            ]);
+
+            PaymentAllocation::create([
+                'finance_checkout_id' => $checkout->id,
+                'customer_id' => $customerId,
+                'merchant_order_id' => $merchantOrderId,
+                'merchant_org_id' => $providerOrgId,
+                'allocation_rank' => 1,
+                'product_subtotal_idr' => $totalSubtotal,
+                'shipping_customer_idr' => 0,
+                'app_fee_allocated_idr' => $customerAppFee,
+                'discount_allocated_idr' => 0,
+                'customer_total_idr' => $customerTotal,
+                'merchant_commission_idr' => $providerCommission,
+                'merchant_net_entitlement_idr' => $providerNet,
+                'status' => 'PENDING',
+                'fee_snapshot' => [
+                    'purpose' => $purpose,
+                    'labor_subtotal_idr' => $laborSubtotal,
+                    'provider_part_subtotal_idr' => $partsSubtotal,
+                    'discount_bearer' => 'MERCHANT',
+                    'merchant_fee_breakdown' => $merchantFeeBreakdown,
+                ],
+            ]);
+
+            return $checkout->load('paymentAllocations');
+        });
     }
 }

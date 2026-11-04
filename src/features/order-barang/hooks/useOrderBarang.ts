@@ -490,7 +490,7 @@ export function useOrderBarang() {
             const mappedCust = rawList.map(mapBackendOrderToMock);
             setBackendCustomerOrders((prev) => {
               const prevMap = new Map(prev.map((p) => [p.id, p]));
-              const merged = mappedCust.map((newItem) => {
+              const merged = mappedCust.map((newItem: any) => {
                 const existing = prevMap.get(newItem.id);
                 if (!existing) return newItem;
 
@@ -557,7 +557,7 @@ export function useOrderBarang() {
             const mappedMerch = rawList.map(mapBackendOrderToMock);
             setBackendMerchantOrders((prev) => {
               const prevMap = new Map(prev.map((p) => [p.id, p]));
-              const merged = mappedMerch.map((newItem) => {
+              const merged = mappedMerch.map((newItem: any) => {
                 const existing = prevMap.get(newItem.id);
                 if (!existing) return newItem;
 

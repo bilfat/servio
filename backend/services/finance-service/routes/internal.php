@@ -11,6 +11,7 @@ Route::prefix('internal/v1/finance')->middleware('finance.internal')->group(func
     // 05A Checkout quote & payment intent creation
     Route::get('/active-customer-fee', [\App\Http\Controllers\FeePolicyController::class, 'activeCustomerFee']);
     Route::post('/checkout-quotes', [InternalCheckoutController::class, 'createQuote']);
+    Route::post('/service-checkout-quotes', [InternalCheckoutController::class, 'createServiceQuote']);
     Route::post('/checkouts/{checkout_group_id}/payment-intents', [InternalCheckoutController::class, 'createPaymentIntent']);
     Route::get('/checkouts/{checkout_group_id}', [InternalCheckoutController::class, 'showCheckout']);
     Route::get('/payments/{payment_id}', [InternalCheckoutController::class, 'showPayment']);
@@ -26,4 +27,5 @@ Route::prefix('internal/v1/finance')->middleware('finance.internal')->group(func
     // Matured held funds release trigger (120-hour elapsed)
     Route::post('/held-funds/process-matured', [InternalOrderEventController::class, 'processMaturedFunds']);
     Route::get('/held-funds/by-order/{merchant_order_id}', [InternalOrderEventController::class, 'showHeldFundByOrder']);
+    Route::post('/held-funds/by-order/{merchant_order_id}/release', [InternalOrderEventController::class, 'releaseHeldFundByOrder']);
 });

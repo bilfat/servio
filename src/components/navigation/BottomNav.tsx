@@ -11,7 +11,6 @@ import {
   ShoppingCart,
   User,
   Wrench,
-  CalendarCheck,
   ChatCircleText,
 } from "@phosphor-icons/react";
 import { useCart } from "@/features/cart/useCart";
@@ -58,7 +57,6 @@ export function BottomNav({ orderBadgeCount, cartBadgeCount }: BottomNavProps) {
       icon: Wrench,
       badge: orderBadgeCount && orderBadgeCount > 0 ? String(orderBadgeCount) : undefined,
     },
-    { label: "Jadwal", href: "/worker/schedule", icon: CalendarCheck },
     { label: "Obrolan", href: "/worker/chat", icon: ChatCircleText },
     { label: "Profil", href: "/worker/profile", icon: User },
   ];
@@ -90,9 +88,6 @@ export function BottomNav({ orderBadgeCount, cartBadgeCount }: BottomNavProps) {
     }
     if (href === "/worker/jobs") {
       return pathname.startsWith("/worker/jobs") || pathname.startsWith("/worker/warranty");
-    }
-    if (href === "/worker/schedule") {
-      return pathname.startsWith("/worker/schedule");
     }
     if (href === "/worker/chat") {
       return pathname.startsWith("/worker/chat");

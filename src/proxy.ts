@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { getRoleDashboard, isOperationalRole } from "@/lib/roleNavigation";
+import { getRoleDashboard, isOperationalRole } from "./lib/roleNavigation";
 
 const PROTECTED_CUSTOMER_ROUTES = [
   "/orders",

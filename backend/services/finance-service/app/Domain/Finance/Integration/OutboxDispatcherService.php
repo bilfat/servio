@@ -13,12 +13,14 @@ use Illuminate\Support\Facades\Log;
 class OutboxDispatcherService
 {
     private string $orderBaseUrl;
+    private string $orderJasaBaseUrl;
     private string $internalKey;
     private int $timeoutSeconds;
 
     public function __construct()
     {
         $this->orderBaseUrl = rtrim((string) env('ORDER_INTERNAL_BASE_URL', 'http://127.0.0.1:8005'), '/');
+        $this->orderJasaBaseUrl = rtrim((string) env('ORDER_JASA_INTERNAL_BASE_URL', 'http://127.0.0.1:8007'), '/');
         $this->internalKey = (string) env('FINANCE_INTERNAL_SERVICE_KEY', env('ORDER_INTERNAL_SERVICE_KEY', 'servio_local_internal_service_key_2026'));
         $this->timeoutSeconds = 10;
     }
@@ -70,7 +72,31 @@ class OutboxDispatcherService
             // Determine destination URL
             $url = null;
             if (str_starts_with($event->event_type, 'finance.payment.') || str_starts_with($event->event_type, 'finance.refund.')) {
-                $url = "{$this->orderBaseUrl}/internal/v1/order-barang/finance-events";
+                $payload = is_array($event->payload) ? $event->payload : (json_decode((string) $event->payload, true) ?? []);
+                $checkoutGroupId = (string) ($payload['checkout_group_id'] ?? '');
+                $merchantOrderId = (string) ($payload['merchant_order_id'] ?? '');
+                $merchantOrderIds = (array) ($payload['merchant_order_ids'] ?? []);
+
+                $isOrderJasa = str_starts_with($checkoutGroupId, 'CHK-JSA-')
+                    || str_starts_with($checkoutGroupId, 'SO-')
+                    || str_starts_with($checkoutGroupId, '#SO-')
+                    || str_contains($checkoutGroupId, 'SO-')
+                    || str_starts_with($merchantOrderId, 'SO-')
+                    || str_starts_with($merchantOrderId, '#SO-');
+                if (!$isOrderJasa) {
+                    foreach ($merchantOrderIds as $mId) {
+                        if (str_starts_with((string) $mId, 'SO-') || str_starts_with((string) $mId, '#SO-')) {
+                            $isOrderJasa = true;
+                            break;
+                        }
+                    }
+                }
+
+                if ($isOrderJasa) {
+                    $url = "{$this->orderJasaBaseUrl}/internal/v1/order-jasa/finance-events";
+                } else {
+                    $url = "{$this->orderBaseUrl}/internal/v1/order-barang/finance-events";
+                }
             }
 
             if (!$url) {

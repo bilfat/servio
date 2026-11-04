@@ -40,7 +40,7 @@ class BankDestinationController extends Controller
             }
             $query->where('owner_type', 'MERCHANT_ORGANIZATION')->where('owner_external_id', $orgId);
         } else {
-            if ($actor->isMerchant() && $actor->organizationId) {
+            if (($actor->isMerchant() || $actor->isProvider()) && $actor->organizationId) {
                 $query->where('owner_type', 'MERCHANT_ORGANIZATION')->where('owner_external_id', $actor->organizationId);
             } else {
                 $query->where('owner_type', 'CUSTOMER')->where('owner_external_id', $actor->actorId);
@@ -53,7 +53,7 @@ class BankDestinationController extends Controller
             'owner_id' => $bank->owner_external_id,
             'bank_code' => $bank->bank_code,
             'bank_name' => $bank->bank_code,
-            'account_number' => $bank->account_last4 ? '•••• •••• ' . $bank->account_last4 : '••••••••',
+            'account_number_masked' => $bank->account_last4 ? '•••• •••• ' . $bank->account_last4 : '••••••••',
             'account_last4' => $bank->account_last4,
             'account_holder_name' => $bank->account_holder_name_masked,
             'account_holder_name_masked' => $bank->account_holder_name_masked,

@@ -58,11 +58,12 @@ class HeldFundService
                 return $heldFund;
             }
 
-            $completedTime = Carbon::parse($completedAt);
-            $eligibleTime = $completedTime->copy()->addHours(120); // 120 hours hold
-
-            $heldFund->completed_at = $completedTime;
-            $heldFund->eligible_release_at = $eligibleTime;
+            // Lock in completion time and 120-hour eligible release time on first completed event
+            if ($heldFund->completed_at === null) {
+                $completedTime = Carbon::parse($completedAt);
+                $heldFund->completed_at = $completedTime;
+                $heldFund->eligible_release_at = $completedTime->copy()->addHours(120); // Exactly 120 hours hold
+            }
             $heldFund->order_event_version = $orderVersion;
 
             if ($activeHold) {

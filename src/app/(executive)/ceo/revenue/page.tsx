@@ -78,6 +78,12 @@ export default function CeoRevenueDashboardPage() {
 
   useEffect(() => {
     fetchRevenueTelemetry();
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && !document.hidden) {
+        fetchRevenueTelemetry();
+      }
+    }, 4500);
+    return () => clearInterval(interval);
   }, []);
 
   const handleRefresh = () => {
@@ -215,7 +221,7 @@ export default function CeoRevenueDashboardPage() {
               </p>
             </div>
             <span className="text-[11px] text-emerald-800 font-semibold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-              Cakupan: Pesanan Produk Barang
+              Cakupan: Pesanan Produk Barang & Jasa Servis (05B)
             </span>
           </div>
 
@@ -274,57 +280,29 @@ export default function CeoRevenueDashboardPage() {
                 tooltipText="Total nilai perputaran belanja yang berhasil dibayar lunas oleh pembeli."
               />
 
-              {/* 5. Biaya Aplikasi Jasa (Roadmap Mendatang) */}
-              <div className="bg-gradient-to-br from-slate-50 to-indigo-50/40 rounded-2xl border border-indigo-200/70 p-4 shadow-xs flex flex-col justify-between">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-[11px] font-bold text-indigo-950 uppercase tracking-wider block">
-                      Biaya Aplikasi Pemesanan Jasa
-                    </span>
-                    <p className="text-[10px] text-slate-500 mt-0.5">Pemesanan Teknisi & Layanan</p>
-                  </div>
-                  <span className="p-2 rounded-xl bg-indigo-100 text-indigo-700">
-                    <Wrench size={16} weight="duotone" />
-                  </span>
-                </div>
-                <div className="mt-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg font-black font-display text-slate-400">Rp 0</span>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200">
-                      Rencana Fitur Jasa Mendatang
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-slate-500 mt-1.5 leading-relaxed">
-                    Pilar pendapatan ke-3: Biaya aplikasi per booking teknisi servis berlisensi (Akan dibuka saat rilis modul jasa).
-                  </p>
-                </div>
-              </div>
+              {/* 5. Biaya Aplikasi Pemesanan Jasa */}
+              <RevenueKpiCard
+                label="Biaya Aplikasi Jasa"
+                subtitle="Pesanan Servis (Fase 05B)"
+                amount={revenueData?.customer_service_app_fee_idr ?? 0}
+                icon={<Wrench size={18} weight="bold" />}
+                iconBg="bg-blue-50"
+                iconColor="text-[#0284C7]"
+                periodLabel="Aktif Terhubung"
+                tooltipText="Biaya aplikasi platform yang dibayarkan pelanggan saat melakukan pemesanan booking jasa servis terstandar."
+              />
 
-              {/* 6. Komisi Penyedia Jasa (Roadmap Mendatang) */}
-              <div className="bg-gradient-to-br from-slate-50 to-indigo-50/40 rounded-2xl border border-indigo-200/70 p-4 shadow-xs flex flex-col justify-between">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-[11px] font-bold text-indigo-950 uppercase tracking-wider block">
-                      Komisi Mitra Penyedia Jasa
-                    </span>
-                    <p className="text-[10px] text-slate-500 mt-0.5">Bagi Hasil Mitra Bengkel & Teknisi</p>
-                  </div>
-                  <span className="p-2 rounded-xl bg-indigo-100 text-indigo-700">
-                    <ShieldCheck size={16} weight="duotone" />
-                  </span>
-                </div>
-                <div className="mt-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-lg font-black font-display text-slate-400">Rp 0</span>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200">
-                      Rencana Fitur Jasa Mendatang
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-slate-500 mt-1.5 leading-relaxed">
-                    Pilar pendapatan ke-4: Bagi hasil komisi resmi mitra bengkel & teknisi servis rekanan SERVIO.
-                  </p>
-                </div>
-              </div>
+              {/* 6. Komisi Penyedia Jasa */}
+              <RevenueKpiCard
+                label="Komisi Mitra Jasa"
+                subtitle="Bagi Hasil Pengerjaan (05B)"
+                amount={revenueData?.provider_service_commission_idr ?? 0}
+                icon={<ShieldCheck size={18} weight="bold" />}
+                iconBg="bg-violet-50"
+                iconColor="text-[#7C3AED]"
+                periodLabel="Aktif Terhubung"
+                tooltipText="Bagi hasil komisi platform dari nilai pengerjaan order jasa oleh mitra penyedia servis resmi."
+              />
 
               {/* 7. Status Pengakuan Akuntansi PSAK */}
               <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col justify-between sm:col-span-2">
@@ -421,25 +399,40 @@ export default function CeoRevenueDashboardPage() {
                   if (!activeVer) return null;
 
                   const custTarget = activeVer?.targets?.find(
-                    (t) => t.policy_code === "CUSTOMER_PRODUCT_APP_FEE"
+                    (t) =>
+                      t.policy_code === "CUSTOMER_PRODUCT_APP_FEE" ||
+                      t.policy_code === "CUSTOMER_SERVICE_APP_FEE" ||
+                      t.payer_type === "CUSTOMER"
                   );
                   const merchTarget = activeVer?.targets?.find(
-                    (t) => t.policy_code === "MERCHANT_PRODUCT_COMMISSION"
+                    (t) =>
+                      t.policy_code === "MERCHANT_PRODUCT_COMMISSION" ||
+                      (t.payer_type === "MERCHANT" && t.scope === "PRODUCT")
+                  );
+                  const provTarget = activeVer?.targets?.find(
+                    (t) =>
+                      t.policy_code === "PROVIDER_SERVICE_COMMISSION" ||
+                      t.payer_type === "PROVIDER" ||
+                      (t.scope === "SERVICE" && t.payer_type !== "CUSTOMER")
                   );
 
                   const hasCustomer = !!custTarget;
                   const hasMerchant = !!merchTarget;
+                  const hasProvider = !!provTarget;
+                  const targetCount = (hasCustomer ? 1 : 0) + (hasMerchant ? 1 : 0) + (hasProvider ? 1 : 0);
 
-                  const isBoth = hasCustomer && hasMerchant;
-                  const isCustomerOnly = hasCustomer && !hasMerchant;
-                  const isMerchantOnly = !hasCustomer && hasMerchant;
-
-                  const custSubtotal = hasCustomer ? (revenueData?.customer_product_app_fee_idr ?? 0) : 0;
+                  const custSubtotal = hasCustomer
+                    ? (revenueData?.customer_product_app_fee_idr ?? 0) + (revenueData?.customer_service_app_fee_idr ?? 0)
+                    : 0;
                   const merchSubtotal = hasMerchant ? (revenueData?.merchant_product_commission_idr ?? 0) : 0;
-                  const totalSubtotal = custSubtotal + merchSubtotal;
+                  const provSubtotal = hasProvider ? (revenueData?.provider_service_commission_idr ?? 0) : 0;
+                  const totalSubtotal = custSubtotal + merchSubtotal + provSubtotal;
 
                   const checkoutsCount = hasCustomer ? paidCheckouts : 0;
                   const ordersCount = hasMerchant ? paidCheckouts : 0;
+                  const providerOrdersCount = hasProvider
+                    ? (revenueData?.provider_service_commission_idr ? Math.max(1, Math.round((revenueData?.provider_service_commission_idr || 0) / 10000)) : 0)
+                    : 0;
 
                   return (
                     <div
@@ -450,19 +443,39 @@ export default function CeoRevenueDashboardPage() {
                       <div className="space-y-1">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            {isBoth && (
+                            {hasCustomer && hasMerchant && hasProvider && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                Pelanggan, Toko & Jasa
+                              </span>
+                            )}
+                            {hasCustomer && hasMerchant && !hasProvider && (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
                                 Pembeli & Mitra Toko
                               </span>
                             )}
-                            {isCustomerOnly && (
+                            {hasCustomer && hasProvider && !hasMerchant && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-sky-700 border border-sky-200">
+                                Pembeli & Mitra Jasa
+                              </span>
+                            )}
+                            {hasMerchant && hasProvider && !hasCustomer && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-50 text-violet-700 border border-violet-200">
+                                Toko & Mitra Jasa
+                              </span>
+                            )}
+                            {hasCustomer && !hasMerchant && !hasProvider && (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
                                 Khusus Pembeli
                               </span>
                             )}
-                            {isMerchantOnly && (
+                            {hasMerchant && !hasCustomer && !hasProvider && (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
                                 Khusus Mitra Toko
+                              </span>
+                            )}
+                            {hasProvider && !hasCustomer && !hasMerchant && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-50 text-violet-700 border border-violet-200">
+                                Khusus Mitra Jasa
                               </span>
                             )}
                             <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-100 text-emerald-800">
@@ -480,8 +493,29 @@ export default function CeoRevenueDashboardPage() {
                         </h3>
                       </div>
 
-                      {/* Format Ringkas: Total Pesanan / Total Transaksi & Total Pendapatan */}
-                      {isMerchantOnly && (
+                      {/* Format Single Target */}
+                      {targetCount === 1 && hasProvider && (
+                        <div className="grid grid-cols-2 gap-2.5 p-2.5 rounded-xl bg-violet-50/60 border border-violet-100">
+                          <div>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-violet-700 block">
+                              Total Pesanan Jasa
+                            </span>
+                            <span className="text-base font-black text-slate-900 mt-0.5 block">
+                              {providerOrdersCount} Pesanan Jasa
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-violet-700 block">
+                              Total Pendapatan
+                            </span>
+                            <span className="text-base font-black text-emerald-800 mt-0.5 block">
+                              Rp {provSubtotal.toLocaleString("id-ID")}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {targetCount === 1 && hasMerchant && (
                         <div className="grid grid-cols-2 gap-2.5 p-2.5 rounded-xl bg-purple-50/60 border border-purple-100">
                           <div>
                             <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 block">
@@ -502,7 +536,7 @@ export default function CeoRevenueDashboardPage() {
                         </div>
                       )}
 
-                      {isCustomerOnly && (
+                      {targetCount === 1 && hasCustomer && (
                         <div className="grid grid-cols-2 gap-2.5 p-2.5 rounded-xl bg-rose-50/60 border border-rose-100">
                           <div>
                             <span className="text-[10px] font-bold uppercase tracking-wider text-rose-700 block">
@@ -523,24 +557,39 @@ export default function CeoRevenueDashboardPage() {
                         </div>
                       )}
 
-                      {isBoth && (
+                      {/* Format Multi-Target (2 atau 3 Target) */}
+                      {targetCount > 1 && (
                         <div className="space-y-1.5">
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div className="p-2 rounded-xl bg-rose-50/50 border border-rose-100">
-                              <span className="text-[10px] font-bold text-rose-700 uppercase block">Pembeli</span>
-                              <span className="font-extrabold text-slate-900 block mt-0.5">{checkoutsCount} Transaksi</span>
-                              <span className="text-[10px] font-black text-emerald-800 block mt-0.5">
-                                Rp {custSubtotal.toLocaleString("id-ID")}
-                              </span>
-                            </div>
+                          <div className={`grid ${targetCount === 3 ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-2"} gap-2 text-xs`}>
+                            {hasCustomer && (
+                              <div className="p-2 rounded-xl bg-rose-50/50 border border-rose-100">
+                                <span className="text-[10px] font-bold text-rose-700 uppercase block">Pembeli</span>
+                                <span className="font-extrabold text-slate-900 block mt-0.5">{checkoutsCount} Transaksi</span>
+                                <span className="text-[10px] font-black text-emerald-800 block mt-0.5">
+                                  Rp {custSubtotal.toLocaleString("id-ID")}
+                                </span>
+                              </div>
+                            )}
 
-                            <div className="p-2 rounded-xl bg-purple-50/50 border border-purple-100">
-                              <span className="text-[10px] font-bold text-purple-700 uppercase block">Mitra Toko</span>
-                              <span className="font-extrabold text-slate-900 block mt-0.5">{ordersCount} Pesanan</span>
-                              <span className="text-[10px] font-black text-emerald-800 block mt-0.5">
-                                Rp {merchSubtotal.toLocaleString("id-ID")}
-                              </span>
-                            </div>
+                            {hasMerchant && (
+                              <div className="p-2 rounded-xl bg-purple-50/50 border border-purple-100">
+                                <span className="text-[10px] font-bold text-purple-700 uppercase block">Mitra Toko</span>
+                                <span className="font-extrabold text-slate-900 block mt-0.5">{ordersCount} Pesanan</span>
+                                <span className="text-[10px] font-black text-emerald-800 block mt-0.5">
+                                  Rp {merchSubtotal.toLocaleString("id-ID")}
+                                </span>
+                              </div>
+                            )}
+
+                            {hasProvider && (
+                              <div className="p-2 rounded-xl bg-violet-50/50 border border-violet-100">
+                                <span className="text-[10px] font-bold text-violet-700 uppercase block">Mitra Jasa</span>
+                                <span className="font-extrabold text-slate-900 block mt-0.5">{providerOrdersCount} Pesanan</span>
+                                <span className="text-[10px] font-black text-emerald-800 block mt-0.5">
+                                  Rp {provSubtotal.toLocaleString("id-ID")}
+                                </span>
+                              </div>
+                            )}
                           </div>
 
                           <div className="p-2 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between text-xs px-2.5">
@@ -676,7 +725,7 @@ export default function CeoRevenueDashboardPage() {
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
             {/* 1. Dana Ditahan (Rekening Bersama 120 Jam) */}
             <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs space-y-2">
               <div className="flex items-center justify-between">
@@ -692,7 +741,7 @@ export default function CeoRevenueDashboardPage() {
                   Rp {(revenueData?.held_liability_idr ?? 0).toLocaleString("id-ID")}
                 </span>
                 <span className="text-[10px] text-slate-400 mt-1 block leading-relaxed">
-                  Hak bersih toko yang ditahan sementara selama 5 hari (120 jam) setelah pesanan diselesaikan pembeli.
+                  Hak bersih mitra yang ditahan sementara selama 5 hari (120 jam) setelah pesanan diselesaikan pembeli.
                 </span>
               </div>
             </div>
@@ -717,7 +766,27 @@ export default function CeoRevenueDashboardPage() {
               </div>
             </div>
 
-            {/* 3. Saldo S-Pay Pengembalian Dana Pembeli */}
+            {/* 3. Saldo S-Pay Mitra Jasa Siap Tarik */}
+            <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Saldo S-Pay Mitra Jasa Siap Tarik
+                </span>
+                <span className="p-2 rounded-xl bg-violet-50 text-violet-700">
+                  <Wrench size={18} weight="duotone" />
+                </span>
+              </div>
+              <div>
+                <span className="text-xl font-bold font-display text-violet-800 block">
+                  Rp {(revenueData?.provider_payable_idr ?? 0).toLocaleString("id-ID")}
+                </span>
+                <span className="text-[10px] text-slate-400 mt-1 block leading-relaxed">
+                  Kewajiban platform untuk saldo mitra penyedia jasa servis (05B) yang telah tuntas pengerjaan dan siap dicairkan ke bank.
+                </span>
+              </div>
+            </div>
+
+            {/* 4. Saldo S-Pay Pengembalian Dana Pembeli */}
             <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">

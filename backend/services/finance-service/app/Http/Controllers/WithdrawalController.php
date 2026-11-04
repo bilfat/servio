@@ -116,7 +116,7 @@ class WithdrawalController extends Controller
             if ($ownerType && $ownerId) {
                 $query->whereHas('spayAccount', fn ($q) => $q->where('owner_type', $ownerType)->where('owner_external_id', $ownerId));
             }
-        } elseif ($actor->isMerchant() && $actor->organizationId) {
+        } elseif (($actor->isMerchant() || $actor->isProvider()) && $actor->organizationId) {
             $query->whereHas('spayAccount', fn ($q) => $q->where('owner_type', 'MERCHANT_ORGANIZATION')->where('owner_external_id', $actor->organizationId));
         } else {
             $query->whereHas('spayAccount', fn ($q) => $q->where('owner_type', 'CUSTOMER')->where('owner_external_id', $actor->actorId));
@@ -197,6 +197,8 @@ class WithdrawalController extends Controller
             }
 
             $hasWithdrawPermission = $actor->isCeo()
+                || $actor->isMerchant()
+                || $actor->isProvider()
                 || $actor->hasPermission('finance.spay.withdraw_organization')
                 || $actor->hasPermission('finance.withdrawal.create');
 

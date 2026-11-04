@@ -1,27 +1,32 @@
 "use client";
 
-import React, { Suspense, useState, useEffect } from "react";
+import React, { Suspense, useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useServices } from "@/features/discovery/useServices";
 import { useBookingWizard } from "@/features/booking/useBookingWizard";
-import { DynamicFieldRenderer, FieldSchema, FieldType } from "@/components/form/DynamicFieldRenderer";
-import { SchedulePicker } from "@/components/form/SchedulePicker";
-import { UploadDropzone } from "@/components/form/UploadDropzone";
-import { profileApi, locationApi, serviceSlotApi, ApiAddress } from "@/lib/servioApi";
+import { DynamicFieldRenderer, FieldSchema } from "@/components/form/DynamicFieldRenderer";
+import { UploadDropzone, UploadedFile } from "@/components/form/UploadDropzone";
+import { profileApi, locationApi, ApiAddress } from "@/lib/servioApi";
 import {
   ArrowLeft,
   ArrowRight,
-  CheckCircle,
   House,
   ShieldCheck,
-  Storefront,
   Wrench,
   Info,
   WarningCircle,
   MapPin,
-  NavigationArrow,
+  CalendarCheck,
+  Lightning,
+  Clock,
+  User,
+  Phone,
+  CheckCircle,
+  FileText,
+  X,
 } from "@phosphor-icons/react";
+import { useOrderJasa } from "@/features/order-jasa/hooks/useOrderJasa";
 
 function BookingWizardSkeleton() {
   return (
@@ -45,6 +50,7 @@ function BookingWizardContent() {
   const searchParams = useSearchParams();
   const serviceIdParam = searchParams.get("serviceId");
   const { services } = useServices();
+  const { createBooking } = useOrderJasa();
   const initialService = services.find((s) => s.id === serviceIdParam) || services[0];
 
   const {
@@ -55,7 +61,6 @@ function BookingWizardContent() {
     setCustomFields,
     nextStep,
     prevStep,
-    submitBooking,
     isSubmitting,
   } = useBookingWizard(initialService);
 
@@ -70,7 +75,10 @@ function BookingWizardContent() {
 
   const [stepError, setStepError] = useState<string | null>(null);
 
-  // Level 08: Saved Addresses, Location Evaluation & Server Slots
+  // 1. Files uploaded state (Langkah 1)
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+
+  // 2. Saved Addresses from Identity DB (Langkah 2)
   const [savedAddresses, setSavedAddresses] = useState<ApiAddress[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string>("");
   const [coverageResult, setCoverageResult] = useState<{
@@ -79,9 +87,8 @@ function BookingWizardContent() {
     covered: boolean;
   } | null>(null);
   const [isEvaluatingLocation, setIsEvaluatingLocation] = useState(false);
-  const [serverSlots, setServerSlots] = useState<any[]>([]);
 
-  // Load saved addresses
+  // Load saved addresses directly from Identity Service
   useEffect(() => {
     profileApi.getAddresses().then((res) => {
       if (res.data && res.data.length > 0) {
@@ -89,12 +96,19 @@ function BookingWizardContent() {
         const defaultAddr = res.data.find((a) => a.isDefault) || res.data[0];
         if (defaultAddr) {
           setSelectedAddressId(defaultAddr.id);
+          const fullStreet = [
+            defaultAddr.addressLine,
+            defaultAddr.village ? `Kel. ${defaultAddr.village}` : null,
+            defaultAddr.district ? `Kec. ${defaultAddr.district}` : null,
+          ].filter(Boolean).join(", ");
+
           setAddress({
-            street: defaultAddr.addressLine,
+            street: fullStreet || defaultAddr.addressLine,
             city: defaultAddr.city,
             notes: "",
           });
-          // Evaluate location
+
+          // Evaluate location coverage
           if (defaultAddr.latitude != null && defaultAddr.longitude != null) {
             setIsEvaluatingLocation(true);
             locationApi.evaluate({
@@ -119,36 +133,55 @@ function BookingWizardContent() {
     }).catch(() => {});
   }, []);
 
-  // Fetch slots from API for Step 3
+  // 3. Schedule state (Langkah 3: Sekarang vs Nanti, Strictly Format 24 Jam)
+  const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
+  const [scheduleMode, setScheduleMode] = useState<"SEKARANG" | "NANTI">("SEKARANG");
+  const [customDate, setCustomDate] = useState<string>(todayStr);
+  const [customHour, setCustomHour] = useState<string>("10");
+  const [customMinute, setCustomMinute] = useState<string>("00");
+  const customTime = `${customHour}:${customMinute}`;
+
+  // Sync schedule whenever scheduleMode, customDate, customHour, or customMinute changes
   useEffect(() => {
-    if (state.step === 3 && state.service?.id) {
-      const queryDate = state.scheduledDate || new Date().toISOString().split("T")[0];
-      serviceSlotApi.getSlots({
-        providerMasterServiceId: state.service.id,
-        date: queryDate,
-      }).then((res) => {
-        if (res.data) {
-          setServerSlots(res.data);
-        }
-      }).catch(() => {
-        setServerSlots([]);
-      });
+    if (scheduleMode === "SEKARANG") {
+      setSchedule(todayStr, "Segera Hari Ini (Est. 30-60 Menit)");
+    } else {
+      setSchedule(customDate || todayStr, `${customHour}:${customMinute} WIB`);
     }
-  }, [state.step, state.scheduledDate, state.service?.id]);
+  }, [scheduleMode, customDate, customHour, customMinute, todayStr, setSchedule]);
+
+  // Handler batal order untuk kembali ke halaman sebelumnya
+  const handleCancelBooking = () => {
+    if (typeof window !== "undefined" && window.confirm("Apakah Anda yakin ingin membatalkan pemesanan ini dan kembali?")) {
+      if (window.history.length > 1) {
+        router.back();
+      } else if (state.service?.id) {
+        router.push(`/services/${state.service.id}`);
+      } else {
+        router.push("/services");
+      }
+    }
+  };
+
+  const handleSelectPopularTime = (timeStr: string) => {
+    const parts = timeStr.split(":");
+    if (parts[0]) setCustomHour(parts[0].padStart(2, "0"));
+    if (parts[1]) setCustomMinute(parts[1].padStart(2, "0"));
+  };
 
   const dynamicFields: FieldSchema[] = [
     {
       id: "brand",
       label: "Merk & Model Unit",
       type: "text",
-      placeholder: "Contoh: Daikin FTKQ25SVM4",
+      placeholder: "Contoh: Daikin FTKQ25SVM4 / Panasonic Inverter 1 PK",
       required: true,
     },
     {
       id: "issueDetails",
       label: "Deskripsi Detail Masalah / Gejala",
       type: "textarea",
-      placeholder: "Jelaskan apa yang terjadi pada unit Anda...",
+      placeholder: "Jelaskan apa yang terjadi pada unit Anda (misal: AC tidak dingin, hanya keluar angin, bocor air pada indoor unit)...",
       required: true,
     },
   ];
@@ -162,47 +195,142 @@ function BookingWizardContent() {
 
   const handleNextStep = () => {
     setStepError(null);
-    if (state.step === 2) {
-      if (!state.address.street || state.address.street.length < 5) {
-        setStepError("Alamat lengkap pengerjaan wajib diisi minimal 5 karakter");
+    if (state.step === 1) {
+      const brand = state.customFieldValues?.brand;
+      const issue = state.customFieldValues?.issueDetails;
+      if (!brand || String(brand).trim().length < 2) {
+        setStepError("Merk & Model Unit wajib diisi.");
+        return;
+      }
+      if (!issue || String(issue).trim().length < 5) {
+        setStepError("Deskripsi detail masalah/gejala wajib diisi minimal 5 karakter.");
+        return;
+      }
+    } else if (state.step === 2) {
+      if (!selectedAddressId && (!state.address.street || state.address.street.length < 5)) {
+        setStepError("Silakan pilih alamat tersimpan atau masukkan alamat lengkap pengerjaan.");
         return;
       }
     } else if (state.step === 3) {
-      if (!state.scheduledDate) {
-        setStepError("Silakan tentukan tanggal kunjungan teknisi");
-        return;
-      }
-      if (!state.scheduledTimeSlot) {
-        setStepError("Silakan pilih slot waktu pengerjaan");
-        return;
+      if (scheduleMode === "NANTI") {
+        if (!customDate) {
+          setStepError("Silakan tentukan tanggal kunjungan teknisi.");
+          return;
+        }
+        if (!customTime) {
+          setStepError("Silakan pilih jam kedatangan yang Anda inginkan.");
+          return;
+        }
       }
     }
     nextStep();
   };
 
+  const selectedAddr = useMemo(() => {
+    return savedAddresses.find((a) => a.id === selectedAddressId) || savedAddresses[0];
+  }, [savedAddresses, selectedAddressId]);
+
   const handleSubmit = async () => {
     try {
-      const booking = await submitBooking();
-      router.push(`/bookings/${booking.id}`);
-    } catch {
-      setStepError("Gagal mengirim permohonan booking. Silakan coba lagi.");
+      setStepError(null);
+      const recipientName = selectedAddr?.recipientName || "Pelanggan Servio";
+      const recipientPhone = selectedAddr?.phone || "-";
+      const districtName = selectedAddr?.district || "Area Layanan";
+      const cityName = selectedAddr?.city || state.address.city || "Jakarta";
+      const fullAddr = [
+        selectedAddr?.addressLine || state.address.street,
+        selectedAddr?.village ? `Kel. ${selectedAddr.village}` : null,
+        selectedAddr?.district ? `Kec. ${selectedAddr.district}` : null,
+        selectedAddr?.city || null,
+        selectedAddr?.province || null,
+        selectedAddr?.postalCode || null,
+      ].filter(Boolean).join(", ");
+
+      const issueText = String(state.customFieldValues?.issueDetails || "").trim();
+      const brandModel = String(state.customFieldValues?.brand || "").trim();
+      const complaintText = issueText || (state.service?.title ? `Permintaan servis: ${state.service.title}` : "Permohonan servis unit pelanggan");
+      const symptomsList = brandModel ? [brandModel] : ["Pemeriksaan unit"];
+      const complaintPhotos = uploadedFiles.map((f) => f.url);
+
+      const targetDate = scheduleMode === "SEKARANG" ? todayStr : (customDate || todayStr);
+      const targetTimeSlot = scheduleMode === "SEKARANG"
+        ? `${new Date().getHours().toString().padStart(2, "0")}:${new Date().getMinutes().toString().padStart(2, "0")} WIB`
+        : `${customTime} WIB`;
+
+      const newOrder = await createBooking({
+        serviceId: state.service?.id || "6129bf1a-ee2b-4c63-92c0-d32f9df2bfcd",
+        providerId: state.service?.providerId || "0740d857-b665-4191-aaf5-d7dd3611dc1d",
+        complaintDescription: complaintText,
+        symptoms: symptomsList,
+        complaintPhotos,
+        address: {
+          recipientName,
+          phone: recipientPhone,
+          fullAddress: fullAddr,
+          district: districtName,
+          city: cityName,
+          notes: state.address.notes || "",
+        },
+        scheduledDate: targetDate,
+        scheduledTimeSlot: targetTimeSlot,
+        addressId: selectedAddressId || undefined,
+      } as any);
+
+      router.push(`/orders/${newOrder.id}`);
+    } catch (err: any) {
+      console.error("Gagal submit booking:", err);
+      setStepError(err?.message || "Gagal mengirim permohonan booking ke database. Silakan coba lagi.");
     }
   };
+
+  // Generate date chips for next 7 days
+  const dateOptions = useMemo(() => {
+    const list = [];
+    const dayNames = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+    const now = new Date();
+
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(now);
+      d.setDate(now.getDate() + i);
+      const iso = d.toISOString().split("T")[0];
+      const dayLabel = i === 0 ? "HARI INI" : dayNames[d.getDay()];
+      const dateNum = d.getDate();
+      const monthLabel = monthNames[d.getMonth()];
+      list.push({ iso, dayLabel, dateNum, monthLabel });
+    }
+    return list;
+  }, []);
+
+  const popularTimes = ["08:00", "08:30", "09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00", "17:00", "19:00", "20:00"];
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-20">
       {/* Wizard Header & Stepper */}
       <div className="space-y-6">
-        <div>
-          <span className="text-xs font-bold text-primary uppercase tracking-wider">
-            Langkah {state.step} dari 4
-          </span>
-          <h1 className="text-2xl sm:text-3xl font-display font-extrabold text-neutral-dark mt-1">
-            Pemesanan Servis Terstandar
-          </h1>
-          <p className="text-xs sm:text-sm text-neutral-slate mt-0.5">
-            Layanan: <strong className="text-neutral-dark">{state.service?.title}</strong> • Dilindungi Jaminan Uang Aman Servio
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div>
+            <span className="text-xs font-bold text-primary uppercase tracking-wider">
+              Langkah {state.step} dari 4
+            </span>
+            <h1 className="text-2xl sm:text-3xl font-display font-extrabold text-neutral-dark mt-1">
+              Pemesanan Servis Terstandar
+            </h1>
+            <p className="text-xs sm:text-sm text-neutral-slate mt-0.5">
+              Layanan: <strong className="text-neutral-dark">{state.service?.title}</strong> • Dilindungi Jaminan Uang Aman Servio
+            </p>
+          </div>
+
+          {/* Tombol Batal Order di Paling Atas Kanan */}
+          <button
+            type="button"
+            onClick={handleCancelBooking}
+            className="self-start sm:self-auto px-4 py-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 hover:border-rose-300 text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer"
+            title="Batalkan proses pemesanan dan kembali ke halaman sebelumnya"
+          >
+            <X size={15} weight="bold" />
+            <span>Batal Order</span>
+          </button>
         </div>
 
         {/* 4-Step Stepper Bar */}
@@ -257,7 +385,7 @@ function BookingWizardContent() {
           transition={{ duration: 0.18 }}
           className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 shadow-servio-xs space-y-6"
         >
-          {/* STEP 1: PROBLEM DETAILS */}
+          {/* STEP 1: PROBLEM DETAILS & FILE UPLOAD */}
           {state.step === 1 && (
             <div className="space-y-6">
               <div className="border-b border-slate-100 pb-4">
@@ -265,7 +393,7 @@ function BookingWizardContent() {
                   Detail Gejala Kerusakan
                 </h2>
                 <p className="text-xs text-neutral-slate">
-                  Tentukan gejala atau keluhan kerusakan agar teknisi membawa peralatan dan suku cadang yang tepat.
+                  Tentukan merk & keluhan unit agar teknisi membawa peralatan diagnostik dan suku cadang yang tepat.
                 </p>
               </div>
 
@@ -283,20 +411,23 @@ function BookingWizardContent() {
                 />
               </div>
 
-              {/* Photo Upload Dropzone */}
+              {/* Real Photo / Video Upload Dropzone */}
               <div className="space-y-2 pt-2">
-                <label className="text-xs font-bold text-neutral-dark">
-                  Unggah Foto Kendala / Kondisi Unit (Opsional)
+                <label className="text-xs font-bold text-neutral-dark block">
+                  Unggah Bukti Foto / Video Kerusakan (Opsional)
                 </label>
                 <UploadDropzone
-                  maxFiles={3}
-                  accept="image/jpeg,image/png,image/webp"
+                  maxFiles={5}
+                  maxFileSizeMb={10}
+                  accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime"
+                  files={uploadedFiles}
+                  onFilesChange={setUploadedFiles}
                 />
               </div>
             </div>
           )}
 
-          {/* STEP 2: LOCATION & SERVICE MODE */}
+          {/* STEP 2: LOCATION & SERVICE MODE (HOME SERVICE LOCKED + IDENTITY DB ADDRESSES) */}
           {state.step === 2 && (
             <div className="space-y-6">
               <div className="border-b border-slate-100 pb-4">
@@ -304,48 +435,45 @@ function BookingWizardContent() {
                   Mode Layanan & Lokasi Pengerjaan
                 </h2>
                 <p className="text-xs text-neutral-slate">
-                  Tentukan apakah teknisi datang ke rumah Anda atau Anda yang membawa unit ke workshop mitra.
+                  Layanan ini dikerjakan secara Home Service. Teknisi bersertifikasi akan datang langsung ke alamat Anda.
                 </p>
               </div>
 
-              {/* Mode Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="p-4 rounded-2xl border-2 border-primary bg-sky/20 flex items-start gap-3">
-                  <div className="p-2.5 rounded-xl bg-primary text-white">
-                    <House size={20} weight="bold" />
+              {/* Locked Mode: Home Service Only */}
+              <div className="p-4 rounded-2xl border-2 border-primary bg-sky/15 flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3.5">
+                  <div className="p-3 rounded-2xl bg-primary text-white shadow-servio-xs shrink-0">
+                    <House size={24} weight="bold" />
                   </div>
                   <div>
-                    <span className="text-xs font-bold text-neutral-dark block">
-                      Home Service (Kunjungan Teknisi)
-                    </span>
-                    <span className="text-[11px] text-neutral-slate leading-relaxed">
-                      Teknisi bersertifikasi datang ke hunian dengan perlengkapan standar Servio.
-                    </span>
-                  </div>
-                </div>
-
-                <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 opacity-60 flex items-start gap-3">
-                  <div className="p-2.5 rounded-xl bg-slate-200 text-neutral-slate">
-                    <Storefront size={20} weight="bold" />
-                  </div>
-                  <div>
-                    <span className="text-xs font-bold text-neutral-dark block">
-                      Workshop Drop-off
-                    </span>
-                    <span className="text-[11px] text-neutral-slate leading-relaxed">
-                      Bawa perangkat langsung ke bengkel resmi mitra terdekat.
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-neutral-dark font-display">
+                        Home Service (Kunjungan Teknisi ke Hunian)
+                      </span>
+                      <span className="text-[10px] bg-primary text-white font-bold px-2 py-0.5 rounded-full">
+                        Standar Aktif
+                      </span>
+                    </div>
+                    <p className="text-xs text-neutral-slate mt-1 leading-relaxed">
+                      Teknisi bersertifikasi resmi Servio datang langsung ke tempat tinggal Anda dengan perlengkapan standar inspeksi dan servis.
+                    </p>
                   </div>
                 </div>
               </div>
 
-              {/* Saved Address Selector */}
-              {savedAddresses.length > 0 && (
-                <div className="space-y-2">
+              {/* Saved Address Selector From Identity Module Database */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-neutral-dark block">
-                    Pilih Dari Alamat Tersimpan
+                    Pilih Dari Alamat Tersimpan (Modul Identitas Pelanggan)
                   </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <span className="text-[11px] text-neutral-slate font-medium">
+                    {savedAddresses.length} Alamat Terdaftar
+                  </span>
+                </div>
+
+                {savedAddresses.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {savedAddresses.map((addr) => {
                       const isSelected = selectedAddressId === addr.id;
                       return (
@@ -354,11 +482,18 @@ function BookingWizardContent() {
                           type="button"
                           onClick={() => {
                             setSelectedAddressId(addr.id);
+                            const fullStreet = [
+                              addr.addressLine,
+                              addr.village ? `Kel. ${addr.village}` : null,
+                              addr.district ? `Kec. ${addr.district}` : null,
+                            ].filter(Boolean).join(", ");
+
                             setAddress({
-                              street: addr.addressLine,
+                              street: fullStreet || addr.addressLine,
                               city: addr.city,
-                              notes: "",
+                              notes: state.address.notes || "",
                             });
+
                             if (addr.latitude != null && addr.longitude != null) {
                               setIsEvaluatingLocation(true);
                               locationApi.evaluate({
@@ -379,28 +514,61 @@ function BookingWizardContent() {
                               }).catch(() => {}).finally(() => setIsEvaluatingLocation(false));
                             }
                           }}
-                          className={`p-3 rounded-2xl border text-left transition-all ${
+                          className={`p-4 rounded-2xl border text-left transition-all relative ${
                             isSelected
-                              ? "border-[#0F4C81] bg-sky-50/50 shadow-xs"
-                              : "border-slate-200 hover:border-slate-300"
+                              ? "border-primary bg-sky/20 shadow-servio-xs ring-2 ring-primary/20"
+                              : "border-slate-200 hover:border-slate-300 bg-white"
                           }`}
                         >
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-xs text-slate-900">{addr.label}</span>
-                            {addr.isDefault && (
-                              <span className="text-[10px] bg-[#0F4C81] text-white px-2 py-0.5 rounded-full font-bold">
-                                Utama
-                              </span>
-                            )}
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-bold text-xs text-neutral-dark font-display flex items-center gap-1.5">
+                              <MapPin size={15} className={isSelected ? "text-primary" : "text-neutral-slate"} weight="fill" />
+                              {addr.label}
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              {addr.isDefault && (
+                                <span className="text-[10px] bg-primary text-white px-2 py-0.5 rounded-full font-bold">
+                                  Utama
+                                </span>
+                              )}
+                              {isSelected && (
+                                <CheckCircle size={16} weight="fill" className="text-primary" />
+                              )}
+                            </div>
                           </div>
-                          <p className="text-[11px] text-slate-600 mt-1 line-clamp-1">{addr.addressLine}</p>
-                          <p className="text-[10px] text-slate-400 mt-0.5">{addr.city}</p>
+
+                          {/* Recipient & Contact Info */}
+                          <div className="space-y-1 text-[11px] text-neutral-slate border-b border-slate-100 pb-2 mb-2">
+                            <div className="flex items-center gap-1.5 text-neutral-dark font-medium">
+                              <User size={13} className="text-neutral-muted" />
+                              <span>{addr.recipientName || "Penerima Tidak Tercantum"}</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 font-mono">
+                              <Phone size={13} className="text-neutral-muted" />
+                              <span>{addr.phone || "-"}</span>
+                            </div>
+                          </div>
+
+                          {/* Full Address Details from DB */}
+                          <div className="space-y-0.5 text-[11px] text-neutral-dark">
+                            <p className="font-semibold line-clamp-1">{addr.addressLine}</p>
+                            <p className="text-neutral-slate">
+                              {addr.village ? `Kel. ${addr.village}` : ""}{addr.district ? `, Kec. ${addr.district}` : ""}
+                            </p>
+                            <p className="text-neutral-slate">
+                              {addr.city}, {addr.province} {addr.postalCode ? `(${addr.postalCode})` : ""}
+                            </p>
+                          </div>
                         </button>
                       );
                     })}
                   </div>
-                </div>
-              )}
+                ) : (
+                  <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
+                    Belum ada alamat tersimpan di akun Anda. Silakan masukkan alamat kunjungan di bawah.
+                  </div>
+                )}
+              </div>
 
               {/* Coverage Evaluation Status Banner */}
               {coverageResult && (
@@ -420,18 +588,18 @@ function BookingWizardContent() {
                     </span>
                     <span className="text-[11px] opacity-90">
                       {coverageResult.distanceKm !== null
-                        ? `Estimasi jarak teknisi: ${coverageResult.distanceKm.toFixed(1)} km dari workshop.`
-                        : "Cakupan operasional berdasarkan wilayah terdaftar."}
+                        ? `Estimasi jarak teknisi: ${coverageResult.distanceKm.toFixed(1)} km dari workshop mitra.`
+                        : "Cakupan operasional terverifikasi di wilayah kota ini."}
                     </span>
                   </div>
                 </div>
               )}
 
-              {/* Address Form */}
+              {/* Selected Address Confirmation & Notes */}
               <div className="space-y-4 pt-2">
                 <div>
                   <label className="text-xs font-bold text-neutral-dark block mb-1.5">
-                    Alamat Lengkap Kunjungan <span className="text-rose-500">*</span>
+                    Alamat Lengkap Kunjungan Terpilih <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -440,7 +608,7 @@ function BookingWizardContent() {
                       setAddress({ ...state.address, street: e.target.value })
                     }
                     placeholder="Contoh: Jl. Metro Pondok Indah Blok TB No. 12, RT 02 / RW 14"
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-xs text-neutral-dark focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-xs text-neutral-dark focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary font-medium"
                   />
                 </div>
 
@@ -452,7 +620,7 @@ function BookingWizardContent() {
                     <input
                       type="text"
                       disabled
-                      value={state.address.city || "Jakarta Selatan (Coverage Area Resmi)"}
+                      value={state.address.city || selectedAddr?.city || "KOTA JAKARTA PUSAT"}
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs text-neutral-slate font-medium"
                     />
                   </div>
@@ -475,7 +643,7 @@ function BookingWizardContent() {
             </div>
           )}
 
-          {/* STEP 3: SCHEDULE PICKER */}
+          {/* STEP 3: SCHEDULE (SEKARANG VS NANTI + FREE CUSTOM TIME) */}
           {state.step === 3 && (
             <div className="space-y-6">
               <div className="border-b border-slate-100 pb-4">
@@ -483,32 +651,249 @@ function BookingWizardContent() {
                   Pilih Jadwal Kedatangan Teknisi
                 </h2>
                 <p className="text-xs text-neutral-slate">
-                  Jadwalkan slot waktu pengerjaan. Slot waktu dihitung secara otomatis oleh sistem server mitra.
+                  Pilih apakah Anda membutuhkan kunjungan segera sekarang atau tentukan jam berapa pun sesuai keinginan Anda.
                 </p>
               </div>
 
-              <SchedulePicker
-                selectedDate={state.scheduledDate || undefined}
-                selectedSlotId={state.scheduledTimeSlot || undefined}
-                slots={
-                  serverSlots.length > 0
-                    ? serverSlots.map((s, idx) => ({
-                        id: s.startAt || `slot-${idx}`,
-                        label: s.startAt && s.endAt ? `${s.startAt} - ${s.endAt}` : "Slot Reguler",
-                        timeRange: s.startAt && s.endAt ? `${s.startAt} - ${s.endAt} WIB` : "Waktu Fleksibel",
-                        available: Boolean(s.available),
-                        remainingSlots: s.available ? 2 : 0,
-                      }))
-                    : undefined
-                }
-                onSelectSchedule={(date: string, slotId: string) => {
-                  setSchedule(date, slotId);
-                }}
-              />
+              {/* Option 1: Sekarang vs Nanti Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Mode Sekarang */}
+                <button
+                  type="button"
+                  onClick={() => setScheduleMode("SEKARANG")}
+                  className={`p-5 rounded-2xl border text-left transition-all relative flex flex-col justify-between ${
+                    scheduleMode === "SEKARANG"
+                      ? "border-primary bg-sky/20 shadow-servio-xs ring-2 ring-primary/20"
+                      : "border-slate-200 hover:border-slate-300 bg-white"
+                  }`}
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-servio-xs">
+                        <Lightning size={22} weight="fill" />
+                      </div>
+                      <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-bold">
+                        Paling Cepat
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-sm font-bold text-neutral-dark block font-display">
+                        Sekarang (Kunjungan Segera)
+                      </span>
+                      <p className="text-xs text-neutral-slate mt-1 leading-relaxed">
+                        Teknisi terdekat akan ditugaskan dan segera meluncur ke lokasi Anda hari ini.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 mt-2 border-t border-slate-100 text-[11px] font-semibold text-primary flex items-center gap-1.5">
+                    <Clock size={15} weight="bold" />
+                    <span>Hari ini, waktu estimasi segera (±30-60 menit)</span>
+                  </div>
+                </button>
+
+                {/* Mode Nanti */}
+                <button
+                  type="button"
+                  onClick={() => setScheduleMode("NANTI")}
+                  className={`p-5 rounded-2xl border text-left transition-all relative flex flex-col justify-between ${
+                    scheduleMode === "NANTI"
+                      ? "border-primary bg-sky/20 shadow-servio-xs ring-2 ring-primary/20"
+                      : "border-slate-200 hover:border-slate-300 bg-white"
+                  }`}
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="w-10 h-10 rounded-xl bg-primary text-white flex items-center justify-center shadow-servio-xs">
+                        <CalendarCheck size={22} weight="fill" />
+                      </div>
+                      <span className="text-[10px] bg-primary text-white px-2 py-0.5 rounded-full font-bold">
+                        Bebas Pilih Waktu
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-sm font-bold text-neutral-dark block font-display">
+                        Nanti (Jadwalkan Waktu Sendiri)
+                      </span>
+                      <p className="text-xs text-neutral-slate mt-1 leading-relaxed">
+                        Tentukan tanggal dan masukkan jam berapa pun yang Anda inginkan dengan leluasa.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 mt-2 border-t border-slate-100 text-[11px] font-semibold text-primary flex items-center gap-1.5">
+                    <Clock size={15} weight="bold" />
+                    <span>Pilih tanggal & masukkan jam bebas</span>
+                  </div>
+                </button>
+              </div>
+
+              {/* Sub-form when "NANTI" is selected */}
+              {scheduleMode === "NANTI" && (
+                <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-5 animate-in fade-in duration-200">
+                  {/* Date Selection */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-neutral-dark">
+                        Pilih Tanggal Kedatangan
+                      </label>
+                      <span className="text-[11px] text-neutral-slate">Tersedia 7 hari ke depan</span>
+                    </div>
+
+                    <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+                      {dateOptions.map((opt) => {
+                        const isSelected = customDate === opt.iso;
+                        return (
+                          <button
+                            key={opt.iso}
+                            type="button"
+                            onClick={() => setCustomDate(opt.iso)}
+                            className={`p-2.5 rounded-xl border text-center transition-all ${
+                              isSelected
+                                ? "bg-primary text-white border-primary shadow-servio-xs"
+                                : "bg-white text-neutral-dark border-slate-200 hover:border-slate-300"
+                            }`}
+                          >
+                            <span className="text-[10px] block font-medium opacity-80 uppercase">
+                              {opt.dayLabel}
+                            </span>
+                            <span className="text-base font-bold font-display block my-0.5">
+                              {opt.dateNum}
+                            </span>
+                            <span className="text-[10px] block opacity-75">
+                              {opt.monthLabel}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Or manual date input */}
+                    <div className="pt-2 flex items-center gap-3">
+                      <span className="text-[11px] text-neutral-slate">Atau pilih tanggal lain:</span>
+                      <input
+                        type="date"
+                        min={todayStr}
+                        value={customDate}
+                        onChange={(e) => setCustomDate(e.target.value)}
+                        className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs text-neutral-dark bg-white font-medium focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Custom 24-Hour Time Picker + Quick Chips (No AM/PM) */}
+                  <div className="space-y-3 pt-2 border-t border-slate-200">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-neutral-dark flex items-center gap-1.5">
+                        <Clock size={16} className="text-primary" weight="bold" />
+                        Jam Kedatangan Yang Diinginkan (Format 24 Jam)
+                      </label>
+                      <span className="text-[11px] text-neutral-slate">Bebas tentukan jam (00:00 - 23:59)</span>
+                    </div>
+
+                    {/* 24-Hour Custom Inputs (00-23 dan 00-59) */}
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="inline-flex items-center bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-xs focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary">
+                        {/* Dropdown Jam 00 - 23 */}
+                        <div className="flex flex-col">
+                          <span className="text-[9px] uppercase font-bold text-neutral-muted">Jam</span>
+                          <select
+                            value={customHour}
+                            onChange={(e) => setCustomHour(e.target.value)}
+                            className="bg-transparent font-mono font-bold text-base text-neutral-dark focus:outline-none cursor-pointer pr-1"
+                            aria-label="Pilih Jam Format 24"
+                          >
+                            {Array.from({ length: 24 }).map((_, i) => {
+                              const val = String(i).padStart(2, "0");
+                              return (
+                                <option key={val} value={val}>
+                                  {val}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
+
+                        <span className="font-mono font-bold text-lg text-neutral-dark px-2 pt-2">:</span>
+
+                        {/* Dropdown Menit 00 - 59 */}
+                        <div className="flex flex-col">
+                          <span className="text-[9px] uppercase font-bold text-neutral-muted">Menit</span>
+                          <select
+                            value={customMinute}
+                            onChange={(e) => setCustomMinute(e.target.value)}
+                            className="bg-transparent font-mono font-bold text-base text-neutral-dark focus:outline-none cursor-pointer pr-1"
+                            aria-label="Pilih Menit"
+                          >
+                            {Array.from({ length: 60 }).map((_, i) => {
+                              const val = String(i).padStart(2, "0");
+                              return (
+                                <option key={val} value={val}>
+                                  {val}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
+
+                        <span className="ml-2 pl-2 border-l border-slate-200 text-xs font-bold text-primary pt-2">
+                          WIB
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2 text-xs text-neutral-slate">
+                        <span className="px-2.5 py-1 rounded-lg bg-sky/20 border border-sky-200 text-primary font-mono font-bold text-xs">
+                          {customHour}:{customMinute} WIB
+                        </span>
+                        <span className="text-[11px]">(Format 24 Jam Universal)</span>
+                      </div>
+                    </div>
+
+                    {/* Popular Time Chips */}
+                    <div className="space-y-1.5 pt-1">
+                      <span className="text-[11px] text-neutral-muted block">Pilihan jam cepat:</span>
+                      <div className="flex flex-wrap gap-2">
+                        {popularTimes.map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => handleSelectPopularTime(t)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all cursor-pointer ${
+                              customTime === t
+                                ? "bg-primary text-white shadow-servio-xs"
+                                : "bg-white border border-slate-200 text-neutral-dark hover:bg-slate-100"
+                            }`}
+                          >
+                            {t} WIB
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Active Selection Callout */}
+              <div className="p-4 rounded-2xl bg-sky/20 border border-sky-200 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2.5">
+                  <Clock size={18} weight="fill" className="text-primary" />
+                  <span className="text-neutral-dark font-medium">
+                    Jadwal Terpilih:{" "}
+                    <strong className="text-primary font-bold">
+                      {scheduleMode === "SEKARANG"
+                        ? `Kunjungan Segera Hari Ini (${todayStr})`
+                        : `${customDate} Pukul ${customTime} WIB`}
+                    </strong>
+                  </span>
+                </div>
+                <span className="text-[11px] text-emerald-600 font-bold bg-white px-2.5 py-1 rounded-full border border-emerald-200 flex items-center gap-1">
+                  <CheckCircle size={13} weight="fill" /> Waktu Siap
+                </span>
+              </div>
             </div>
           )}
 
-          {/* STEP 4: SUMMARY & POLICIES */}
+          {/* STEP 4: COMPLETE SUMMARY (ALL DATA FROM STEPS 1-3 & POLICIES) */}
           {state.step === 4 && (
             <div className="space-y-6">
               <div className="border-b border-slate-100 pb-4">
@@ -516,10 +901,11 @@ function BookingWizardContent() {
                   Ringkasan Pemesanan & Jaminan Garansi
                 </h2>
                 <p className="text-xs text-neutral-slate">
-                  Periksa kembali seluruh detail permohonan servis Anda sebelum dikirim ke sistem antrean mitra.
+                  Periksa kembali seluruh informasi permohonan servis Anda sebelum dikirim ke sistem antrean mitra.
                 </p>
               </div>
 
+              {/* Card 1: Service & Provider Info */}
               <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-200">
                   <div className="flex items-center gap-3">
@@ -527,32 +913,135 @@ function BookingWizardContent() {
                       <Wrench size={22} weight="bold" />
                     </div>
                     <div>
-                      <span className="text-xs font-bold text-neutral-dark block">
+                      <span className="text-xs font-bold text-neutral-dark block font-display">
                         {state.service?.title}
                       </span>
                       <span className="text-[11px] text-neutral-slate">
-                        Mitra: {state.service?.providerName}
+                        Mitra: {state.service?.providerName || "PT Servio Mandiri Teknik"}
                       </span>
                     </div>
                   </div>
                   <span className="text-xs font-bold text-primary px-3 py-1 rounded-full bg-sky border border-sky-200">
                     {state.service?.pricingModel === "SURVEY_ESTIMATE"
                       ? "Biaya Survei Rp 50.000"
-                      : `Rp ${state.service?.basePrice.toLocaleString("id-ID")}`}
+                      : `Rp ${state.service?.basePrice?.toLocaleString("id-ID") || "150.000"}`}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <span className="text-neutral-muted block text-[11px]">Jadwal Kunjungan:</span>
-                    <span className="font-bold text-neutral-dark">
-                      {state.scheduledDate || "2026-09-22"} • Slot {state.scheduledTimeSlot || "09:00 - 11:00 WIB"}
-                    </span>
+                {/* Card 2: Step 1 Information (Unit & Complaint Details) */}
+                <div className="space-y-2.5 pt-1">
+                  <h3 className="text-xs font-bold text-neutral-dark font-display flex items-center gap-1.5">
+                    <FileText size={15} className="text-primary" weight="bold" />
+                    1. Detail Unit & Kendala Kerusakan
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-white p-3.5 rounded-xl border border-slate-200">
+                    <div>
+                      <span className="text-neutral-muted block text-[11px]">Merk & Model Unit:</span>
+                      <span className="font-bold text-neutral-dark">
+                        {String(state.customFieldValues?.brand || "-")}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-neutral-muted block text-[11px]">Deskripsi Keluhan:</span>
+                      <span className="font-medium text-neutral-dark line-clamp-2">
+                        {String(state.customFieldValues?.issueDetails || "-")}
+                      </span>
+                    </div>
+
+                    {/* Uploaded Photos Preview in Summary */}
+                    <div className="sm:col-span-2 pt-2 border-t border-slate-100">
+                      <span className="text-neutral-muted block text-[11px] mb-1.5">
+                        Bukti Foto/Video Terlampir ({uploadedFiles.length}):
+                      </span>
+                      {uploadedFiles.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {uploadedFiles.map((file) => (
+                            <div
+                              key={file.id}
+                              className="flex items-center gap-2 p-1.5 rounded-lg border border-slate-200 bg-slate-50 text-[11px]"
+                            >
+                              {file.type === "image" && file.url ? (
+                                <img
+                                  src={file.url}
+                                  alt={file.name}
+                                  className="w-10 h-10 object-cover rounded-md border border-slate-200"
+                                />
+                              ) : (
+                                <div className="w-10 h-10 rounded-md bg-sky text-primary flex items-center justify-center font-bold">
+                                  MP4
+                                </div>
+                              )}
+                              <div className="pr-1">
+                                <p className="font-semibold text-neutral-dark truncate max-w-[140px]">{file.name}</p>
+                                <span className="text-[10px] text-neutral-slate">{file.size}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-neutral-slate italic">
+                          Tidak ada foto dilampirkan (teknisi akan inspeksi langsung di tempat)
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-neutral-muted block text-[11px]">Alamat Pengerjaan:</span>
-                    <span className="font-medium text-neutral-dark truncate block">
-                      {state.address.street || "Kelapa Gading, Jakarta"}
+                </div>
+
+                {/* Card 3: Step 2 Information (Location & Contact Details) */}
+                <div className="space-y-2.5 pt-2">
+                  <h3 className="text-xs font-bold text-neutral-dark font-display flex items-center gap-1.5">
+                    <MapPin size={15} className="text-primary" weight="bold" />
+                    2. Lokasi Pengerjaan (Home Service)
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-white p-3.5 rounded-xl border border-slate-200">
+                    <div>
+                      <span className="text-neutral-muted block text-[11px]">Mode Pengerjaan:</span>
+                      <span className="font-bold text-neutral-dark">
+                        Home Service (Kunjungan Teknisi ke Hunian)
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-neutral-muted block text-[11px]">Nama Penerima & Kontak:</span>
+                      <span className="font-bold text-neutral-dark">
+                        {selectedAddr?.recipientName || "Pelanggan"} ({selectedAddr?.phone || "-"})
+                      </span>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <span className="text-neutral-muted block text-[11px]">Alamat Lengkap:</span>
+                      <p className="font-medium text-neutral-dark">
+                        {state.address.street}
+                      </p>
+                      <p className="text-[11px] text-neutral-slate mt-0.5">
+                        {selectedAddr?.village ? `Kel. ${selectedAddr.village}, ` : ""}
+                        {selectedAddr?.district ? `Kec. ${selectedAddr.district}, ` : ""}
+                        {selectedAddr?.city || state.address.city}, {selectedAddr?.province || ""} {selectedAddr?.postalCode || ""}
+                      </p>
+                      {state.address.notes && (
+                        <p className="text-[11px] text-primary font-medium mt-1">
+                          Catatan Akses: {state.address.notes}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card 4: Step 3 Information (Schedule Details) */}
+                <div className="space-y-2.5 pt-2">
+                  <h3 className="text-xs font-bold text-neutral-dark font-display flex items-center gap-1.5">
+                    <Clock size={15} className="text-primary" weight="bold" />
+                    3. Jadwal Kedatangan Teknisi
+                  </h3>
+                  <div className="bg-white p-3.5 rounded-xl border border-slate-200 text-xs flex items-center justify-between">
+                    <div>
+                      <span className="text-neutral-muted block text-[11px]">Jadwal Pengerjaan:</span>
+                      <span className="font-bold text-neutral-dark">
+                        {scheduleMode === "SEKARANG"
+                          ? `Kunjungan Segera Hari Ini (${todayStr})`
+                          : `Tanggal ${customDate} • Pukul ${customTime} WIB`}
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-bold text-primary bg-sky/30 px-2.5 py-1 rounded-lg">
+                      {scheduleMode === "SEKARANG" ? "Segera (±30-60 mnt)" : "Waktu Khusus Pelanggan"}
                     </span>
                   </div>
                 </div>
@@ -560,12 +1049,12 @@ function BookingWizardContent() {
 
               {/* Survey Fee & Escrow Policy Callout */}
               <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-xs space-y-2 text-amber-900">
-                <div className="flex items-center gap-2 font-bold">
+                <div className="flex items-center gap-2 font-bold font-display">
                   <Info size={18} weight="fill" className="text-amber-600" />
-                  <span>Kebijakan Survei & Uang Aman Servio Protection</span>
+                  <span>Kebijakan Survei & Uang Aman Servio Protection (Garansi 30 Hari)</span>
                 </div>
                 <p className="text-[11px] leading-relaxed text-neutral-dark">
-                  Jika perbaikan memerlukan pemeriksaan fisik lebih lanjut di lokasi (seperti kebocoran freon dalam instalasi), estimasi biaya suku cadang akan diterbitkan dalam bentuk <strong>Quotation Resmi</strong> yang wajib Anda setujui sebelum pengerjaan dimulai. Uang ditampung aman di rekening penampung hingga pekerjaan selesai.
+                  Biaya survei diagnostik awal (Rp 50.000) ditampung aman oleh sistem penampung resmi. Jika perbaikan memerlukan penggantian suku cadang atau pengerjaan teknis lanjutan di lokasi, rincian biaya akan diterbitkan dalam bentuk <strong>Quotation Resmi</strong> yang wajib Anda setujui sebelum pengerjaan dimulai. Seluruh hasil servis dilindungi garansi 30 hari.
                 </p>
               </div>
             </div>
@@ -577,7 +1066,7 @@ function BookingWizardContent() {
               <button
                 type="button"
                 onClick={prevStep}
-                className="px-5 py-2.5 rounded-xl border border-slate-200 text-neutral-dark font-bold text-xs hover:bg-slate-50 transition-colors flex items-center gap-1.5"
+                className="px-5 py-2.5 rounded-xl border border-slate-200 text-neutral-dark font-bold text-xs hover:bg-slate-50 transition-colors flex items-center gap-1.5 font-display"
               >
                 <ArrowLeft size={16} weight="bold" />
                 <span>Sebelumnya</span>
@@ -603,7 +1092,7 @@ function BookingWizardContent() {
                 className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-display font-bold text-xs sm:text-sm hover:bg-emerald-700 transition-all flex items-center gap-2 shadow-servio-md active:scale-95 disabled:opacity-50"
               >
                 <ShieldCheck size={18} weight="fill" />
-                <span>{isSubmitting ? "Mengirim Pesanan..." : "Kirim Permohonan Booking"}</span>
+                <span>{isSubmitting ? "Menyimpan ke Database..." : "Kirim Permohonan Booking"}</span>
               </button>
             )}
           </div>

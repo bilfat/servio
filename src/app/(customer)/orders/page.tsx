@@ -39,6 +39,9 @@ import {
   TrackingModal,
 } from "@/features/order-barang/components/CustomerOrderModals";
 import { Toast } from "@/components/feedback/Toast";
+import { useOrderJasa } from "@/features/order-jasa/hooks/useOrderJasa";
+import { ServiceOrderCard } from "@/features/order-jasa/components/common/ServiceOrderCard";
+import { CustomerTabType } from "@/features/order-jasa/types";
 
 type OrderDomain = "PRODUCT" | "SERVICE";
 type ProductFilterTab = "BELUM_BAYAR" | "DIPROSES" | "DIKIRIM" | "TIBA" | "SELESAI" | "BATAL";
@@ -48,6 +51,14 @@ export default function OrderListPage() {
   const router = useRouter();
   const repo = useDomainRepository();
   const { orders } = useServiceOrder();
+  const {
+    orders: serviceOrders05B,
+    customerOrdersByTab: customerServiceOrdersByTab,
+    customerTabCounts: customerServiceTabCounts,
+    syncBackendOrders: syncOrderJasa,
+    isLoading: isOrderJasaLoading,
+    hasLoadedBackend: hasLoadedServiceBackend,
+  } = useOrderJasa();
   const {
     customerOrders,
     customerOrdersByTab,
@@ -64,13 +75,19 @@ export default function OrderListPage() {
 
   const [orderDomain, setOrderDomain] = useState<OrderDomain>("PRODUCT");
   const [productFilterTab, setProductFilterTab] = useState<ProductFilterTab>("BELUM_BAYAR");
+  const [customerServiceTab, setCustomerServiceTab] = useState<CustomerTabType>("BELUM_BAYAR");
   const [serviceFilterTab, setServiceFilterTab] = useState<ServiceFilterTab>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [initialLoading, setInitialLoading] = useState(false);
 
   useEffect(() => {
-    if (customerOrders.length === 0 && !hasLoadedBackend) {
+    const isDomainEmpty =
+      orderDomain === "SERVICE"
+        ? serviceOrders05B.length === 0 && !hasLoadedServiceBackend
+        : customerOrders.length === 0 && !hasLoadedBackend;
+
+    if (isDomainEmpty) {
       setInitialLoading(true);
       const timer = setTimeout(() => {
         setInitialLoading(false);
@@ -79,7 +96,7 @@ export default function OrderListPage() {
     } else {
       setInitialLoading(false);
     }
-  }, [customerOrders.length, hasLoadedBackend]);
+  }, [customerOrders.length, hasLoadedBackend, serviceOrders05B.length, hasLoadedServiceBackend, orderDomain]);
 
   const handleProductTabChange = (tabId: ProductFilterTab) => {
     if (tabId === productFilterTab) return;
@@ -89,7 +106,17 @@ export default function OrderListPage() {
   const handleRefreshData = async () => {
     setIsRefreshing(true);
     try {
-      await syncBackendOrders();
+      if (orderDomain === "SERVICE") {
+        // Fast focused refresh: only wait for Service Orders API
+        await syncOrderJasa();
+        // Silent background sync for product orders without blocking UI/spinner
+        syncBackendOrders(true).catch(() => {});
+      } else {
+        // Fast focused refresh: wait for Product Orders API
+        await syncBackendOrders();
+        // Silent background sync for service orders
+        syncOrderJasa(true).catch(() => {});
+      }
       setToastMessage("Data pesanan berhasil dimuat ulang.");
       setToastType("success");
     } catch {
@@ -340,13 +367,26 @@ export default function OrderListPage() {
     { id: "BATAL", label: "Batal", count: customerOrdersByTab.BATAL.length },
   ];
 
-  const serviceFilterTabs: { id: ServiceFilterTab; label: string; count: number; alert?: boolean }[] = [
-    { id: "ALL", label: "Semua", count: serviceCounts.ALL },
-    { id: "ACTION_REQUIRED", label: "Menunggu Tindakan ⚠", count: serviceCounts.ACTION_REQUIRED, alert: true },
-    { id: "ACTIVE", label: "Aktif", count: serviceCounts.ACTIVE },
-    { id: "COMPLETED", label: "Selesai", count: serviceCounts.COMPLETED },
-    { id: "CANCELLED", label: "Dibatalkan", count: serviceCounts.CANCELLED },
+  const serviceFilterTabs: { id: CustomerTabType; label: string; count: number; alert?: boolean }[] = [
+    { id: "BELUM_BAYAR", label: "Belum Bayar", count: customerServiceTabCounts.BELUM_BAYAR, alert: customerServiceTabCounts.BELUM_BAYAR > 0 },
+    { id: "MENUNGGU_JADWAL", label: "Menunggu Jadwal", count: customerServiceTabCounts.MENUNGGU_JADWAL },
+    { id: "BERLANGSUNG", label: "Berlangsung", count: customerServiceTabCounts.BERLANGSUNG },
+    { id: "SELESAI", label: "Selesai", count: customerServiceTabCounts.SELESAI },
+    { id: "BATAL", label: "Batal", count: customerServiceTabCounts.BATAL },
   ];
+
+  const filtered05BServiceOrders = useMemo(() => {
+    const list = customerServiceOrdersByTab[customerServiceTab] || [];
+    if (!searchQuery.trim()) return list;
+    const q = searchQuery.toLowerCase();
+    return list.filter(
+      (o) =>
+        o.id.toLowerCase().includes(q) ||
+        o.orderNumber.toLowerCase().includes(q) ||
+        o.serviceSnapshot.title.toLowerCase().includes(q) ||
+        o.providerName.toLowerCase().includes(q)
+    );
+  }, [customerServiceOrdersByTab, customerServiceTab, searchQuery]);
 
   return (
     <div className="space-y-6 pb-20">
@@ -367,16 +407,21 @@ export default function OrderListPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleRefreshData}
-            disabled={isLoadingBackend || isRefreshing}
-            className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition flex items-center gap-1.5 shadow-2xs shrink-0 cursor-pointer disabled:opacity-60"
-            title="Muat ulang data pesanan dari server"
-          >
-            <ArrowsClockwise size={15} className={`text-primary ${(isLoadingBackend || isRefreshing) ? "animate-spin" : ""}`} />
-            <span>{(isLoadingBackend || isRefreshing) ? "Memuat Data..." : "Muat Data"}</span>
-          </button>
+          {(() => {
+            const isRefreshingActive = isRefreshing || (orderDomain === "SERVICE" ? false : isLoadingBackend);
+            return (
+              <button
+                type="button"
+                onClick={handleRefreshData}
+                disabled={isRefreshingActive}
+                className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 transition flex items-center gap-1.5 shadow-2xs shrink-0 cursor-pointer disabled:opacity-60"
+                title="Muat ulang data pesanan dari server"
+              >
+                <ArrowsClockwise size={15} className={`text-primary ${isRefreshingActive ? "animate-spin" : ""}`} />
+                <span>{isRefreshingActive ? "Memuat Data..." : "Muat Data"}</span>
+              </button>
+            );
+          })()}
           {orderDomain === "SERVICE" ? (
             <Link
               href="/services"
@@ -417,6 +462,7 @@ export default function OrderListPage() {
           onClick={() => {
             setOrderDomain("PRODUCT");
             setProductFilterTab("BELUM_BAYAR");
+            syncBackendOrders(true).catch(() => {});
           }}
           className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition ${
             orderDomain === "PRODUCT"
@@ -439,7 +485,8 @@ export default function OrderListPage() {
           type="button"
           onClick={() => {
             setOrderDomain("SERVICE");
-            setServiceFilterTab("ALL");
+            setCustomerServiceTab("BELUM_BAYAR");
+            syncOrderJasa(true).catch(() => {});
           }}
           className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition ${
             orderDomain === "SERVICE"
@@ -454,7 +501,7 @@ export default function OrderListPage() {
               orderDomain === "SERVICE" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
             }`}
           >
-            {orders.length}
+            {serviceOrders05B.length}
           </span>
         </button>
       </div>
@@ -512,17 +559,17 @@ export default function OrderListPage() {
         {orderDomain === "SERVICE" && (
           <div className="flex items-center gap-2 overflow-x-auto pt-1 scrollbar-none">
             {serviceFilterTabs.map((tab) => {
-              const isActive = serviceFilterTab === tab.id;
+              const isActive = customerServiceTab === tab.id;
               return (
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setServiceFilterTab(tab.id)}
+                  onClick={() => setCustomerServiceTab(tab.id)}
                   className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-2 ${
                     isActive
                       ? tab.alert
                         ? "bg-amber-500 text-white shadow-servio-xs"
-                        : "bg-primary text-white shadow-servio-xs"
+                        : "bg-[#0F4C81] text-white shadow-servio-xs"
                       : "bg-slate-100 text-neutral-slate hover:bg-slate-200"
                   }`}
                 >
@@ -669,217 +716,65 @@ export default function OrderListPage() {
 
       {/* CONTENT LIST: SERVICE ORDERS */}
       {orderDomain === "SERVICE" && (
-        <>
-          {filteredServiceOrders.length === 0 ? (
+        <div className="space-y-4">
+          {/* 05B Service Orders */}
+          <div className="bg-sky-50/80 border border-sky-100 rounded-2xl p-3.5 flex items-center justify-between text-xs text-sky-950">
+            <div className="flex items-center gap-2.5">
+              <span className="w-6 h-6 rounded-lg bg-[#0F4C81] text-white font-bold text-[10px] flex items-center justify-center">
+                05B
+              </span>
+              <span>
+                Menampilkan <strong>{filtered05BServiceOrders.length}</strong> pesanan jasa dalam tab <strong>{serviceFilterTabs.find((t) => t.id === customerServiceTab)?.label}</strong>.
+              </span>
+            </div>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-sky-200 text-[#0F4C81]">
+              LIVE
+            </span>
+          </div>
+
+          {filtered05BServiceOrders.length === 0 ? (
             <EmptyState
-              title="Tidak Ada Pesanan Jasa Servis"
+              title={`Tidak Ada Pesanan Jasa (${serviceFilterTabs.find((t) => t.id === customerServiceTab)?.label})`}
               description={
                 searchQuery
-                  ? "Tidak ditemukan pesanan servis yang sesuai dengan kata kunci pencarian Anda."
-                  : serviceFilterTab === "ACTION_REQUIRED"
-                  ? "Tidak ada pesanan servis yang memerlukan tindakan saat ini."
-                  : serviceFilterTab === "ACTIVE"
-                  ? "Tidak ada pesanan servis yang sedang aktif atau dikerjakan teknisi."
-                  : serviceFilterTab === "COMPLETED"
-                  ? "Belum ada pesanan servis yang telah selesai."
-                  : serviceFilterTab === "CANCELLED"
-                  ? "Tidak ada pesanan servis yang dibatalkan."
-                  : "Anda belum memiliki riwayat pesanan jasa servis."
+                  ? `Tidak ada pesanan jasa yang cocok dengan kata kunci "${searchQuery}".`
+                  : `Belum ada pesanan jasa pada status ${serviceFilterTabs.find((t) => t.id === customerServiceTab)?.label.toLowerCase()}.`
               }
               action={
                 <div className="flex items-center gap-2">
-                  {(searchQuery || serviceFilterTab !== "ALL") && (
+                  {searchQuery && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setServiceFilterTab("ALL");
-                        setSearchQuery("");
-                      }}
+                      onClick={() => setSearchQuery("")}
                       className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-neutral-dark text-xs font-bold transition"
                     >
-                      Reset Filter
+                      Reset Pencarian
                     </button>
                   )}
                   <Link
                     href="/services"
-                    className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition"
+                    className="px-4 py-2 rounded-xl bg-[#0F4C81] text-white text-xs font-bold hover:bg-[#0c3c66] transition"
                   >
-                    Pesan Servis Baru
+                    Pesan Jasa Baru
                   </Link>
                 </div>
               }
             />
           ) : (
             <div className="space-y-4">
-              {filteredServiceOrders.map((ord, idx) => {
-                const actionInfo = getActionRequiredInfo(ord);
-                return (
-                  <div
-                    key={`${ord.id}-${idx}`}
-                    onClick={() => router.push(`/orders/${ord.id}`)}
-                    className={`glass-card p-5 sm:p-6 rounded-3xl border transition-all flex flex-col justify-between space-y-4 cursor-pointer group bg-white shadow-servio-xs hover:shadow-servio-md ${
-                      actionInfo.hasAction
-                        ? "border-amber-300 ring-1 ring-amber-300/40 hover:border-amber-500"
-                        : "border-slate-200/80 hover:border-primary/40"
-                    }`}
-                  >
-                    {/* Header Row */}
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-mono text-xs font-bold text-neutral-dark">
-                          #{ord.id}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-md bg-sky text-primary text-[10px] font-bold border border-primary/20">
-                          Jasa Servis
-                        </span>
-                        <StatusBadge
-                          status={getServiceVariant(ord.status)}
-                          label={ord.statusLabel}
-                          size="sm"
-                        />
-                      </div>
-                      <span className="text-xs text-neutral-muted">
-                        Jadwal: {ord.scheduledDate} ({ord.scheduledTimeSlot})
-                      </span>
-                    </div>
-
-                    {/* Action Required Banner if Applicable */}
-                    {actionInfo.hasAction && (
-                      <div
-                        className={`p-3 rounded-2xl border text-xs flex items-center justify-between gap-3 ${actionInfo.color}`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <WarningCircle
-                            size={18}
-                            weight="fill"
-                            className="shrink-0 text-amber-600"
-                          />
-                          <div>
-                            <strong className="block">{actionInfo.label}</strong>
-                            <span className="text-[11px] opacity-90">{actionInfo.detail}</span>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            actionInfo.ctaAction();
-                          }}
-                          className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs shrink-0 shadow-sm transition"
-                        >
-                          {actionInfo.ctaLabel}
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Body Content */}
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                      <div className="flex items-start gap-3.5 min-w-0">
-                        <div className="w-12 h-12 rounded-2xl bg-sky text-primary flex items-center justify-center shrink-0">
-                          <Wrench size={24} weight="duotone" />
-                        </div>
-                        <div className="space-y-1 min-w-0">
-                          <h3 className="font-display font-bold text-sm sm:text-base text-neutral-dark group-hover:text-primary transition-colors">
-                            {ord.serviceTitle}
-                          </h3>
-                          <p className="text-xs text-neutral-slate">
-                            Mitra: <strong>{ord.providerName}</strong>
-                            {ord.assignedWorker ? ` • Teknisi: ${ord.assignedWorker.name}` : ""}
-                          </p>
-                          <p className="text-[11px] text-neutral-muted truncate max-w-md">
-                            Lokasi: {ord.address}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Price & Primary CTA */}
-                      <div className="flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto shrink-0 pt-2 sm:pt-0">
-                        <div>
-                          <span className="text-[10px] text-neutral-muted block sm:text-right">
-                            {ord.priceAdjustment ? "Total Terbaru:" : "Total Tagihan:"}
-                          </span>
-                          <span className="font-mono font-bold text-base text-primary">
-                            Rp {ord.pricing?.totalAmount?.toLocaleString("id-ID") ?? "0"}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2 mt-2">
-                          {ord.status === "WAITING_APPROVAL" && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                router.push(`/orders/${ord.id}`);
-                              }}
-                              className="px-3.5 py-1.5 rounded-xl bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 transition-colors flex items-center gap-1 shadow-servio-xs"
-                            >
-                              <span>Review & Approve</span>
-                            </button>
-                          )}
-                          {ord.status === "PAYMENT_PENDING" && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                router.push(`/orders/${ord.id}`);
-                              }}
-                              className="px-3.5 py-1.5 rounded-xl bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 transition-colors flex items-center gap-1 shadow-servio-xs"
-                            >
-                              <CreditCard size={14} weight="bold" />
-                              <span>Bayar</span>
-                            </button>
-                          )}
-                          {ord.status === "TECHNICIAN_DISPATCHED" && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                router.push(`/orders/${ord.id}`);
-                              }}
-                              className="px-3.5 py-1.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition-colors flex items-center gap-1 shadow-servio-xs"
-                            >
-                              <NavigationArrow size={14} weight="bold" />
-                              <span>Lacak Teknisi</span>
-                            </button>
-                          )}
-                          {ord.status === "AWAITING_PROOF_REVIEW" && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                router.push(`/orders/${ord.id}`);
-                              }}
-                              className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors flex items-center gap-1 shadow-servio-xs"
-                            >
-                              <CheckCircle size={14} weight="bold" />
-                              <span>Konfirmasi Selesai</span>
-                            </button>
-                          )}
-                          {ord.status === "COMPLETED" && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                router.push(`/orders/${ord.id}`);
-                              }}
-                              className="px-3.5 py-1.5 rounded-xl bg-slate-100 text-neutral-dark text-xs font-bold hover:bg-slate-200 transition-colors flex items-center gap-1"
-                            >
-                              <ShieldCheck size={14} className="text-emerald-600" />
-                              <span>Detail & Garansi</span>
-                            </button>
-                          )}
-                          <span className="text-xs font-bold text-primary group-hover:translate-x-1 transition-transform flex items-center gap-1 ml-1">
-                            <ArrowRight size={14} />
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {filtered05BServiceOrders.map((order) => (
+                <ServiceOrderCard
+                  key={order.id}
+                  order={order}
+                  role="CUSTOMER"
+                  onPrimaryAction={(o) => {
+                    router.push(`/orders/${o.id}`);
+                  }}
+                />
+              ))}
             </div>
           )}
-        </>
+        </div>
       )}
 
       {/* PHASE 05A MODALS */}

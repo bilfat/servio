@@ -42,12 +42,86 @@ import {
 } from "@phosphor-icons/react";
 import { useAfterSales } from "@/features/afterSales/useAfterSales";
 import { WarrantyClaimModal } from "@/components/features/afterSales/WarrantyClaimModal";
+import { useOrderJasa } from "@/features/order-jasa/hooks/useOrderJasa";
+import { ServiceOrderDetailLayout } from "@/features/order-jasa/components/common/ServiceOrderDetailLayout";
+import { getStoredWorkerPhoto } from "@/features/worker/workerPhotoHelper";
 
 export default function CustomerServiceOrderDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const rawParamId = (params?.orderId as string) || "SRV-C06-ADJ-PRESENT";
 
+  const { orders: serviceOrders05B, fetchOrderById, isLoading } = useOrderJasa();
+  const order05B = serviceOrders05B.find(
+    (o) => o.id === rawParamId || o.orderNumber === rawParamId
+  );
+  const [asyncOrder05B, setAsyncOrder05B] = useState<any>(null);
+  const [isFetchingAsync, setIsFetchingAsync] = useState(false);
+
+  const [hasAttemptedFetch, setHasAttemptedFetch] = useState(false);
+
+  React.useEffect(() => {
+    if (rawParamId && fetchOrderById) {
+      if (!order05B) {
+        setIsFetchingAsync(true);
+      }
+      fetchOrderById(rawParamId, true)
+        .then((res: any) => {
+          if (res) setAsyncOrder05B(res);
+        })
+        .finally(() => {
+          setIsFetchingAsync(false);
+          setHasAttemptedFetch(true);
+        });
+    }
+  }, [rawParamId, fetchOrderById]);
+
+  const active05B = asyncOrder05B || order05B;
+
+  if (active05B) {
+    return (
+      <ServiceOrderDetailLayout
+        order={active05B}
+        role="CUSTOMER"
+        backHref="/orders"
+        onOrderUpdated={(updated) => setAsyncOrder05B(updated)}
+      />
+    );
+  }
+
+  if (isFetchingAsync || (isLoading && !hasAttemptedFetch)) {
+    return (
+      <div className="py-24 max-w-xl mx-auto flex flex-col items-center justify-center space-y-3">
+        <div className="w-9 h-9 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        <p className="text-xs text-slate-500 font-semibold">Memuat rincian pesanan jasa...</p>
+      </div>
+    );
+  }
+
+  const isLegacyMockId = rawParamId.startsWith("SRV-") || rawParamId.startsWith("SC-");
+  if (isLegacyMockId) {
+    return <LegacyCustomerServiceOrderDetail rawParamId={rawParamId} />;
+  }
+
+  return (
+    <div className="py-16 max-w-lg mx-auto">
+      <EmptyState
+        title="Pesanan Jasa Tidak Ditemukan"
+        description={`Pesanan jasa dengan ID "${rawParamId}" tidak ditemukan pada sistem.`}
+        action={
+          <Link
+            href="/orders"
+            className="px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition shadow-xs"
+          >
+            Kembali ke Daftar Pesanan
+          </Link>
+        }
+      />
+    </div>
+  );
+}
+
+function LegacyCustomerServiceOrderDetail({ rawParamId }: { rawParamId: string }) {
+  const router = useRouter();
   const repo = useDomainRepository();
   const {
     order,
@@ -147,7 +221,7 @@ export default function CustomerServiceOrderDetailPage() {
   };
 
   // Stepper representation
-  const stepperSteps: StepItem[] = order.stepper.map((st) => ({
+  const stepperSteps: StepItem[] = (order?.stepper || []).map((st) => ({
     id: st.id,
     title: st.title,
     description: st.description,
@@ -155,11 +229,11 @@ export default function CustomerServiceOrderDetailPage() {
   }));
 
   // Pricing calculation
-  const totalPaid = (order.paymentRecords || [])
+  const totalPaid = (order?.paymentRecords || [])
     .filter((r) => r.status === "PAID")
     .reduce((sum, r) => sum + r.amount, 0);
 
-  const payableRemaining = Math.max(0, order.pricing.totalAmount - totalPaid);
+  const payableRemaining = Math.max(0, (order?.pricing?.totalAmount || 0) - totalPaid);
 
   // Linked Product Orders if any
   const linkedProductOrders = (order.relatedProductOrderIds || [])
@@ -585,18 +659,25 @@ export default function CustomerServiceOrderDetailPage() {
           </span>
 
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-sky text-primary flex items-center justify-center font-bold text-base shrink-0 border border-primary/20">
-              {order.assignedWorker?.name?.charAt(0) || "T"}
-            </div>
+            {(() => {
+              const photo = getStoredWorkerPhoto(order.assignedWorker?.id) || (order.assignedWorker as any)?.avatarUrl || (order.assignedWorker as any)?.photo;
+              return photo ? (
+                <img
+                  src={photo}
+                  alt={order.assignedWorker?.name || "Teknisi"}
+                  className="w-12 h-12 rounded-2xl object-cover border border-slate-200 shrink-0 shadow-sm"
+                />
+              ) : (
+                <div className="w-12 h-12 rounded-2xl bg-sky text-primary flex items-center justify-center font-bold text-base shrink-0 border border-primary/20">
+                  {order.assignedWorker?.name?.charAt(0) || "T"}
+                </div>
+              );
+            })()}
             <div>
               <h4 className="font-display font-bold text-sm text-neutral-dark">
                 {order.assignedWorker?.name || "Budi Santoso"}
               </h4>
-              <p className="text-xs text-neutral-slate">Teknisi Servio Terverifikasi</p>
-              <div className="flex items-center gap-1 text-xs text-amber-600 font-bold pt-0.5">
-                <Star size={13} weight="fill" />
-                <span>{order.assignedWorker?.rating || 4.9} • 140+ Layanan Selesai</span>
-              </div>
+              <p className="text-xs text-emerald-700 font-semibold pt-0.5">Teknisi Servio Terverifikasi</p>
             </div>
           </div>
 

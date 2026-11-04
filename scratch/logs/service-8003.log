@@ -3,3 +3,6 @@
 
   Press Ctrl+C to stop the server
 
+  2026-11-02 11:47:16 /up ..................................................................................... ~ 5dt
+  2026-11-02 11:47:20 / ....................................................................................... ~ 2dt
+  PHP Fatal error:  Maximum execution time of 60 seconds exceeded in D:\website latihan\servio_web_13\backend\services\product-service\vendor\laravel\framework\src\Illuminate\Foundation\Exceptions\Renderer\Exception.php on line 118

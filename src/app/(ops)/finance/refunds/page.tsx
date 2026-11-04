@@ -28,8 +28,10 @@ import { Toast } from "@/components/feedback/Toast";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { EmptyState } from "@/components/feedback/EmptyState";
+import { useOrderJasa } from "@/features/order-jasa/hooks/useOrderJasa";
 
 export default function RefundOperationsQueuePage() {
+  const { orders: serviceOrders05B } = useOrderJasa();
   const [refunds, setRefunds] = useState<BackendRefundTransaction[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
@@ -39,11 +41,62 @@ export default function RefundOperationsQueuePage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Filters
+  const [channelFilter, setChannelFilter] = useState<"ALL" | "BARANG_05A" | "JASA_05B">("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
 
   // Inspection Modal
   const [selectedRefund, setSelectedRefund] = useState<BackendRefundTransaction | null>(null);
+  const [selected05BRefund, setSelected05BRefund] = useState<{
+    id: string;
+    orderId: string;
+    orderNumber: string;
+    customerName: string;
+    providerName: string;
+    serviceTitle: string;
+    amount: number;
+    reason: string;
+    status: string;
+    requestedAt: string;
+  } | null>(null);
+
+  const service05BRefunds = useMemo(() => {
+    return serviceOrders05B
+      .filter((o) => o.paymentSummary?.refundSummary)
+      .map((o) => {
+        const ref = o.paymentSummary.refundSummary!;
+        return {
+          id: ref.refundId,
+          orderId: o.id,
+          orderNumber: o.orderNumber,
+          customerName: o.customerName,
+          providerName: o.providerName,
+          serviceTitle: o.serviceSnapshot.title,
+          amount: ref.amount,
+          reason: ref.reason,
+          status: ref.status,
+          requestedAt: ref.requestedAt,
+        };
+      });
+  }, [serviceOrders05B]);
+
+  const filtered05BRefunds = useMemo(() => {
+    if (channelFilter === "BARANG_05A") return [];
+    return service05BRefunds.filter((r) => {
+      if (statusFilter !== "ALL" && r.status !== statusFilter) return false;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return (
+          r.id.toLowerCase().includes(q) ||
+          r.orderNumber.toLowerCase().includes(q) ||
+          r.customerName.toLowerCase().includes(q) ||
+          r.serviceTitle.toLowerCase().includes(q) ||
+          r.reason.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [service05BRefunds, channelFilter, statusFilter, searchQuery]);
 
   const fetchRefunds = async () => {
     try {
@@ -139,6 +192,38 @@ export default function RefundOperationsQueuePage() {
         </div>
       </div>
 
+      {/* CHANNEL FILTER TABS (SECTION 23) */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none text-xs font-bold">
+        {[
+          { id: "ALL" as const, label: "Semua Refund", count: totalCount + service05BRefunds.length },
+          { id: "BARANG_05A" as const, label: "Order Barang 05A", count: totalCount },
+          { id: "JASA_05B" as const, label: "Order Jasa 05B", count: service05BRefunds.length },
+        ].map((tab) => {
+          const isActive = channelFilter === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setChannelFilter(tab.id)}
+              className={`px-4 py-2.5 rounded-xl whitespace-nowrap transition flex items-center gap-2 shrink-0 ${
+                isActive
+                  ? "bg-[#0F4C81] text-white shadow-servio-xs"
+                  : "bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50 hover:text-slate-900"
+              }`}
+            >
+              <span>{tab.label}</span>
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold ${
+                  isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Filter and Search Bar */}
       <div className="p-4 rounded-3xl bg-white border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
         <div className="flex-1 relative">
@@ -199,6 +284,77 @@ export default function RefundOperationsQueuePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs">
+                {/* 1. 05B Service Refund Rows */}
+                {filtered05BRefunds.map((row) => (
+                  <tr key={row.id} className="hover:bg-sky-50/40 transition-colors bg-sky-50/15">
+                    <td className="py-4 px-5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-bold text-slate-900">{row.id}</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-sky-100 text-[#0F4C81]">
+                          05B JASA
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-mono block">
+                        Order: #{row.orderNumber}
+                      </span>
+                    </td>
+
+                    <td className="py-4 px-4 font-mono text-[11px] text-slate-700">
+                      <div className="font-bold text-slate-800">{row.serviceTitle}</div>
+                      <span className="text-[10px] text-slate-500 block truncate max-w-xs">
+                        Pelanggan: {row.customerName} • Mitra: {row.providerName}
+                      </span>
+                      <span className="text-[9px] text-rose-600 block">
+                        Alasan: {row.reason}
+                      </span>
+                    </td>
+
+                    <td className="py-4 px-4 font-bold text-slate-900">
+                      Rp {row.amount.toLocaleString("id-ID")}
+                    </td>
+
+                    <td className="py-4 px-4 font-bold text-slate-800">
+                      Rp {row.amount.toLocaleString("id-ID")}
+                    </td>
+
+                    <td className="py-4 px-4">
+                      <span className="font-black text-purple-900">
+                        Rp {row.status === "SUCCEEDED" ? row.amount.toLocaleString("id-ID") : "0"}
+                      </span>
+                    </td>
+
+                    <td className="py-4 px-4">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-black inline-block mb-1 ${
+                          row.status === "SUCCEEDED"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : row.status === "PENDING"
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-sky-100 text-sky-800"
+                        }`}
+                      >
+                        {row.status}
+                      </span>
+                      <div className="text-[10px] text-slate-400">
+                        {row.requestedAt}
+                      </div>
+                    </td>
+
+                    <td className="py-4 px-5 text-right whitespace-nowrap">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelected05BRefund(row)}
+                        className="text-xs text-slate-700 hover:bg-slate-100 rounded-xl"
+                      >
+                        <Eye className="w-3.5 h-3.5 mr-1" />
+                        Rincian
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+
+                {/* 2. Existing 05A Product Refund Rows */}
                 {filteredRefunds.map((refund) => (
                   <tr key={refund.id} className="hover:bg-slate-50/60 transition-colors">
                     <td className="py-4 px-5">
@@ -361,6 +517,68 @@ export default function RefundOperationsQueuePage() {
                 size="sm"
                 onClick={() => setSelectedRefund(null)}
                 className="rounded-xl text-xs font-bold"
+              >
+                Tutup
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal 05B Refund Detail */}
+      <Modal
+        isOpen={!!selected05BRefund}
+        onClose={() => setSelected05BRefund(null)}
+        title="Rincian Pengembalian Dana (05B)"
+        size="md"
+      >
+        {selected05BRefund && (
+          <div className="space-y-4 text-left font-body text-xs">
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Refund Reference:</span>
+                <strong className="font-mono text-slate-900">{selected05BRefund.id}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Nomor Order:</span>
+                <strong className="font-mono text-slate-900">#{selected05BRefund.orderNumber}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Layanan:</span>
+                <span className="font-semibold text-slate-800">{selected05BRefund.serviceTitle}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Pelanggan:</span>
+                <span className="font-semibold text-slate-800">{selected05BRefund.customerName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Mitra Provider:</span>
+                <span className="font-semibold text-slate-800">{selected05BRefund.providerName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Alasan Pembatalan:</span>
+                <span className="text-rose-700 font-semibold">{selected05BRefund.reason}</span>
+              </div>
+              <div className="flex justify-between pt-2 border-t border-slate-200">
+                <span className="text-slate-500 font-bold">Nominal Refund:</span>
+                <strong className="text-emerald-700 text-sm">
+                  Rp {selected05BRefund.amount.toLocaleString("id-ID")}
+                </strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Status Finance:</span>
+                <span className="font-bold uppercase text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                  {selected05BRefund.status}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSelected05BRefund(null)}
+                className="rounded-xl"
               >
                 Tutup
               </Button>

@@ -199,6 +199,10 @@ Route::prefix('v1')->group(function () {
         Route::match(['get', 'patch', 'post'], '/organizations/{id}/operational-status', [ProfileOrganizationController::class, 'updateOperationalStatus']);
         Route::match(['get', 'patch', 'post'], '/organizations/{id}/status', [ProfileOrganizationController::class, 'updateOperationalStatus']);
         Route::match(['get', 'patch', 'post'], '/organizations/{id}/availability', [ProfileOrganizationController::class, 'updateOperationalStatus']);
+        Route::get('/organizations/{id}/coverage', [ProfileOrganizationController::class, 'getCoverage']);
+        Route::match(['patch', 'put', 'post'], '/organizations/{id}/coverage', [ProfileOrganizationController::class, 'updateCoverage']);
+        Route::get('/organizations/{id}/schedule', [ProfileOrganizationController::class, 'getSchedule']);
+        Route::match(['patch', 'put', 'post'], '/organizations/{id}/schedule', [ProfileOrganizationController::class, 'updateSchedule']);
         Route::get('/organizations/{id}/memberships', [ProfileOrganizationController::class, 'organizationMemberships']);
         Route::get('/roles/me', [ProfileOrganizationController::class, 'myRoles']);
         Route::get('/permissions/me', [ProfileOrganizationController::class, 'myPermissions']);
@@ -227,6 +231,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/provider/workers', [WorkerInvitationController::class, 'listWorkers']);
         Route::post('/provider/workers', [WorkerInvitationController::class, 'inviteWorker']);
         Route::get('/provider/workers/{id}', [WorkerInvitationController::class, 'getWorker']);
+        Route::patch('/provider/workers/{id}', [WorkerInvitationController::class, 'updateWorker']);
         Route::post('/provider/worker-invitations', [WorkerInvitationController::class, 'inviteWorker']);
         Route::get('/provider/worker-invitations', [WorkerInvitationController::class, 'listInvitations']);
         Route::post('/provider/worker-invitations/{id}/resend', [WorkerInvitationController::class, 'resendInvitation']);

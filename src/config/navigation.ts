@@ -47,7 +47,6 @@ import {
   Folder,
   TrendUp,
 } from "@phosphor-icons/react";
-
 export const CATEGORY_ICON_MAP: Record<string, React.ComponentType<any>> = {
   Wrench,
   HouseLine,
@@ -73,13 +72,11 @@ export const CATEGORY_ICON_MAP: Record<string, React.ComponentType<any>> = {
   Sparkle,
   Folder,
 };
-
 export type IconComponent = React.ComponentType<{
   size?: number | string;
   weight?: "thin" | "light" | "regular" | "bold" | "fill" | "duotone";
   className?: string;
 }>;
-
 export interface NavChildItem {
   id: string;
   label: string;
@@ -87,7 +84,6 @@ export interface NavChildItem {
   badge?: string;
   icon?: IconComponent;
 }
-
 export interface NavigationItem {
   id: string;
   label: string;
@@ -97,13 +93,11 @@ export interface NavigationItem {
   roles: UserRole[];
   children?: NavChildItem[];
 }
-
 export interface NavigationSection {
   id: string;
   title: string;
   items: NavigationItem[];
 }
-
 /**
  * 6 Fixed Service Domains for Public and Customer Dropdowns (Points to valid App Router routes)
  */
@@ -115,7 +109,6 @@ export const SIX_SERVICE_DOMAINS = [
   { id: "48cadd7a-6707-4139-b650-4cadc74ca76b", label: "Environment", href: "/categories/48cadd7a-6707-4139-b650-4cadc74ca76b", icon: TreeEvergreen },
   { id: "06e8f70c-6a07-417c-ba04-38cf26976aef", label: "Automotive", href: "/categories/06e8f70c-6a07-417c-ba04-38cf26976aef", icon: Car },
 ];
-
 /**
  * Public Landing Navigation Elements (P0.3)
  */
@@ -147,7 +140,6 @@ export const PUBLIC_NAV_ITEMS = [
     ],
   },
 ];
-
 /**
  * Hierarchical Navigation Matrix by Role (P1.3 / ROOT-08 complete sections)
  */
@@ -183,7 +175,6 @@ export const CANONICAL_NAVIGATION_SECTIONS: Partial<Record<UserRole, NavigationS
         { id: "prov-dash", label: "Dashboard", href: "/provider/dashboard", icon: ChartLineUp, roles: ["SERVICE_PROVIDER"] },
         { id: "prov-serv", label: "Katalog Layanan", href: "/provider/services", icon: Wrench, roles: ["SERVICE_PROVIDER"] },
         { id: "prov-tax-req", label: "Ajukan Subkategori", href: "/provider/taxonomy-request", icon: PlusCircle, roles: ["SERVICE_PROVIDER"] },
-        { id: "prov-book", label: "Antrean Booking", href: "/provider/bookings", icon: CalendarCheck, badge: "3", roles: ["SERVICE_PROVIDER"] },
         { id: "prov-ord", label: "Order Operasional", href: "/provider/orders", icon: ClipboardText, roles: ["SERVICE_PROVIDER"] },
         { id: "prov-chat", label: "Obrolan Pelanggan", href: "/provider/chat", icon: ChatCircleText, roles: ["SERVICE_PROVIDER"] },
       ],
@@ -224,7 +215,6 @@ export const CANONICAL_NAVIGATION_SECTIONS: Partial<Record<UserRole, NavigationS
       title: "Pengaturan",
       items: [
         { id: "prov-prof", label: "Profil", href: "/provider/profile", icon: User, roles: ["SERVICE_PROVIDER"] },
-        { id: "prov-area-set", label: "Cakupan & Area Layanan", href: "/provider/service-area", icon: SlidersHorizontal, roles: ["SERVICE_PROVIDER"] },
       ],
     },
   ],
@@ -254,7 +244,6 @@ export const CANONICAL_NAVIGATION_SECTIONS: Partial<Record<UserRole, NavigationS
       id: "work-ops-section",
       title: "Operasional",
       items: [
-        { id: "work-schedule", label: "Jadwal", href: "/worker/schedule", icon: CalendarCheck, roles: ["WORKER_TECHNICIAN"] },
         { id: "work-chat", label: "Obrolan", href: "/worker/chat", icon: ChatCircleText, roles: ["WORKER_TECHNICIAN"] },
       ],
     },
@@ -274,7 +263,6 @@ export const CANONICAL_NAVIGATION_SECTIONS: Partial<Record<UserRole, NavigationS
       ],
     },
   ],
-
   CUSTOMER_SUPPORT: [
     {
       id: "cs-tickets",
@@ -459,7 +447,6 @@ export const CANONICAL_NAVIGATION_SECTIONS: Partial<Record<UserRole, NavigationS
     },
   ],
 };
-
 /**
  * Flat items for standard top navigation or simple sidebar
  */
@@ -544,7 +531,6 @@ export const CANONICAL_NAVIGATION: Record<UserRole, NavigationItem[]> = {
     { id: "prov-dashboard", label: "Dashboard", href: "/provider/dashboard", icon: ChartLineUp, roles: ["SERVICE_PROVIDER"] },
     { id: "prov-services", label: "Katalog Layanan", href: "/provider/services", icon: Wrench, roles: ["SERVICE_PROVIDER"] },
     { id: "prov-tax-req", label: "Ajukan Subkategori", href: "/provider/taxonomy-request", icon: PlusCircle, roles: ["SERVICE_PROVIDER"] },
-    { id: "prov-bookings", label: "Antrean Booking", href: "/provider/bookings", icon: CalendarCheck, badge: "3", roles: ["SERVICE_PROVIDER"] },
     { id: "prov-orders", label: "Order Operasional", href: "/provider/orders", icon: ClipboardText, roles: ["SERVICE_PROVIDER"] },
     { id: "prov-workers", label: "Teknisi", href: "/provider/workers", icon: Users, roles: ["SERVICE_PROVIDER"] },
     { id: "prov-tracking", label: "Radar Pelacakan", href: "/provider/tracking", icon: MapPin, roles: ["SERVICE_PROVIDER"] },
@@ -557,7 +543,6 @@ export const CANONICAL_NAVIGATION: Record<UserRole, NavigationItem[]> = {
     { id: "work-dashboard", label: "Dashboard", href: "/worker/dashboard", icon: House, roles: ["WORKER_TECHNICIAN"] },
     { id: "work-jobs", label: "Pekerjaan Saya", href: "/worker/jobs", icon: Wrench, roles: ["WORKER_TECHNICIAN"] },
     { id: "work-warranty", label: "Garansi", href: "/worker/warranty", icon: ShieldCheck, roles: ["WORKER_TECHNICIAN"] },
-    { id: "work-schedule", label: "Jadwal", href: "/worker/schedule", icon: CalendarCheck, roles: ["WORKER_TECHNICIAN"] },
     { id: "work-chat", label: "Obrolan", href: "/worker/chat", icon: ChatCircleText, roles: ["WORKER_TECHNICIAN"] },
     { id: "work-guide", label: "Bantuan", href: "/worker/guide", icon: Question, roles: ["WORKER_TECHNICIAN"] },
     { id: "work-profile", label: "Profil", href: "/worker/profile", icon: User, roles: ["WORKER_TECHNICIAN"] },

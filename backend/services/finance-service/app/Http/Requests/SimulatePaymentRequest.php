@@ -11,7 +11,7 @@ class SimulatePaymentRequest extends BaseFinanceRequest
         return [
             'outcome' => ['required', 'string', 'in:SUCCESS,FAILED,PAID'],
             'provider_event_id' => ['required', 'string', 'max:64'],
-            'reported_amount_idr' => ['required', 'integer', 'min:1'],
+            'reported_amount_idr' => ['nullable', 'integer', 'min:1'],
         ];
     }
 }

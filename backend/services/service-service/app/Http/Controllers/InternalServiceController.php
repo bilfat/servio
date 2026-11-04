@@ -59,10 +59,17 @@ class InternalServiceController extends Controller
             ], 'SERVICE_ELIGIBILITY_CHECK_OK');
         }
 
+        $serviceTitle = $offering->display_name ?: ($offering->definition?->name ?: 'Layanan Servis Terstandarisasi');
+
         return ApiResponse::success([
             'eligible' => true,
             'reason_code' => 'ELIGIBLE',
             'offering_id' => $offering->id,
+            'title' => $serviceTitle,
+            'display_name' => $offering->display_name,
+            'name' => $serviceTitle,
+            'definition_name' => $offering->definition?->name,
+            'description' => $offering->description,
             'provider_org_id' => $offering->provider_organization_id,
             'definition_id' => $offering->service_definition_id,
             'offering_version' => $offering->lock_version,

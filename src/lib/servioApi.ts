@@ -321,13 +321,13 @@ export const MOCK_USERS_BY_ROLE: Record<string, any> = {
     createdAt: "2026-01-01T00:00:00Z",
   },
   WORKER_TECHNICIAN: {
-    id: "00d4c5e5-f912-451f-afe5-54f34d481e0f",
-    fullName: "Bambang Sudirman",
-    email: "worker@servio.id",
+    id: "acfdfc27-9ba5-472f-bec1-3c372f47fff6",
+    fullName: "Ahmad Teknisi",
+    email: "ahmad.teknisi@servio.id",
     phone: "+62 819-6677-889",
     role: "WORKER_TECHNICIAN",
     status: "ACTIVE",
-    employeeId: "WRK-001",
+    employeeId: "SMT-AHMAD-RWS",
     organizationId: "0740d857-b665-4191-aaf5-d7dd3611dc1d",
     organizationName: "PT Servio Mandiri Teknik",
     providerId: "prov-bintang-teknik",
@@ -339,17 +339,17 @@ export const MOCK_USERS_BY_ROLE: Record<string, any> = {
     },
     permissions: ["*"],
     activeRole: {
-      assignmentId: "0bf0d288-6a87-4b1d-b19c-b5b3391f9600",
+      assignmentId: "525c553c-b1ec-4392-bc9e-2000a0947d12",
       code: "WORKER_TECHNICIAN",
       scopeType: "ASSIGNED",
     },
     roles: [
-      { assignmentId: "0bf0d288-6a87-4b1d-b19c-b5b3391f9600", code: "WORKER_TECHNICIAN", name: "Senior Technician", scopeType: "ASSIGNED", status: "ACTIVE" },
+      { assignmentId: "525c553c-b1ec-4392-bc9e-2000a0947d12", code: "WORKER_TECHNICIAN", name: "Senior Technician", scopeType: "ASSIGNED", status: "ACTIVE" },
       { assignmentId: "031772ea-9657-49bd-82f2-f57c65b0d986", code: "CUSTOMER", name: "Customer", scopeType: "OWN", status: "ACTIVE" },
     ],
-    avatar: "/brand/logo.png",
-    profile: { avatar: "/brand/logo.png" },
-    personalProfile: { avatar: "/brand/logo.png" },
+    avatar: "/storage/avatars/tY7SeXSkRKHBMrsVkJ3mqGV8Jl6pn6q3H0cRI0f2.jpg",
+    profile: { avatar: "/storage/avatars/tY7SeXSkRKHBMrsVkJ3mqGV8Jl6pn6q3H0cRI0f2.jpg" },
+    personalProfile: { avatar: "/storage/avatars/tY7SeXSkRKHBMrsVkJ3mqGV8Jl6pn6q3H0cRI0f2.jpg" },
     emailVerified: true,
     phoneVerified: true,
     createdAt: "2026-01-01T00:00:00Z",
@@ -961,6 +961,15 @@ const ORDER_BARANG_BASE_URL =
     ? "/api/v1/order-barang"
     : (process.env.NEXT_PUBLIC_ORDER_BARANG_API_URL || "http://127.0.0.1:8005/api/v1/order-barang");
 
+const ORDER_JASA_SERVICE_ROOT =
+  typeof window !== "undefined"
+    ? ""
+    : (process.env.NEXT_PUBLIC_ORDER_JASA_SERVICE_URL || "http://127.0.0.1:8007");
+const ORDER_JASA_BASE_URL =
+  typeof window !== "undefined"
+    ? "/api/v1/order-jasa"
+    : (process.env.NEXT_PUBLIC_ORDER_JASA_API_URL || "http://127.0.0.1:8007/api/v1/order-jasa");
+
 
 let csrfPromise: Promise<void> | null = null;
 
@@ -1052,6 +1061,13 @@ function isOrderBarangRoute(path: string): boolean {
   const p = path.replace(/^\/api\/v1/, "");
   return (
     p.startsWith("/order-barang")
+  );
+}
+
+function isOrderJasaRoute(path: string): boolean {
+  const p = path.replace(/^\/api\/v1/, "");
+  return (
+    p.startsWith("/order-jasa")
   );
 }
 
@@ -1601,20 +1617,38 @@ export async function apiFetch<T = unknown>(
       headers["X-Gateway-Key"] = gatewayKey;
 
       const activeRoleCookie = getCookie("servio_active_role");
+      const isWindowCeo = typeof window !== "undefined" && window.location.pathname.startsWith("/ceo");
+      const isWindowOps = typeof window !== "undefined" && (window.location.pathname.startsWith("/ops") || window.location.pathname.startsWith("/finance"));
+      const isWindowMerchant = typeof window !== "undefined" && window.location.pathname.startsWith("/merchant");
+      const isWindowProvider = typeof window !== "undefined" && window.location.pathname.startsWith("/provider");
+      const isWindowWorker = typeof window !== "undefined" && window.location.pathname.startsWith("/worker");
+
+      const isPolicyRoute =
+        pathname.startsWith("/policies") ||
+        pathname.startsWith("/finance/policies") ||
+        pathname.startsWith("/finance/platform-policy");
+
       const isOpsOrDemo =
         pathname.includes("/ops") ||
         pathname.includes("/finance/ops") ||
-        pathname.includes("/demo");
-      const activeRole = isOpsOrDemo
-        ? "FINANCE_PAYMENT_OPS"
-        : resolveActorRole(
-            activeRoleCookie ||
-            (pathname.includes("/merchant")
-              ? "MERCHANT"
-              : pathname.includes("/ceo")
-              ? "CEO_PRODUCT_OWNER"
-              : "CUSTOMER")
-          );
+        pathname.includes("/demo") ||
+        isWindowOps;
+
+      let activeRole = resolveActorRole(activeRoleCookie || "");
+
+      if (isWindowCeo || pathname.includes("/ceo") || (isPolicyRoute && (!activeRole || activeRole === "CUSTOMER"))) {
+        activeRole = "CEO_PRODUCT_OWNER";
+      } else if (isOpsOrDemo) {
+        activeRole = "FINANCE_PAYMENT_OPS";
+      } else if (isWindowMerchant || pathname.includes("/merchant")) {
+        activeRole = "MERCHANT";
+      } else if (isWindowProvider || pathname.includes("/provider")) {
+        activeRole = "SERVICE_PROVIDER";
+      } else if (isWindowWorker || pathname.includes("/worker")) {
+        activeRole = "WORKER_TECHNICIAN";
+      } else if (!activeRole) {
+        activeRole = "CUSTOMER";
+      }
 
       const currentUser = MOCK_USERS_BY_ROLE[activeRole] || MOCK_USERS_BY_ROLE["CUSTOMER"];
       if (currentUser?.id) {
@@ -1843,6 +1877,157 @@ export async function apiFetch<T = unknown>(
         return apiFetch<T>(endpoint, { ...options, _isRetry: true } as any);
       }
       console.warn("Order Barang Service network failure:", err);
+      throw err;
+    }
+  }
+
+  // =========================================================================
+  // REAL BACKEND INTEGRATION: Modul 05B Order Jasa Service (Port 8007)
+  // =========================================================================
+  if (isOrderJasaRoute(pathname)) {
+    try {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+      };
+
+      const gatewayKey = process.env.NEXT_PUBLIC_ORDER_JASA_GATEWAY_KEY || "servio_local_gateway_key_2026";
+      headers["X-Gateway-Key"] = gatewayKey;
+
+      const activeRoleCookie = getCookie("servio_active_role");
+      let activeRole = resolveActorRole(activeRoleCookie || "CUSTOMER");
+
+      // Context-aware role adjustment based strictly on the endpoint path:
+      if (pathname.includes("/order-jasa/provider")) {
+        activeRole = "PROVIDER";
+      } else if (pathname.includes("/order-jasa/worker")) {
+        activeRole = "WORKER";
+      } else if (pathname.includes("/order-jasa/admin")) {
+        activeRole = "ADMIN_OPERATIONS";
+      } else if (pathname.includes("/order-jasa/finance")) {
+        activeRole = "FINANCE";
+      } else if (
+        pathname.startsWith("/order-jasa/orders") ||
+        pathname.startsWith("/api/v1/order-jasa/orders")
+      ) {
+        if (!["ADMIN_OPERATIONS", "SUPER_ADMIN", "ADMIN"].includes(activeRole)) {
+          activeRole = "CUSTOMER";
+        }
+      } else if (activeRole === "SERVICE_PROVIDER" || activeRole === "PROVIDER") {
+        activeRole = "PROVIDER";
+      } else if (activeRole === "WORKER_TECHNICIAN" || activeRole === "TECHNICIAN" || activeRole === "WORKER") {
+        activeRole = "WORKER";
+      } else if (activeRole === "SUPER_ADMIN" || activeRole === "ADMIN" || activeRole === "ADMIN_OPERATIONS") {
+        activeRole = "ADMIN_OPERATIONS";
+      } else if (activeRole.startsWith("FINANCE")) {
+        activeRole = "FINANCE";
+      } else {
+        activeRole = "CUSTOMER";
+      }
+
+      const roleLookup =
+        activeRole === "PROVIDER"
+          ? "SERVICE_PROVIDER"
+          : activeRole === "WORKER"
+          ? "WORKER_TECHNICIAN"
+          : activeRole.startsWith("FINANCE")
+          ? "FINANCE_PAYMENT_OPS"
+          : activeRole;
+      const currentUser = MOCK_USERS_BY_ROLE[roleLookup] || MOCK_USERS_BY_ROLE["CUSTOMER"];
+      if (currentUser?.id) {
+        headers["X-Actor-User-Id"] = currentUser.id;
+        headers["X-Actor-Role"] = activeRole;
+        if (currentUser.activeRole?.assignmentId) {
+          headers["X-Actor-Role-Assignment-Id"] = currentUser.activeRole.assignmentId;
+        }
+        if (currentUser.organizationId) {
+          headers["X-Actor-Org-Id"] = currentUser.organizationId;
+        }
+        headers["X-Actor-Org-Active"] = "true";
+        headers["X-Actor-Membership-Active"] = "true";
+        headers["X-Actor-Authz-Version"] = "1";
+      }
+
+      if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+        if (!headers["Idempotency-Key"]) {
+          headers["Idempotency-Key"] = `idemp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        }
+      }
+
+      if (options.headers) {
+        if (options.headers instanceof Headers) {
+          options.headers.forEach((val, key) => {
+            headers[key] = val;
+          });
+        } else if (Array.isArray(options.headers)) {
+          options.headers.forEach(([k, v]) => {
+            headers[k] = v;
+          });
+        } else {
+          Object.assign(headers, options.headers);
+        }
+      }
+
+      if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
+        headers["Content-Type"] = "application/json";
+      }
+
+      const cleanSub = pathname.replace(/^\/api\/v1/, "").replace(/^\/+/, "");
+      const subWithoutOrder = cleanSub.replace(/^order-jasa\/?/, "");
+
+      const targetUrl = `${ORDER_JASA_BASE_URL.replace(/\/+$/, "")}/${subWithoutOrder.replace(/^\/+/, "")}${queryString ? `?${queryString}` : ""}`;
+
+      const res = await fetch(targetUrl, {
+        ...options,
+        headers,
+        credentials: "include",
+      });
+
+      const contentType = res.headers.get("content-type") || "";
+      let json: any = null;
+      if (contentType.includes("application/json")) {
+        json = await res.json();
+      } else {
+        const text = await res.text();
+        try {
+          json = JSON.parse(text);
+        } catch {
+          json = { message: text };
+        }
+      }
+
+      if (!res.ok) {
+        const errorMsg =
+          json?.error?.message ||
+          json?.message ||
+          (typeof json?.error === "string" ? json.error : null) ||
+          `Request ke Order Jasa Service gagal dengan status ${res.status}.`;
+        console.warn(`[Order Jasa Service Error ${res.status}] ${targetUrl}:`, json || errorMsg);
+        const err: any = new Error(errorMsg);
+        err.status = res.status;
+        err.code = json?.code || json?.error?.code;
+        err.errors = json?.error?.field_errors || json?.errors;
+        throw err;
+      }
+
+      return {
+        success: json?.success ?? true,
+        message: json?.message,
+        data: json?.data !== undefined ? json.data : json,
+        count: json?.count,
+        meta: json?.meta,
+        pagination: json?.pagination,
+        ...json,
+      };
+    } catch (err) {
+      if ((err as any)?.status) {
+        throw err;
+      }
+      if (!(options as any)?._isRetry && typeof window !== "undefined") {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return apiFetch<T>(endpoint, { ...options, _isRetry: true } as any);
+      }
+      console.warn("Order Jasa Service network failure:", err);
       throw err;
     }
   }
