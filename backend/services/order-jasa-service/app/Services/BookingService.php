@@ -63,11 +63,51 @@ class BookingService
         $orderId = (string) Str::ulid();
         $orderNo = 'SO-' . date('Ymd') . '-' . strtoupper(Str::random(6));
 
+        // Process customer_media_refs: store base64 data URLs to disk to prevent DB bloat / packet overflow
+        $processedMediaRefs = [];
+        if (!empty($payload['customer_media_refs']) && is_array($payload['customer_media_refs'])) {
+            foreach ($payload['customer_media_refs'] as $ref) {
+                if (is_string($ref) && preg_match('/^data:([a-zA-Z0-9\+\-\.]+\/[a-zA-Z0-9\+\-\.]+);base64,(.*)$/s', $ref, $matches)) {
+                    $mime = strtolower($matches[1]);
+                    $base64Data = $matches[2];
+                    $ext = match ($mime) {
+                        'image/png' => 'png',
+                        'image/jpeg', 'image/jpg' => 'jpg',
+                        'image/webp' => 'webp',
+                        'image/gif' => 'gif',
+                        'video/mp4' => 'mp4',
+                        'video/quicktime' => 'mov',
+                        'video/webm' => 'webm',
+                        default => 'bin',
+                    };
+                    $decoded = base64_decode($base64Data);
+                    if ($decoded !== false) {
+                        $filename = 'customer_media/' . Str::ulid() . '.' . $ext;
+                        \Illuminate\Support\Facades\Storage::disk('public')->put($filename, $decoded);
+                        $processedMediaRefs[] = '/storage/' . $filename;
+                        continue;
+                    }
+                }
+                $processedMediaRefs[] = $ref;
+            }
+        }
+
+        $rawPaymentMethod = strtoupper((string) ($payload['payment_method'] ?? 'QRIS'));
+        $financeMethod = match ($rawPaymentMethod) {
+            'BCA_VA', 'MOCK_VA_BCA' => 'MOCK_VA_BCA',
+            'BRI_VA', 'MOCK_VA_BRI' => 'MOCK_VA_BRI',
+            'BNI_VA', 'MOCK_VA_BNI' => 'MOCK_VA_BNI',
+            'MANDIRI_VA', 'MOCK_VA_MANDIRI' => 'MOCK_VA_MANDIRI',
+            'PERMATA_VA', 'MOCK_VA_PERMATA' => 'MOCK_VA_PERMATA',
+            'VA', 'MOCK_VA' => 'MOCK_VA',
+            default => 'QRIS',
+        };
+
         if (request()) {
             request()->attributes->set('idempotency_has_side_effect', true);
         }
 
-        return DB::transaction(function () use (
+        $res = DB::transaction(function () use (
             $actor,
             $payload,
             $orderId,
@@ -82,7 +122,8 @@ class BookingService
             $obligationState,
             $hasDiagnosisFee,
             $scheduledStart,
-            $scheduledEnd
+            $scheduledEnd,
+            $processedMediaRefs
         ) {
             // 4. Create ServiceOrder
             $order = ServiceOrder::forceCreate([
@@ -97,7 +138,7 @@ class BookingService
                 'address_snapshot' => $addressSnapshot,
                 'complaint_text' => (string) $payload['complaint_text'],
                 'symptoms_json' => $payload['symptoms_json'] ?? null,
-                'customer_media_refs' => $payload['customer_media_refs'] ?? null,
+                'customer_media_refs' => !empty($processedMediaRefs) ? $processedMediaRefs : null,
                 'diagnosis_fee_idr' => $diagnosisFeeIdr,
                 'status' => $initialStatus,
                 'phase' => $initialPhase,
@@ -168,39 +209,6 @@ class BookingService
                 'updated_at' => now(),
             ]);
 
-            // 8. If diagnosis fee > 0, generate invoice & payment intent with Finance Service 06
-            if ($hasDiagnosisFee) {
-                $financeResult = $this->financeClient->createPaymentIntent(
-                    orderId: $orderId,
-                    obligationId: $obligationId,
-                    purpose: 'DIAGNOSIS',
-                    amountIdr: $diagnosisFeeIdr,
-                    customerId: $actor->id
-                );
-
-                $attemptId = (string) Str::ulid();
-                ServicePaymentAttempt::forceCreate([
-                    'id' => $attemptId,
-                    'obligation_id' => $obligationId,
-                    'attempt_no' => 1,
-                    'finance_payment_id' => $financeResult['payment_intent_id'],
-                    'finance_invoice_ref' => $financeResult['invoice_no'],
-                    'method' => 'MOCK',
-                    'reported_status' => 'PENDING',
-                    'amount_due_idr' => $diagnosisFeeIdr,
-                    'issued_at' => now(),
-                    'expires_at' => $paymentDueAt,
-                    'is_current' => true,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-
-                $obligation->forceFill([
-                    'active_finance_payment_id' => $financeResult['payment_intent_id'],
-                    'finance_obligation_ref' => $financeResult['invoice_no'],
-                ])->save();
-            }
-
             // 9. Timeline event & audit log
             \App\Support\DomainEventLogger::recordOrderEvent(
                 orderId: $orderId,
@@ -223,7 +231,50 @@ class BookingService
                 reason: "Customer created booking {$orderNo}"
             );
 
-            return $order->load(['booking', 'visit', 'paymentObligations.attempts']);
+            return [$order, $obligation, $paymentDueAt];
         });
+
+        [$order, $obligation, $paymentDueAt] = $res;
+
+        // 8. If diagnosis fee > 0, generate invoice & payment intent with Finance Service 06 outside main DB transaction
+        if ($hasDiagnosisFee && $obligation) {
+            try {
+                $financeResult = $this->financeClient->createPaymentIntent(
+                    orderId: $order->id,
+                    obligationId: $obligation->id,
+                    purpose: 'DIAGNOSIS',
+                    amountIdr: $diagnosisFeeIdr,
+                    customerId: $actor->id,
+                    attemptNo: 1,
+                    method: $financeMethod
+                );
+
+                $attemptId = (string) Str::ulid();
+                ServicePaymentAttempt::forceCreate([
+                    'id' => $attemptId,
+                    'obligation_id' => $obligation->id,
+                    'attempt_no' => 1,
+                    'finance_payment_id' => $financeResult['payment_intent_id'],
+                    'finance_invoice_ref' => $financeResult['invoice_no'],
+                    'method' => $rawPaymentMethod,
+                    'reported_status' => 'PENDING',
+                    'amount_due_idr' => $diagnosisFeeIdr,
+                    'issued_at' => now(),
+                    'expires_at' => $paymentDueAt,
+                    'is_current' => true,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                $obligation->forceFill([
+                    'active_finance_payment_id' => $financeResult['payment_intent_id'],
+                    'finance_obligation_ref' => $financeResult['invoice_no'],
+                ])->save();
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning("Finance diagnosis payment intent creation failed: " . $e->getMessage());
+            }
+        }
+
+        return $order->fresh(['booking', 'visit', 'paymentObligations.attempts']);
     }
 }

@@ -187,6 +187,7 @@ export const orderJasaApi = {
     symptoms_json?: string[];
     customer_media_refs?: string[];
     slot_reference?: string;
+    payment_method?: string;
   }): Promise<ApiResponse<BackendCustomerOrder>> {
     return apiFetch<BackendCustomerOrder>("/order-jasa/orders", {
       method: "POST",
@@ -265,6 +266,19 @@ export const orderJasaApi = {
     return apiFetch<BackendProviderOrder>(`/order-jasa/provider/orders/${id}`);
   },
 
+  async acceptOrder(orderId: string): Promise<ApiResponse<BackendProviderOrder>> {
+    return apiFetch<BackendProviderOrder>(`/order-jasa/provider/orders/${orderId}/accept`, {
+      method: "POST",
+    });
+  },
+
+  async rejectOrder(orderId: string, reason: string): Promise<ApiResponse<BackendProviderOrder>> {
+    return apiFetch<BackendProviderOrder>(`/order-jasa/provider/orders/${orderId}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  },
+
   async assignWorker(
     orderId: string,
     payload: { worker_id: string; notes?: string }
@@ -303,7 +317,7 @@ export const orderJasaApi = {
 
   async updateVisit(
     assignmentId: string,
-    payload: { action: "OTW" | "ARRIVED" | "START_DIAGNOSIS" }
+    payload: { action: "OTW" | "ARRIVED" | "START_DIAGNOSIS" | "START_EXECUTION" }
   ): Promise<ApiResponse<{ visit_status: string }>> {
     return apiFetch<{ visit_status: string }>(`/order-jasa/worker/tasks/${assignmentId}/visit`, {
       method: "POST",
@@ -315,7 +329,10 @@ export const orderJasaApi = {
     assignmentId: string,
     payload: {
       findings: string;
+      suspected_cause?: string;
+      root_cause?: string;
       action_plan?: string;
+      recommended_actions?: string;
       work_items: Array<{
         item_name?: string;
         name?: string;
@@ -334,6 +351,7 @@ export const orderJasaApi = {
         availability_status?: string;
       }>;
       diagnosis_photos?: string[];
+      diagnosis_photo_refs?: string[];
     }
   ): Promise<ApiResponse<{ diagnosis_version: { id: string; version_no: number } }>> {
     // Normalize field names for backend validator: item_name -> item_name, part_source -> part_source
@@ -353,14 +371,20 @@ export const orderJasaApi = {
       availability_status: p.availability_status || "IN_STOCK",
     }));
 
+    const photos = payload.diagnosis_photo_refs || payload.diagnosis_photos || [];
+
     return apiFetch(`/order-jasa/worker/tasks/${assignmentId}/diagnosis`, {
       method: "POST",
       body: JSON.stringify({
         findings: payload.findings,
-        action_plan: payload.action_plan || payload.findings,
+        suspected_cause: payload.suspected_cause || payload.root_cause || "",
+        root_cause: payload.root_cause || payload.suspected_cause || "",
+        action_plan: payload.action_plan || payload.recommended_actions || payload.findings,
+        recommended_actions: payload.recommended_actions || payload.action_plan || "",
         work_items: normalizedWorkItems,
         part_items: normalizedPartItems,
-        diagnosis_photos: payload.diagnosis_photos || [],
+        diagnosis_photos: photos,
+        diagnosis_photo_refs: photos,
       }),
     });
   },

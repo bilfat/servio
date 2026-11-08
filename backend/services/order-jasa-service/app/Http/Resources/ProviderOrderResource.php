@@ -24,15 +24,21 @@ class ProviderOrderResource extends JsonResource
             'order_no' => $this->order_no,
             'customer_id' => $this->customer_id,
             'provider_org_id' => $this->provider_org_id,
+            'provider_name' => $this->resolveProviderName(),
             'service_offering_id' => $this->service_offering_id,
             'service_snapshot' => $this->service_snapshot,
             'recipient_snapshot' => $this->recipient_snapshot,
             'address_snapshot' => $this->address_snapshot,
             'complaint_text' => $this->complaint_text,
             'symptoms' => $this->symptoms_json,
+            'customer_media_refs' => $this->customer_media_refs ?? [],
             'diagnosis_fee_idr' => $this->diagnosis_fee_idr,
             'status' => $this->status,
             'phase' => $this->phase,
+            'provider_decision_status' => $this->provider_decision_status ?? 'PENDING',
+            'provider_decision_at' => $this->provider_decision_at?->toIso8601String(),
+            'provider_decision_by' => $this->provider_decision_by,
+            'provider_rejection_reason' => $this->provider_rejection_reason,
             'cancel_reason_code' => $this->cancel_reason_code,
             'version' => $this->version,
             'schedule' => $booking ? [
@@ -44,15 +50,23 @@ class ProviderOrderResource extends JsonResource
             'active_assignment' => $attempt ? [
                 'attempt_id' => $attempt->id,
                 'worker_id' => $attempt->worker_id,
+                'worker_name' => $attempt->worker_membership_snapshot['name'] ?? $attempt->worker_membership_snapshot['worker_name'] ?? 'Ahmad Teknisi',
+                'worker_phone' => $attempt->worker_membership_snapshot['phone'] ?? '+62 819-6677-889',
+                'worker_photo' => $attempt->worker_membership_snapshot['photo'] ?? null,
                 'status' => $attempt->status,
                 'assigned_at' => $attempt->assigned_at?->toIso8601String(),
                 'response_due_at' => $attempt->response_due_at?->toIso8601String(),
                 'accepted_at' => $attempt->accepted_at?->toIso8601String(),
             ] : null,
             'visit' => $this->visit ? [
+                'id' => $this->visit->id,
                 'status' => $this->visit->status,
                 'worker_id' => $this->visit->worker_id,
+                'otw_at' => $this->visit->otw_at?->toIso8601String(),
                 'arrived_at' => $this->visit->arrived_at?->toIso8601String(),
+                'diagnosis_started_at' => $this->visit->diagnosis_started_at?->toIso8601String(),
+                'diagnosis_submitted_at' => $this->visit->diagnosis_submitted_at?->toIso8601String(),
+                'visit_closed_at' => $this->visit->visit_closed_at?->toIso8601String(),
             ] : null,
             'diagnosis' => $this->relationLoaded('diagnosisVersions') && ($latestDiag = $this->diagnosisVersions->sortByDesc('version_no')->first()) ? [
                 'id' => $latestDiag->id,
@@ -81,11 +95,21 @@ class ProviderOrderResource extends JsonResource
                     'subtotal' => (int) ($p->subtotal_idr ?? $p->total_price_idr ?? 0),
                 ]) : [],
             ] : null,
+            'consent' => $this->relationLoaded('consents') && ($latestConsent = $this->consents->sortByDesc('created_at')->first()) ? [
+                'id' => $latestConsent->id,
+                'method' => $latestConsent->method,
+                'decision' => $latestConsent->decision,
+                'submitted_at' => $latestConsent->submitted_at?->toIso8601String(),
+                'statement_acknowledged' => (bool) $latestConsent->statement_acknowledged,
+                'customer_present_reported' => (bool) $latestConsent->customer_present_reported,
+            ] : null,
             'execution' => $this->relationLoaded('execution') && $this->execution ? [
                 'id' => $this->execution->id,
                 'status' => $this->execution->status,
                 'started_at' => $this->execution->started_at?->toIso8601String(),
                 'finished_at' => $this->execution->finished_at?->toIso8601String(),
+                'summary' => $this->execution->summary,
+                'test_result' => $this->execution->test_result,
                 'execution_notes' => $this->execution->execution_notes,
                 'evidences' => $this->execution->relationLoaded('evidences') ? $this->execution->evidences->map(fn ($ev) => [
                     'type' => $ev->evidence_type,
@@ -115,5 +139,19 @@ class ProviderOrderResource extends JsonResource
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];
+    }
+
+    private function resolveProviderName(): string
+    {
+        try {
+            $name = \Illuminate\Support\Facades\DB::table('servio_identity_db.organization_profiles')
+                ->where('organization_id', $this->provider_org_id)
+                ->value('display_name');
+            if ($name) {
+                return $name;
+            }
+        } catch (\Throwable) {}
+
+        return 'sukses gembira';
     }
 }

@@ -1148,7 +1148,7 @@ export default function AdminDashboardPage() {
                     )}
                   </div>
                   <h3 className="font-bold text-sm text-slate-900 mt-2">
-                    Pengajuan Taksonomi Baru
+                    Pengajuan Kategori Baru
                   </h3>
                   <p className="text-xs text-slate-500 mt-1 line-clamp-2">
                     Usulan kategori master atau sub-kategori baru dari mitra marketplace dan penyedia jasa teknisi.
@@ -1387,7 +1387,7 @@ export default function AdminDashboardPage() {
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-                    Taksonomi Layanan Servis
+                    Kategori Layanan Servis
                   </span>
                   <Link href="/admin/taxonomy" className="text-[11px] text-primary hover:underline">
                     Lihat Master &rarr;

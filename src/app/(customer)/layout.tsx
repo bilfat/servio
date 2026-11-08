@@ -92,15 +92,6 @@ export default function CustomerLayout({
                 </Button>
               </Link>
 
-              <Button
-                variant="outline"
-                className="w-full flex items-center justify-center gap-2"
-                onClick={() => switchRole("CUSTOMER")}
-              >
-                <UserSwitch size={18} weight="bold" />
-                <span>Simulasi Role Customer</span>
-              </Button>
-
               <Link href="/">
                 <Button variant="ghost" className="w-full flex items-center justify-center gap-2 text-neutral hover:text-neutral-dark">
                   <House size={18} />

@@ -45,6 +45,7 @@ export interface LocationContextType {
   openLocationModal: () => void;
   closeLocationModal: () => void;
   detectGps: () => Promise<ActiveLocation | null>;
+  setActiveLocation: (newLoc: ActiveLocation) => void;
   setManualCity: (cityName: string, provinceName?: string) => void;
   selectSavedAddress: (address: ApiAddress) => void;
   refreshAddresses: () => Promise<void>;
@@ -109,7 +110,7 @@ export function isSameCity(city1?: string | null, city2?: string | null): boolea
   return c1.includes(c2) || c2.includes(c1);
 }
 
-export function calculateStoreDistance(
+export function calculateStoreDistanceKm(
   userLoc: ActiveLocation,
   merchant?: {
     city?: string;
@@ -119,7 +120,7 @@ export function calculateStoreDistance(
     name?: string;
     district?: string;
   }
-): string {
+): number | null {
   let mLat = merchant?.latitude;
   let mLng = merchant?.longitude;
   let mCity = merchant?.city;
@@ -162,16 +163,57 @@ export function calculateStoreDistance(
     }
   }
 
-  const effectiveMerchantCity = mCity || "Jakarta Pusat";
-  if (!isSameCity(effectiveMerchantCity, userLoc.city)) {
-    return "Luar Kota";
+  if (
+    typeof uLat === "number" &&
+    typeof uLng === "number" &&
+    typeof mLat === "number" &&
+    typeof mLng === "number" &&
+    !isNaN(uLat) &&
+    !isNaN(uLng) &&
+    !isNaN(mLat) &&
+    !isNaN(mLng)
+  ) {
+    const { calculateHaversineDistance } = require("@/lib/geoUtils");
+    return calculateHaversineDistance(uLat, uLng, mLat, mLng);
+  }
+
+  return null;
+}
+
+export function calculateStoreDistance(
+  userLoc: ActiveLocation,
+  merchant?: {
+    city?: string;
+    latitude?: number;
+    longitude?: number;
+    id?: string;
+    name?: string;
+    district?: string;
+  }
+): string {
+  const distKm = calculateStoreDistanceKm(userLoc, merchant);
+  const effectiveMerchantCity = merchant?.city || "Jakarta Pusat";
+  const same = isSameCity(effectiveMerchantCity, userLoc.city);
+
+  if (distKm !== null) {
+    if (distKm > 80 && !same) {
+      return "> 80 km";
+    }
+    if (distKm < 1) {
+      return `${Math.max(100, Math.round(distKm * 1000))} m`;
+    }
+    return `${distKm.toFixed(1)} km`;
+  }
+
+  if (!same) {
+    return "Luar Kota (> 80 km)";
   }
 
   return formatStoreDistance(
-    uLat,
-    uLng,
-    mLat,
-    mLng,
+    userLoc.latitude,
+    userLoc.longitude,
+    merchant?.latitude,
+    merchant?.longitude,
     `${merchant?.id || merchant?.name || "merch"}-${userLoc.city}-${userLoc.district || ""}`
   );
 }
@@ -312,6 +354,17 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     }
   }, [saveToLocalStorage]);
 
+  // 2b. Set active location directly
+  const setActiveLocation = useCallback(
+    (newLoc: ActiveLocation) => {
+      setLocation(newLoc);
+      saveToLocalStorage(newLoc);
+      setLocationFeedback(`Lokasi aktif diubah ke ${newLoc.displayName}`);
+      setTimeout(() => setLocationFeedback(null), 3000);
+    },
+    [saveToLocalStorage]
+  );
+
   // 3. Set manual city selection
   const setManualCity = useCallback(
     (cityName: string, provinceName?: string) => {
@@ -371,18 +424,21 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isCustomer, user.id]);
 
-  // 6. Core Delivery Verification: In-City vs Out-of-City Check
+  // 6. Core Delivery Verification: In-City or Within 80 km Check
   const checkDeliveryAvailability = useCallback(
     (merchantCity?: string): DeliveryCheckResult => {
       const uCity = location.city || "Jakarta Selatan";
       const mCity = merchantCity || "Jakarta Selatan";
 
       const same = isSameCity(uCity, mCity);
+      const distKm = calculateStoreDistanceKm(location, { city: mCity });
+      const within80Km = distKm !== null ? distKm <= 80 : false;
+      const deliverable = same || within80Km;
 
-      if (same) {
+      if (deliverable) {
         return {
           isDeliverable: true,
-          isSameCity: true,
+          isSameCity: same,
           userCity: uCity,
           merchantCity: mCity,
         };
@@ -393,10 +449,10 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
         isSameCity: false,
         userCity: uCity,
         merchantCity: mCity,
-        reason: `Toko ini berlokasi di ${mCity} dan saat ini HANYA melayani pengiriman dalam kota. Lokasi Anda saat ini terdeteksi di ${uCity}.`,
+        reason: `Toko ini berlokasi di ${mCity} (> 80 km dari ${uCity}) dan berada di luar jangkauan pengiriman.`,
       };
     },
-    [location.city]
+    [location]
   );
 
   // 7. Calculate distance to merchant
@@ -426,6 +482,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       openLocationModal: () => setIsLocationModalOpen(true),
       closeLocationModal: () => setIsLocationModalOpen(false),
       detectGps,
+      setActiveLocation,
       setManualCity,
       selectSavedAddress,
       refreshAddresses,
@@ -440,6 +497,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       locationFeedback,
       isLocationModalOpen,
       detectGps,
+      setActiveLocation,
       setManualCity,
       selectSavedAddress,
       refreshAddresses,

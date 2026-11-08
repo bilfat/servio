@@ -30,6 +30,7 @@ import {
   Star,
 } from "@phosphor-icons/react";
 import { OFFICIAL_CITIES } from "@/lib/servioApi";
+import { afterSalesApi, ReviewEntry, CatalogRatingSummaryItem, BusinessReputationDto } from "@/lib/afterSalesApi";
 
 function getServiceFallbackImage(title?: string, category?: string): string {
   const t = ((title || "") + " " + (category || "")).toLowerCase();
@@ -66,6 +67,34 @@ export default function ServiceDetailPage() {
   const [imageLoadError, setImageLoadError] = useState(false);
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [relatedProducts, setRelatedProducts] = useState<ApiProduct[]>([]);
+  const [serviceReviews, setServiceReviews] = useState<ReviewEntry[]>([]);
+  const [reviewSummary, setReviewSummary] = useState<CatalogRatingSummaryItem | null>(null);
+  const [providerReputation, setProviderReputation] = useState<BusinessReputationDto | null>(null);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!serviceId) return;
+    setReviewsLoading(true);
+    afterSalesApi.public
+      .getServiceReviews(serviceId)
+      .then((res) => {
+        if (res.data) setServiceReviews(res.data);
+        if (res.meta?.summary) setReviewSummary(res.meta.summary);
+      })
+      .catch(() => {})
+      .finally(() => setReviewsLoading(false));
+  }, [serviceId]);
+
+  useEffect(() => {
+    const provId = service?.providerId || provider?.id;
+    if (!provId) return;
+    afterSalesApi.public
+      .getBusinessReputation("PROVIDER", provId)
+      .then((res) => {
+        if (res.data) setProviderReputation(res.data);
+      })
+      .catch(() => {});
+  }, [service?.providerId, provider?.id]);
 
   useEffect(() => {
     if (!service) return;
@@ -161,6 +190,22 @@ export default function ServiceDetailPage() {
   const fallbackImg = getServiceFallbackImage(service.title, service.categoryName);
   const rawMediaUrl = mediaList[activeMediaIndex]?.url || service.thumbnailUrl;
   const activeMediaUrl = imageLoadError || !rawMediaUrl ? fallbackImg : rawMediaUrl;
+
+  // Unified Combined Average Rating (Service + Provider)
+  const sAvg = reviewSummary?.average_rating ?? null;
+  const sCount = reviewSummary?.total_reviews ?? 0;
+  const pAvg = providerReputation?.average_rating ?? null;
+  const pCount = providerReputation?.total_reviews ?? 0;
+
+  let detailCombinedRating: number | null = null;
+  if (sAvg !== null && sCount > 0 && pAvg !== null && pCount > 0) {
+    detailCombinedRating = (sAvg + pAvg) / 2;
+  } else if (sAvg !== null && sCount > 0) {
+    detailCombinedRating = sAvg;
+  } else if (pAvg !== null && pCount > 0) {
+    detailCombinedRating = pAvg;
+  }
+  const detailTotalReviews = sCount > 0 ? sCount : pCount;
 
   return (
     <div className="w-full max-w-[1440px] 2xl:max-w-[1560px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 py-5 space-y-8 font-body text-slate-800">
@@ -279,11 +324,18 @@ export default function ServiceDetailPage() {
 
               {/* Rating & Pesanan Selesai */}
               <div className="flex items-center gap-2.5 text-[11px] text-slate-500 flex-wrap">
-                <div className="flex items-center gap-1 text-amber-500 font-bold">
-                  <Star size={14} weight="fill" />
-                  <span className="text-slate-800">4.9</span>
-                  <span className="text-slate-400 font-normal">({provider?.reviewCount || 38} ulasan)</span>
-                </div>
+                {detailCombinedRating !== null ? (
+                  <div className="flex items-center gap-1 text-amber-500 font-bold" title={`Rating rata-rata: ${detailCombinedRating.toFixed(1)}`}>
+                    <Star size={14} weight="fill" />
+                    <span className="text-slate-800">{detailCombinedRating.toFixed(1)}</span>
+                    <span className="text-slate-400 font-normal">({detailTotalReviews} penilaian)</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 text-slate-400">
+                    <Star size={14} className="text-slate-300" />
+                    <span>Belum dinilai</span>
+                  </div>
+                )}
                 <span className="text-slate-300">•</span>
                 <div className="text-slate-600">
                   <span className="font-bold text-slate-800">{provider?.completedJobs || 142}</span> pengerjaan selesai
@@ -384,9 +436,15 @@ export default function ServiceDetailPage() {
                   <span className="truncate">{service.providerOfficeCity || provider?.city || "DKI Jakarta"}</span>
                 </div>
                 <div className="flex items-center gap-3 text-[11px] text-slate-600 pt-0.5 flex-wrap">
-                  <div className="flex items-center gap-1 text-amber-500 font-bold">
+                  <div className="flex items-center gap-1 text-amber-500 font-bold" title="Reputasi Mitra Penyedia Jasa (PROVIDER)">
                     <Star size={13} weight="fill" />
-                    <span>{provider?.rating || "4.9"}</span>
+                    <span>
+                      {(providerReputation?.total_reviews ?? 0) > 0
+                        ? `${providerReputation!.average_rating.toFixed(1)} (${providerReputation!.total_reviews} ulasan mitra)`
+                        : provider?.rating
+                          ? `${provider.rating}`
+                          : "Belum dinilai"}
+                    </span>
                   </div>
                   <span className="text-slate-300">•</span>
                   <span className="text-emerald-700 font-semibold flex items-center gap-1">
@@ -496,7 +554,11 @@ export default function ServiceDetailPage() {
               </div>
               <div className="flex items-center gap-2">
                 <CheckCircle size={16} weight="fill" className="text-primary shrink-0" />
-                <span>Garansi Resmi Pengerjaan 30 Hari</span>
+                <span>
+                  {service.warrantyEnabled && (service.warrantyDays || 0) > 0
+                    ? `Garansi Layanan ${service.warrantyDays} Hari Kalender`
+                    : "Proteksi Standar Operasional Servio"}
+                </span>
               </div>
             </div>
           </div>
@@ -652,6 +714,317 @@ export default function ServiceDetailPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* SECTION: GARANSI LAYANAN (MODUL 07 AFTER-SALES PHASE INTEGRATION)        */}
+      {/* ========================================================================= */}
+      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-servio-sm p-6 sm:p-7 space-y-4">
+        {(() => {
+          const isWarOn = Boolean(service.warrantyEnabled && (service.warrantyDays || 0) > 0);
+          const warDays = service.warrantyDays || 0;
+          const warName = (service as any).warrantyName || "Garansi Layanan Purna Jual";
+          const warCoverage = (service as any).warrantyCoverage || "Jaminan perbaikan ulang tanpa biaya tambahan jika keluhan atau malafungsi teknis yang sama terjadi kembali pasca pengerjaan.";
+          const rawExclusions = (service as any).warrantyExclusions;
+          const warExclusions = (rawExclusions && rawExclusions.trim() !== "" && rawExclusions !== "null") ? rawExclusions : "Tidak ada pengecualian khusus.";
+          const warTerms = (service as any).warrantyTerms || "Klaim dapat diajukan konsumen di pusat purnajual selama masa garansi aktif dengan mengunggah foto/video kendala pengerjaan teknisi.";
+
+          if (isWarOn) {
+            return (
+              <div className="space-y-3.5">
+                <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck size={20} className="text-emerald-600" weight="fill" />
+                    <div>
+                      <h2 className="text-base font-bold font-display text-slate-900">
+                        Tersedia Garansi Layanan
+                      </h2>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Layanan ini dilengkapi jaminan purna jual resmi langsung dari mitra penyedia jasa.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-2xs">
+                    GARANSI AKTIF ({warDays} HARI)
+                  </span>
+                </div>
+
+                <div className="p-4 bg-emerald-50/60 border border-emerald-200/80 rounded-2xl space-y-3 text-xs shadow-2xs">
+                  <div className="flex items-center justify-between pb-2 border-b border-emerald-200/60 flex-wrap gap-2">
+                    <div>
+                      <span className="text-[10px] font-bold text-emerald-900 uppercase block">Nama Pilihan Garansi</span>
+                      <span className="font-extrabold text-emerald-950 text-sm">{warName}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] font-bold text-emerald-900 uppercase block">Masa Berlaku</span>
+                      <span className="font-bold text-emerald-800 text-xs px-2.5 py-0.5 rounded-md bg-white border border-emerald-200">
+                        {warDays} Hari Kalender
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 pt-1">
+                    <p className="text-emerald-950 leading-relaxed">
+                      <strong className="text-emerald-900 font-bold">Cakupan Garansi:</strong>{" "}
+                      {warCoverage}
+                    </p>
+                    <p className="text-emerald-900/90 leading-relaxed">
+                      <strong className="text-emerald-900 font-bold">Pengecualian Garansi:</strong>{" "}
+                      {warExclusions}
+                    </p>
+                    <p className="text-emerald-800/80 leading-relaxed text-[11px] pt-1.5 border-t border-emerald-200/50">
+                      <strong className="text-emerald-900 font-semibold">Syarat &amp; Ketentuan Klaim:</strong>{" "}
+                      {warTerms}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                <ShieldCheck size={20} className="text-slate-400" weight="bold" />
+                <div>
+                  <h2 className="text-base font-bold font-display text-slate-800">
+                    Garansi Layanan
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Informasi ketentuan purna jual untuk layanan jasa ini.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-1.5">
+                <p className="font-bold text-slate-800">
+                  Tidak ada garansi tambahan dari penyedia jasa untuk layanan ini.
+                </p>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  Layanan ini tidak menyertakan opsi garansi purnajual lanjutan dari mitra penyedia jasa. Namun demikian, setiap pengerjaan tetap diproteksi sepenuhnya oleh standar operasional platform SERVIO, termasuk garansi serah terima dan proteksi dana pembayaran aman hingga status pengerjaan dinyatakan selesai.
+                </p>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* ========================================================================= */}
+      {/* ULASAN PELANGGAN TERVERIFIKASI (PUB04)                                    */}
+      {/* ========================================================================= */}
+      <div className="bg-white rounded-3xl border border-slate-200/90 shadow-servio-sm p-6 sm:p-7 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div>
+            <div className="flex items-center gap-2">
+              <Star size={18} weight="fill" className="text-amber-400" />
+              <h2 className="text-base font-bold text-slate-900 font-display">
+                Ulasan &amp; Penilaian Kualitas Layanan
+              </h2>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                {reviewSummary?.total_reviews ?? serviceReviews.length} Ulasan
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Menampilkan nama pelanggan publik, tanggal order, tanggal penilaian, rating kualitas layanan (tanpa rating individual teknisi), dan tanggapan resmi mitra.
+            </p>
+          </div>
+          {(reviewSummary?.total_reviews ?? serviceReviews.length) > 0 && (
+            <div className="flex items-center gap-3 bg-amber-50/70 px-3.5 py-2 rounded-2xl border border-amber-200">
+              <div className="text-center">
+                <span className="text-xl font-extrabold text-slate-900">
+                  {(
+                    reviewSummary?.average_rating ??
+                    serviceReviews.reduce((acc, r) => acc + r.rating, 0) / serviceReviews.length
+                  ).toFixed(1)}
+                </span>
+                <span className="text-[11px] text-slate-500 font-semibold"> / 5.0</span>
+              </div>
+              <div className="flex items-center gap-0.5">
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <Star
+                    key={s}
+                    size={14}
+                    weight="fill"
+                    className={
+                      s <=
+                      Math.round(
+                        reviewSummary?.average_rating ??
+                          serviceReviews.reduce((acc, r) => acc + r.rating, 0) /
+                            serviceReviews.length
+                      )
+                        ? "text-amber-400"
+                        : "text-slate-300"
+                    }
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Distribution 5..1 Stars & Separate Provider Reputation (PUB04 & PUB05) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
+          {(reviewSummary?.total_reviews ?? serviceReviews.length) > 0 && (
+            <div className="lg:col-span-8 grid grid-cols-2 sm:grid-cols-5 gap-2 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs">
+              {[5, 4, 3, 2, 1].map((star) => {
+                const total = reviewSummary?.total_reviews ?? serviceReviews.length;
+                const count =
+                  reviewSummary?.distribution?.[String(star)] ??
+                  serviceReviews.filter((r) => Math.round(r.rating) === star).length;
+                const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                return (
+                  <div key={star} className="flex items-center gap-2 bg-white px-2.5 py-2 rounded-xl border border-slate-200/70">
+                    <span className="font-bold text-slate-700 flex items-center gap-0.5 shrink-0">
+                      {star} <Star size={12} weight="fill" className="text-amber-400" />
+                    </span>
+                    <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-amber-400 rounded-full"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-500 shrink-0">{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="lg:col-span-4 p-3.5 rounded-2xl bg-purple-50/60 border border-purple-200/80 flex items-center justify-between gap-3 text-xs">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700 block">
+                Reputasi Penyedia Jasa (Terpisah)
+              </span>
+              <span className="font-bold text-slate-900 block mt-0.5">
+                {provider?.name || service.providerName || "Penyedia Jasa Mitra"}
+              </span>
+              <span className="text-[11px] text-slate-500">
+                {providerReputation && providerReputation.total_reviews > 0
+                  ? `${providerReputation.total_reviews} penilaian reputasi usaha`
+                  : "Belum ada penilaian usaha"}
+              </span>
+            </div>
+            <div className="px-3 py-1.5 rounded-xl bg-white border border-purple-200 text-center shrink-0">
+              <div className="flex items-center gap-1 font-extrabold text-slate-900 text-sm">
+                <Star size={14} weight="fill" className="text-amber-400" />
+                <span>
+                  {providerReputation && providerReputation.total_reviews > 0
+                    ? Number(providerReputation.average_rating).toFixed(1)
+                    : "-"}
+                </span>
+              </div>
+              <span className="text-[9px] font-bold text-purple-700 uppercase">Provider</span>
+            </div>
+          </div>
+        </div>
+
+        {reviewsLoading ? (
+          <div className="p-8 text-center text-xs text-slate-400">
+            Memuat ulasan layanan...
+          </div>
+        ) : serviceReviews.length === 0 ? (
+          <div className="p-8 text-center bg-slate-50/70 rounded-2xl border border-slate-200/80 text-xs text-slate-500 space-y-1">
+            <p className="font-semibold text-slate-700">Belum ada ulasan untuk layanan ini</p>
+            <p className="text-[11px] text-slate-400">Pesan layanan ini dan jadilah yang pertama memberikan ulasan setelah pengerjaan selesai!</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {serviceReviews.map((rev) => {
+              const publicName =
+                rev.customer_display_name ||
+                (rev.submission?.customer_id
+                  ? `Pelanggan #${rev.submission.customer_id.substring(0, 6)}`
+                  : "Pelanggan Terverifikasi");
+              const reviewDateStr = new Date(
+                rev.submitted_at || rev.created_at
+              ).toLocaleDateString("id-ID", {
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+              });
+              const orderDateStr = rev.ordered_at
+                ? new Date(rev.ordered_at).toLocaleDateString("id-ID", {
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                  })
+                : null;
+              const commentText = rev.review_text ?? rev.comment;
+              const replyText = rev.reply?.reply_text ?? rev.reply?.text;
+
+              return (
+                <div key={rev.id} className="p-4 rounded-2xl bg-slate-50/60 border border-slate-200/80 space-y-2.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-700 font-bold text-xs flex items-center justify-center shrink-0">
+                        {publicName.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <span className="font-bold text-xs text-slate-900 block">{publicName}</span>
+                        <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 mt-0.5">
+                          {orderDateStr && (
+                            <span>
+                              Tanggal Order: <strong className="text-slate-700">{orderDateStr}</strong>
+                            </span>
+                          )}
+                          {orderDateStr && <span className="text-slate-300">•</span>}
+                          <span>
+                            Tanggal Ulasan: <strong className="text-slate-700">{reviewDateStr}</strong>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <Star
+                          key={i}
+                          size={14}
+                          weight="fill"
+                          className={i < (rev.rating || 5) ? "text-amber-400" : "text-slate-200"}
+                        />
+                      ))}
+                      <span className="text-xs font-bold text-slate-800 ml-1">{rev.rating || 5}.0</span>
+                    </div>
+                  </div>
+
+                  {commentText ? (
+                    <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-line">
+                      {commentText}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-slate-400 italic">
+                      Pelanggan memberikan rating bintang tanpa komentar tertulis.
+                    </p>
+                  )}
+
+                  {/* Provider Reply if exists */}
+                  {replyText && (
+                    <div className="p-3 bg-white rounded-xl border border-slate-200 text-xs space-y-1 mt-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700">
+                          Balasan Resmi Penyedia Jasa:
+                        </span>
+                        {rev.reply?.created_at && (
+                          <span className="text-[10px] text-slate-400">
+                            {new Date(rev.reply.updated_at || rev.reply.created_at).toLocaleDateString("id-ID", {
+                              day: "2-digit",
+                              month: "short",
+                              year: "numeric",
+                            })}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-slate-600 text-[11px] leading-relaxed">
+                        {replyText}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* ========================================================================= */}

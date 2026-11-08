@@ -259,7 +259,7 @@ class FeePolicyController extends Controller
             ->toArray();
 
         $knownProviderOrgs = [
-            '0740d857-b665-4191-aaf5-d7dd3611dc1d', // PT Servio Mandiri Teknik
+            '0740d857-b665-4191-aaf5-d7dd3611dc1d', // sukses gembira
             '087c97b7-2c46-4b97-ba35-1177dd72ba3a', // Bengkel Sejuk Sentosa AC
         ];
         $providerOrgIds = array_values(array_unique(array_merge($serviceProviderOrgIds, $knownProviderOrgs)));

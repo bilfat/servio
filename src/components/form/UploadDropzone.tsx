@@ -75,33 +75,42 @@ export function UploadDropzone({
     const filesToProcess = fileArray.slice(0, remainingSlots);
     const maxSizeBytes = maxFileSizeMb * 1024 * 1024;
 
-    filesToProcess.forEach((file) => {
-      if (file.size > maxSizeBytes) {
-        setUploadError(`Berkas "${file.name}" (${formatFileSize(file.size)}) melebihi batas maksimal ${maxFileSizeMb}MB.`);
-        return;
+    Promise.all(
+      filesToProcess.map((file) => {
+        return new Promise<UploadedFile | null>((resolve) => {
+          if (file.size > maxSizeBytes) {
+            setUploadError(`Berkas "${file.name}" (${formatFileSize(file.size)}) melebihi batas maksimal ${maxFileSizeMb}MB.`);
+            resolve(null);
+            return;
+          }
+
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const dataUrl = event.target?.result as string;
+            const isVideo = file.type.startsWith("video/");
+            resolve({
+              id: `file-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+              name: file.name,
+              size: formatFileSize(file.size),
+              type: isVideo ? "video" : "image",
+              url: dataUrl || "",
+              progress: 100,
+            });
+          };
+
+          reader.onerror = () => {
+            setUploadError(`Gagal membaca berkas "${file.name}". Silakan coba lagi.`);
+            resolve(null);
+          };
+
+          reader.readAsDataURL(file);
+        });
+      })
+    ).then((newFiles) => {
+      const validFiles = newFiles.filter((f): f is UploadedFile => f !== null);
+      if (validFiles.length > 0) {
+        updateFiles([...activeFiles, ...validFiles]);
       }
-
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUrl = event.target?.result as string;
-        const isVideo = file.type.startsWith("video/");
-        const newFile: UploadedFile = {
-          id: `file-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-          name: file.name,
-          size: formatFileSize(file.size),
-          type: isVideo ? "video" : "image",
-          url: dataUrl || "",
-          progress: 100,
-        };
-
-        updateFiles([...activeFiles, newFile]);
-      };
-
-      reader.onerror = () => {
-        setUploadError(`Gagal membaca berkas "${file.name}". Silakan coba lagi.`);
-      };
-
-      reader.readAsDataURL(file);
     });
   };
 

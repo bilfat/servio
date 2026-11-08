@@ -21,7 +21,7 @@ class IdentityServiceClient
     {
         $this->baseUrl = rtrim((string) config('services.identity.base_url', env('IDENTITY_INTERNAL_BASE_URL', 'http://localhost:8001')), '/');
         $this->internalKey = config('services.identity.internal_key', env('SERVICE_INTERNAL_SERVICE_KEY', 'servio_local_internal_service_key_2026'));
-        $this->timeout = (float) config('services.identity.timeout_ms', env('SERVICE_IDENTITY_TIMEOUT_MS', 1500)) / 1000.0;
+        $this->timeout = (float) config('services.identity.timeout_ms', env('SERVICE_IDENTITY_TIMEOUT_MS', 5000)) / 1000.0;
     }
 
     public static function fake(?Closure $callback = null): void

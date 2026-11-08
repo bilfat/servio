@@ -72,7 +72,23 @@ export class HttpOrderJasaRepository implements OrderJasaRepository {
       if (isWorker) {
         const res = await orderJasaApi.listWorkerTasks({ per_page: 50 });
         const tasks = res.data || [];
-        return tasks.map((t) => mapBackendWorkerTaskToServiceOrder(t));
+        const mappedOrders = tasks.map((t) => mapBackendWorkerTaskToServiceOrder(t));
+
+        // Deduplicate orders by ID so multiple assignment attempts don't cause duplicate keys
+        const uniqueOrders = new Map<string, ServiceOrder>();
+        for (const order of mappedOrders) {
+          if (!uniqueOrders.has(order.id)) {
+            uniqueOrders.set(order.id, order);
+          } else {
+            const existing = uniqueOrders.get(order.id)!;
+            const isOrderActive = order.assignment?.status === "ASSIGNED" || order.assignment?.status === "ACCEPTED";
+            const isExistingActive = existing.assignment?.status === "ASSIGNED" || existing.assignment?.status === "ACCEPTED";
+            if ((isOrderActive && !isExistingActive) || new Date(order.updatedAt).getTime() >= new Date(existing.updatedAt).getTime()) {
+              uniqueOrders.set(order.id, order);
+            }
+          }
+        }
+        return Array.from(uniqueOrders.values());
       }
 
       if (isProvider) {
@@ -167,6 +183,7 @@ export class HttpOrderJasaRepository implements OrderJasaRepository {
       symptoms_json: input.symptoms || ["Butuh pemeriksaan"],
       customer_media_refs: input.complaintPhotos || [],
       slot_reference: input.scheduledTimeSlot || "CUSTOM_CHOICE",
+      payment_method: input.paymentMethod || "QRIS",
     });
 
     if (!res.data) {
@@ -275,7 +292,7 @@ export class HttpOrderJasaRepository implements OrderJasaRepository {
     try {
       const workItems = diagnosisInput.costBreakdown?.workItems || [
         {
-          name: "Deep Cleaning & Cuci Kimia",
+          title: "Deep Cleaning & Cuci Kimia",
           quantity: 1,
           unit_price_idr: 100000,
         },
@@ -285,7 +302,12 @@ export class HttpOrderJasaRepository implements OrderJasaRepository {
 
       const res = await orderJasaApi.submitDiagnosis(assignmentId, {
         findings: diagnosisInput.findings || "Hasil pemeriksaan teknisi di lokasi",
+        suspected_cause: diagnosisInput.rootCause || "",
+        root_cause: diagnosisInput.rootCause || "",
+        recommended_actions: diagnosisInput.recommendedActions || "",
         action_plan: diagnosisInput.recommendedActions || "Pembersihan dan perbaikan komponen",
+        diagnosis_photos: diagnosisInput.damagePhotos || [],
+        diagnosis_photo_refs: diagnosisInput.damagePhotos || [],
         work_items: workItems.map((w: any) => ({
           item_name: w.title || w.name,
           quantity: w.qty || w.quantity || 1,
@@ -294,6 +316,7 @@ export class HttpOrderJasaRepository implements OrderJasaRepository {
         })),
         part_items: partItems.map((p: any) => ({
           part_name: p.name,
+          specification: p.specification || "",
           part_source: p.source || "PROVIDER_SUPPLIED",
           quantity: p.qty || p.quantity || 1,
           unit_price_idr: p.unitPrice || p.unit_price_idr || 50000,
@@ -327,7 +350,7 @@ export class HttpOrderJasaRepository implements OrderJasaRepository {
 
   async startExecution(assignmentId: string): Promise<boolean> {
     try {
-      const res = await orderJasaApi.updateVisit(assignmentId, { action: "START_DIAGNOSIS" });
+      const res = await orderJasaApi.updateVisit(assignmentId, { action: "START_EXECUTION" });
       return res.success ?? true;
     } catch (err) {
       console.error(`[HttpOrderJasaRepository] startExecution failed:`, err);
@@ -347,21 +370,24 @@ export class HttpOrderJasaRepository implements OrderJasaRepository {
     }
   ): Promise<boolean> {
     try {
+      const beforeEvidences = (executionData.beforePhotos && executionData.beforePhotos.length > 0)
+        ? executionData.beforePhotos.map((p) => ({
+            evidence_type: "BEFORE" as const,
+            media_reference: p,
+          }))
+        : [{ evidence_type: "BEFORE" as const, media_reference: "https://img.servio.id/ev-before-v41.jpg" }];
+
+      const afterEvidences = (executionData.afterPhotos && executionData.afterPhotos.length > 0)
+        ? executionData.afterPhotos.map((p) => ({
+            evidence_type: "AFTER" as const,
+            media_reference: p,
+          }))
+        : [{ evidence_type: "AFTER" as const, media_reference: "https://img.servio.id/ev-after-v41.jpg" }];
+
       const res = await orderJasaApi.finishExecution(assignmentId, {
         summary: executionData.workSummary || "Pekerjaan servis telah selesai.",
         test_result: executionData.testResults || "Fungsi alat berjalan normal.",
-        evidence: [
-          {
-            evidence_type: "BEFORE",
-            media_reference:
-              executionData.beforePhotos?.[0] || "https://img.servio.id/ev-before-v41.jpg",
-          },
-          {
-            evidence_type: "AFTER",
-            media_reference:
-              executionData.afterPhotos?.[0] || "https://img.servio.id/ev-after-v41.jpg",
-          },
-        ],
+        evidence: [...beforeEvidences, ...afterEvidences],
       });
       return res.success ?? true;
     } catch (err) {
@@ -391,6 +417,30 @@ export class HttpOrderJasaRepository implements OrderJasaRepository {
       return res.success ?? true;
     } catch (err) {
       console.error(`[HttpOrderJasaRepository] reportPaymentIssue failed:`, err);
+      throw err;
+    }
+  }
+
+  async acceptOrder(orderId: string): Promise<boolean> {
+    try {
+      const res = await orderJasaApi.acceptOrder(orderId);
+      this.inFlightList = null;
+      this.inFlightGet.delete(orderId);
+      return res.success ?? true;
+    } catch (err) {
+      console.error(`[HttpOrderJasaRepository] acceptOrder failed:`, err);
+      throw err;
+    }
+  }
+
+  async rejectOrder(orderId: string, reason: string): Promise<boolean> {
+    try {
+      const res = await orderJasaApi.rejectOrder(orderId, reason);
+      this.inFlightList = null;
+      this.inFlightGet.delete(orderId);
+      return res.success ?? true;
+    } catch (err) {
+      console.error(`[HttpOrderJasaRepository] rejectOrder failed:`, err);
       throw err;
     }
   }
@@ -446,14 +496,35 @@ export class HttpOrderJasaRepository implements OrderJasaRepository {
       let matchedOrder: ServiceOrder | undefined;
 
       if (!targetOrderId) {
-        const orders = await this.listOrders();
-        matchedOrder = orders.find(
-          (o) =>
-            o.id === invoiceNoOrPaymentId ||
-            o.orderNumber === invoiceNoOrPaymentId ||
-            o.paymentSummary.diagnosisPayment?.invoiceNo === invoiceNoOrPaymentId ||
-            o.paymentSummary.executionPayment?.invoiceNo === invoiceNoOrPaymentId
-        );
+        try {
+          const cached = typeof window !== "undefined"
+            ? JSON.parse(localStorage.getItem("servio_service_orders_cache_v2") || "[]")
+            : [];
+          matchedOrder = cached.find(
+            (o: ServiceOrder) =>
+              o.id === invoiceNoOrPaymentId ||
+              o.orderNumber === invoiceNoOrPaymentId ||
+              o.paymentSummary?.diagnosisPayment?.invoiceNo === invoiceNoOrPaymentId ||
+              o.paymentSummary?.diagnosisPayment?.paymentId === invoiceNoOrPaymentId ||
+              o.paymentSummary?.executionPayment?.invoiceNo === invoiceNoOrPaymentId ||
+              o.paymentSummary?.executionPayment?.paymentId === invoiceNoOrPaymentId
+          );
+        } catch {
+          // ignore cache read error
+        }
+
+        if (!matchedOrder) {
+          const orders = await this.listOrders();
+          matchedOrder = orders.find(
+            (o) =>
+              o.id === invoiceNoOrPaymentId ||
+              o.orderNumber === invoiceNoOrPaymentId ||
+              o.paymentSummary?.diagnosisPayment?.invoiceNo === invoiceNoOrPaymentId ||
+              o.paymentSummary?.diagnosisPayment?.paymentId === invoiceNoOrPaymentId ||
+              o.paymentSummary?.executionPayment?.invoiceNo === invoiceNoOrPaymentId ||
+              o.paymentSummary?.executionPayment?.paymentId === invoiceNoOrPaymentId
+          );
+        }
       }
 
       const orderIdToQuery = targetOrderId || matchedOrder?.id;
@@ -462,10 +533,44 @@ export class HttpOrderJasaRepository implements OrderJasaRepository {
         try {
           const paymentsRes = await orderJasaApi.getCustomerOrderPayments(orderIdToQuery);
           const obligations = paymentsRes.data?.obligations || [];
-          const isExec = invoiceNoOrPaymentId.includes("EXEC");
-          const targetObligation = isExec
-            ? (obligations.find((ob) => ob.purpose === "SERVICE_EXECUTION") || obligations[0])
-            : (obligations.find((ob) => ob.purpose === "DIAGNOSIS") || obligations[0]);
+
+          // 1. Direct match on obligation id, active payment id, attempt payment id, or invoice ref
+          let targetObligation = obligations.find(
+            (ob) =>
+              ob.id === invoiceNoOrPaymentId ||
+              ob.active_finance_payment_id === invoiceNoOrPaymentId ||
+              ob.attempts?.some(
+                (a) =>
+                  a.finance_payment_id === invoiceNoOrPaymentId ||
+                  a.finance_invoice_ref === invoiceNoOrPaymentId
+              )
+          );
+
+          // 2. If not found by exact string, resolve by context or pending state
+          if (!targetObligation) {
+            const isExecHint =
+              invoiceNoOrPaymentId.toUpperCase().includes("EXEC") ||
+              (matchedOrder?.subStatus &&
+                [
+                  "EXECUTING",
+                  "EXECUTION_PENDING",
+                  "WORK_FINISHED",
+                  "PAYMENT_OVERDUE",
+                  "WAITING_WORKER_CLOSE_VISIT",
+                ].includes(matchedOrder.subStatus));
+
+            if (isExecHint) {
+              targetObligation =
+                obligations.find((ob) => ob.purpose === "SERVICE_EXECUTION") ||
+                obligations.find((ob) => ob.state !== "PAID" && ob.state !== "CANCELLED") ||
+                obligations[0];
+            } else {
+              targetObligation =
+                obligations.find((ob) => ob.state !== "PAID" && ob.state !== "CANCELLED") ||
+                obligations.find((ob) => ob.purpose === "SERVICE_EXECUTION") ||
+                obligations[0];
+            }
+          }
 
           const foundId =
             targetObligation?.active_finance_payment_id ||

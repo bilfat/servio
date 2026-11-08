@@ -193,6 +193,12 @@ function CategoryDetailContent() {
     durationMin: s.durationMin,
     durationMax: s.durationMax,
     durationUnit: s.durationUnit,
+    warrantyDays: s.warrantyDays || 0,
+    warrantyEnabled: s.warrantyEnabled || ((s.warrantyDays || 0) > 0),
+    rating: (s as any).rating ?? 0,
+    reviewCount: (s as any).reviewCount ?? 0,
+    providerRating: (s as any).providerRating ?? (s as any).provider?.rating,
+    providerReviewCount: (s as any).providerReviewCount ?? (s as any).provider?.reviewCount,
   });
 
   if (isLoadingCategory) {

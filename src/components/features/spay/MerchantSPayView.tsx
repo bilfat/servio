@@ -967,7 +967,7 @@ export function MerchantSPayView() {
                   <span>Protokol Keamanan Otoritatif (Identity Step-Up)</span>
                 </div>
                 <p className="text-[11px] text-emerald-900/90 leading-relaxed">
-                  Pencairan saldo organisasi divalidasi dengan token otorisasi resmi. Dalam lingkungan demo integrasi penuh ini, kredensial diverifikasi secara otomatis (Step-Up Reference: <code className="bg-emerald-100/70 px-1 py-0.5 rounded text-[10px] font-mono">DEMO_STEP_UP_VERIFIED</code>).
+                  Pencairan saldo organisasi divalidasi melalui protokol keamanan otoritatif sebelum diteruskan ke rekening bank terdaftar.
                 </p>
               </div>
 

@@ -1,0 +1,425 @@
+# SERVIO PHASE 05B — CRITICAL IMPLEMENTATION AUDIT & CORRECTIVE REWORK
+
+## PERINTAH: PERIKSA IMPLEMENTASI SEBELUM MENGKLAIM SELESAI
+
+Implementasi sebelumnya dilaporkan telah selesai. Namun perubahan yang terlihat pada aplikasi belum sesuai dengan Master Prompt SERVIO Phase 05B Full Booking to Completed.
+
+Fokus utama perbaikan:
+
+1. Detail Order masih terlihat seperti sebelumnya.
+2. Ringkasan Order belum benar-benar berubah menjadi ringkasan status aktif.
+3. Riwayat Pesanan dan kartu setiap tab belum terbukti diperbaiki.
+4. Popup Ringkasan Lengkap baru ditambahkan, tetapi layout lama kemungkinan masih dipertahankan.
+5. Sinkronisasi status Customer, Provider, dan Worker belum terbukti.
+6. Provider Terima/Tolak dan refund belum diuji end-to-end.
+7. Alur diagnosis sampai COMPLETED belum diuji.
+8. TypeScript typecheck sebelumnya gagal/dihentikan.
+
+**JANGAN LANGSUNG MENGATAKAN IMPLEMENTASI SUDAH SELESAI.**
+
+# TAHAP 1 — AUDIT HASIL PERUBAHAN SEBELUMNYA
+
+Periksa git diff dan seluruh file yang telah diubah.
+
+Audit khusus:
+
+- `CompleteOrderSummaryModal.tsx`
+- `ServiceOrderDetailLayout.tsx`
+- `ServiceOrderCard.tsx`
+- `orderJasaMapper.ts`
+- `useOrderJasa.ts`
+- `HttpOrderJasaRepository.ts`
+- `orderJasaApi.ts`
+- Customer Order List dan Detail.
+- Customer Riwayat Pesanan.
+- Provider Order List dan Detail.
+- Worker Task List dan Detail.
+- Provider acceptance backend.
+- Finance refund integration.
+- Booking Service dan form empat tahap.
+
+Verifikasi apakah perubahan sebelumnya hanya menambahkan tombol/modal tanpa menghilangkan struktur detail lama.
+
+Buat laporan:
+
+- Komponen yang benar-benar berubah.
+- Komponen yang belum berubah.
+- Komponen yang hanya ditambahkan secara visual.
+- Komponen yang masih memakai status lama.
+- Komponen yang memakai data mock/fallback.
+- Kegagalan build dan test.
+
+Jangan menghapus bagian yang sudah berfungsi.
+
+# TAHAP 2 — REWORK DETAIL ORDER SELURUH ROLE
+
+Ubah Detail Order pada Customer, Provider, dan Worker.
+
+**JANGAN SEKADAR MENAMBAHKAN MODAL.**
+
+Default halaman Detail Order wajib menampilkan:
+
+- Nama jasa.
+- Nomor Order.
+- Status utama terkini.
+- Substatus terkini.
+- Ringkasan kondisi saat ini.
+- Waktu update terakhir.
+- Pihak yang sedang bertanggung jawab.
+- Langkah selanjutnya.
+- Tombol utama yang sesuai.
+- Informasi pembayaran hanya jika relevan.
+- Timeline ringkas berdasarkan event nyata.
+
+Pindahkan rincian historis panjang ke:
+
+**Lihat Ringkasan Lengkap**
+
+Popup menampilkan data A–H sesuai Master Prompt sebelumnya.
+
+Tetap tampilkan detail harga lengkap secara langsung ketika Customer harus menyetujui diagnosis atau membayar tagihan.
+
+Jangan menyembunyikan informasi penting untuk mengambil keputusan.
+
+# TAHAP 3 — REWORK RIWAYAT PESANAN DAN KARTU TAB
+
+Audit seluruh halaman daftar dan Riwayat Pesanan.
+
+Customer:
+
+- Belum Bayar.
+- Menunggu Jadwal.
+- Berlangsung.
+- Selesai.
+- Batal.
+
+Provider:
+
+- Booking Masuk.
+- Penugasan.
+- Berlangsung.
+- Selesai.
+- Batal.
+
+Worker:
+
+- Tugas Masuk.
+- Terjadwal.
+- Berlangsung.
+- Selesai.
+- Riwayat.
+
+**Perbaiki kartu daftar Order, bukan hanya halaman Detail Order.**
+
+Setiap kartu menampilkan:
+
+- Identitas layanan.
+- Nomor Order.
+- Identitas pihak terkait sesuai permission.
+- Status dan substatus authoritative.
+- Ringkasan tahap berjalan.
+- Jadwal atau waktu terakhir.
+- Satu CTA utama yang sesuai.
+- Tombol Lihat Detail.
+- Akses Ringkasan Lengkap yang konsisten.
+
+Contoh:
+
+Jika Customer menunggu Provider:
+
+Tampilkan "Menunggu Konfirmasi Penyedia Jasa".
+
+Jika Provider belum menerima Order:
+
+Tampilkan "Perlu Keputusan" serta tombol Terima/Tolak.
+
+Jika Provider sudah menerima:
+
+Tampilkan tombol Pilih Teknisi.
+
+Jika Worker selesai fisik tetapi belum PAID:
+
+Customer harus Belum Bayar dan Provider tetap Berlangsung.
+
+Jika Finance PAID tetapi Worker belum VISIT_CLOSED:
+
+Customer harus Berlangsung — Menunggu Teknisi.
+
+Jika Worker VISIT_CLOSED:
+
+Customer harus Berlangsung — Perlu Konfirmasi.
+
+Jika Order COMPLETED:
+
+Barulah Customer dan Provider masuk Selesai.
+
+Jangan membuat kartu ganda pada dua tab yang berbeda untuk Order yang sama.
+
+# TAHAP 4 — PERBAIKI STATUS RESOLVER DAN MAPPER
+
+Audit semua status mapping:
+
+- Service Order.
+- Provider Decision.
+- Assignment.
+- Visit.
+- Diagnosis.
+- Consent.
+- Execution.
+- Payment.
+- Visit Closure.
+- Completion.
+- Cancellation.
+- Refund.
+
+Buat resolver terpusat yang menghasilkan:
+
+- Main status.
+- Substatus.
+- Tab.
+- Display label.
+- Current action.
+- Action permission.
+- Relevant data.
+- Next expected step.
+
+Gunakan backend sebagai sumber kebenaran.
+
+Jangan hardcode badge berdasarkan Order status saja.
+
+Semua role harus sinkron setelah tindakan, refresh, dan login ulang.
+
+# TAHAP 5 — VERIFIKASI PROVIDER TERIMA/TOLAK
+
+Lakukan E2E menggunakan Customer dan Provider asli dalam lingkungan test.
+
+Skenario pertama:
+
+Customer Booking → Finance DIAGNOSIS PAID → Provider Booking Masuk → Terima Order → Customer melihat Diterima → Provider Pilih Teknisi → Worker Tugas Masuk.
+
+Skenario kedua:
+
+Customer Booking → Finance PAID → Provider Tolak Order → Order BATAL → Refund Finance REQUESTED → REFUND_SUCCEEDED → S-Pay Customer bertambah.
+
+Buktikan:
+
+- Provider tidak bisa assign sebelum ACCEPTED.
+- Customer melihat status Menunggu Provider.
+- Provider memiliki tombol Terima dan Tolak.
+- Keputusan tersimpan.
+- Refund tidak langsung dianggap SUCCEEDED ketika baru REQUESTED.
+- Tidak ada duplikasi refund.
+
+# TAHAP 6 — VERIFIKASI FULL FLOW SAMPAI COMPLETED
+
+Uji satu Order yang sama melalui:
+
+Booking → Finance Diagnosis PAID → Provider Accepted → Worker Assigned → Worker Accepted → OTW → ARRIVED → Diagnosis → Kirim Pengajuan → Customer ACC → Harga Disetujui → Lanjutkan Pengerjaan → Selesai Pengerjaan → Invoice SERVICE_EXECUTION → Customer Bayar → Finance PAID → Worker Akhiri Kunjungan → Customer Pekerjaan Telah Selesai → Order COMPLETED.
+
+Pada setiap transisi wajib tangkap:
+
+- Backend status.
+- Response API.
+- Data database.
+- Tab Customer.
+- Tab Provider.
+- Tab Worker.
+- Tombol yang tampil.
+- Timeline event.
+- Notification event.
+
+Jangan melewati status antara.
+
+# TAHAP 7 — AUDIT FINANCE, DATABASE, DAN KONFIGURASI
+
+Periksa:
+
+- Migration yang sebelumnya gagal.
+- Schema akhir.
+- Finance invoice dan payment reference.
+- Refund Service Client.
+- Ledger/S-Pay.
+- Perubahan `.env`.
+- Temporary PHP scripts.
+- Error log.
+
+Audit perubahan `ServiceCatalogController.php` yang membaca database Identity secara langsung.
+
+Jangan membiarkan pelanggaran batas antar-microservice hanya demi mempercepat pembacaan nama Provider.
+
+Gunakan kontrak internal, caching, atau read model sesuai arsitektur yang benar.
+
+Jangan hardcode garansi 30 hari untuk semua jasa. Gunakan snapshot garansi setiap Service Offering.
+
+Jangan mengubah fitur rating/katalog lain yang tidak diperlukan untuk memperbaiki Order Jasa kecuali ada dependency yang terbukti.
+
+# TAHAP 8 — VALIDASI FRONTEND DAN BUILD
+
+Wajib menjalankan dan menyelesaikan:
+
+- TypeScript typecheck.
+- Lint jika tersedia.
+- Frontend build.
+- Backend tests.
+- Integration tests.
+- E2E multi-role.
+- Regression Finance dan Order Barang.
+
+Jika gagal, perbaiki error lalu jalankan ulang.
+
+Jangan membatalkan test kemudian menyatakan PASS.
+
+# TAHAP 9 — BUKTI VISUAL WAJIB
+
+Berikan screenshot atau bukti browser dari:
+
+1. Customer — Menunggu Provider.
+2. Provider — Booking Masuk dengan Terima/Tolak.
+3. Provider — Pilih Teknisi setelah ACCEPTED.
+4. Worker — Tugas Masuk.
+5. Customer — Ringkasan status aktif.
+6. Provider — Ringkasan status aktif.
+7. Worker — Ringkasan status aktif.
+8. Popup Ringkasan Lengkap masing-masing role.
+9. Customer — Riwayat Pesanan semua tab.
+10. Provider — Daftar dan riwayat semua tab.
+11. Worker — Daftar dan riwayat tugas.
+12. Customer — Persetujuan diagnosis.
+13. Customer — Bayar Pengerjaan.
+14. Worker — Akhiri Kunjungan.
+15. Customer — Pekerjaan Telah Selesai.
+16. Customer dan Provider — Order COMPLETED.
+17. Customer — Provider Ditolak/Refund.
+
+Screenshot tidak menggantikan pengujian API/backend. Keduanya wajib diperiksa.
+
+# TAHAP 10 — DEFINITION OF DONE
+
+Implementasi baru boleh dinyatakan selesai jika:
+
+- Detail Order sudah benar-benar berubah menjadi status aktif.
+- Ringkasan lengkap hanya ditampilkan melalui modal/drawer.
+- Riwayat dan seluruh kartu tab menggunakan desain serta status baru.
+- Customer, Provider, dan Worker sinkron.
+- Provider Terima/Tolak berfungsi end-to-end.
+- Refund berjalan sampai Finance SUCCEEDED dan S-Pay.
+- Diagnosis sampai Customer.
+- Pengerjaan sampai pembayaran.
+- Worker VISIT_CLOSED.
+- Customer COMPLETED.
+- Tidak ada hardcoded status, pembayaran, atau garansi yang salah.
+- TypeScript typecheck dan build lulus.
+- E2E normal dan cancellation critical path lulus.
+- Tersedia bukti aktual.
+
+**JANGAN LEWATI TAHAP 1–10.**
+
+Lakukan audit, implementasi, dan testing secara berurutan.
+
+Jangan hanya mengulangi klaim "sudah selesai".
+
+Berikan laporan perubahan file dan bukti hasil test yang benar-benar dijalankan.
+
+**END — SERVIO 05B CORRECTIVE UI/UX & FULL FLOW AUDIT.**
+
+## TAMBAHAN WAJIB — FINAL UI/UX REWORK RINGKASAN ORDER CUSTOMER, PROVIDER, DAN WORKER
+
+Perbaiki seluruh halaman Detail Order, Daftar Pesanan, dan Riwayat Pesanan pada Customer, Provider Jasa, dan Worker.
+
+**1. Halaman Detail Order utama wajib diubah menjadi Ringkasan Status Aktif.**
+
+Jangan mempertahankan halaman lama yang menampilkan seluruh detail pemesanan secara panjang.
+
+Tampilkan hanya:
+- Nama layanan, nomor Order, dan pihak terkait.
+- Status dan substatus terbaru.
+- Ringkasan aktivitas yang sedang berlangsung.
+- Tanggal/jadwal yang relevan.
+- Penanggung jawab tahap saat ini.
+- Informasi pembayaran jika relevan.
+- Langkah berikutnya.
+- Tombol tindakan sesuai status.
+- Tombol Lihat Ringkasan Lengkap.
+
+**2. Tombol Lihat Ringkasan Lengkap wajib membuka popup berisi seluruh informasi Order.**
+
+Popup harus mencakup:
+- Identitas Order dan layanan.
+- Detail unit dan keluhan awal.
+- Foto/video Customer.
+- Lokasi, mode, dan jadwal.
+- Biaya diagnosis serta riwayat pembayarannya.
+- Keputusan Provider menerima atau menolak pesanan.
+- Penugasan dan identitas Worker.
+- Hasil diagnosis beserta foto.
+- Rincian pekerjaan, sparepart, dan harga.
+- Persetujuan Customer atau persetujuan yang dicatat Worker di lokasi.
+- Progres dan bukti penyelesaian pekerjaan.
+- Tagihan dan pembayaran pengerjaan.
+- Penutupan kunjungan Worker.
+- Konfirmasi Customer dan waktu COMPLETED.
+- Alasan pembatalan dan status refund jika Order dibatalkan.
+- Garansi sesuai snapshot transaksi jika tersedia.
+- Timeline lengkap beserta actor dan timestamp.
+
+Semua data harus berasal dari backend, bukan hardcode atau dummy.
+
+**3. Perbaiki seluruh kartu Daftar Pesanan dan Riwayat Order.**
+
+Customer:
+- Belum Bayar.
+- Menunggu Jadwal.
+- Berlangsung.
+- Selesai.
+- Batal.
+
+Provider:
+- Booking Masuk.
+- Penugasan.
+- Berlangsung.
+- Selesai.
+- Batal.
+
+Worker:
+- Tugas Masuk.
+- Terjadwal.
+- Berlangsung.
+- Selesai.
+- Riwayat.
+
+Kartu wajib berubah sesuai status aktual dan menampilkan satu tindakan utama yang paling relevan.
+
+**4. Perbaiki status awal setelah booking.**
+
+Jika diagnosis PAID:
+- Customer: Menunggu Konfirmasi Provider.
+- Provider: Booking Masuk, tombol Terima Order dan Tolak Order.
+- Worker: Belum mempunyai tugas.
+
+Jika Provider menerima:
+- Customer: Pesanan Diterima, Menunggu Penugasan.
+- Provider: tombol Pilih Teknisi.
+- Worker: belum ada tugas sampai benar-benar ditugaskan.
+
+Jika Provider menolak:
+- Customer: Pesanan Ditolak, masuk Batal.
+- Provider: Batal.
+- Finance: Refund 100% biaya diagnosis yang telah dibayar, kemudian dikreditkan ke S-Pay setelah REFUND_SUCCEEDED.
+
+**5. Jangan sembunyikan informasi yang wajib dibaca sebelum suatu keputusan.**
+
+Walaupun tampilan Detail Order dibuat ringkas, rincian harga lengkap tetap harus ditampilkan ketika Customer:
+- Memilih metode pembayaran diagnosis.
+- Menyetujui hasil diagnosis.
+- Membayar pengerjaan.
+- Mengonfirmasi pekerjaan selesai.
+
+**6. Wajib lakukan pengujian visual dan fungsional untuk ketiga role.**
+
+Buktikan melalui screenshot halaman sebelum/sesudah, pemeriksaan data API, serta E2E bahwa UI utama benar-benar berubah, popup lengkap berfungsi, dan riwayat seluruh tab sesuai lifecycle.
+
+JANGAN menganggap pekerjaan selesai hanya karena komponen modal telah dibuat.
+
+JANGAN hanya mengubah Customer tanpa Provider dan Worker.
+
+JANGAN hanya memperbaiki halaman Detail tanpa Daftar/Riwayat Pesanan.

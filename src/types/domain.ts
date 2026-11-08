@@ -345,6 +345,8 @@ export interface ServiceOffering {
   rating: number;
   reviewCount: number;
   warrantyDays: number;
+  warrantyEnabled?: boolean;
+  warrantyConfig?: any;
   providerId: string;
   providerName: string;
   isVerifiedProvider: boolean;
@@ -3031,13 +3033,18 @@ export interface ApiProduct {
   relatedProducts?: ApiProduct[];
   sameStoreProducts?: ApiProduct[];
   warrantyPolicy?: {
+    presetId?: string;
+    preset_id?: string;
+    name?: string;
     durationMonths?: number;
     durationDays?: number;
+    duration_days?: number;
     type?: string;
     coverage?: string;
     exclusions?: string;
     terms?: string;
   };
+  warranty_policy?: any;
   merchantCity?: string;
   merchantProvince?: string;
   merchant?: {

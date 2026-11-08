@@ -1207,7 +1207,7 @@ export function WorkerDiagnosisDecisionWorkspace({
                 <input
                   type="number"
                   min={0}
-                  step={10000}
+                  step="any"
                   required
                   value={newWorkPrice}
                   onChange={(e) => setNewWorkPrice(Number(e.target.value))}

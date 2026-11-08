@@ -11,7 +11,7 @@ import {
   ShoppingCart,
   User,
   Wrench,
-  ChatCircleText,
+  BookOpen,
 } from "@phosphor-icons/react";
 import { useCart } from "@/features/cart/useCart";
 
@@ -57,7 +57,7 @@ export function BottomNav({ orderBadgeCount, cartBadgeCount }: BottomNavProps) {
       icon: Wrench,
       badge: orderBadgeCount && orderBadgeCount > 0 ? String(orderBadgeCount) : undefined,
     },
-    { label: "Obrolan", href: "/worker/chat", icon: ChatCircleText },
+    { label: "Panduan SOP", href: "/worker/guide", icon: BookOpen },
     { label: "Profil", href: "/worker/profile", icon: User },
   ];
 
@@ -87,10 +87,10 @@ export function BottomNav({ orderBadgeCount, cartBadgeCount }: BottomNavProps) {
       return pathname === "/worker/dashboard";
     }
     if (href === "/worker/jobs") {
-      return pathname.startsWith("/worker/jobs") || pathname.startsWith("/worker/warranty");
+      return pathname.startsWith("/worker/jobs");
     }
-    if (href === "/worker/chat") {
-      return pathname.startsWith("/worker/chat");
+    if (href === "/worker/guide") {
+      return pathname.startsWith("/worker/guide");
     }
     if (href === "/worker/profile") {
       return pathname.startsWith("/worker/profile");

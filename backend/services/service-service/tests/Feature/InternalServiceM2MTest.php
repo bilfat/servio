@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\ServiceCoverageCity;
 use App\Models\ServiceDefinition;
 use App\Models\ServiceOffering;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -52,12 +51,6 @@ class InternalServiceM2MTest extends TestCase
             'customer_requirements' => ['Akses listrik'],
             'status' => 'ACTIVE',
             'lock_version' => 3,
-        ]);
-
-        ServiceCoverageCity::create([
-            'id' => (string) Str::uuid(),
-            'offering_id' => $this->offering->id,
-            'city_code' => 'JKT-BARAT',
         ]);
     }
 

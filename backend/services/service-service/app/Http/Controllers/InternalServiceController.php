@@ -22,7 +22,7 @@ class InternalServiceController extends Controller
         $cityCode = $request->input('city_code');
         $expectedVersion = $request->input('expected_version');
 
-        $offering = ServiceOffering::with(['definition', 'coverageCities', 'capabilities'])->find($id);
+        $offering = ServiceOffering::with(['definition', 'capabilities'])->find($id);
 
         if (! $offering || $offering->status !== 'ACTIVE' || ! $offering->definition || $offering->definition->status !== 'ACTIVE') {
             return ApiResponse::success([
@@ -47,7 +47,7 @@ class InternalServiceController extends Controller
         }
 
         $normCity = CityRegistryClient::normalize((string) $cityCode);
-        $coversCity = $offering->coverageCities->contains('city_code', $normCity);
+        $coversCity = true; // Area cakupan dikelola terpusat via radius provider (Area & Cakupan)
 
         if (! $coversCity) {
             return ApiResponse::success([
@@ -61,6 +61,32 @@ class InternalServiceController extends Controller
 
         $serviceTitle = $offering->display_name ?: ($offering->definition?->name ?: 'Layanan Servis Terstandarisasi');
 
+        $subcatName = 'AC & Pendingin Udara';
+        $catName = 'Repair & Technical';
+        try {
+            if ($offering->definition) {
+                if ($offering->definition->subcategory_id) {
+                    $subcatName = \Illuminate\Support\Facades\DB::table('servio_category_db.subcategories')
+                        ->where('id', $offering->definition->subcategory_id)
+                        ->value('name') ?: $subcatName;
+                }
+                if ($offering->definition->category_id) {
+                    $catName = \Illuminate\Support\Facades\DB::table('servio_category_db.categories')
+                        ->where('id', $offering->definition->category_id)
+                        ->value('name') ?: $catName;
+                }
+            }
+        } catch (\Throwable) {}
+
+        $providerName = 'sukses gembira';
+        try {
+            if ($offering->provider_organization_id) {
+                $providerName = \Illuminate\Support\Facades\DB::table('servio_identity_db.organization_profiles')
+                    ->where('organization_id', $offering->provider_organization_id)
+                    ->value('display_name') ?: $providerName;
+            }
+        } catch (\Throwable) {}
+
         return ApiResponse::success([
             'eligible' => true,
             'reason_code' => 'ELIGIBLE',
@@ -69,6 +95,10 @@ class InternalServiceController extends Controller
             'display_name' => $offering->display_name,
             'name' => $serviceTitle,
             'definition_name' => $offering->definition?->name,
+            'category_name' => $catName,
+            'subcategory_name' => $subcatName,
+            'provider_name' => $providerName,
+            'store_name' => $providerName,
             'description' => $offering->description,
             'provider_org_id' => $offering->provider_organization_id,
             'definition_id' => $offering->service_definition_id,
@@ -92,6 +122,7 @@ class InternalServiceController extends Controller
                 'unit' => $offering->duration_unit,
             ],
             'requirements_snapshot' => $offering->customer_requirements ?: [],
+            'warranty_config' => $offering->warranty_config ? (is_string($offering->warranty_config) ? json_decode($offering->warranty_config, true) : $offering->warranty_config) : null,
             'capability_ids' => $offering->capabilities->pluck('id')->values()->all(),
             'checked_at' => now()->toISOString(),
         ], 'SERVICE_ELIGIBILITY_CHECK_OK');

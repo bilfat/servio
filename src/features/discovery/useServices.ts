@@ -6,6 +6,8 @@ import { publicCatalogApi, ApiCatalogService } from "@/lib/servioApi";
 
 export interface ServiceFilterOptions {
   cityCode?: string;
+  lat?: number;
+  lng?: number;
   domainId?: FixedDomainId | "all";
   categoryId?: string;
   subcategoryId?: string;
@@ -28,7 +30,9 @@ function mapCategoryCodeToDomainId(code?: string): FixedDomainId {
 }
 
 export function useServices(initialFilters?: ServiceFilterOptions) {
-  const cityCode = initialFilters?.cityCode || "JKT-SEL";
+  const cityCode = initialFilters?.cityCode;
+  const lat = initialFilters?.lat;
+  const lng = initialFilters?.lng;
   const categoryId = initialFilters?.categoryId || "all";
   const subcategoryId = initialFilters?.subcategoryId || "all";
   const pricingModel = initialFilters?.pricingModel || "all";
@@ -49,6 +53,10 @@ export function useServices(initialFilters?: ServiceFilterOptions) {
       try {
         const params: Record<string, string> = {};
         if (cityCode) params.city_code = cityCode;
+        if (typeof lat === "number" && typeof lng === "number") {
+          params.lat = String(lat);
+          params.lng = String(lng);
+        }
         if (searchQuery) params.search = searchQuery;
         if (categoryId && categoryId !== "all") params.categories = categoryId;
         if (subcategoryId && subcategoryId !== "all") params.subcategories = subcategoryId;
@@ -80,7 +88,7 @@ export function useServices(initialFilters?: ServiceFilterOptions) {
     return () => {
       mounted = false;
     };
-  }, [cityCode, categoryId, subcategoryId, pricingModel, searchQuery]);
+  }, [cityCode, lat, lng, categoryId, subcategoryId, pricingModel, searchQuery]);
 
   const allOfferings: ServiceOffering[] = useMemo(() => {
     if (catalogItems.length > 0) {
@@ -94,8 +102,8 @@ export function useServices(initialFilters?: ServiceFilterOptions) {
         return {
           id: s.id,
           providerMasterServiceId: s.id,
-          providerId: s.providerId || s.provider_organization_id || (s as any).provider?.organization_id || "0740d857-b665-4191-aaf5-d7dd3611dc1d",
-          providerName: s.providerName || (s as any).provider?.store_name || (s as any).provider?.display_name || "Penyedia Jasa",
+          providerId: (s as any).provider?.organization_id || s.providerId || s.provider_organization_id || "0740d857-b665-4191-aaf5-d7dd3611dc1d",
+          providerName: (s as any).provider?.store_name || (s as any).provider?.display_name || s.providerName || "sukses gembira",
           isVerifiedProvider: true,
           domainId: mapCategoryCodeToDomainId(s.categoryCode),
           categoryId: (s as any).category?.id || s.categoryId || "repair",
@@ -119,7 +127,30 @@ export function useServices(initialFilters?: ServiceFilterOptions) {
           durationUnit: s.duration?.unit ?? s.duration_unit ?? "HOUR",
           surveyFee: s.survey_summary?.fee_idr ?? s.surveyFee ?? 0,
           surveyFeeModel: s.survey_summary?.fee_model ?? ((s.surveyFee && s.surveyFee > 0) ? "PAID" : "FREE"),
-          warrantyDays: s.warrantyDays || 0,
+          ...(() => {
+            const rawWCfg = (s as any).warranty_config || (s as any).warrantyConfig;
+            let parsedWCfg = rawWCfg;
+            if (typeof rawWCfg === "string" && rawWCfg.trim().startsWith("{")) {
+              try {
+                parsedWCfg = JSON.parse(rawWCfg);
+              } catch {
+                parsedWCfg = null;
+              }
+            }
+            const wDays = Number(parsedWCfg?.duration_days ?? parsedWCfg?.durationDays ?? s.warrantyDays ?? 0);
+            const wEnabled = Boolean(
+              (s as any).warrantyEnabled ??
+              parsedWCfg?.warrantyEnabled ??
+              parsedWCfg?.warranty_enabled ??
+              ((parsedWCfg?.presetId || parsedWCfg?.preset_id || parsedWCfg?.warranty_option_id || wDays > 0) && wDays > 0)
+            );
+            return {
+              warrantyDays: wDays,
+              warrantyEnabled: wEnabled,
+              warrantyConfig: parsedWCfg,
+              warranty_config: parsedWCfg,
+            };
+          })(),
           rating: s.rating || 0,
           reviewCount: s.reviewCount || 0,
           thumbnailUrl: s.thumbnailUrl || (s as any).primary_media?.url || null,
@@ -128,6 +159,10 @@ export function useServices(initialFilters?: ServiceFilterOptions) {
             : (["HOME_SERVICE"] as ("HOME_SERVICE" | "WORKSHOP")[])),
           inclusions: ["Inspeksi Awal", "Pengerjaan Profesional", "Proteksi Pembayaran Escrow"],
           exclusions: ["Suku Cadang / Material Tambahan (Bila ada)"],
+          distance: (s as any).distance,
+          distanceKm: (s as any).distance_km,
+          withinCoverage: (s as any).within_coverage ?? true,
+          providerWorkshop: (s as any).provider,
         };
       });
     }

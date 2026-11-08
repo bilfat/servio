@@ -90,7 +90,7 @@ export function SPayTransactionHistory({
             Riwayat Transaksi S-Pay
           </h2>
           <p className="text-xs text-neutral-slate">
-            Catatan mutasi dana refund, settlement, dan simulasi penarikan dana.
+            Catatan mutasi dana refund, settlement, dan penarikan dana.
           </p>
         </div>
 

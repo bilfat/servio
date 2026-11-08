@@ -18,7 +18,8 @@ class FakeFinanceServiceClient implements FinanceServiceClientInterface
         string $purpose,
         int $amountIdr,
         string $customerId,
-        int $attemptNo = 1
+        int $attemptNo = 1,
+        string $method = 'QRIS'
     ): array {
         $simulatedPaymentId = 'PAY-' . Str::ulid();
         $invoiceNo = 'INV-JSA-' . strtoupper(Str::random(8));

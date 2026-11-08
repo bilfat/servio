@@ -1,0 +1,33 @@
+/vendor/
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Environment files
+.env
+.env.backup
+.env.*.local
+.env.production
+.env.staging
+
+# Application storage & logs
+/storage/*.key
+/storage/app/*
+!/storage/app/.gitignore
+/storage/framework/cache/*
+!/storage/framework/cache/.gitignore
+/storage/framework/sessions/*
+!/storage/framework/sessions/.gitignore
+/storage/framework/views/*
+!/storage/framework/views/.gitignore
+/storage/logs/*
+!/storage/logs/.gitignore
+
+# PHPUnit & IDE
+.phpunit.result.cache
+.phpunit.cache/
+.idea/
+.vscode/
+*.swp
+*.swo
+

@@ -144,9 +144,10 @@ class ProcessOrderJasaTimeoutsCommand extends Command
             });
         }
 
-        // 3. 72-Hour Auto-Completion: completed 72h after max(finished_at, paid_at) without blocking dispute
-        $finishedOrders = ServiceOrder::whereIn('status', ['EXECUTION_PAID', 'WORKER_FINISHED'])
-            ->with(['execution', 'paymentObligations'])
+        // 3. 72-Hour Auto-Completion: completed 72h after max(finished_at, paid_at, visit_closed_at)
+        // Strict V3 Rule: Requires execution finished, payment paid, AND visit closed!
+        $finishedOrders = ServiceOrder::whereIn('status', ['VISIT_CLOSED', 'EXECUTION_PAID', 'WORKER_FINISHED'])
+            ->with(['execution', 'paymentObligations', 'visit'])
             ->get();
 
         foreach ($finishedOrders as $order) {
@@ -156,11 +157,27 @@ class ProcessOrderJasaTimeoutsCommand extends Command
             }
 
             $execObligation = $order->paymentObligations->firstWhere('purpose', 'SERVICE_EXECUTION');
-            $finishedAt = $execution->finished_at;
-            $paidAt = $execObligation?->paid_at ?? $finishedAt;
+            if (!$execObligation || $execObligation->state !== 'PAID' || !$execObligation->paid_at) {
+                continue;
+            }
 
-            // Base clock starts at max(finished_at, paid_at)
-            $clockStart = $finishedAt->gt($paidAt) ? $finishedAt : $paidAt;
+            $visit = $order->visit;
+            if (!$visit || !in_array($visit->status, ['CLOSED', 'VISIT_CLOSED'], true) || !$visit->visit_closed_at) {
+                continue;
+            }
+
+            $finishedAt = $execution->finished_at;
+            $paidAt = $execObligation->paid_at;
+            $visitClosedAt = $visit->visit_closed_at;
+
+            // Base clock starts at max(finished_at, paid_at, visit_closed_at)
+            $clockStart = $finishedAt;
+            if ($paidAt->gt($clockStart)) {
+                $clockStart = $paidAt;
+            }
+            if ($visitClosedAt->gt($clockStart)) {
+                $clockStart = $visitClosedAt;
+            }
             $completionDueAt = $clockStart->copy()->addHours(72);
 
             if ($now->gte($completionDueAt)) {

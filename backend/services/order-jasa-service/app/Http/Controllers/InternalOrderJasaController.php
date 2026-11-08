@@ -60,5 +60,88 @@ class InternalOrderJasaController
             'message' => "Berhasil memproses pembebasan {$count} dana escrow matang.",
         ], 200);
     }
+
+    /**
+     * Create real non-commercial Rp0 warranty rework job for Phase 07.
+     */
+    public function createWarrantyJob(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'case_id' => 'required|string',
+            'source_order_id' => 'required|string',
+            'provider_org_id' => 'required|string',
+            'customer_id' => 'required|string',
+            'scope_description' => 'required|string',
+            'worker_id' => 'nullable|string',
+        ]);
+
+        $existing = \App\Models\ServiceWarrantyJob::where('case_id', $validated['case_id'])->first();
+        if ($existing) {
+            return ApiResponse::success($existing, 200);
+        }
+
+        try {
+            $job = \App\Models\ServiceWarrantyJob::create([
+                'case_id' => $validated['case_id'],
+                'source_order_id' => $validated['source_order_id'],
+                'provider_org_id' => $validated['provider_org_id'],
+                'customer_id' => $validated['customer_id'],
+                'badge' => 'GARANSI',
+                'scope_description' => $validated['scope_description'],
+                'price_idr' => 0,
+                'status' => 'ASSIGNED',
+                'worker_id' => $validated['worker_id'] ?? ('wrk-' . strtoupper(\Illuminate\Support\Str::random(8))),
+            ]);
+
+            return ApiResponse::success($job, 201);
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Concurrent race condition caught by DB unique constraint
+            $existing = \App\Models\ServiceWarrantyJob::where('case_id', $validated['case_id'])->first();
+            if ($existing) {
+                return ApiResponse::success($existing, 200);
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Read real warranty job record.
+     */
+    public function showWarrantyJob(string $id): JsonResponse
+    {
+        $job = \App\Models\ServiceWarrantyJob::find($id)
+            ?? \App\Models\ServiceWarrantyJob::where('case_id', $id)->first();
+
+        if (!$job) {
+            return ApiResponse::error('WARRANTY_JOB_NOT_FOUND', 'Data warranty job tidak ditemukan.', 404);
+        }
+
+        return ApiResponse::success($job, 200);
+    }
+
+    /**
+     * Complete warranty job with authentic work evidence.
+     */
+    public function completeWarrantyJob(Request $request, string $id): JsonResponse
+    {
+        $job = \App\Models\ServiceWarrantyJob::find($id)
+            ?? \App\Models\ServiceWarrantyJob::where('case_id', $id)->first();
+
+        if (!$job) {
+            return ApiResponse::error('WARRANTY_JOB_NOT_FOUND', 'Data warranty job tidak ditemukan.', 404);
+        }
+
+        $validated = $request->validate([
+            'completion_evidence' => 'required|string',
+        ]);
+
+        $job->update([
+            'status' => 'COMPLETED',
+            'completion_evidence' => $validated['completion_evidence'],
+            'completed_at' => now(),
+        ]);
+
+        return ApiResponse::success($job, 200);
+    }
 }
 

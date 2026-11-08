@@ -35,6 +35,7 @@ class CustomerOrderController
             ->with([
                 'booking.activeAssignment.attempt',
                 'visit',
+                'consents',
                 'paymentObligations.attempts',
                 'diagnosisVersions.workItems',
                 'diagnosisVersions.partItems',
@@ -94,6 +95,7 @@ class CustomerOrderController
         $query = ServiceOrder::with([
             'booking.activeAssignment.attempt',
             'visit',
+            'consents',
             'execution.evidences',
             'diagnosisVersions.workItems',
             'diagnosisVersions.partItems',
@@ -262,6 +264,7 @@ class CustomerOrderController
             'symptoms_json' => 'nullable|array',
             'customer_media_refs' => 'nullable|array',
             'slot_reference' => 'nullable|string',
+            'payment_method' => 'nullable|string',
         ]);
 
         $order = $this->bookingService->createBooking($actor, $validated);

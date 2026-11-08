@@ -6,9 +6,9 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useActiveRole } from "@/context/RoleContext";
 import { CANONICAL_NAVIGATION, CANONICAL_NAVIGATION_SECTIONS } from "@/config/navigation";
-import { useDomainRepository } from "@/lib/repository/domainRepository";
 import { UserRole } from "@/types/auth";
 import { X, SignOut } from "@phosphor-icons/react";
+import { useWorkerPhoto } from "@/features/worker/workerPhotoHelper";
 
 interface RoleSidebarProps {
   isCollapsed?: boolean;
@@ -24,14 +24,16 @@ export function RoleSidebar({
   onCloseMobile,
 }: RoleSidebarProps) {
   const { activeRole, user, logout } = useActiveRole();
+  const liveWorkerPhoto = useWorkerPhoto(user?.id);
+  const isWorkerRole = activeRole === "WORKER_TECHNICIAN";
+  const userPhoto =
+    (isWorkerRole ? liveWorkerPhoto : null) ||
+    user.avatar ||
+    user.personalProfile?.avatar ||
+    (user.avatarUrl && user.avatarUrl !== "/brand/logo.png" ? user.avatarUrl : null);
   const pathname = usePathname();
-  const repo = useDomainRepository();
-  const merchantPendingCount = repo.getMerchantPartnershipRequests("merch-01").length;
 
   const resolveItemBadge = (item: { id: string; badge?: string }) => {
-    if (item.id === "merch-part-req") {
-      return merchantPendingCount > 0 ? String(merchantPendingCount) : undefined;
-    }
     return item.badge;
   };
 
@@ -267,10 +269,10 @@ export function RoleSidebar({
           ) : (
             <div className="flex flex-col items-center gap-2">
               <div className="w-8 h-8 mx-auto rounded-full bg-primary text-white flex items-center justify-center font-bold text-xs overflow-hidden shrink-0 shadow-sm">
-                {user.avatar || (user.personalProfile?.avatar) || (user.avatarUrl && user.avatarUrl !== "/brand/logo.png") ? (
+                {userPhoto ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={user.avatar || user.personalProfile?.avatar || user.avatarUrl}
+                    src={userPhoto}
                     alt={user.name}
                     className="w-full h-full object-cover"
                   />
@@ -435,10 +437,10 @@ export function RoleSidebar({
             <div className="p-3.5 border-t border-slate-100 bg-slate-50/50 shrink-0 flex items-center justify-between gap-2.5">
               <div className="flex items-center gap-2.5 min-w-0 flex-1">
                 <div className="w-8 h-8 rounded-full bg-primary text-white font-bold flex items-center justify-center text-xs shrink-0 shadow-sm overflow-hidden">
-                  {user.avatar || (user.personalProfile?.avatar) || (user.avatarUrl && user.avatarUrl !== "/brand/logo.png") ? (
+                  {userPhoto ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={user.avatar || user.personalProfile?.avatar || user.avatarUrl}
+                      src={userPhoto}
                       alt={user.name}
                       className="w-full h-full object-cover"
                     />

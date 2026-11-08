@@ -85,7 +85,7 @@ export function useServiceDetail(serviceId: string, cityCode = "JKT-BARAT") {
       id: apiService.id,
       providerMasterServiceId: apiService.id,
       providerId: apiService.provider?.organization_id || apiService.providerId || "0740d857-b665-4191-aaf5-d7dd3611dc1d",
-      providerName: apiService.provider?.store_name || apiService.provider?.display_name || apiService.providerName || "Penyedia Jasa",
+      providerName: apiService.provider?.store_name || apiService.provider?.display_name || apiService.providerName || "sukses gembira",
       providerOfficeCity: apiService.provider?.office_city || apiService.provider?.city || null,
       isVerifiedProvider: true,
       domainId: mapCategoryCodeToDomainId(apiService.categoryCode || apiService.service_definition?.name),
@@ -116,7 +116,56 @@ export function useServiceDetail(serviceId: string, cityCode = "JKT-BARAT") {
       surveyFeeModel: apiService.survey?.fee_model ?? ((apiService.survey?.fee_idr !== undefined && apiService.survey?.fee_idr > 0) ? "PAID" : "FREE"),
       surveyAvailability: apiService.survey?.availability ?? "AVAILABLE",
       surveyRequirement: apiService.survey?.requirement ?? "OPTIONAL",
-      warrantyDays: 0,
+      warrantyDays: (() => {
+        let wCfg = apiService.warranty_config || (apiService as any).warrantyConfig;
+        if (typeof wCfg === "string") {
+          try { wCfg = JSON.parse(wCfg); } catch {}
+        }
+        return Number(wCfg?.durationDays ?? wCfg?.duration_days ?? 0);
+      })(),
+      warrantyEnabled: (() => {
+        let wCfg = apiService.warranty_config || (apiService as any).warrantyConfig;
+        if (typeof wCfg === "string") {
+          try { wCfg = JSON.parse(wCfg); } catch {}
+        }
+        const d = Number(wCfg?.durationDays ?? wCfg?.duration_days ?? 0);
+        return Boolean(wCfg?.warrantyEnabled ?? (d > 0 || wCfg?.presetId));
+      })(),
+      warrantyName: (() => {
+        let wCfg = apiService.warranty_config || (apiService as any).warrantyConfig;
+        if (typeof wCfg === "string") {
+          try { wCfg = JSON.parse(wCfg); } catch {}
+        }
+        return wCfg?.presetName || wCfg?.name || "Garansi Layanan Purna Jual";
+      })(),
+      warrantyCoverage: (() => {
+        let wCfg = apiService.warranty_config || (apiService as any).warrantyConfig;
+        if (typeof wCfg === "string") {
+          try { wCfg = JSON.parse(wCfg); } catch {}
+        }
+        return wCfg?.coverage || wCfg?.coverage_text || "";
+      })(),
+      warrantyExclusions: (() => {
+        let wCfg = apiService.warranty_config || (apiService as any).warrantyConfig;
+        if (typeof wCfg === "string") {
+          try { wCfg = JSON.parse(wCfg); } catch {}
+        }
+        return wCfg?.exclusions ?? wCfg?.exclusion_text ?? "";
+      })(),
+      warrantyTerms: (() => {
+        let wCfg = apiService.warranty_config || (apiService as any).warrantyConfig;
+        if (typeof wCfg === "string") {
+          try { wCfg = JSON.parse(wCfg); } catch {}
+        }
+        return wCfg?.terms || wCfg?.terms_text || "Klaim dapat diajukan konsumen di pusat purnajual selama masa garansi aktif dengan mengunggah foto/video kendala pengerjaan teknisi.";
+      })(),
+      warrantyConfig: (() => {
+        let wCfg = apiService.warranty_config || (apiService as any).warrantyConfig || null;
+        if (typeof wCfg === "string") {
+          try { wCfg = JSON.parse(wCfg); } catch {}
+        }
+        return wCfg;
+      })(),
       rating: 0,
       reviewCount: 0,
       thumbnailUrl: apiService.gallery?.[0]?.url || (apiService.primary_media?.url ?? null),
@@ -142,18 +191,28 @@ export function useServiceDetail(serviceId: string, cityCode = "JKT-BARAT") {
 
   const provider: ServiceProvider | undefined = useMemo(() => {
     if (!service) return undefined;
+    const pName = service.providerName || "sukses gembira";
+    const initials = pName
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((w: string) => w[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2) || "SG";
+
     return ({
       id: service.providerId,
-      name: service.providerName,
+      name: pName,
       businessType: "COMPANY",
-      avatarInitials: service.providerName.slice(0, 2).toUpperCase(),
+      avatarInitials: initials,
       rating: 4.9,
       reviewCount: 38,
       completedJobs: 142,
       operationalHoursSummary: "08:00 - 18:00 WIB",
       operatingHoursDetail: [],
       address: "Kawasan Industri Servio Center",
-      city: "Jakarta Barat",
+      city: service.providerOfficeCity || "DKI Jakarta",
       specialties: [service.title],
       isVerified: true,
       joinedYear: 2024,

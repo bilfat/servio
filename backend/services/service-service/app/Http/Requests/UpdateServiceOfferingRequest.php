@@ -41,6 +41,8 @@ class UpdateServiceOfferingRequest extends FormRequest
             'duration.min' => 'nullable|integer|min:0',
             'duration.max' => 'nullable|integer|min:0',
             'duration.unit' => 'nullable|string|in:MINUTE,HOUR,DAY',
+
+            'warranty_config' => 'nullable',
         ];
     }
 

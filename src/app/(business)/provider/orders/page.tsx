@@ -34,6 +34,8 @@ export default function ProviderOrdersListPage() {
     orders: serviceOrders05B,
     providerOrdersByTab,
     providerTabCounts,
+    acceptOrder,
+    rejectOrder,
     assignWorker,
     refresh,
   } = useOrderJasa();
@@ -41,9 +43,51 @@ export default function ProviderOrdersListPage() {
   const [activeProviderTab, setActiveProviderTab] = useState<ProviderTabType>("BOOKING_MASUK");
   const [searchQuery, setSearchQuery] = useState("");
   const [assigningOrder, setAssigningOrder] = useState<ServiceOrder | null>(null);
+  const [rejectingOrder, setRejectingOrder] = useState<ServiceOrder | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [isRejecting, setIsRejecting] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<"success" | "error">("success");
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleAcceptOrder = async (order: ServiceOrder) => {
+    try {
+      await acceptOrder(order.id);
+      setToastType("success");
+      setToastMessage(`Pesanan #${order.orderNumber} berhasil diterima! Silakan pilih & tugaskan teknisi.`);
+      // Seamlessly open assign worker modal
+      setAssigningOrder(order);
+    } catch (err: any) {
+      setToastType("error");
+      setToastMessage(err?.message || "Gagal menerima pesanan.");
+    }
+  };
+
+  const handleConfirmReject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectingOrder) return;
+    if (!rejectReason.trim() || rejectReason.trim().length < 5) {
+      setToastType("error");
+      setToastMessage("Harap sertakan alasan penolakan yang jelas (minimal 5 karakter).");
+      return;
+    }
+
+    setIsRejecting(true);
+    try {
+      await rejectOrder(rejectingOrder.id, rejectReason.trim());
+      setToastType("success");
+      setToastMessage(`Pesanan #${rejectingOrder.orderNumber} telah ditolak. Jika ada biaya diagnosis terbayar, dana telah di-refund 100% ke S-Pay pelanggan.`);
+      setActiveProviderTab("BATAL");
+      setRejectingOrder(null);
+      setRejectReason("");
+      await refresh(true);
+    } catch (err: any) {
+      setToastType("error");
+      setToastMessage(err?.message || "Gagal menolak pesanan.");
+    } finally {
+      setIsRejecting(false);
+    }
+  };
 
   // Real-time synchronization across multi-role tabs
   useEffect(() => {
@@ -293,6 +337,11 @@ export default function ProviderOrdersListPage() {
               key={order.id}
               order={order}
               role="PROVIDER"
+              onAcceptOrder={handleAcceptOrder}
+              onRejectOrder={(o) => {
+                setRejectingOrder(o);
+                setRejectReason("");
+              }}
               onPrimaryAction={(o) => {
                 if (o.subStatus === "UNASSIGNED" || o.subStatus === "ASSIGNED_PENDING") {
                   setAssigningOrder(o);
@@ -304,6 +353,93 @@ export default function ProviderOrdersListPage() {
           ))
         )}
       </div>
+
+      {/* Reject Order Modal */}
+      {rejectingOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="w-full max-w-lg bg-white rounded-3xl p-6 shadow-2xl space-y-4 border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-rose-600 font-bold text-base">
+                <WarningCircle size={20} weight="fill" />
+                <span>Tolak &amp; Batalkan Pesanan</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectingOrder(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs text-slate-600">
+              <p>
+                Anda akan menolak pesanan <strong className="text-slate-900 font-bold">#{rejectingOrder.orderNumber}</strong> ({rejectingOrder.serviceSnapshot.title}) dari pelanggan <strong className="text-slate-900 font-bold">{rejectingOrder.customerName}</strong>.
+              </p>
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 space-y-1">
+                <span className="font-bold flex items-center gap-1">
+                  <ShieldCheck size={14} weight="fill" className="text-amber-600" />
+                  Jaminan S-Pay Pelanggan (Section 50)
+                </span>
+                <p className="text-[11px] leading-relaxed">
+                  Jika pelanggan telah membayar biaya diagnosis/survei, dana sebesar <strong className="font-bold">Rp {(rejectingOrder.serviceSnapshot.diagnosisFee || 50000).toLocaleString("id-ID")}</strong> akan otomatis dikembalikan 100% ke akun S-Pay pelanggan tanpa potongan.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmReject} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 block">
+                  Alasan Penolakan <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="Contoh: Jadwal operasional penuh, di luar kapasitas teknisi saat ini, atau alamat di luar jangkauan aman."
+                  className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                />
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {[
+                    "Jadwal teknisi penuh",
+                    "Kapasitas servis tidak mencukupi",
+                    "Alamat di luar area jangkauan",
+                    "Peralatan servis sedang maintenance",
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setRejectReason(preset)}
+                      className="text-[11px] px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium transition cursor-pointer"
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={isRejecting}
+                  onClick={() => setRejectingOrder(null)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isRejecting || rejectReason.trim().length < 5}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isRejecting ? "Memproses Refund..." : "Konfirmasi Tolak & Refund 100%"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {assigningOrder && (
         <ProviderAssignWorkerModal

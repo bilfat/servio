@@ -113,33 +113,44 @@ class ConsentService
             $nextSeq = ($order->events()->max('sequence_no') ?? 0) + 1;
 
             if ($decision === 'APPROVED') {
-                // CRITICAL LOCKED RULE: Worker is immediately authorized to start physical work!
-                // Order transitions to EXECUTION_IN_PROGRESS!
+                $diagnosis->forceFill([
+                    'status' => 'APPROVED',
+                    'updated_at' => $now,
+                ])->save();
+
                 $order->forceFill([
                     'status' => 'EXECUTION_IN_PROGRESS',
                     'phase' => 'EXECUTION_IN_PROGRESS',
                     'version' => $order->version + 1,
                 ])->save();
 
-                // Create ServiceExecution
-                ServiceExecution::forceCreate([
-                    'id' => (string) Str::ulid(),
-                    'order_id' => $order->id,
-                    'visit_id' => $visit->id,
-                    'diagnosis_version_id' => $diagnosis->id,
-                    'consent_id' => $consentId,
-                    'worker_id' => $visit->worker_id ?: $diagnosis->worker_id,
-                    'status' => 'IN_PROGRESS',
-                    'started_at' => $now,
-                    'version' => 1,
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ]);
+                $visit->forceFill([
+                    'status' => 'EXECUTING',
+                    'version' => $visit->version + 1,
+                ])->save();
+
+                // Create or ensure ServiceExecution exists
+                $existingExecution = \App\Models\ServiceExecution::where('order_id', $order->id)->first();
+                if (!$existingExecution) {
+                    \App\Models\ServiceExecution::forceCreate([
+                        'id' => (string) Str::ulid(),
+                        'order_id' => $order->id,
+                        'visit_id' => $visit->id,
+                        'diagnosis_version_id' => $diagnosis->id,
+                        'consent_id' => $consentId,
+                        'worker_id' => $visit->worker_id ?: $actor->id,
+                        'status' => 'IN_PROGRESS',
+                        'started_at' => $now,
+                        'version' => 1,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+                }
 
                 \App\Support\DomainEventLogger::recordOrderEvent(
                     orderId: $order->id,
                     sequenceNo: $nextSeq,
-                    eventType: 'CONSENT_APPROVED',
+                    eventType: 'EXECUTION_IN_PROGRESS',
                     fromState: $fromStatus,
                     toState: 'EXECUTION_IN_PROGRESS',
                     actorId: $actor->id,
@@ -152,7 +163,7 @@ class ConsentService
 
                 \App\Support\DomainEventLogger::recordAuditLog(
                     actor: "{$actor->role}:{$actor->id}",
-                    action: 'APPROVE_CONSENT',
+                    action: 'APPROVE_PRICE_CONSENT',
                     resource: "ServiceOrder:{$order->id}"
                 );
             } else {

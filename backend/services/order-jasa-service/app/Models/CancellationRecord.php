@@ -13,22 +13,7 @@ class CancellationRecord extends Model
     protected $keyType = 'string';
     public $timestamps = false;
 
-    protected $fillable = [
-        'reason_code',
-        'reason_notes',
-    ];
-
-    protected $guarded = [
-        'id',
-        'order_id',
-        'cancelled_by_role',
-        'cancelled_by_id',
-        'compensation_fee_idr',
-        'diagnosis_fulfilled',
-        'cancelled_at',
-        'created_at',
-        'updated_at',
-    ];
+    protected $guarded = [];
 
     protected $casts = [
         'diagnosis_fulfilled' => 'boolean',

@@ -1,32 +1,7 @@
 
+   WARN  Unable to respect the `PHP_CLI_SERVER_WORKERS` environment variable without the `--no-reload` flag. Only creating a single server.  
+
    INFO  Server running on [http://127.0.0.1:8005].  
 
   Press Ctrl+C to stop the server
 
-  2026-11-02 11:47:28 /up ..................................................................................... ~ 4dt
-  127.0.0.1:62084 Invalid request (An existing connection was forcibly closed by the remote host)
-  2026-11-02 11:47:33 ...................................................................................... ~ 0.38ms
-  PHP Fatal error:  Maximum execution time of 60 seconds exceeded in D:\website latihan\servio_web_13\backend\services\order-barang-service\vendor\ramsey\uuid\src\Generator\DefaultNameGenerator.php on line 26
-  PHP Fatal error:  Uncaught Error: Class "Ramsey\Uuid\Generator\DefaultNameGenerator" not found in D:\website latihan\servio_web_13\backend\services\order-barang-service\vendor\ramsey\uuid\src\Generator\NameGeneratorFactory.php:27
-  Stack trace:
-  #0 D:\website latihan\servio_web_13\backend\services\order-barang-service\vendor\ramsey\uuid\src\FeatureSet.php(342): Ramsey\Uuid\Generator\NameGeneratorFactory->getGenerator()
-  #1 D:\website latihan\servio_web_13\backend\services\order-barang-service\vendor\ramsey\uuid\src\FeatureSet.php(99): Ramsey\Uuid\FeatureSet->buildNameGenerator()
-  #2 D:\website latihan\servio_web_13\backend\services\order-barang-service\vendor\ramsey\uuid\src\UuidFactory.php(73): Ramsey\Uuid\FeatureSet->__construct()
-  #3 D:\website latihan\servio_web_13\backend\services\order-barang-service\vendor\ramsey\uuid\src\Uuid.php(422): Ramsey\Uuid\UuidFactory->__construct()
-  #4 D:\website latihan\servio_web_13\backend\services\order-barang-service\vendor\ramsey\uuid\src\Uuid.php(643): Ramsey\Uuid\Uuid::getFactory()
-  #5 D:\website latihan\servio_web_13\backend\services\order-barang-service\vendor\laravel\framework\src\Illuminate\Support\Str.php(1933): Ramsey\Uuid\Uuid::uuid4()
-  #6 D:\website latihan\servio_web_13\backend\services\order-barang-service\app\Support\ApiResponse.php(57): Illuminate\Support\Str::uuid()
-  #7 D:\website latihan\servio_web_13\backend\services\order-barang-service\bootstrap\app.php(94): App\Support\ApiResponse::error('ORDER_SERVER_ER...', 'Maximum executi...', 500)
-  #8 D:\website latihan\servio_web_13\backend\services\order-barang-service\vendor\laravel\framework\src\Illuminate\Foundation\Exceptions\Handler.php(717): {closure}(Object(Symfony\Component\ErrorHandler\Error\FatalError), Object(Illuminate\Http\Request))
-  #9 D:\website latihan\servio_web_13\backend\services\order-barang-service\vendor\laravel\framework\src\Illuminate\Foundation\Exceptions\Handler.php(618): Illuminate\Foundation\Exceptions\Handler->renderViaCallbacks(Object(Illuminate\Http\Request), Object(Symfony\Component\ErrorHandler\Error\FatalError))
-  #10 D:\website latihan\servio_web_13\backend\services\order-barang-service\vendor\laravel\framework\src\Illuminate\Foundation\Bootstrap\HandleExceptions.php(225): Illuminate\Foundation\Exceptions\Handler->render(Object(Illuminate\Http\Request), Object(Symfony\Component\ErrorHandler\Error\FatalError))
-  #11 D:\website latihan\servio_web_13\backend\services\order-barang-service\vendor\laravel\framework\src\Illuminate\Foundation\Bootstrap\HandleExceptions.php(202): Illuminate\Foundation\Bootstrap\HandleExceptions->renderHttpResponse(Object(Symfony\Component\ErrorHandler\Error\FatalError))
-  #12 D:\website latihan\servio_web_13\backend\services\order-barang-service\vendor\laravel\framework\src\Illuminate\Foundation\Bootstrap\HandleExceptions.php(238): Illuminate\Foundation\Bootstrap\HandleExceptions->handleException(Object(Symfony\Component\ErrorHandler\Error\FatalError))
-  #13 D:\website latihan\servio_web_13\backend\services\order-barang-service\vendor\laravel\framework\src\Illuminate\Foundation\Bootstrap\HandleExceptions.php(262): Illuminate\Foundation\Bootstrap\HandleExceptions->handleShutdown()
-  #14 [internal function]: Illuminate\Foundation\Bootstrap\HandleExceptions->Illuminate\Foundation\Bootstrap\{closure}()
-  #15 {main}
-  thrown in D:\website latihan\servio_web_13\backend\services\order-barang-service\vendor\ramsey\uuid\src\Generator\NameGeneratorFactory.php on line 27
-  2026-11-02 11:48:35 /api/v1/order-barang/cart .......................................................... ~ 1mnt 5dt
-  2026-11-02 11:49:41 ...................................................................................... ~ 0.30ms
-  2026-11-02 11:49:41 ...................................................................................... ~ 9.15ms
-  2026-11-02 11:49:41 /api/v1/order-barang/health ............................................................. ~ 9dt

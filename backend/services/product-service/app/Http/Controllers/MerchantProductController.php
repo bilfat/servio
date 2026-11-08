@@ -65,6 +65,7 @@ class MerchantProductController extends Controller
             'brand' => 'nullable|string|max:160',
             'category_id' => 'nullable|string|uuid',
             'subcategory_id' => 'nullable|string|uuid',
+            'warranty_policy' => 'nullable',
             'variants' => 'nullable|array',
             'variants.*.attributes' => 'required_with:variants|array',
             'variants.*.display_name' => 'nullable|string|max:191',
@@ -92,7 +93,13 @@ class MerchantProductController extends Controller
             'brand' => 'nullable|string|max:160',
             'category_id' => 'nullable|string|uuid',
             'subcategory_id' => 'nullable|string|uuid',
+            'warranty_policy' => 'nullable',
+            'warrantyPolicy' => 'nullable',
         ]);
+
+        if ($request->has('warrantyPolicy') && ! array_key_exists('warranty_policy', $validated)) {
+            $validated['warranty_policy'] = $request->input('warrantyPolicy');
+        }
 
         $ifMatch = $request->header('If-Match');
 

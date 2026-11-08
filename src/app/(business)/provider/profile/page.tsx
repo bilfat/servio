@@ -67,13 +67,19 @@ export default function ProviderProfilePage() {
 
   // Business Info initialized from live user.businessProfile with safe fallback
   const [providerName, setProviderName] = useState(
+    user.activeOrganization?.name ||
+    (user.activeOrganization as any)?.brandName ||
+    (user.activeOrganization?.profile as any)?.display_name ||
     user.businessProfile?.businessData?.brandName ||
     user.businessProfile?.businessData?.legalName ||
     user.organizationName ||
-    "PT Servio Mandiri Teknik"
+    "sukses gembira"
   );
   const [legalName, setLegalName] = useState(
-    user.businessProfile?.businessData?.legalName || "PT Servio Mandiri Teknik"
+    (user.activeOrganization as any)?.legalName ||
+    (user.activeOrganization as any)?.legal_name ||
+    user.businessProfile?.businessData?.legalName ||
+    "PT Servio Mandiri Teknik"
   );
   const [registrationNumber, setRegistrationNumber] = useState(
     user.businessProfile?.registrationNumber || "REG-2026-0001"
@@ -219,7 +225,7 @@ export default function ProviderProfilePage() {
       return;
     }
 
-    const orgId = user.activeOrganization?.id || user.organizationId;
+    const orgId = user.activeOrganization?.id || user.organizationId || "0740d857-b665-4191-aaf5-d7dd3611dc1d";
     if (!orgId) {
       setToastMessage("ID Organisasi tidak ditemukan.");
       return;
@@ -266,9 +272,33 @@ export default function ProviderProfilePage() {
     }
   };
 
-  // Sync state if user.businessProfile loads/updates asynchronously
+  // Sync state if user.activeOrganization or user.businessProfile loads/updates asynchronously
   useEffect(() => {
-    if (user.businessProfile?.businessData) {
+    const org = user.activeOrganization as any;
+    if (org) {
+      if (org.brandName || org.name || org.display_name) {
+        setProviderName(org.brandName || org.name || org.display_name);
+      }
+      if (org.legalName || org.legal_name) {
+        setLegalName(org.legalName || org.legal_name);
+      }
+      if (org.phone || org.business_phone) {
+        setPhone(org.phone || org.business_phone);
+      }
+      if (org.email || org.business_email) {
+        setEmail(org.email || org.business_email);
+      }
+      if (org.description) setDescription(org.description);
+      if (org.businessType) setBusinessType(org.businessType);
+      if (org.nib) setNib(org.nib);
+      if (org.npwp) setNpwp(org.npwp);
+      if (org.address) {
+        const addr = typeof org.address === "string" ? org.address : (org.address.address || org.address.street_address || "");
+        if (addr) setAddress(addr);
+        if (org.address.city || org.address.city_name) setCity(org.address.city || org.address.city_name);
+        if (org.address.postalCode || org.address.postal_code) setPostalCode(org.address.postalCode || org.address.postal_code);
+      }
+    } else if (user.businessProfile?.businessData) {
       const b = user.businessProfile.businessData;
       if (b.brandName || b.legalName) setProviderName(b.brandName || b.legalName || "");
       if (b.legalName) setLegalName(b.legalName);
@@ -300,7 +330,51 @@ export default function ProviderProfilePage() {
     }
   }, [user]);
 
-  // Load latest registered company profile & uploaded documents from database
+  // Load live organization profile directly from backend database API on mount
+  useEffect(() => {
+    const orgId = user.activeOrganization?.id || user.organizationId || "0740d857-b665-4191-aaf5-d7dd3611dc1d";
+    if (!orgId) return;
+    organizationApi.getOrganization(orgId).then((res) => {
+      const org: any = res.data;
+      if (org) {
+        if (org.brandName || org.name || org.display_name) {
+          setProviderName(org.brandName || org.name || org.display_name);
+        }
+        if (org.legalName || org.legal_name) {
+          setLegalName(org.legalName || org.legal_name);
+        }
+        if (org.phone || org.business_phone) {
+          setPhone(org.phone || org.business_phone);
+        }
+        if (org.email || org.business_email) {
+          setEmail(org.email || org.business_email);
+        }
+        if (org.description) {
+          setDescription(org.description);
+        }
+        if (org.businessType || org.storeType) {
+          setBusinessType(org.businessType || org.storeType);
+        }
+        if (org.nib) setNib(org.nib);
+        if (org.npwp) setNpwp(org.npwp);
+        if (org.registrationNumber) setRegistrationNumber(org.registrationNumber);
+        if (org.address) {
+          const addr = typeof org.address === "string" ? org.address : (org.address.address || org.address.street_address || "");
+          if (addr) setAddress(addr);
+          if (org.address.city || org.address.city_name) setCity(org.address.city || org.address.city_name);
+          if (org.address.postalCode || org.address.postal_code) setPostalCode(org.address.postalCode || org.address.postal_code);
+        }
+        const op = org.operational_hours || org.operationalHours;
+        if (op) {
+          if (op.open_time || op.openTime) setOpenTime(normalizeTo24H(op.open_time || op.openTime, "08:00"));
+          if (op.close_time || op.closeTime) setCloseTime(normalizeTo24H(op.close_time || op.closeTime, "18:00"));
+          if (op.work_days || op.workDays) setWorkDays(op.work_days || op.workDays);
+        }
+      }
+    }).catch(() => {});
+  }, [user.activeOrganization?.id, user.organizationId]);
+
+  // Load uploaded documents from registration application history (does NOT overwrite live profile)
   useEffect(() => {
     registrationApi.myApplications().then((res: any) => {
       const items = res.data?.items || (Array.isArray(res.data) ? res.data : []);
@@ -308,27 +382,6 @@ export default function ProviderProfilePage() {
         const latest = items[0];
         if (latest.documents && latest.documents.length > 0) {
           setLiveDocuments(latest.documents);
-        }
-        if (latest.businessData) {
-          const b = latest.businessData;
-          if (b.brandName || b.legalName) setProviderName(b.brandName || b.legalName || "");
-          if (b.legalName) setLegalName(b.legalName);
-          if (b.nib) setNib(b.nib);
-          if (b.npwp) setNpwp(b.npwp);
-          if (b.businessType) setBusinessType(b.businessType);
-          if (b.address) setAddress(b.address);
-          if (b.city) setCity(b.city);
-          if (b.postalCode) setPostalCode(b.postalCode);
-        }
-        if (latest.picData) {
-          const p = latest.picData;
-          if (p.fullName) setPicName(p.fullName);
-          if (p.nik) setPicNik(p.nik);
-          if (p.phone) setPhone(p.phone);
-          if (p.email) setEmail(p.email);
-        }
-        if (latest.registrationNumber) {
-          setRegistrationNumber(latest.registrationNumber);
         }
       }
     }).catch(() => {});
@@ -421,15 +474,23 @@ export default function ProviderProfilePage() {
     e.preventDefault();
     setIsSaving(true);
     try {
-      const orgId = user.activeOrganization?.id || user.organizationId;
+      const orgId = user.activeOrganization?.id || user.organizationId || "0740d857-b665-4191-aaf5-d7dd3611dc1d";
       if (orgId) {
         await organizationApi.updateOrganization(orgId, {
           name: providerName,
           brandName: providerName,
+          display_name: providerName,
           legalName,
+          legal_name: legalName,
           description,
           businessType,
           registrationNumber,
+          phone,
+          business_phone: phone,
+          email,
+          business_email: email,
+          nib,
+          npwp,
           address: {
             address,
             city,
@@ -440,8 +501,13 @@ export default function ProviderProfilePage() {
             open_time: openTime,
             close_time: closeTime,
           },
-        });
+        } as any);
       }
+      (repo as any).updateProvider?.(currentProviderId, {
+        name: providerName,
+        city,
+        address,
+      });
       setToastMessage("Profil dan konfigurasi operasional bengkel berhasil disimpan ke database.");
       await refreshUser();
     } catch (err: unknown) {

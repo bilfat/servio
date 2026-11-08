@@ -38,7 +38,7 @@ import {
 
 export default function WorkerProfilePage() {
   const repo = useDomainRepository();
-  const { user } = useActiveRole();
+  const { user, refreshUser } = useActiveRole();
   const {
     worker,
     capabilities: initialCaps,
@@ -91,6 +91,7 @@ export default function WorkerProfilePage() {
         const apiRes = await profileApi.uploadAvatar(file);
         if (apiRes?.data?.photo_url) {
           saveStoredWorkerPhoto(apiRes.data.photo_url, worker.id);
+          await refreshUser();
         }
       } catch (apiErr) {
         console.warn("Background API avatar upload fallback:", apiErr);
@@ -103,8 +104,12 @@ export default function WorkerProfilePage() {
     }
   };
 
-  const handleRemovePhoto = () => {
+  const handleRemovePhoto = async () => {
     removeStoredWorkerPhoto(worker.id);
+    try {
+      await profileApi.updateProfile({ photo_path: "" } as any);
+      await refreshUser();
+    } catch {}
     setToastMessage("Foto profil teknisi berhasil dihapus.");
   };
 

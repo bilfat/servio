@@ -16,6 +16,7 @@ import {
   CalendarBlank,
   CreditCard,
   Building,
+  XCircle,
 } from "@phosphor-icons/react";
 import { useOrderJasa } from "@/features/order-jasa/hooks/useOrderJasa";
 import { ServiceOrderCard } from "@/features/order-jasa/components/common/ServiceOrderCard";
@@ -28,6 +29,7 @@ function WorkerJobsContent() {
   const rawFilter = searchParams.get("tab")?.toUpperCase() as WorkerTabType;
   const initialFilter: WorkerTabType = [
     "TUGAS_MASUK",
+    "HARI_INI",
     "TERJADWAL",
     "BERLANGSUNG",
     "SELESAI",
@@ -41,7 +43,9 @@ function WorkerJobsContent() {
     workerOrdersByTab,
     workerTabCounts,
     acceptAssignment,
+    rejectAssignment,
     startTrip,
+    arriveAtLocation,
     refresh,
   } = useOrderJasa();
 
@@ -50,6 +54,19 @@ function WorkerJobsContent() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Worker task rejection modal state
+  const [rejectingOrder, setRejectingOrder] = useState<ServiceOrder | null>(null);
+  const [rejectReason, setRejectReason] = useState<string>("Jadwal bentrok dengan pekerjaan lain");
+  const [rejectNotes, setRejectNotes] = useState("");
+
+  const rejectionOptions = [
+    "Jadwal bentrok dengan pekerjaan lain",
+    "Keahlian atau perlengkapan tidak sesuai dengan keluhan pelanggan",
+    "Jarak lokasi / kendala transportasi di luar jangkauan operasional",
+    "Kondisi darurat operasional / kesehatan",
+    "Lainnya",
+  ];
+
   const workerTabs: { id: WorkerTabType; label: string; count: number; alert?: boolean }[] = [
     {
       id: "TUGAS_MASUK",
@@ -57,6 +74,7 @@ function WorkerJobsContent() {
       count: workerTabCounts.TUGAS_MASUK,
       alert: workerTabCounts.TUGAS_MASUK > 0,
     },
+    { id: "HARI_INI", label: "Hari Ini", count: workerTabCounts.HARI_INI, alert: workerTabCounts.HARI_INI > 0 },
     { id: "TERJADWAL", label: "Terjadwal", count: workerTabCounts.TERJADWAL },
     { id: "BERLANGSUNG", label: "Berlangsung", count: workerTabCounts.BERLANGSUNG },
     { id: "SELESAI", label: "Selesai", count: workerTabCounts.SELESAI },
@@ -231,18 +249,36 @@ function WorkerJobsContent() {
             )}
           </div>
         ) : (
-          filtered05BWorkerJobs.map((order) => (
+          filtered05BWorkerJobs.map((order, idx) => (
             <ServiceOrderCard
-              key={order.id}
+              key={`worker-card-${order.id}-${order.assignment?.assignmentId || idx}`}
               order={order}
               role="WORKER"
+              onSecondaryAction={(o) => {
+                setRejectingOrder(o);
+                setRejectReason("Jadwal bentrok dengan pekerjaan lain");
+                setRejectNotes("");
+              }}
               onPrimaryAction={async (o) => {
-                if (o.assignment?.status === "ASSIGNED") {
+                const isAwaitingAcceptance =
+                  o.assignment?.status === "ASSIGNED" ||
+                  o.subStatus === "ASSIGNED_PENDING" ||
+                  (o.assignment?.status as any) === "PENDING";
+
+                if (isAwaitingAcceptance) {
                   setIsProcessing(true);
                   try {
                     await acceptAssignment(o.id);
-                    setToastMessage("Penugasan diterima! Pesanan kini masuk ke tab Terjadwal.");
-                    setActiveWorkerTab("TERJADWAL");
+                    const todayJakarta = new Intl.DateTimeFormat("en-CA", {
+                      timeZone: "Asia/Jakarta",
+                      year: "numeric",
+                      month: "2-digit",
+                      day: "2-digit",
+                    }).format(new Date());
+                    const schedDate = o.schedule?.date || (o as any).scheduledDate || "";
+                    const targetTab: WorkerTabType = (schedDate && schedDate > todayJakarta) ? "TERJADWAL" : "HARI_INI";
+                    setToastMessage(`Penugasan diterima! Pesanan kini masuk ke tab ${targetTab === "HARI_INI" ? "Hari Ini" : "Terjadwal"}.`);
+                    setActiveWorkerTab(targetTab);
                   } catch (err: any) {
                     setToastMessage(err?.message || "Gagal menerima penugasan.");
                   } finally {
@@ -259,6 +295,20 @@ function WorkerJobsContent() {
                   } finally {
                     setIsProcessing(false);
                   }
+                } else if (
+                  o.subStatus === "WORKER_OTW" ||
+                  o.visit?.status === "OTW" ||
+                  o.visit?.status === "ON_THE_WAY"
+                ) {
+                  setIsProcessing(true);
+                  try {
+                    await arriveAtLocation(o.id);
+                    setToastMessage("Status diubah: Telah Tiba di Lokasi. Silakan mulai pemeriksaan.");
+                  } catch (err: any) {
+                    setToastMessage(err?.message || "Gagal memperbarui status kedatangan.");
+                  } finally {
+                    setIsProcessing(false);
+                  }
                 } else {
                   router.push(`/worker/jobs/${o.id}`);
                 }
@@ -267,6 +317,122 @@ function WorkerJobsContent() {
           ))
         )}
       </div>
+
+      {/* Modal Konfirmasi Tolak Penugasan */}
+      {rejectingOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100">
+                  <XCircle size={22} weight="bold" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-bold text-base text-slate-900">
+                    Tolak Penugasan Pekerjaan
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Order #{rejectingOrder.orderNumber} • {rejectingOrder.serviceSnapshot.title}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRejectingOrder(null)}
+                className="text-slate-400 hover:text-slate-600 text-sm p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+                <p className="font-bold mb-1">Perhatian Teknisi:</p>
+                <p>
+                  Penolakan tugas akan mengembalikan pesanan ke antrean Provider agar dapat ditugaskan ke teknisi lain. Pelanggan tidak perlu melakukan pemesanan ulang.
+                </p>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1.5">
+                  Pilih Alasan Penolakan <span className="text-rose-500">*</span>
+                </label>
+                <div className="space-y-2">
+                  {rejectionOptions.map((opt) => (
+                    <label
+                      key={opt}
+                      className={`flex items-center gap-2.5 p-3 rounded-xl border text-xs cursor-pointer transition ${
+                        rejectReason === opt
+                          ? "border-rose-400 bg-rose-50/50 text-rose-950 font-semibold"
+                          : "border-slate-200 hover:bg-slate-50 text-slate-700"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="rejectionReason"
+                        value={opt}
+                        checked={rejectReason === opt}
+                        onChange={() => setRejectReason(opt)}
+                        className="text-rose-600 focus:ring-rose-500"
+                      />
+                      <span>{opt}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Catatan Tambahan (Opsional)
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Tambahkan detail kendala operasional untuk pihak Provider..."
+                  value={rejectNotes}
+                  onChange={(e) => setRejectNotes(e.target.value)}
+                  className="w-full p-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-rose-500 focus:outline-hidden"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isProcessing}
+                onClick={() => setRejectingOrder(null)}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 transition"
+              >
+                Kembali
+              </button>
+              <button
+                type="button"
+                disabled={isProcessing || !rejectReason}
+                onClick={async () => {
+                  if (!rejectingOrder) return;
+                  setIsProcessing(true);
+                  try {
+                    const finalReason = rejectNotes.trim()
+                      ? `${rejectReason}: ${rejectNotes.trim()}`
+                      : rejectReason;
+                    await rejectAssignment(rejectingOrder.id, finalReason);
+                    setToastMessage(`Penugasan #${rejectingOrder.orderNumber} telah ditolak. Pesanan dikembalikan ke antrean Provider.`);
+                    setRejectingOrder(null);
+                    setActiveWorkerTab("RIWAYAT");
+                  } catch (err: any) {
+                    setToastMessage(err?.message || "Gagal menolak tugas.");
+                  } finally {
+                    setIsProcessing(false);
+                  }
+                }}
+                className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shadow-xs flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <XCircle size={15} weight="bold" />
+                <span>{isProcessing ? "Menolak..." : "Konfirmasi Tolak Tugas"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toastMessage && (
         <Toast

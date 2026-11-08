@@ -38,6 +38,7 @@ class CustomerOrderResource extends JsonResource
             'order_no' => $this->order_no,
             'customer_id' => $this->customer_id,
             'provider_org_id' => $this->provider_org_id,
+            'provider_name' => $this->resolveProviderName(),
             'service_offering_id' => $this->service_offering_id,
             'service_snapshot' => $this->service_snapshot,
             'recipient_snapshot' => $this->recipient_snapshot,
@@ -49,6 +50,9 @@ class CustomerOrderResource extends JsonResource
             'diagnosis_fee_exemption_type' => $this->diagnosis_fee_exemption_type,
             'status' => $this->status,
             'phase' => $this->phase,
+            'provider_decision_status' => $this->provider_decision_status ?? 'PENDING',
+            'provider_decision_at' => $this->provider_decision_at?->toIso8601String(),
+            'provider_rejection_reason' => $this->provider_rejection_reason,
             'cancel_reason_code' => $this->cancel_reason_code,
             'original_order_id' => $this->original_order_id,
             'version' => $this->version,
@@ -60,10 +64,14 @@ class CustomerOrderResource extends JsonResource
             ] : null,
             'assigned_worker' => $workerData, // Masked if not ACCEPTED!
             'visit' => $this->relationLoaded('visit') && $this->visit ? [
+                'id' => $this->visit->id,
                 'status' => $this->visit->status,
                 'worker_id' => $this->visit->worker_id,
                 'otw_at' => $this->visit->otw_at?->toIso8601String(),
                 'arrived_at' => $this->visit->arrived_at?->toIso8601String(),
+                'diagnosis_started_at' => $this->visit->diagnosis_started_at?->toIso8601String(),
+                'diagnosis_submitted_at' => $this->visit->diagnosis_submitted_at?->toIso8601String(),
+                'visit_closed_at' => $this->visit->visit_closed_at?->toIso8601String(),
             ] : null,
             'diagnosis' => $this->relationLoaded('diagnosisVersions') && ($latestDiag = $this->diagnosisVersions->sortByDesc('version_no')->first()) ? [
                 'id' => $latestDiag->id,
@@ -76,6 +84,8 @@ class CustomerOrderResource extends JsonResource
                 'provider_part_subtotal_idr' => $latestDiag->provider_part_subtotal_idr,
                 'grand_total_idr' => $latestDiag->service_total_base_idr,
                 'status' => $latestDiag->status,
+                'published_to_customer_at' => $latestDiag->published_to_customer_at?->toIso8601String(),
+                'remote_response_due_at' => $latestDiag->remote_response_due_at?->toIso8601String(),
                 'work_items' => $latestDiag->relationLoaded('workItems') ? $latestDiag->workItems->map(fn ($w) => [
                     'id' => $w->id,
                     'title' => $w->name ?? $w->item_name ?? 'Item Pekerjaan',
@@ -92,11 +102,21 @@ class CustomerOrderResource extends JsonResource
                     'subtotal' => (int) ($p->subtotal_idr ?? $p->total_price_idr ?? 0),
                 ]) : [],
             ] : null,
+            'consent' => $this->relationLoaded('consents') && ($latestConsent = $this->consents->sortByDesc('created_at')->first()) ? [
+                'id' => $latestConsent->id,
+                'method' => $latestConsent->method,
+                'decision' => $latestConsent->decision,
+                'submitted_at' => $latestConsent->submitted_at?->toIso8601String(),
+                'statement_acknowledged' => (bool) $latestConsent->statement_acknowledged,
+                'customer_present_reported' => (bool) $latestConsent->customer_present_reported,
+            ] : null,
             'execution' => $this->relationLoaded('execution') && $this->execution ? [
                 'id' => $this->execution->id,
                 'status' => $this->execution->status,
                 'started_at' => $this->execution->started_at?->toIso8601String(),
                 'finished_at' => $this->execution->finished_at?->toIso8601String(),
+                'summary' => $this->execution->summary,
+                'test_result' => $this->execution->test_result,
                 'execution_notes' => $this->execution->execution_notes,
                 'evidences' => $this->execution->relationLoaded('evidences') ? $this->execution->evidences->map(fn ($ev) => [
                     'type' => $ev->evidence_type,
@@ -126,5 +146,19 @@ class CustomerOrderResource extends JsonResource
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];
+    }
+
+    private function resolveProviderName(): string
+    {
+        try {
+            $name = \Illuminate\Support\Facades\DB::table('servio_identity_db.organization_profiles')
+                ->where('organization_id', $this->provider_org_id)
+                ->value('display_name');
+            if ($name) {
+                return $name;
+            }
+        } catch (\Throwable) {}
+
+        return 'sukses gembira';
     }
 }

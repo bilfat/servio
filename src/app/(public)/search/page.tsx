@@ -143,6 +143,12 @@ function SearchPageContent() {
     durationMin: s.durationMin,
     durationMax: s.durationMax,
     durationUnit: s.durationUnit,
+    warrantyDays: s.warrantyDays || 0,
+    warrantyEnabled: s.warrantyEnabled || (s.warrantyDays > 0),
+    rating: (s as any).rating ?? 0,
+    reviewCount: (s as any).reviewCount ?? 0,
+    providerRating: (s as any).providerRating ?? (s as any).provider?.rating,
+    providerReviewCount: (s as any).providerReviewCount ?? (s as any).provider?.reviewCount,
   });
 
   const toProviderCard = (p: ServiceProvider): ProviderCardData => ({
@@ -169,7 +175,10 @@ function SearchPageContent() {
       stock: p.totalStock ?? defaultVariant?.stock ?? 10,
       compatibilityTags: p.brandName ? [p.brandName] : ["Universal OEM"],
       merchantName: p.merchantName || "Toko Sparepart Glodok",
-      rating: 4.9,
+      rating: (p as any).rating,
+      reviewCount: (p as any).reviewCount,
+      merchantRating: (p as any).merchantRating ?? (p.merchant as any)?.rating,
+      merchantReviewCount: (p as any).merchantReviewCount ?? (p.merchant as any)?.reviewCount,
       thumbnailUrl: getProductMediaUrl(p.media),
       warrantyMonths: p.warrantyPolicy?.durationMonths ?? 0,
     };

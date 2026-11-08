@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Models\Capability;
-use App\Models\ServiceCoverageCity;
 use App\Models\ServiceDefinition;
 use App\Models\ServiceOffering;
 use App\Models\ServiceOfferingMedia;
@@ -50,7 +49,7 @@ class ServiceCatalogTest extends TestCase
             ]);
     }
 
-    public function test_public_services_without_city_returns_location_required(): void
+    public function test_public_services_without_city_returns_catalog_ok(): void
     {
         $response = $this->getJson('/api/v1/services');
 
@@ -60,8 +59,7 @@ class ServiceCatalogTest extends TestCase
                 'code' => 'SERVICE_CATALOG_OK',
                 'data' => [
                     'items' => [],
-                    'location_required' => true,
-                    'selected_city_code' => null,
+                    'location_required' => false,
                 ],
             ]);
     }
@@ -84,28 +82,17 @@ class ServiceCatalogTest extends TestCase
             'lock_version' => 1,
         ]);
 
-        ServiceCoverageCity::create([
-            'id' => (string) Str::uuid(),
-            'offering_id' => $offering->id,
-            'city_code' => 'JKT-BARAT',
-            'city_label_snapshot' => 'Kota Jakarta Barat',
-        ]);
-
-        // Search with matching city: JKT-BARAT
-        $responseMatch = $this->getJson('/api/v1/services?city_code=JKT-BARAT');
+        // User location close to provider (-6.2361, 106.8522) -> within 25 km
+        $responseMatch = $this->getJson('/api/v1/services?lat=-6.24&lng=106.85');
         $responseMatch->assertStatus(200)
             ->assertJson([
                 'success' => true,
-                'data' => [
-                    'location_required' => false,
-                    'selected_city_code' => 'JKT-BARAT',
-                ],
             ]);
         $this->assertCount(1, $responseMatch->json('data.items'));
         $this->assertEquals($offering->id, $responseMatch->json('data.items.0.id'));
 
-        // Search with non-matching city: BDG-KOTA
-        $responseNoMatch = $this->getJson('/api/v1/services?city_code=BDG-KOTA');
+        // User location far away (e.g. Bandung lat=-6.9175, lng=107.6191) -> > 25 km
+        $responseNoMatch = $this->getJson('/api/v1/services?lat=-6.9175&lng=107.6191');
         $responseNoMatch->assertStatus(200);
         $this->assertCount(0, $responseNoMatch->json('data.items'));
     }
@@ -128,13 +115,7 @@ class ServiceCatalogTest extends TestCase
             'lock_version' => 1,
         ]);
 
-        ServiceCoverageCity::create([
-            'id' => (string) Str::uuid(),
-            'offering_id' => $offering->id,
-            'city_code' => 'JKT-BARAT',
-        ]);
-
-        $response = $this->getJson("/api/v1/services/{$offering->id}?city_code=JKT-BARAT");
+        $response = $this->getJson("/api/v1/services/{$offering->id}?lat=-6.24&lng=106.85");
 
         $response->assertStatus(200)
             ->assertJson([
@@ -142,7 +123,6 @@ class ServiceCatalogTest extends TestCase
                 'data' => [
                     'id' => $offering->id,
                     'location' => [
-                        'selected_city_code' => 'JKT-BARAT',
                         'serviceable' => true,
                         'location_required' => false,
                     ],
@@ -173,13 +153,7 @@ class ServiceCatalogTest extends TestCase
             'lock_version' => 1,
         ]);
 
-        ServiceCoverageCity::create([
-            'id' => (string) Str::uuid(),
-            'offering_id' => $offering->id,
-            'city_code' => 'JKT-BARAT',
-        ]);
-
-        $response = $this->getJson("/api/v1/services/{$offering->id}?city_code=CITY_CODE_9");
+        $response = $this->getJson("/api/v1/services/{$offering->id}?lat=-6.9175&lng=107.6191");
 
         $response->assertStatus(200)
             ->assertJson([
@@ -187,7 +161,6 @@ class ServiceCatalogTest extends TestCase
                 'data' => [
                     'id' => $offering->id,
                     'location' => [
-                        'selected_city_code' => 'CITY_CODE_9',
                         'serviceable' => false,
                     ],
                     'next_action' => [

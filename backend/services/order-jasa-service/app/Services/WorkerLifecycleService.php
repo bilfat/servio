@@ -242,6 +242,68 @@ class WorkerLifecycleService
                     actorId: $actor->id,
                     actorType: $actor->role
                 );
+            } elseif ($actionUpper === 'START_EXECUTION') {
+                if ($order->status === 'EXECUTION_IN_PROGRESS') {
+                    return $visit;
+                }
+                if (!in_array($order->status, ['PRICE_APPROVED', 'CONSENT_APPROVED', 'DIAGNOSIS_APPROVED'], true)) {
+                    throw new HttpException(422, "Pengerjaan fisik hanya dapat dimulai setelah rincian biaya disetujui (status saat ini: {$order->status}).");
+                }
+
+                $visit->forceFill([
+                    'status' => 'EXECUTING',
+                    'version' => $visit->version + 1,
+                ])->save();
+
+                $fromStatus = $order->status;
+                $order->forceFill([
+                    'status' => 'EXECUTION_IN_PROGRESS',
+                    'phase' => 'EXECUTION_IN_PROGRESS',
+                    'version' => $order->version + 1,
+                ])->save();
+
+                // Create or ensure ServiceExecution exists
+                $existingExecution = ServiceExecution::where('order_id', $order->id)->first();
+                if (!$existingExecution) {
+                    $latestConsent = \App\Models\CustomerConsent::where('order_id', $order->id)->latest('created_at')->first();
+                    $latestDiag = \App\Models\DiagnosisVersion::where('order_id', $order->id)->latest('version_no')->first();
+
+                    ServiceExecution::forceCreate([
+                        'id' => (string) Str::ulid(),
+                        'order_id' => $order->id,
+                        'visit_id' => $visit->id,
+                        'diagnosis_version_id' => $latestDiag?->id,
+                        'consent_id' => $latestConsent?->id,
+                        'worker_id' => $visit->worker_id ?: $actor->id,
+                        'status' => 'IN_PROGRESS',
+                        'started_at' => $now,
+                        'version' => 1,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]);
+                } else {
+                    $existingExecution->forceFill([
+                        'status' => 'IN_PROGRESS',
+                        'started_at' => $existingExecution->started_at ?: $now,
+                        'updated_at' => $now,
+                    ])->save();
+                }
+
+                \App\Support\DomainEventLogger::recordOrderEvent(
+                    orderId: $order->id,
+                    sequenceNo: $nextSeq,
+                    eventType: 'EXECUTION_STARTED',
+                    fromState: $fromStatus,
+                    toState: 'EXECUTION_IN_PROGRESS',
+                    actorId: $actor->id,
+                    actorType: $actor->role
+                );
+
+                \App\Support\DomainEventLogger::recordAuditLog(
+                    actor: "{$actor->role}:{$actor->id}",
+                    action: 'START_EXECUTION',
+                    resource: "ServiceOrder:{$order->id}"
+                );
             } else {
                 throw new HttpException(422, "Aksi visit '{$action}' tidak dikenal.");
             }
@@ -305,10 +367,10 @@ class WorkerLifecycleService
                 'worker_id' => $actor->id,
                 'initial_condition' => $payload['initial_condition'] ?? null,
                 'findings' => (string) $payload['findings'],
-                'suspected_cause' => $payload['suspected_cause'] ?? null,
-                'recommended_actions' => $payload['recommended_actions'] ?? null,
+                'suspected_cause' => $payload['suspected_cause'] ?? $payload['root_cause'] ?? null,
+                'recommended_actions' => $payload['recommended_actions'] ?? $payload['action_plan'] ?? null,
                 'safety_notes' => $payload['safety_notes'] ?? null,
-                'diagnosis_photo_refs' => $payload['diagnosis_photo_refs'] ?? null,
+                'diagnosis_photo_refs' => $payload['diagnosis_photo_refs'] ?? $payload['diagnosis_photos'] ?? null,
                 'work_subtotal_idr' => $workSubtotal,
                 'provider_part_subtotal_idr' => $providerPartSubtotal,
                 'service_total_base_idr' => $totalBase,
@@ -325,11 +387,12 @@ class WorkerLifecycleService
             foreach ($rawWorkItems as $item) {
                 $qty = max(1, (int) ($item['quantity'] ?? $item['qty'] ?? 1));
                 $price = max(0, (int) ($item['unit_price_idr'] ?? $item['unit_price'] ?? $item['price'] ?? 0));
+                $workTitle = !empty($item['item_name']) ? (string)$item['item_name'] : (!empty($item['title']) ? (string)$item['title'] : (!empty($item['name']) ? (string)$item['name'] : 'Jasa Perbaikan'));
                 ServiceWorkItem::forceCreate([
                     'id' => (string) Str::ulid(),
                     'diagnosis_version_id' => $diagId,
                     'line_no' => $lineNo++,
-                    'name' => (string) ($item['name'] ?? $item['item_name'] ?? $item['title'] ?? 'Jasa Perbaikan'),
+                    'name' => $workTitle,
                     'description' => $item['description'] ?? null,
                     'quantity' => $qty,
                     'unit' => $item['unit'] ?? 'item',
@@ -351,12 +414,13 @@ class WorkerLifecycleService
                 };
                 $qty = max(1, (int) ($item['quantity'] ?? $item['qty'] ?? 1));
                 $price = ($source === 'PROVIDER_SUPPLIED') ? max(0, (int) ($item['unit_price_idr'] ?? $item['unit_price'] ?? $item['price'] ?? 0)) : 0;
+                $partTitle = !empty($item['part_name']) ? (string)$item['part_name'] : (!empty($item['name']) ? (string)$item['name'] : 'Sparepart');
 
                 ServicePartItem::forceCreate([
                     'id' => (string) Str::ulid(),
                     'diagnosis_version_id' => $diagId,
                     'line_no' => $partLineNo++,
-                    'part_name' => (string) ($item['part_name'] ?? $item['name'] ?? 'Sparepart'),
+                    'part_name' => $partTitle,
                     'specification' => $item['specification'] ?? null,
                     'source' => $source,
                     'quantity' => $qty,
@@ -530,16 +594,55 @@ class WorkerLifecycleService
                 throw new HttpException(422, 'Teknisi hanya dapat menutup kunjungan (close visit) setelah tagihan pengerjaan lunas dibayar atau telah dicatat kendala operasional pengerjaan.');
             }
 
+            /** @var ServiceOrder $order */
+            $order = ServiceOrder::where('id', $attempt->order_id)->lockForUpdate()->firstOrFail();
+
+            // Validate that physical work is finished before closing visit
+            $execution = ServiceExecution::where('order_id', $order->id)->first();
+            if ($execution && $execution->status !== 'WORKER_FINISHED') {
+                if (!$hasOperationalIssue) {
+                    throw new HttpException(422, 'Teknisi hanya dapat menutup kunjungan setelah pekerjaan fisik diselesaikan (WORKER_FINISHED).');
+                }
+            }
+
             /** @var ServiceVisit $visit */
             $visit = ServiceVisit::where('order_id', $attempt->order_id)->lockForUpdate()->firstOrFail();
 
             $now = now();
+            $fromStatus = $order->status;
+
             $visit->forceFill([
                 'status' => 'CLOSED',
                 'visit_closed_at' => $now,
                 'visit_close_reason' => $reason ?: 'NORMAL_COMPLETION',
                 'version' => $visit->version + 1,
             ])->save();
+
+            $order->forceFill([
+                'status' => 'VISIT_CLOSED',
+                'version' => $order->version + 1,
+            ])->save();
+
+            $nextSeq = ($order->events()->max('sequence_no') ?? 0) + 1;
+            \App\Support\DomainEventLogger::recordOrderEvent(
+                orderId: $order->id,
+                sequenceNo: $nextSeq,
+                eventType: 'VISIT_CLOSED',
+                fromState: $fromStatus,
+                toState: 'VISIT_CLOSED',
+                actorId: $actor->id,
+                actorType: $actor->role,
+                metadata: [
+                    'reason' => $reason ?: 'NORMAL_COMPLETION',
+                ]
+            );
+
+            \App\Support\DomainEventLogger::recordAuditLog(
+                actor: "{$actor->role}:{$actor->id}",
+                action: 'CLOSE_VISIT',
+                resource: "ServiceVisit:{$visit->id}",
+                reason: $reason ?: 'NORMAL_COMPLETION'
+            );
 
             return $visit;
         });

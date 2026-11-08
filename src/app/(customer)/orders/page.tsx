@@ -7,7 +7,6 @@ import { useServiceOrder } from "@/features/orders/useServiceOrder";
 import { useDomainRepository } from "@/lib/repository/domainRepository";
 import { StatusBadge, StatusVariant } from "@/components/data-display/StatusBadge";
 import { EmptyState } from "@/components/feedback/EmptyState";
-import { CustomerDemoScenarioSelector } from "@/components/navigation/CustomerDemoScenarioSelector";
 import { OrderStatus, MerchantOrder } from "@/types/domain";
 import {
   Wrench,
@@ -25,7 +24,14 @@ import {
   Truck,
   CaretRight,
   ArrowsClockwise,
+  Star,
+  ChatCircleText,
 } from "@phosphor-icons/react";
+import { afterSalesApi, ReviewSubmission } from "@/lib/afterSalesApi";
+import {
+  OrderReviewModal,
+  OrderReviewModalTarget,
+} from "@/components/features/afterSales/OrderReviewModal";
 
 import { useOrderBarang } from "@/features/order-barang/hooks/useOrderBarang";
 import { MockMerchantOrder } from "@/types/order-barang";
@@ -44,7 +50,9 @@ import { ServiceOrderCard } from "@/features/order-jasa/components/common/Servic
 import { CustomerTabType } from "@/features/order-jasa/types";
 
 type OrderDomain = "PRODUCT" | "SERVICE";
-type ProductFilterTab = "BELUM_BAYAR" | "DIPROSES" | "DIKIRIM" | "TIBA" | "SELESAI" | "BATAL";
+type ProductFilterTab = "BELUM_BAYAR" | "DIPROSES" | "DIKIRIM" | "TIBA" | "SELESAI" | "BATAL" | "PENILAIAN";
+type ServiceCustomerTab = CustomerTabType | "PENILAIAN";
+type ReviewFilterMode = "ALL" | "UNREVIEWED" | "REVIEWED";
 type ServiceFilterTab = "ALL" | "ACTION_REQUIRED" | "ACTIVE" | "COMPLETED" | "CANCELLED";
 
 export default function OrderListPage() {
@@ -75,8 +83,11 @@ export default function OrderListPage() {
 
   const [orderDomain, setOrderDomain] = useState<OrderDomain>("PRODUCT");
   const [productFilterTab, setProductFilterTab] = useState<ProductFilterTab>("BELUM_BAYAR");
-  const [customerServiceTab, setCustomerServiceTab] = useState<CustomerTabType>("BELUM_BAYAR");
+  const [customerServiceTab, setCustomerServiceTab] = useState<ServiceCustomerTab>("BELUM_BAYAR");
   const [serviceFilterTab, setServiceFilterTab] = useState<ServiceFilterTab>("ALL");
+  const [reviewFilterMode, setReviewFilterMode] = useState<ReviewFilterMode>("ALL");
+  const [myReviewsByKey, setMyReviewsByKey] = useState<Record<string, ReviewSubmission>>({});
+  const [activeReviewModalTarget, setActiveReviewModalTarget] = useState<OrderReviewModalTarget | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [initialLoading, setInitialLoading] = useState(false);
@@ -137,6 +148,30 @@ export default function OrderListPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<"success" | "error" | "warning">("success");
 
+  const loadMyReviews = React.useCallback(async () => {
+    try {
+      const res = await afterSalesApi.customer.getMyReviewsList();
+      if (res.success && Array.isArray(res.data)) {
+        const map: Record<string, ReviewSubmission> = {};
+        for (const sub of res.data) {
+          if (sub.source_order_id) {
+            map[sub.source_order_id] = sub;
+          }
+          if (sub.source_merchant_order_id) {
+            map[sub.source_merchant_order_id] = sub;
+          }
+        }
+        setMyReviewsByKey(map);
+      }
+    } catch {
+      // ignore unauthenticated or offline errors
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMyReviews();
+  }, [loadMyReviews]);
+
   // Check URL query param for domain and status tab on initial mount
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -164,6 +199,9 @@ export default function OrderListPage() {
         setProductFilterTab("SELESAI");
       } else if (activeTab === "BATAL" || activeTab === "CANCELLED") {
         setProductFilterTab("BATAL");
+      } else if (activeTab === "PENILAIAN" || activeTab === "REVIEWS") {
+        setProductFilterTab("PENILAIAN");
+        setCustomerServiceTab("PENILAIAN");
       }
     }
   }, []);
@@ -287,76 +325,40 @@ export default function OrderListPage() {
     };
   };
 
-  // Filtered Product Orders by active 5-tab + search
+  // Filtered Product Orders by active tab + search
   const filteredProductOrders: MockMerchantOrder[] = useMemo(() => {
-    const list = customerOrdersByTab[productFilterTab] || [];
-    if (!searchQuery.trim()) return list;
+    const baseKey = productFilterTab === "PENILAIAN" ? "SELESAI" : productFilterTab;
+    const list = customerOrdersByTab[baseKey] || [];
+    const byReviewStatus =
+      productFilterTab === "PENILAIAN"
+        ? list.filter((ord) => {
+            const isReviewed = Boolean(myReviewsByKey[ord.id] || myReviewsByKey[ord.orderNumber]);
+            if (reviewFilterMode === "UNREVIEWED") return !isReviewed;
+            if (reviewFilterMode === "REVIEWED") return isReviewed;
+            return true;
+          })
+        : list;
+
+    if (!searchQuery.trim()) return byReviewStatus;
     const q = searchQuery.toLowerCase();
-    return list.filter(
+    return byReviewStatus.filter(
       (p) =>
         p.orderNumber.toLowerCase().includes(q) ||
         p.merchantName.toLowerCase().includes(q) ||
         (p.delivery?.trackingNumber || "").toLowerCase().includes(q) ||
         p.items.some((it) => it.title.toLowerCase().includes(q))
     );
-  }, [customerOrdersByTab, productFilterTab, searchQuery]);
+  }, [customerOrdersByTab, productFilterTab, searchQuery, myReviewsByKey, reviewFilterMode]);
 
-  // Compute status counts for Service Orders
-  const serviceCounts = {
-    ALL: orders.length,
-    ACTION_REQUIRED: orders.filter((o) => getActionRequiredInfo(o).hasAction).length,
-    ACTIVE: orders.filter((o) =>
-      [
-        "IN_PROGRESS",
-        "TECHNICIAN_DISPATCHED",
-        "TECHNICIAN_ARRIVED",
-        "DIAGNOSING",
-        "WAITING_SPAREPART",
-        "WAITING_APPROVAL",
-        "PAYMENT_PENDING",
-        "PENDING_WORKER",
-        "AWAITING_PROOF_REVIEW",
-      ].includes(o.status)
-    ).length,
-    COMPLETED: orders.filter((o) => o.status === "COMPLETED").length,
-    CANCELLED: orders.filter((o) => o.status === "CANCELLED" || o.status === "REFUNDED").length,
-  };
+  const unreviewedProductCount = useMemo(() => {
+    const completed = customerOrdersByTab.SELESAI || [];
+    return completed.filter((o) => !myReviewsByKey[o.id] && !myReviewsByKey[o.orderNumber]).length;
+  }, [customerOrdersByTab.SELESAI, myReviewsByKey]);
 
-  const filteredServiceOrders = useMemo(() => {
-    return orders.filter((o) => {
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchesQuery =
-          (o.id || "").toLowerCase().includes(q) ||
-          (o.serviceTitle || "").toLowerCase().includes(q) ||
-          (o.serviceMode || "").toLowerCase().includes(q);
-        if (!matchesQuery) return false;
-      }
-      if (serviceFilterTab === "ACTION_REQUIRED") {
-        return getActionRequiredInfo(o).hasAction;
-      }
-      if (serviceFilterTab === "ACTIVE") {
-        return [
-          "IN_PROGRESS",
-          "TECHNICIAN_DISPATCHED",
-          "TECHNICIAN_ARRIVED",
-          "DIAGNOSING",
-          "WAITING_SPAREPART",
-          "WAITING_APPROVAL",
-          "PAYMENT_PENDING",
-          "PENDING_WORKER",
-          "AWAITING_PROOF_REVIEW",
-        ].includes(o.status);
-      }
-      if (serviceFilterTab === "COMPLETED") {
-        return o.status === "COMPLETED";
-      }
-      if (serviceFilterTab === "CANCELLED") {
-        return o.status === "CANCELLED" || o.status === "REFUNDED";
-      }
-      return true;
-    });
-  }, [orders, serviceFilterTab, searchQuery]);
+  const unreviewedServiceCount = useMemo(() => {
+    const completed = customerServiceOrdersByTab.SELESAI || [];
+    return completed.filter((o) => !myReviewsByKey[o.id] && !myReviewsByKey[o.orderNumber]).length;
+  }, [customerServiceOrdersByTab.SELESAI, myReviewsByKey]);
 
   const productFilterTabs: { id: ProductFilterTab; label: string; count: number; alert?: boolean }[] = [
     { id: "BELUM_BAYAR", label: "Belum Bayar", count: customerOrdersByTab.BELUM_BAYAR.length },
@@ -365,35 +367,44 @@ export default function OrderListPage() {
     { id: "TIBA", label: "Tiba di Tujuan", count: customerOrdersByTab.TIBA.length, alert: customerOrdersByTab.TIBA.length > 0 },
     { id: "SELESAI", label: "Selesai", count: customerOrdersByTab.SELESAI.length },
     { id: "BATAL", label: "Batal", count: customerOrdersByTab.BATAL.length },
+    { id: "PENILAIAN", label: "Penilaian", count: customerOrdersByTab.SELESAI.length, alert: unreviewedProductCount > 0 },
   ];
 
-  const serviceFilterTabs: { id: CustomerTabType; label: string; count: number; alert?: boolean }[] = [
+  const serviceFilterTabs: { id: ServiceCustomerTab; label: string; count: number; alert?: boolean }[] = [
     { id: "BELUM_BAYAR", label: "Belum Bayar", count: customerServiceTabCounts.BELUM_BAYAR, alert: customerServiceTabCounts.BELUM_BAYAR > 0 },
     { id: "MENUNGGU_JADWAL", label: "Menunggu Jadwal", count: customerServiceTabCounts.MENUNGGU_JADWAL },
     { id: "BERLANGSUNG", label: "Berlangsung", count: customerServiceTabCounts.BERLANGSUNG },
     { id: "SELESAI", label: "Selesai", count: customerServiceTabCounts.SELESAI },
     { id: "BATAL", label: "Batal", count: customerServiceTabCounts.BATAL },
+    { id: "PENILAIAN", label: "Penilaian", count: customerServiceTabCounts.SELESAI, alert: unreviewedServiceCount > 0 },
   ];
 
   const filtered05BServiceOrders = useMemo(() => {
-    const list = customerServiceOrdersByTab[customerServiceTab] || [];
-    if (!searchQuery.trim()) return list;
+    const baseKey: CustomerTabType = customerServiceTab === "PENILAIAN" ? "SELESAI" : customerServiceTab;
+    const list = customerServiceOrdersByTab[baseKey] || [];
+    const byReviewStatus =
+      customerServiceTab === "PENILAIAN"
+        ? list.filter((ord) => {
+            const isReviewed = Boolean(myReviewsByKey[ord.id] || myReviewsByKey[ord.orderNumber]);
+            if (reviewFilterMode === "UNREVIEWED") return !isReviewed;
+            if (reviewFilterMode === "REVIEWED") return isReviewed;
+            return true;
+          })
+        : list;
+
+    if (!searchQuery.trim()) return byReviewStatus;
     const q = searchQuery.toLowerCase();
-    return list.filter(
+    return byReviewStatus.filter(
       (o) =>
         o.id.toLowerCase().includes(q) ||
         o.orderNumber.toLowerCase().includes(q) ||
         o.serviceSnapshot.title.toLowerCase().includes(q) ||
         o.providerName.toLowerCase().includes(q)
     );
-  }, [customerServiceOrdersByTab, customerServiceTab, searchQuery]);
+  }, [customerServiceOrdersByTab, customerServiceTab, searchQuery, myReviewsByKey, reviewFilterMode]);
 
   return (
     <div className="space-y-6 pb-20">
-      {/* Dev / Demo Scenario Selector Banner */}
-      <div className="-mx-4 sm:-mx-6 lg:-mx-8 -mt-6 mb-4">
-        <CustomerDemoScenarioSelector onSelectScenario={(id) => router.push(`/orders/${id}`)} />
-      </div>
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -586,6 +597,38 @@ export default function OrderListPage() {
             })}
           </div>
         )}
+        {/* SUB-FILTER FOR PENILAIAN TAB */}
+        {((orderDomain === "PRODUCT" && productFilterTab === "PENILAIAN") ||
+          (orderDomain === "SERVICE" && customerServiceTab === "PENILAIAN")) && (
+          <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2 text-xs text-slate-600">
+              <Star size={16} weight="fill" className="text-amber-400 shrink-0" />
+              <span>
+                Daftar pesanan <strong>Selesai (COMPLETED)</strong> yang dapat dinilai atau telah dinilai.
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl w-fit">
+              {[
+                { id: "ALL" as ReviewFilterMode, label: "Semua" },
+                { id: "UNREVIEWED" as ReviewFilterMode, label: "Belum Dinilai" },
+                { id: "REVIEWED" as ReviewFilterMode, label: "Sudah Dinilai" },
+              ].map((rf) => (
+                <button
+                  key={rf.id}
+                  type="button"
+                  onClick={() => setReviewFilterMode(rf.id)}
+                  className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                    reviewFilterMode === rf.id
+                      ? "bg-white text-slate-900 shadow-2xs"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  {rf.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* CONTENT LIST: PRODUCT ORDERS */}
@@ -642,10 +685,12 @@ export default function OrderListPage() {
             </div>
           ) : filteredProductOrders.length === 0 ? (
             <EmptyState
-              title="Tidak Ada Pesanan Barang"
+              title={productFilterTab === "PENILAIAN" ? "Tidak Ada Pesanan pada Filter Penilaian" : "Tidak Ada Pesanan Barang"}
               description={
                 searchQuery
                   ? "Tidak ditemukan pesanan barang yang sesuai dengan kata kunci pencarian Anda."
+                  : productFilterTab === "PENILAIAN"
+                  ? "Belum ada pesanan barang selesai yang sesuai dengan filter penilaian ini."
                   : productFilterTab === "BELUM_BAYAR"
                   ? "Tidak ada pesanan barang yang menunggu pembayaran."
                   : productFilterTab === "DIPROSES"
@@ -689,6 +734,129 @@ export default function OrderListPage() {
                 </div>
               }
             />
+          ) : productFilterTab === "PENILAIAN" ? (
+            /* C03: Product Orders Penilaian Tab View */
+            <div className="space-y-4">
+              {filteredProductOrders.map((order) => {
+                const existingReview = myReviewsByKey[order.id] || myReviewsByKey[order.orderNumber] || null;
+                const hasReply = existingReview?.entries?.some((e) => Boolean(e.reply));
+
+                return (
+                  <div
+                    key={order.id}
+                    className="p-5 sm:p-6 rounded-3xl border border-slate-200/80 bg-white shadow-servio-xs space-y-4 hover:border-blue-200 transition"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Storefront size={16} weight="duotone" className="text-primary" />
+                        <span className="text-xs font-bold text-slate-900">{order.merchantName}</span>
+                        <span className="text-slate-300">•</span>
+                        <span className="text-xs font-mono font-bold text-slate-500">#{order.orderNumber}</span>
+                        <span className="text-[11px] text-slate-400">
+                          • Order: {order.createdAt ? new Date(order.createdAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "-"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {hasReply && (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
+                            <ChatCircleText size={12} weight="fill" />
+                            Ada Balasan Toko
+                          </span>
+                        )}
+                        <span
+                          className={`px-3 py-1 rounded-full text-[11px] font-bold border flex items-center gap-1.5 ${
+                            existingReview
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : "bg-amber-50 text-amber-700 border-amber-200"
+                          }`}
+                        >
+                          <Star size={13} weight="fill" className={existingReview ? "text-emerald-600" : "text-amber-500"} />
+                          {existingReview ? "Sudah Dinilai" : "Belum Dinilai"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {order.items.map((it) => (
+                        <div key={it.id} className="flex items-center gap-3.5">
+                          <div className="w-14 h-14 rounded-2xl bg-slate-100 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center">
+                            {(it as any).imageUrl || it.thumbnailUrl ? (
+                              <img src={(it as any).imageUrl || it.thumbnailUrl} alt={it.title} className="w-full h-full object-cover" />
+                            ) : (
+                              <Package size={22} weight="duotone" className="text-slate-400" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">{it.title}</h4>
+                            <p className="text-[11px] text-slate-500">
+                              {it.quantity}x • Rp {(it.unitPrice || 0).toLocaleString("id-ID")}
+                              {it.variantName ? ` • ${it.variantName}` : ""}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="text-xs text-slate-500">
+                        Total Belanja:{" "}
+                        <strong className="text-slate-900 text-sm">
+                          Rp {(((order.pricing as any)?.totalAmount ?? order.pricing?.merchantOrderTotal ?? (order as any).totalAmount) || 0).toLocaleString("id-ID")}
+                        </strong>
+                        {existingReview?.submitted_at && (
+                          <span className="ml-2 text-[11px] text-emerald-700">
+                            • Dinilai pada {new Date(existingReview.submitted_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 self-end sm:self-auto">
+                        <Link
+                          href={`/orders/products/${order.id}`}
+                          className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+                        >
+                          Lihat Detail Pesanan
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setActiveReviewModalTarget({
+                              sourceKind: "GOODS",
+                              orderId: order.id,
+                              subOrderId: order.id,
+                              orderNumber: order.orderNumber,
+                              orderedAt: order.createdAt,
+                              completedAt: order.completedAt || order.updatedAt,
+                              businessOrgId: order.merchantId || "merch-jaya-motor",
+                              businessName: order.merchantName || "Toko Official",
+                              items: order.items.map((it) => ({
+                                orderItemId: it.id,
+                                targetId: it.productId || it.id,
+                                title: it.title,
+                                imageUrl: (it as any).imageUrl || it.thumbnailUrl,
+                                quantity: it.quantity,
+                                variantLabel: it.variantName,
+                                price: it.unitPrice,
+                              })),
+                              existingSubmission: existingReview,
+                            })
+                          }
+                          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                            existingReview
+                              ? "bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
+                              : "bg-blue-600 text-white hover:bg-blue-700"
+                          }`}
+                        >
+                          <Star size={14} weight="fill" />
+                          <span>{existingReview ? "Lihat Penilaian" : "Beri Rating & Ulasan"}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
             <div className="space-y-4">
               {filteredProductOrders.map((order) => (
@@ -760,6 +928,122 @@ export default function OrderListPage() {
                 </div>
               }
             />
+          ) : customerServiceTab === "PENILAIAN" ? (
+            /* C04: Service Orders Penilaian Tab View */
+            <div className="space-y-4">
+              {filtered05BServiceOrders.map((order) => {
+                const existingReview = myReviewsByKey[order.id] || myReviewsByKey[order.orderNumber] || null;
+                const hasReply = existingReview?.entries?.some((e) => Boolean(e.reply));
+
+                return (
+                  <div
+                    key={order.id}
+                    className="p-5 sm:p-6 rounded-3xl border border-slate-200/80 bg-white shadow-servio-xs space-y-4 hover:border-blue-200 transition"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Wrench size={16} weight="duotone" className="text-[#0F4C81]" />
+                        <span className="text-xs font-bold text-slate-900">{order.providerName}</span>
+                        <span className="text-slate-300">•</span>
+                        <span className="text-xs font-mono font-bold text-slate-500">#{order.orderNumber}</span>
+                        <span className="text-[11px] text-slate-400">
+                          • Order: {order.createdAt ? new Date(order.createdAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "-"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {hasReply && (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
+                            <ChatCircleText size={12} weight="fill" />
+                            Ada Balasan Penyedia
+                          </span>
+                        )}
+                        <span
+                          className={`px-3 py-1 rounded-full text-[11px] font-bold border flex items-center gap-1.5 ${
+                            existingReview
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : "bg-amber-50 text-amber-700 border-amber-200"
+                          }`}
+                        >
+                          <Star size={13} weight="fill" className={existingReview ? "text-emerald-600" : "text-amber-500"} />
+                          {existingReview ? "Sudah Dinilai" : "Belum Dinilai"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-14 h-14 rounded-2xl bg-sky-50 border border-sky-200 flex items-center justify-center shrink-0 text-[#0F4C81]">
+                        <Wrench size={24} weight="duotone" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">
+                          {order.serviceSnapshot.title}
+                        </h4>
+                        <p className="text-[11px] text-slate-500">
+                          Kategori: {order.serviceSnapshot.categoryName} • Jadwal: {order.schedule.date} ({order.schedule.timeSlot})
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="text-xs text-slate-500">
+                        Total Biaya Layanan:{" "}
+                        <strong className="text-slate-900 text-sm">
+                          Rp {(((order as any).pricing?.finalTotal ?? order.paymentSummary?.executionPayment?.amount ?? (order.serviceSnapshot as any).minPrice) || 0).toLocaleString("id-ID")}
+                        </strong>
+                        {existingReview?.submitted_at && (
+                          <span className="ml-2 text-[11px] text-emerald-700">
+                            • Dinilai pada {new Date(existingReview.submitted_at).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 self-end sm:self-auto">
+                        <Link
+                          href={`/orders/${order.id}`}
+                          className="px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 transition"
+                        >
+                          Lihat Detail Pesanan
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setActiveReviewModalTarget({
+                              sourceKind: "SERVICE",
+                              orderId: order.id,
+                              orderNumber: order.orderNumber,
+                              orderedAt: order.createdAt,
+                              completedAt: (order as any).completedAt || order.updatedAt,
+                              businessOrgId: order.providerId || "prov-surya-teknik",
+                              businessName: order.providerName || "Penyedia Jasa",
+                              items: [
+                                {
+                                  orderItemId: order.id,
+                                  targetId: (order as any).serviceId || order.serviceSnapshot.id || order.id,
+                                  title: order.serviceSnapshot.title,
+                                  quantity: 1,
+                                  variantLabel: order.serviceSnapshot.categoryName,
+                                  price: (order as any).pricing?.finalTotal ?? order.paymentSummary?.executionPayment?.amount ?? (order.serviceSnapshot as any).minPrice,
+                                },
+                              ],
+                              existingSubmission: existingReview,
+                            })
+                          }
+                          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                            existingReview
+                              ? "bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
+                              : "bg-[#0F4C81] text-white hover:bg-[#0c3c66]"
+                          }`}
+                        >
+                          <Star size={14} weight="fill" />
+                          <span>{existingReview ? "Lihat Penilaian" : "Beri Rating & Ulasan"}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
             <div className="space-y-4">
               {filtered05BServiceOrders.map((order) => (
@@ -776,6 +1060,24 @@ export default function OrderListPage() {
           )}
         </div>
       )}
+
+      {/* PHASE 07 REVIEW MODAL (C05 / C06 / C07) */}
+      <OrderReviewModal
+        isOpen={!!activeReviewModalTarget}
+        onClose={() => setActiveReviewModalTarget(null)}
+        target={activeReviewModalTarget}
+        onSubmitted={(submission) => {
+          setMyReviewsByKey((prev) => {
+            const next = { ...prev };
+            if (submission.source_order_id) next[submission.source_order_id] = submission;
+            if (submission.source_merchant_order_id) next[submission.source_merchant_order_id] = submission;
+            if (activeReviewModalTarget?.orderNumber) next[activeReviewModalTarget.orderNumber] = submission;
+            return next;
+          });
+          setToastMessage("Penilaian dan ulasan Anda berhasil disimpan!");
+          setToastType("success");
+        }}
+      />
 
       {/* PHASE 05A MODALS */}
       <CancelUnpaidCheckoutModal

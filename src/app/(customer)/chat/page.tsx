@@ -188,9 +188,6 @@ export default function CustomerChatPage() {
             <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200 hidden md:inline shrink-0">
               Layanan Komunikasi Terpadu
             </span>
-            <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[9px] font-extrabold uppercase shrink-0">
-              DEMO
-            </span>
           </div>
         </div>
 

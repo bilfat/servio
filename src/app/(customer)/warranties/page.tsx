@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, Suspense } from "react";
+import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -19,17 +20,33 @@ import {
   SlidersHorizontal,
   Info,
   CalendarCheck,
+  Eye,
 } from "@phosphor-icons/react";
 import { useAfterSales } from "@/features/afterSales/useAfterSales";
 import { CustomerWarrantyEntitlement, AfterSalesCase } from "@/types/afterSales";
 import { AfterSalesCaseDetail } from "@/components/features/afterSales/AfterSalesCaseDetail";
 import { WarrantyClaimModal } from "@/components/features/afterSales/WarrantyClaimModal";
-import { DemoScenarioSwitcher } from "@/components/features/afterSales/DemoScenarioSwitcher";
+import { WarrantyDetailTwoGrid } from "@/components/features/afterSales/WarrantyDetailTwoGrid";
 
 type MainTab = "active" | "submissions" | "expired";
 type CaseTypeFilter = "ALL" | "claim_product" | "claim_service" | "return_product";
 type CaseStatusFilter = "ALL" | "IN_PROGRESS" | "COMPLETED" | "REJECTED" | "NO_RESPONSE";
 type ItemTypeFilter = "ALL" | "PRODUCT" | "SERVICE";
+
+function formatDisplayDate(dateStr?: string | null): string {
+  if (!dateStr) return "-";
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return dateStr;
+  }
+}
 
 function CustomerWarrantiesAndSubmissionsContent() {
   const router = useRouter();
@@ -72,23 +89,47 @@ function CustomerWarrantiesAndSubmissionsContent() {
     }
   }, [searchParams]);
 
-  // Tab 1: Active Warranties
-  const activeWarranties = warranties.filter(
-    (w) =>
-      w.isActive &&
-      (warrantyFilter === "ALL" || w.itemType === warrantyFilter) &&
-      (w.itemTitle.toLowerCase().includes(warrantySearch.toLowerCase()) ||
-        w.organizationName.toLowerCase().includes(warrantySearch.toLowerCase()))
-  );
+  // Tab 1: Active Warranties (Strictly only active, unconsumed, claim-eligible warranties)
+  const activeWarranties = warranties.filter((w) => {
+    const isEligible = w.isClaimEligible !== false;
+    const hasRemaining = w.remainingQuantity === undefined || w.remainingQuantity > 0;
+    const notConsumed = w.status === "ACTIVE" && w.activeCaseStatus !== "COMPLETED";
+    if (!w.isActive || !isEligible || !hasRemaining || !notConsumed) {
+      return false;
+    }
+    if (warrantyFilter !== "ALL" && w.itemType !== warrantyFilter) {
+      return false;
+    }
+    if (
+      warrantySearch &&
+      !w.itemTitle.toLowerCase().includes(warrantySearch.toLowerCase()) &&
+      !w.organizationName.toLowerCase().includes(warrantySearch.toLowerCase())
+    ) {
+      return false;
+    }
+    return true;
+  });
 
-  // Tab 3: Expired Warranties
-  const expiredWarranties = warranties.filter(
-    (w) =>
-      !w.isActive &&
-      (warrantyFilter === "ALL" || w.itemType === warrantyFilter) &&
-      (w.itemTitle.toLowerCase().includes(warrantySearch.toLowerCase()) ||
-        w.organizationName.toLowerCase().includes(warrantySearch.toLowerCase()))
-  );
+  // Tab 3: Expired Warranties (Entitlements that expired without being claimed)
+  const expiredWarranties = warranties.filter((w) => {
+    const isExpired = !w.isActive || w.status === "EXPIRED" || (w.remainingDays !== undefined && w.remainingDays <= 0);
+    const unclaimed = !(w as any).claimedQuantity || (w as any).claimedQuantity === 0;
+    const notConsumed = w.status !== "CONSUMED" && w.activeCaseStatus !== "COMPLETED";
+    if (!isExpired || !unclaimed || !notConsumed) {
+      return false;
+    }
+    if (warrantyFilter !== "ALL" && w.itemType !== warrantyFilter) {
+      return false;
+    }
+    if (
+      warrantySearch &&
+      !w.itemTitle.toLowerCase().includes(warrantySearch.toLowerCase()) &&
+      !w.organizationName.toLowerCase().includes(warrantySearch.toLowerCase())
+    ) {
+      return false;
+    }
+    return true;
+  });
 
   // Tab 2: Unified Submissions (Claims + Returns)
   const filteredSubmissions = cases.filter((c) => {
@@ -118,6 +159,27 @@ function CustomerWarrantiesAndSubmissionsContent() {
   if (selectedCaseId) {
     const currentCase = getCaseById(selectedCaseId);
     if (currentCase) {
+      const parentWarranty = warranties.find(
+        (w) =>
+          w.id === currentCase.warrantyId ||
+          w.orderId === currentCase.sourceOrderId ||
+          (w.cases && w.cases.some((wc: any) => wc.id === currentCase.id))
+      );
+
+      if (parentWarranty) {
+        return (
+          <WarrantyDetailTwoGrid
+            warranty={parentWarranty}
+            initialCaseId={currentCase.id}
+            onBack={() => {
+              setSelectedCaseId(null);
+              router.push("/warranties?tab=submissions");
+            }}
+            backHref="/warranties?tab=submissions"
+          />
+        );
+      }
+
       return (
         <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <AfterSalesCaseDetail
@@ -170,7 +232,7 @@ function CustomerWarrantiesAndSubmissionsContent() {
               <ShieldCheck size={16} weight="bold" />
               Garansi Aktif
               <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-sky/40 text-primary font-bold">
-                {warranties.filter((w) => w.isActive).length}
+                {activeWarranties.length}
               </span>
             </button>
 
@@ -208,7 +270,7 @@ function CustomerWarrantiesAndSubmissionsContent() {
               <Clock size={16} weight="bold" />
               Berakhir
               <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] bg-slate-100 text-slate-600 font-bold">
-                {warranties.filter((w) => !w.isActive).length}
+                {expiredWarranties.length}
               </span>
             </button>
           </div>
@@ -216,14 +278,59 @@ function CustomerWarrantiesAndSubmissionsContent() {
       </div>
 
       <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        {/* Scenario Switcher Component */}
-        <DemoScenarioSwitcher
-          onSelectCase={(cId) => setSelectedCaseId(cId)}
-          onSelectTab={(tab) => {
-            setActiveTab(tab);
-            setSelectedCaseId(null);
-          }}
-        />
+        {/* 3 Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-xs flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+              <ShieldCheck size={26} weight="fill" />
+            </div>
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                Garansi Aktif
+              </span>
+              <div className="text-xl font-bold font-display text-slate-900 mt-0.5">
+                {activeWarranties.length} Hak Perlindungan
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Siap diklaim jika terdapat kendala
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-xs flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+              <ArrowsClockwise size={26} weight="bold" />
+            </div>
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                Pengajuan Berjalan
+              </span>
+              <div className="text-xl font-bold font-display text-slate-900 mt-0.5">
+                {cases.filter((c) => c.mainStatus !== "COMPLETED" && c.mainStatus !== "REJECTED" && c.mainStatus !== "CANCELLED").length} Kasus Aktif
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Dalam peninjauan & penyelesaian SLA 72 jam
+              </p>
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-xs flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+              <WarningCircle size={26} weight="fill" />
+            </div>
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                Perlu Respon Anda
+              </span>
+              <div className="text-xl font-bold font-display text-slate-900 mt-0.5">
+                {cases.filter((c) => c.specialCondition === "WAITING_CUSTOMER_INFO" || c.specialCondition === "WAITING_CUSTOMER_APPROVAL" || c.isNoResponse).length} Menunggu Aksi
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Unggah bukti tambahan atau respon proposal solusi
+              </p>
+            </div>
+          </div>
+        </div>
 
         {/* TAB 1: GARANSI AKTIF */}
         {activeTab === "active" && (
@@ -278,23 +385,34 @@ function CustomerWarrantiesAndSubmissionsContent() {
                   >
                     <div className="space-y-3">
                       <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-1">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                              w.itemType === "PRODUCT"
-                                ? "bg-blue-50 text-blue-700 border-blue-200"
-                                : "bg-purple-50 text-purple-700 border-purple-200"
-                            }`}
-                          >
-                            {w.itemType === "PRODUCT" ? <Package size={12} weight="bold" /> : <Wrench size={12} weight="bold" />}
-                            {w.itemType === "PRODUCT" ? "Garansi Toko Barang" : "Garansi Layanan Jasa"}
-                          </span>
-                          <h3 className="font-bold text-sm text-slate-900 line-clamp-2">
-                            {w.itemTitle}
-                          </h3>
-                          <p className="text-xs text-slate-500">
-                            {w.organizationName} • Ref: {w.orderNumber}
-                          </p>
+                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                          {w.itemImageUrl && (
+                            <img
+                              src={w.itemImageUrl}
+                              alt={w.itemTitle}
+                              className="w-13 h-13 rounded-2xl object-cover border border-slate-200 shrink-0 bg-slate-50 shadow-xs"
+                            />
+                          )}
+                          <div className="space-y-1 min-w-0 flex-1">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                                w.itemType === "PRODUCT"
+                                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                                  : "bg-purple-50 text-purple-700 border-purple-200"
+                              }`}
+                            >
+                              {w.itemType === "PRODUCT" ? <Package size={12} weight="bold" /> : <Wrench size={12} weight="bold" />}
+                              {w.itemType === "PRODUCT" ? "Garansi Toko Barang" : "Garansi Layanan Jasa"}
+                            </span>
+                            <h3 className="font-bold text-sm text-slate-900 line-clamp-2" title={w.itemTitle}>
+                              {w.itemTitle}
+                            </h3>
+                            <p className="text-xs text-slate-500 truncate">
+                              <span className="font-semibold text-slate-700">{w.organizationName}</span>
+                              {" • "}
+                              <span className="text-slate-400">Ref: #{w.orderNumber}</span>
+                            </p>
+                          </div>
                         </div>
 
                         <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
@@ -302,50 +420,65 @@ function CustomerWarrantiesAndSubmissionsContent() {
                         </span>
                       </div>
 
-                      <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 text-xs space-y-1">
-                        <div className="flex justify-between">
+                      <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 text-xs space-y-1.5">
+                        <div className="flex justify-between items-center">
                           <span className="text-slate-400">Pilihan Garansi:</span>
-                          <span className="font-bold text-slate-700">{w.presetName}</span>
+                          <span className="font-bold text-slate-800">{w.presetName}</span>
                         </div>
-                        <div className="flex justify-between">
+                        <div className="flex justify-between items-center">
                           <span className="text-slate-400">Durasi:</span>
                           <span className="font-bold text-primary">{w.durationDays} Hari Kalender</span>
                         </div>
-                        <div className="flex justify-between pt-1 border-t border-slate-200/60">
-                          <span className="text-slate-400">Berlaku Sampai:</span>
-                          <span className="font-semibold text-emerald-800">{w.endDate}</span>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400">Mulai Berlaku:</span>
+                          <span className="font-medium text-slate-700">{formatDisplayDate(w.startDate)}</span>
                         </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400">Berlaku Sampai:</span>
+                          <span className="font-semibold text-emerald-800">{formatDisplayDate(w.endDate)}</span>
+                        </div>
+                        <div className="flex justify-between items-center pt-1 border-t border-slate-200/60">
+                          <span className="text-slate-400">Sisa Masa Berlaku:</span>
+                          <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 text-[11px]">
+                            {w.remainingDays !== undefined ? `${w.remainingDays} Hari` : `${Math.max(0, Math.ceil((new Date(w.endDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))} Hari`}
+                          </span>
+                        </div>
+                        {((w.quantity && w.quantity > 1) || (w.remainingQuantity !== undefined && w.remainingQuantity > 1)) && (
+                          <div className="flex justify-between items-center pt-1 border-t border-slate-200/60">
+                            <span className="text-slate-400">Unit Tersedia:</span>
+                            <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200 text-[11px]">
+                              {w.remainingQuantity ?? w.quantity} dari {w.quantity} Unit
+                            </span>
+                          </div>
+                        )}
+                        {w.coverage && (
+                          <div className="pt-1.5 border-t border-slate-200/60">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Cakupan Garansi:</span>
+                            <p className="text-[11px] text-slate-600 line-clamp-2 mt-0.5 leading-snug">
+                              {w.coverage}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                    <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100">
+                      <Link
+                        href={`/warranties/${w.id}`}
+                        className="px-3.5 py-2 text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition flex items-center gap-1.5"
+                      >
+                        <FileText size={14} weight="bold" />
+                        Detail Garansi
+                      </Link>
+
                       <button
                         type="button"
-                        onClick={() => setViewingWarranty(w)}
-                        className="px-3 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-800 transition"
+                        onClick={() => setClaimModalWarranty(w)}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
                       >
-                        Detail Garansi
+                        Ajukan Klaim
+                        <ArrowRight size={14} weight="bold" />
                       </button>
-
-                      {w.activeCaseId ? (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedCaseId(w.activeCaseId!)}
-                          className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5"
-                        >
-                          Lihat Klaim Berjalan
-                          <ArrowRight size={14} weight="bold" />
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setClaimModalWarranty(w)}
-                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
-                        >
-                          Ajukan Klaim
-                          <ArrowRight size={14} weight="bold" />
-                        </button>
-                      )}
                     </div>
                   </div>
                 ))}
@@ -528,7 +661,19 @@ function CustomerWarrantiesAndSubmissionsContent() {
 
                         <button
                           type="button"
-                          onClick={() => setSelectedCaseId(c.id)}
+                          onClick={() => {
+                            const parentW = warranties.find(
+                              (w) =>
+                                w.id === c.warrantyId ||
+                                w.orderId === c.sourceOrderId ||
+                                (w.cases && w.cases.some((wc: any) => wc.id === c.id))
+                            );
+                            if (parentW) {
+                              router.push(`/warranties/${parentW.id}?caseId=${c.id}`);
+                            } else {
+                              setSelectedCaseId(c.id);
+                            }
+                          }}
                           className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
                         >
                           Lihat Detail Pengajuan
@@ -566,42 +711,62 @@ function CustomerWarrantiesAndSubmissionsContent() {
                 {expiredWarranties.map((w) => (
                   <div
                     key={w.id}
-                    className="p-5 rounded-3xl bg-white border border-slate-200/80 shadow-sm opacity-80 space-y-4"
+                    className="p-5 rounded-3xl bg-white border border-slate-200/80 shadow-sm opacity-85 space-y-4 flex flex-col justify-between"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200">
-                          {w.itemType === "PRODUCT" ? "Garansi Toko Barang" : "Garansi Layanan Jasa"}
+                    <div className="space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3 flex-1 min-w-0">
+                          {w.itemImageUrl && (
+                            <img
+                              src={w.itemImageUrl}
+                              alt={w.itemTitle}
+                              className="w-13 h-13 rounded-2xl object-cover border border-slate-200 shrink-0 bg-slate-50 grayscale"
+                            />
+                          )}
+                          <div className="space-y-1 min-w-0 flex-1">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                              {w.itemType === "PRODUCT" ? <Package size={12} weight="bold" /> : <Wrench size={12} weight="bold" />}
+                              {w.itemType === "PRODUCT" ? "Garansi Toko Barang" : "Garansi Layanan Jasa"}
+                            </span>
+                            <h3 className="font-bold text-sm text-slate-800 line-clamp-2">{w.itemTitle}</h3>
+                            <p className="text-xs text-slate-500 truncate">
+                              <span className="font-semibold text-slate-700">{w.organizationName}</span>
+                              {" • "}
+                              <span className="text-slate-400">Ref: #{w.orderNumber}</span>
+                            </p>
+                          </div>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-500 border border-slate-200 shrink-0">
+                          Berakhir
                         </span>
-                        <h3 className="font-bold text-sm text-slate-800 mt-1">{w.itemTitle}</h3>
-                        <p className="text-xs text-slate-400">{w.organizationName}</p>
                       </div>
-                      <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-500 border border-slate-200">
-                        Berakhir
-                      </span>
+
+                      <div className="p-3 bg-slate-50 rounded-2xl text-xs space-y-1.5 border border-slate-100">
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400">Pilihan Garansi:</span>
+                          <span className="font-medium text-slate-700">{w.presetName}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400">Durasi:</span>
+                          <span className="text-slate-600">{w.durationDays} Hari Kalender</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400">Periode:</span>
+                          <span className="text-slate-600">
+                            {formatDisplayDate(w.startDate)} s.d. {formatDisplayDate(w.endDate)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="p-3 bg-slate-50 rounded-2xl text-xs space-y-1">
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Pilihan:</span>
-                        <span className="font-medium text-slate-700">{w.presetName}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Periode:</span>
-                        <span className="text-slate-500">
-                          {w.startDate} s.d. {w.endDate}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
-                      <button
-                        type="button"
-                        onClick={() => setViewingWarranty(w)}
-                        className="font-bold text-slate-600 hover:text-slate-800"
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs">
+                      <Link
+                        href={`/warranties/${w.id}`}
+                        className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition flex items-center gap-1.5"
                       >
-                        Lihat Ketentuan Historis
-                      </button>
+                        <FileText size={14} weight="bold" />
+                        Detail Riwayat Garansi
+                      </Link>
                       <span className="text-slate-400 text-[11px] italic">Garansi Usaha Telah Habis</span>
                     </div>
                   </div>
@@ -621,6 +786,7 @@ function CustomerWarrantiesAndSubmissionsContent() {
           onSuccess={(caseId) => {
             setActiveTab("submissions");
             setSelectedCaseId(caseId);
+            router.push(`/warranties?tab=submissions&caseId=${caseId}`);
           }}
         />
       )}
@@ -649,28 +815,48 @@ function CustomerWarrantiesAndSubmissionsContent() {
                 </button>
               </div>
 
-              <div className="space-y-3 text-xs">
-                <div>
-                  <span className="text-slate-400 block text-[11px]">Item / Jasa Terlindungi:</span>
-                  <strong className="text-slate-800 text-sm">{viewingWarranty.itemTitle}</strong>
+              <div className="space-y-3.5 text-xs">
+                <div className="flex items-start gap-3">
+                  {viewingWarranty.itemImageUrl && (
+                    <img
+                      src={viewingWarranty.itemImageUrl}
+                      alt={viewingWarranty.itemTitle}
+                      className="w-14 h-14 rounded-2xl object-cover border border-slate-200 shrink-0 bg-slate-50"
+                    />
+                  )}
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <span className="text-slate-400 block text-[10px] font-bold uppercase tracking-wider">
+                      Item / Jasa Terlindungi:
+                    </span>
+                    <strong className="text-slate-900 text-sm block leading-snug">{viewingWarranty.itemTitle}</strong>
+                    <p className="text-xs text-slate-500">
+                      <span>{viewingWarranty.organizationName}</span> • <span className="font-mono text-slate-400">Order #{viewingWarranty.orderNumber}</span>
+                    </p>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 p-3 bg-slate-50 rounded-xl">
+                <div className="grid grid-cols-2 gap-2 p-3 bg-slate-50 rounded-2xl border border-slate-100">
                   <div>
-                    <span className="text-slate-400 text-[11px]">Penyedia:</span>
-                    <p className="font-bold text-slate-700">{viewingWarranty.organizationName}</p>
+                    <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Pilihan Garansi:</span>
+                    <p className="font-bold text-slate-800">{viewingWarranty.presetName}</p>
                   </div>
                   <div>
-                    <span className="text-slate-400 text-[11px]">Durasi Garansi:</span>
+                    <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Durasi Garansi:</span>
                     <p className="font-bold text-primary">{viewingWarranty.durationDays} Hari Kalender</p>
                   </div>
                   <div>
-                    <span className="text-slate-400 text-[11px]">Tanggal Mulai:</span>
-                    <p className="font-semibold text-slate-700">{viewingWarranty.startDate}</p>
+                    <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Tanggal Mulai:</span>
+                    <p className="font-semibold text-slate-700">{formatDisplayDate(viewingWarranty.startDate)}</p>
                   </div>
                   <div>
-                    <span className="text-slate-400 text-[11px]">Tanggal Selesai:</span>
-                    <p className="font-semibold text-slate-700">{viewingWarranty.endDate}</p>
+                    <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider block">Berlaku Sampai:</span>
+                    <p className="font-semibold text-emerald-800">{formatDisplayDate(viewingWarranty.endDate)}</p>
+                  </div>
+                  <div className="col-span-2 pt-1 border-t border-slate-200/60 flex items-center justify-between">
+                    <span className="text-slate-400 text-[11px]">Sisa Masa Berlaku:</span>
+                    <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 text-[11px]">
+                      {viewingWarranty.remainingDays !== undefined ? `${viewingWarranty.remainingDays} Hari Kalender` : `${Math.max(0, Math.ceil((new Date(viewingWarranty.endDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))} Hari Kalender`}
+                    </span>
                   </div>
                 </div>
 
@@ -689,27 +875,38 @@ function CustomerWarrantiesAndSubmissionsContent() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
+              <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100">
+                <Link
+                  href={`/warranties/${viewingWarranty.id}`}
                   onClick={() => setViewingWarranty(null)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
+                  className="px-4 py-2 text-xs font-bold text-primary hover:underline flex items-center gap-1.5"
                 >
-                  Tutup
-                </button>
-                {viewingWarranty.isActive && (
+                  <Eye size={15} weight="bold" />
+                  Buka Tampilan Penuh Dua Grid
+                </Link>
+
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      const target = viewingWarranty;
-                      setViewingWarranty(null);
-                      setClaimModalWarranty(target);
-                    }}
-                    className="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm cursor-pointer"
+                    onClick={() => setViewingWarranty(null)}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl"
                   >
-                    Ajukan Klaim Sekarang
+                    Tutup
                   </button>
-                )}
+                  {viewingWarranty.isActive && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const target = viewingWarranty;
+                        setViewingWarranty(null);
+                        setClaimModalWarranty(target);
+                      }}
+                      className="px-4 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm cursor-pointer"
+                    >
+                      Ajukan Klaim Sekarang
+                    </button>
+                  )}
+                </div>
               </div>
             </motion.div>
           </div>

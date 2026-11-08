@@ -25,8 +25,84 @@ import {
   CheckCircle,
   FileText,
   X,
+  Storefront,
+  CreditCard,
+  QrCode,
+  Bank,
+  Check,
 } from "@phosphor-icons/react";
 import { useOrderJasa } from "@/features/order-jasa/hooks/useOrderJasa";
+import { calculateHaversineDistance } from "@/lib/geoUtils";
+import { isSameCity } from "@/context/LocationContext";
+
+interface AddressCoverageInfo {
+  covered: boolean;
+  distanceKm: number | null;
+  radiusKm: number;
+  reason?: string;
+}
+
+function evaluateAddressCoverage(
+  addr: ApiAddress,
+  service?: any
+): AddressCoverageInfo {
+  const provLat =
+    service?.providerWorkshop?.latitude ??
+    service?.provider?.latitude ??
+    -6.2361;
+  const provLng =
+    service?.providerWorkshop?.longitude ??
+    service?.provider?.longitude ??
+    106.8522;
+  const radiusKm =
+    service?.service_area?.coverage_radius_km ??
+    service?.providerWorkshop?.coverage_radius_km ??
+    service?.provider?.coverage_radius_km ??
+    15;
+
+  const addrLat = addr.latitude != null ? Number(addr.latitude) : null;
+  const addrLng = addr.longitude != null ? Number(addr.longitude) : null;
+
+  if (
+    addrLat != null &&
+    addrLng != null &&
+    !isNaN(addrLat) &&
+    !isNaN(addrLng) &&
+    (addrLat !== 0 || addrLng !== 0)
+  ) {
+    const dist = calculateHaversineDistance(
+      addrLat,
+      addrLng,
+      Number(provLat),
+      Number(provLng)
+    );
+    const roundedDist = Math.round(dist * 10) / 10;
+    const covered = dist <= radiusKm;
+    return {
+      covered,
+      distanceKm: roundedDist,
+      radiusKm,
+      reason: covered
+        ? undefined
+        : `Jarak teknisi ke lokasi ini ±${roundedDist} km, melebihi batas cakupan maksimal ${radiusKm} km mitra.`,
+    };
+  }
+
+  // Fallback to city check if coordinates are missing
+  const provCity =
+    service?.providerWorkshop?.office_city ||
+    service?.provider?.office_city ||
+    "Jakarta";
+  const sameCity = isSameCity(addr.city, provCity);
+  return {
+    covered: sameCity,
+    distanceKm: null,
+    radiusKm,
+    reason: sameCity
+      ? undefined
+      : `Kota ${addr.city} berada di luar area operasional mitra (${provCity}).`,
+  };
+}
 
 function BookingWizardSkeleton() {
   return (
@@ -81,6 +157,7 @@ function BookingWizardContent() {
   // 2. Saved Addresses from Identity DB (Langkah 2)
   const [savedAddresses, setSavedAddresses] = useState<ApiAddress[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string>("");
+  const [showAddressModal, setShowAddressModal] = useState<boolean>(false);
   const [coverageResult, setCoverageResult] = useState<{
     status: string;
     distanceKm: number | null;
@@ -88,41 +165,131 @@ function BookingWizardContent() {
   } | null>(null);
   const [isEvaluatingLocation, setIsEvaluatingLocation] = useState(false);
 
+  // 4. Payment Method & Policies (Langkah 4)
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<
+    "QRIS" | "BCA_VA" | "MANDIRI_VA" | "BRI_VA" | "BNI_VA"
+  >("QRIS");
+  const [termsAccepted, setTermsAccepted] = useState<boolean>(true);
+
+  // Financial calculations for Diagnosis Step 4
+  const diagnosisFee = useMemo(() => {
+    const s = state.service as any;
+    if (!s) return 50000;
+    if (s.surveyFeeModel === "FREE" || s.survey_summary?.fee_model === "FREE") return 0;
+    if (typeof s.surveyFee === "number") return s.surveyFee;
+    if (typeof s.survey_summary?.fee_idr === "number") return s.survey_summary.fee_idr;
+    if (typeof s.diagnosis_fee_idr === "number") return s.diagnosis_fee_idr;
+    return 50000;
+  }, [state.service]);
+
+  const platformFee = 0; // Rp0 Bebas Biaya Platform
+  const totalPayNow = diagnosisFee + platformFee;
+
+  // Dynamic Warranty Config from Provider Service Catalog
+  const warrantyInfo = useMemo(() => {
+    const s = state.service as any;
+    if (!s) return { enabled: false, days: 0, label: "Proteksi Standar Servio", name: "" };
+
+    let wCfg = s.warranty_config || s.warrantyConfig;
+    if (typeof wCfg === "string" && wCfg.trim().startsWith("{")) {
+      try {
+        wCfg = JSON.parse(wCfg);
+      } catch {
+        wCfg = null;
+      }
+    }
+
+    const days = Number(
+      wCfg?.duration_days ??
+      wCfg?.durationDays ??
+      s.warrantyDays ??
+      s.warranty_summary?.duration_days ??
+      0
+    );
+
+    const isEnabled = Boolean(
+      s.warrantyEnabled ??
+      wCfg?.warrantyEnabled ??
+      wCfg?.warranty_enabled ??
+      (days > 0)
+    );
+
+    const name = wCfg?.presetName || wCfg?.name || s.warrantyName || "Garansi Layanan";
+
+    return {
+      enabled: isEnabled && days > 0,
+      days,
+      name,
+      label: isEnabled && days > 0 ? `Garansi ${days} Hari Servio` : "Proteksi Standar Servio",
+    };
+  }, [state.service]);
+
+  // Address Coverage Map for each saved address against provider coverage
+  const addressCoverageMap = useMemo(() => {
+    const map: Record<string, AddressCoverageInfo> = {};
+    for (const addr of savedAddresses) {
+      map[addr.id] = evaluateAddressCoverage(addr, state.service);
+    }
+    return map;
+  }, [savedAddresses, state.service]);
+
   // Load saved addresses directly from Identity Service
   useEffect(() => {
     profileApi.getAddresses().then((res) => {
       if (res.data && res.data.length > 0) {
         setSavedAddresses(res.data);
-        const defaultAddr = res.data.find((a) => a.isDefault) || res.data[0];
-        if (defaultAddr) {
-          setSelectedAddressId(defaultAddr.id);
+
+        // Find candidate default address (prefer covered address if default is outside coverage)
+        const addresses = res.data;
+        const defaultCandidate = addresses.find((a) => a.isDefault) || addresses[0];
+        const defaultCoverage = evaluateAddressCoverage(defaultCandidate, state.service);
+
+        let chosenAddr = defaultCandidate;
+        if (!defaultCoverage.covered) {
+          const firstCovered = addresses.find(
+            (a) => evaluateAddressCoverage(a, state.service).covered
+          );
+          if (firstCovered) {
+            chosenAddr = firstCovered;
+          }
+        }
+
+        if (chosenAddr) {
+          setSelectedAddressId(chosenAddr.id);
           const fullStreet = [
-            defaultAddr.addressLine,
-            defaultAddr.village ? `Kel. ${defaultAddr.village}` : null,
-            defaultAddr.district ? `Kec. ${defaultAddr.district}` : null,
+            chosenAddr.addressLine,
+            chosenAddr.village ? `Kel. ${chosenAddr.village}` : null,
+            chosenAddr.district ? `Kec. ${chosenAddr.district}` : null,
           ].filter(Boolean).join(", ");
 
           setAddress({
-            street: fullStreet || defaultAddr.addressLine,
-            city: defaultAddr.city,
+            street: fullStreet || chosenAddr.addressLine,
+            city: chosenAddr.city,
             notes: "",
           });
 
-          // Evaluate location coverage
-          if (defaultAddr.latitude != null && defaultAddr.longitude != null) {
+          const cov = evaluateAddressCoverage(chosenAddr, state.service);
+          setCoverageResult({
+            status: cov.covered ? "COVERED" : "NOT_COVERED",
+            distanceKm: cov.distanceKm,
+            covered: cov.covered,
+          });
+
+          // Evaluate location coverage via server API for telemetry
+          if (chosenAddr.latitude != null && chosenAddr.longitude != null) {
             setIsEvaluatingLocation(true);
             locationApi.evaluate({
               source: "SAVED_ADDRESS",
-              addressId: defaultAddr.id,
-              latitude: Number(defaultAddr.latitude),
-              longitude: Number(defaultAddr.longitude),
-              displayAddress: defaultAddr.addressLine,
+              addressId: chosenAddr.id,
+              latitude: Number(chosenAddr.latitude),
+              longitude: Number(chosenAddr.longitude),
+              displayAddress: chosenAddr.addressLine,
               providerMasterServiceId: state.service?.id,
             }).then((evalRes) => {
-              if (evalRes.data) {
+              if (evalRes.data?.coverage) {
                 setCoverageResult({
                   status: evalRes.data.coverage.status,
-                  distanceKm: evalRes.data.distanceKm,
+                  distanceKm: evalRes.data.distanceKm ?? cov.distanceKm,
                   covered: evalRes.data.coverage.covered,
                 });
               }
@@ -131,7 +298,55 @@ function BookingWizardContent() {
         }
       }
     }).catch(() => {});
-  }, []);
+  }, [state.service?.id]);
+
+  const handleSelectAddress = (addr: ApiAddress) => {
+    const cov = addressCoverageMap[addr.id] || evaluateAddressCoverage(addr, state.service);
+    if (!cov.covered) {
+      return;
+    }
+
+    setSelectedAddressId(addr.id);
+    const fullStreet = [
+      addr.addressLine,
+      addr.village ? `Kel. ${addr.village}` : null,
+      addr.district ? `Kec. ${addr.district}` : null,
+    ].filter(Boolean).join(", ");
+
+    setAddress({
+      street: fullStreet || addr.addressLine,
+      city: addr.city,
+      notes: state.address.notes || "",
+    });
+
+    setCoverageResult({
+      status: "COVERED",
+      distanceKm: cov.distanceKm,
+      covered: true,
+    });
+
+    setShowAddressModal(false);
+
+    if (addr.latitude != null && addr.longitude != null) {
+      setIsEvaluatingLocation(true);
+      locationApi.evaluate({
+        source: "SAVED_ADDRESS",
+        addressId: addr.id,
+        latitude: Number(addr.latitude),
+        longitude: Number(addr.longitude),
+        displayAddress: addr.addressLine,
+        providerMasterServiceId: state.service?.id,
+      }).then((evalRes) => {
+        if (evalRes.data?.coverage) {
+          setCoverageResult({
+            status: evalRes.data.coverage.status,
+            distanceKm: evalRes.data.distanceKm ?? cov.distanceKm,
+            covered: evalRes.data.coverage.covered,
+          });
+        }
+      }).catch(() => {}).finally(() => setIsEvaluatingLocation(false));
+    }
+  };
 
   // 3. Schedule state (Langkah 3: Sekarang vs Nanti, Strictly Format 24 Jam)
   const todayStr = useMemo(() => new Date().toISOString().split("T")[0], []);
@@ -211,6 +426,10 @@ function BookingWizardContent() {
         setStepError("Silakan pilih alamat tersimpan atau masukkan alamat lengkap pengerjaan.");
         return;
       }
+      if (selectedCoverage && !selectedCoverage.covered) {
+        setStepError("Alamat terpilih berada di luar jangkauan provider. Silakan klik 'Ubah Alamat' untuk memilih alamat dalam jangkauan.");
+        return;
+      }
     } else if (state.step === 3) {
       if (scheduleMode === "NANTI") {
         if (!customDate) {
@@ -230,9 +449,25 @@ function BookingWizardContent() {
     return savedAddresses.find((a) => a.id === selectedAddressId) || savedAddresses[0];
   }, [savedAddresses, selectedAddressId]);
 
+  const selectedCoverage = useMemo(() => {
+    if (!selectedAddr) return null;
+    return addressCoverageMap[selectedAddr.id] || evaluateAddressCoverage(selectedAddr, state.service);
+  }, [selectedAddr, addressCoverageMap, state.service]);
+
   const handleSubmit = async () => {
     try {
       setStepError(null);
+
+      if (!termsAccepted) {
+        setStepError("Anda wajib menyetujui syarat & ketentuan diagnosis serta jaminan refund 100% untuk melanjutkan.");
+        return;
+      }
+
+      if (diagnosisFee > 0 && !selectedPaymentMethod) {
+        setStepError("Silakan pilih metode pembayaran diagnosis yang tersedia.");
+        return;
+      }
+
       const recipientName = selectedAddr?.recipientName || "Pelanggan Servio";
       const recipientPhone = selectedAddr?.phone || "-";
       const districtName = selectedAddr?.district || "Area Layanan";
@@ -274,6 +509,7 @@ function BookingWizardContent() {
         scheduledDate: targetDate,
         scheduledTimeSlot: targetTimeSlot,
         addressId: selectedAddressId || undefined,
+        paymentMethod: diagnosisFee > 0 ? selectedPaymentMethod : "QRIS",
       } as any);
 
       router.push(`/orders/${newOrder.id}`);
@@ -427,170 +663,288 @@ function BookingWizardContent() {
             </div>
           )}
 
-          {/* STEP 2: LOCATION & SERVICE MODE (HOME SERVICE LOCKED + IDENTITY DB ADDRESSES) */}
+          {/* STEP 2: LOCATION & SERVICE MODE */}
           {state.step === 2 && (
             <div className="space-y-6">
               <div className="border-b border-slate-100 pb-4">
                 <h2 className="text-base sm:text-lg font-bold text-neutral-dark font-display">
-                  Mode Layanan & Lokasi Pengerjaan
+                  Alamat Kunjungan Teknisi
                 </h2>
                 <p className="text-xs text-neutral-slate">
-                  Layanan ini dikerjakan secara Home Service. Teknisi bersertifikasi akan datang langsung ke alamat Anda.
+                  Teknisi bersertifikasi akan datang langsung ke alamat kunjungan yang Anda tentukan di bawah.
                 </p>
               </div>
 
-              {/* Locked Mode: Home Service Only */}
-              <div className="p-4 rounded-2xl border-2 border-primary bg-sky/15 flex items-start justify-between gap-4">
-                <div className="flex items-start gap-3.5">
-                  <div className="p-3 rounded-2xl bg-primary text-white shadow-servio-xs shrink-0">
-                    <House size={24} weight="bold" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-bold text-neutral-dark font-display">
-                        Home Service (Kunjungan Teknisi ke Hunian)
-                      </span>
-                      <span className="text-[10px] bg-primary text-white font-bold px-2 py-0.5 rounded-full">
-                        Standar Aktif
-                      </span>
-                    </div>
-                    <p className="text-xs text-neutral-slate mt-1 leading-relaxed">
-                      Teknisi bersertifikasi resmi Servio datang langsung ke tempat tinggal Anda dengan perlengkapan standar inspeksi dan servis.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Saved Address Selector From Identity Module Database */}
+              {/* 1. Selected Address Display (Alamat yang dipilih muncul) */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-neutral-dark block">
-                    Pilih Dari Alamat Tersimpan (Modul Identitas Pelanggan)
+                    Alamat Kunjungan Terpilih
                   </label>
-                  <span className="text-[11px] text-neutral-slate font-medium">
-                    {savedAddresses.length} Alamat Terdaftar
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddressModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-primary/30 text-primary bg-sky/20 hover:bg-sky/40 font-bold text-xs transition-all shadow-2xs cursor-pointer"
+                  >
+                    <MapPin size={14} weight="bold" />
+                    <span>Ubah Alamat</span>
+                  </button>
                 </div>
 
-                {savedAddresses.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {savedAddresses.map((addr) => {
-                      const isSelected = selectedAddressId === addr.id;
-                      return (
-                        <button
-                          key={addr.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedAddressId(addr.id);
-                            const fullStreet = [
-                              addr.addressLine,
-                              addr.village ? `Kel. ${addr.village}` : null,
-                              addr.district ? `Kec. ${addr.district}` : null,
-                            ].filter(Boolean).join(", ");
+                {selectedAddr ? (
+                  <div
+                    className={`p-4 sm:p-5 rounded-2xl border-2 transition-all relative ${
+                      selectedCoverage?.covered
+                        ? "border-primary/40 bg-gradient-to-br from-sky/15 via-white to-sky/5 shadow-servio-xs ring-1 ring-primary/20"
+                        : "border-rose-300 bg-rose-50/40 shadow-servio-xs"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-2.5 pb-2.5 border-b border-slate-100">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-xs sm:text-sm text-neutral-dark font-display flex items-center gap-1.5">
+                          <MapPin
+                            size={16}
+                            className={selectedCoverage?.covered ? "text-primary" : "text-rose-600"}
+                            weight="fill"
+                          />
+                          {selectedAddr.label}
+                        </span>
+                        {selectedAddr.isDefault && (
+                          <span className="text-[10px] bg-primary text-white px-2 py-0.5 rounded-full font-bold">
+                            Utama
+                          </span>
+                        )}
+                        {selectedCoverage?.covered ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                            <CheckCircle size={13} weight="fill" className="text-emerald-600" />
+                            Dalam Jangkauan {selectedCoverage.distanceKm !== null ? `(±${selectedCoverage.distanceKm} km)` : ""}
+                          </span>
+                        ) : selectedCoverage ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-0.5 rounded-full">
+                            <WarningCircle size={13} weight="fill" className="text-rose-600" />
+                            Alamat ini di luar jangkauan provider
+                          </span>
+                        ) : null}
+                      </div>
 
-                            setAddress({
-                              street: fullStreet || addr.addressLine,
-                              city: addr.city,
-                              notes: state.address.notes || "",
-                            });
+                      <button
+                        type="button"
+                        onClick={() => setShowAddressModal(true)}
+                        className="text-xs font-bold text-primary hover:underline inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        Ganti Alamat →
+                      </button>
+                    </div>
 
-                            if (addr.latitude != null && addr.longitude != null) {
-                              setIsEvaluatingLocation(true);
-                              locationApi.evaluate({
-                                source: "SAVED_ADDRESS",
-                                addressId: addr.id,
-                                latitude: Number(addr.latitude),
-                                longitude: Number(addr.longitude),
-                                displayAddress: addr.addressLine,
-                                providerMasterServiceId: state.service?.id,
-                              }).then((evalRes) => {
-                                if (evalRes.data) {
-                                  setCoverageResult({
-                                    status: evalRes.data.coverage.status,
-                                    distanceKm: evalRes.data.distanceKm,
-                                    covered: evalRes.data.coverage.covered,
-                                  });
-                                }
-                              }).catch(() => {}).finally(() => setIsEvaluatingLocation(false));
-                            }
-                          }}
-                          className={`p-4 rounded-2xl border text-left transition-all relative ${
-                            isSelected
-                              ? "border-primary bg-sky/20 shadow-servio-xs ring-2 ring-primary/20"
-                              : "border-slate-200 hover:border-slate-300 bg-white"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="font-bold text-xs text-neutral-dark font-display flex items-center gap-1.5">
-                              <MapPin size={15} className={isSelected ? "text-primary" : "text-neutral-slate"} weight="fill" />
-                              {addr.label}
-                            </span>
-                            <div className="flex items-center gap-1.5">
-                              {addr.isDefault && (
-                                <span className="text-[10px] bg-primary text-white px-2 py-0.5 rounded-full font-bold">
-                                  Utama
-                                </span>
-                              )}
-                              {isSelected && (
-                                <CheckCircle size={16} weight="fill" className="text-primary" />
-                              )}
-                            </div>
-                          </div>
+                    {/* Recipient & Contact Info */}
+                    <div className="space-y-1 text-xs text-neutral-dark mb-2">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <User size={14} className="text-neutral-muted" />
+                        <span>{selectedAddr.recipientName || "Penerima Tidak Tercantum"}</span>
+                        <span className="text-neutral-slate font-mono text-[11px] font-normal">
+                          ({selectedAddr.phone || "-"})
+                        </span>
+                      </div>
+                    </div>
 
-                          {/* Recipient & Contact Info */}
-                          <div className="space-y-1 text-[11px] text-neutral-slate border-b border-slate-100 pb-2 mb-2">
-                            <div className="flex items-center gap-1.5 text-neutral-dark font-medium">
-                              <User size={13} className="text-neutral-muted" />
-                              <span>{addr.recipientName || "Penerima Tidak Tercantum"}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 font-mono">
-                              <Phone size={13} className="text-neutral-muted" />
-                              <span>{addr.phone || "-"}</span>
-                            </div>
-                          </div>
+                    {/* Full Address Details from DB */}
+                    <div className="space-y-0.5 text-xs text-neutral-dark">
+                      <p className="font-semibold text-slate-800 leading-relaxed">{selectedAddr.addressLine}</p>
+                      <p className="text-[11px] text-neutral-slate">
+                        {selectedAddr.village ? `Kel. ${selectedAddr.village}, ` : ""}
+                        {selectedAddr.district ? `Kec. ${selectedAddr.district}, ` : ""}
+                        {selectedAddr.city}, {selectedAddr.province} {selectedAddr.postalCode ? `(${selectedAddr.postalCode})` : ""}
+                      </p>
+                    </div>
 
-                          {/* Full Address Details from DB */}
-                          <div className="space-y-0.5 text-[11px] text-neutral-dark">
-                            <p className="font-semibold line-clamp-1">{addr.addressLine}</p>
-                            <p className="text-neutral-slate">
-                              {addr.village ? `Kel. ${addr.village}` : ""}{addr.district ? `, Kec. ${addr.district}` : ""}
-                            </p>
-                            <p className="text-neutral-slate">
-                              {addr.city}, {addr.province} {addr.postalCode ? `(${addr.postalCode})` : ""}
-                            </p>
-                          </div>
-                        </button>
-                      );
-                    })}
+                    {/* Outside coverage warning inside card if needed */}
+                    {!selectedCoverage?.covered && selectedCoverage && (
+                      <div className="mt-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2">
+                        <WarningCircle size={16} weight="fill" className="text-rose-600 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-bold block">Lokasi di Luar Jangkauan Teknisi Mitra</span>
+                          <span className="text-[11px] leading-relaxed block mt-0.5">
+                            {selectedCoverage.reason || "Alamat ini berada di luar radius operasional penyedia jasa."} Silakan klik tombol <strong>Ubah Alamat</strong> untuk memilih alamat lain yang berada dalam jangkauan.
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
-                  <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-800">
-                    Belum ada alamat tersimpan di akun Anda. Silakan masukkan alamat kunjungan di bawah.
+                  <div className="p-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 text-center space-y-3">
+                    <MapPin size={32} className="text-neutral-muted mx-auto" />
+                    <div>
+                      <p className="font-bold text-xs text-neutral-dark">Belum ada alamat yang dipilih</p>
+                      <p className="text-[11px] text-neutral-slate">Silakan pilih alamat kunjungan dari buku alamat Anda atau masukkan secara manual.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddressModal(true)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold shadow-servio-xs hover:bg-primary-dark transition-all cursor-pointer"
+                    >
+                      <MapPin size={14} weight="bold" />
+                      <span>Pilih Alamat Tersimpan</span>
+                    </button>
                   </div>
                 )}
               </div>
 
-              {/* Coverage Evaluation Status Banner */}
-              {coverageResult && (
-                <div
-                  className={`p-3.5 rounded-2xl border text-xs flex items-center gap-3 ${
-                    coverageResult.covered
-                      ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                      : "bg-amber-50 border-amber-200 text-amber-800"
-                  }`}
-                >
-                  <MapPin size={20} className={coverageResult.covered ? "text-emerald-600" : "text-amber-600"} weight="fill" />
-                  <div>
-                    <span className="font-bold block">
-                      {coverageResult.covered
-                        ? "Lokasi Anda Tercakup dalam Radius Layanan Mitra"
-                        : "Lokasi di Luar Cakupan Normal Mitra"}
-                    </span>
-                    <span className="text-[11px] opacity-90">
-                      {coverageResult.distanceKm !== null
-                        ? `Estimasi jarak teknisi: ${coverageResult.distanceKm.toFixed(1)} km dari workshop mitra.`
-                        : "Cakupan operasional terverifikasi di wilayah kota ini."}
-                    </span>
+              {/* MODAL POPUP: BUKU ALAMAT TERSIMPAN */}
+              {showAddressModal && (
+                <div className="fixed inset-0 z-50 bg-neutral-dark/60 backdrop-blur-xs flex items-center justify-center p-4">
+                  <div className="bg-white rounded-3xl shadow-servio-xl max-w-xl w-full max-h-[88vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                    {/* Modal Header */}
+                    <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                      <div>
+                        <h3 className="text-sm font-bold text-neutral-dark font-display flex items-center gap-2">
+                          <MapPin size={18} className="text-primary" weight="fill" />
+                          Pilih Alamat Kunjungan
+                        </h3>
+                        <p className="text-[11px] text-neutral-slate mt-0.5">
+                          Pilih alamat tersimpan yang berada dalam area jangkauan teknisi mitra ({savedAddresses.length} Alamat Terdaftar).
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddressModal(false)}
+                        className="p-2 rounded-full hover:bg-slate-200/60 text-neutral-slate hover:text-neutral-dark transition-colors cursor-pointer"
+                        aria-label="Tutup"
+                      >
+                        <X size={18} weight="bold" />
+                      </button>
+                    </div>
+
+                    {/* Modal Address List */}
+                    <div className="p-4 sm:p-5 overflow-y-auto space-y-3 flex-1">
+                      {savedAddresses.length > 0 ? (
+                        savedAddresses.map((addr) => {
+                          const isSelected = selectedAddressId === addr.id;
+                          const cov = addressCoverageMap[addr.id] || evaluateAddressCoverage(addr, state.service);
+                          const isCovered = cov.covered;
+
+                          return (
+                            <div
+                              key={addr.id}
+                              onClick={() => {
+                                if (isCovered) {
+                                  handleSelectAddress(addr);
+                                }
+                              }}
+                              className={`p-4 rounded-2xl border text-left transition-all relative ${
+                                !isCovered
+                                  ? "border-slate-200 bg-slate-50/80 opacity-75 cursor-not-allowed"
+                                  : isSelected
+                                  ? "border-primary bg-sky/15 shadow-servio-xs ring-2 ring-primary/20 cursor-pointer"
+                                  : "border-slate-200 hover:border-primary/50 hover:bg-slate-50/60 cursor-pointer"
+                              }`}
+                            >
+                              {/* Header row */}
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-bold text-xs text-neutral-dark font-display flex items-center gap-1.5">
+                                    <MapPin
+                                      size={15}
+                                      className={!isCovered ? "text-neutral-muted" : isSelected ? "text-primary" : "text-neutral-slate"}
+                                      weight="fill"
+                                    />
+                                    {addr.label}
+                                  </span>
+                                  {addr.isDefault && (
+                                    <span className="text-[10px] bg-primary text-white px-2 py-0.5 rounded-full font-bold">
+                                      Utama
+                                    </span>
+                                  )}
+
+                                  {/* Coverage badge */}
+                                  {isCovered ? (
+                                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                      <CheckCircle size={11} weight="fill" className="text-emerald-600" />
+                                      Dalam Jangkauan {cov.distanceKm !== null ? `(±${cov.distanceKm} km)` : ""}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                                      <WarningCircle size={12} weight="fill" className="text-rose-600" />
+                                      Alamat ini di luar jangkauan provider
+                                    </span>
+                                  )}
+                                </div>
+
+                                {/* Selection Action / Indicator */}
+                                {isCovered ? (
+                                  isSelected ? (
+                                    <span className="text-xs font-bold text-primary flex items-center gap-1">
+                                      <CheckCircle size={16} weight="fill" /> Terpilih
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleSelectAddress(addr);
+                                      }}
+                                      className="text-xs font-bold text-primary hover:underline px-2.5 py-1 rounded-lg hover:bg-sky/30 cursor-pointer"
+                                    >
+                                      Pilih
+                                    </button>
+                                  )
+                                ) : null}
+                              </div>
+
+                              {/* Recipient & Contact Info */}
+                              <div className="space-y-0.5 text-[11px] text-neutral-slate border-b border-slate-100 pb-2 mb-2">
+                                <div className="flex items-center gap-1.5 text-neutral-dark font-medium">
+                                  <User size={13} className="text-neutral-muted" />
+                                  <span>{addr.recipientName || "Penerima Tidak Tercantum"}</span>
+                                  <span className="font-mono text-neutral-slate font-normal">({addr.phone || "-"})</span>
+                                </div>
+                              </div>
+
+                              {/* Full Address Details */}
+                              <div className="space-y-0.5 text-[11px] text-neutral-dark">
+                                <p className="font-semibold line-clamp-1">{addr.addressLine}</p>
+                                <p className="text-neutral-slate">
+                                  {addr.village ? `Kel. ${addr.village}` : ""}{addr.district ? `, Kec. ${addr.district}` : ""}
+                                </p>
+                                <p className="text-neutral-slate">
+                                  {addr.city}, {addr.province} {addr.postalCode ? `(${addr.postalCode})` : ""}
+                                </p>
+                              </div>
+
+                              {/* Notice banner for out of coverage address */}
+                              {!isCovered && (
+                                <div className="mt-2.5 pt-2 border-t border-rose-100 text-[11px] text-rose-700 flex items-center gap-1.5 font-medium">
+                                  <WarningCircle size={14} weight="fill" className="text-rose-600 shrink-0" />
+                                  <span>{cov.reason || "Alamat ini di luar jangkauan provider dan tidak dapat dipilih."}</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="p-8 text-center text-xs text-neutral-slate bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                          Belum ada alamat tersimpan di akun Anda.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Modal Footer */}
+                    <div className="px-5 py-3.5 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+                      <a
+                        href="/customer/profile?tab=address"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-bold text-primary hover:underline inline-flex items-center gap-1"
+                      >
+                        + Kelola Buku Alamat
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddressModal(false)}
+                        className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-neutral-dark text-xs font-bold transition-colors cursor-pointer"
+                      >
+                        Tutup
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -893,43 +1247,72 @@ function BookingWizardContent() {
             </div>
           )}
 
-          {/* STEP 4: COMPLETE SUMMARY (ALL DATA FROM STEPS 1-3 & POLICIES) */}
+          {/* STEP 4: COMPLETE SUMMARY (ALL DATA FROM STEPS 1-3, FINANCIAL SUMMARY & PAYMENT METHOD SELECTION) */}
           {state.step === 4 && (
             <div className="space-y-6">
               <div className="border-b border-slate-100 pb-4">
                 <h2 className="text-base sm:text-lg font-bold text-neutral-dark font-display">
-                  Ringkasan Pemesanan & Jaminan Garansi
+                  Ringkasan Pemesanan & Pembayaran Diagnosis
                 </h2>
                 <p className="text-xs text-neutral-slate">
-                  Periksa kembali seluruh informasi permohonan servis Anda sebelum dikirim ke sistem antrean mitra.
+                  Tinjau seluruh rincian permohonan servis, biaya diagnosis, dan pilih metode pembayaran resmi Anda.
                 </p>
               </div>
 
-              {/* Card 1: Service & Provider Info */}
-              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              {/* Card 1: Informasi Toko & Layanan Terpilih */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-sky/40 via-sky/20 to-emerald-50/40 border border-sky-200/80 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-sky-100">
                   <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
-                      <Wrench size={22} weight="bold" />
+                    <div className="w-12 h-12 rounded-xl bg-white border border-sky-200 flex items-center justify-center text-primary shadow-xs shrink-0">
+                      <Storefront size={24} weight="bold" />
                     </div>
                     <div>
-                      <span className="text-xs font-bold text-neutral-dark block font-display">
-                        {state.service?.title}
-                      </span>
-                      <span className="text-[11px] text-neutral-slate">
-                        Mitra: {state.service?.providerName || "PT Servio Mandiri Teknik"}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-bold text-neutral-slate uppercase tracking-wider">Mitra Toko Terpercaya</span>
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                          <ShieldCheck size={12} weight="fill" /> Terverifikasi
+                        </span>
+                      </div>
+                      <h3 className="text-sm sm:text-base font-bold text-neutral-dark font-display">
+                        {state.service?.providerName || "sukses gembira"}
+                      </h3>
                     </div>
                   </div>
-                  <span className="text-xs font-bold text-primary px-3 py-1 rounded-full bg-sky border border-sky-200">
-                    {state.service?.pricingModel === "SURVEY_ESTIMATE"
-                      ? "Biaya Survei Rp 50.000"
-                      : `Rp ${state.service?.basePrice?.toLocaleString("id-ID") || "150.000"}`}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-primary bg-white border border-sky-200 px-3 py-1 rounded-full shadow-2xs">
+                      Home Service (Kunjungan Teknisi)
+                    </span>
+                  </div>
                 </div>
 
-                {/* Card 2: Step 1 Information (Unit & Complaint Details) */}
-                <div className="space-y-2.5 pt-1">
+                <div className="flex items-start justify-between gap-4 pt-1">
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-semibold text-neutral-muted block">Layanan yang Dipesan:</span>
+                    <h4 className="text-sm font-bold text-neutral-dark font-display leading-snug">
+                      {state.service?.title}
+                    </h4>
+                    <p className="text-[11px] text-neutral-slate line-clamp-1">
+                      {state.service?.categoryName || "Servis & Perbaikan"} • {state.service?.subcategoryName || "Elektronik & AC"}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    {warrantyInfo.enabled ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg">
+                        <ShieldCheck size={14} weight="fill" /> {warrantyInfo.label}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg">
+                        <ShieldCheck size={14} weight="fill" /> Proteksi Standar Servio
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 2: Rincian dari Langkah 1, 2, dan 3 */}
+              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-4">
+                {/* 1. Detail Unit & Kendala Kerusakan */}
+                <div className="space-y-2.5">
                   <h3 className="text-xs font-bold text-neutral-dark font-display flex items-center gap-1.5">
                     <FileText size={15} className="text-primary" weight="bold" />
                     1. Detail Unit & Kendala Kerusakan
@@ -987,8 +1370,8 @@ function BookingWizardContent() {
                   </div>
                 </div>
 
-                {/* Card 3: Step 2 Information (Location & Contact Details) */}
-                <div className="space-y-2.5 pt-2">
+                {/* 2. Lokasi Pengerjaan */}
+                <div className="space-y-2.5 pt-2 border-t border-slate-200/80">
                   <h3 className="text-xs font-bold text-neutral-dark font-display flex items-center gap-1.5">
                     <MapPin size={15} className="text-primary" weight="bold" />
                     2. Lokasi Pengerjaan (Home Service)
@@ -1025,8 +1408,8 @@ function BookingWizardContent() {
                   </div>
                 </div>
 
-                {/* Card 4: Step 3 Information (Schedule Details) */}
-                <div className="space-y-2.5 pt-2">
+                {/* 3. Jadwal Kedatangan Teknisi */}
+                <div className="space-y-2.5 pt-2 border-t border-slate-200/80">
                   <h3 className="text-xs font-bold text-neutral-dark font-display flex items-center gap-1.5">
                     <Clock size={15} className="text-primary" weight="bold" />
                     3. Jadwal Kedatangan Teknisi
@@ -1047,15 +1430,243 @@ function BookingWizardContent() {
                 </div>
               </div>
 
-              {/* Survey Fee & Escrow Policy Callout */}
-              <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 text-xs space-y-2 text-amber-900">
-                <div className="flex items-center gap-2 font-bold font-display">
-                  <Info size={18} weight="fill" className="text-amber-600" />
-                  <span>Kebijakan Survei & Uang Aman Servio Protection (Garansi 30 Hari)</span>
+              {/* Card 3: Ringkasan Biaya Diagnosis (Wajib Bagian 1) */}
+              <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                      <CreditCard size={18} weight="bold" />
+                    </div>
+                    <h3 className="text-xs sm:text-sm font-bold text-neutral-dark font-display">
+                      Ringkasan Biaya Diagnosis
+                    </h3>
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    Escrow Protection Finance 06
+                  </span>
                 </div>
-                <p className="text-[11px] leading-relaxed text-neutral-dark">
-                  Biaya survei diagnostik awal (Rp 50.000) ditampung aman oleh sistem penampung resmi. Jika perbaikan memerlukan penggantian suku cadang atau pengerjaan teknis lanjutan di lokasi, rincian biaya akan diterbitkan dalam bentuk <strong>Quotation Resmi</strong> yang wajib Anda setujui sebelum pengerjaan dimulai. Seluruh hasil servis dilindungi garansi 30 hari.
-                </p>
+
+                <div className="space-y-2.5 text-xs">
+                  <div className="flex items-center justify-between text-neutral-dark">
+                    <span className="text-neutral-muted">Biaya Diagnosis dari Snapshot Layanan:</span>
+                    <span className="font-bold">
+                      {diagnosisFee === 0 ? "Gratis (Rp 0)" : `Rp ${diagnosisFee.toLocaleString("id-ID")}`}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-neutral-dark">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-neutral-muted">Biaya Platform Diagnosis:</span>
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                        Rp0 Bebas Biaya Platform
+                      </span>
+                    </div>
+                    <span className="font-bold text-emerald-600">Rp 0</span>
+                  </div>
+                  <div className="flex items-start justify-between text-neutral-dark pt-1 border-t border-dashed border-slate-200">
+                    <div>
+                      <span className="text-neutral-muted block">Biaya Pengerjaan Servis & Suku Cadang:</span>
+                      <span className="text-[10px] text-neutral-slate italic">
+                        Ditentukan setelah pemeriksaan fisik unit di lokasi oleh teknisi
+                      </span>
+                    </div>
+                    <span className="text-xs font-bold text-primary bg-sky/40 border border-sky-200 px-2.5 py-1 rounded-md shrink-0">
+                      Menyusul
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-200 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-neutral-dark font-display block">Total Bayar Sekarang</span>
+                    <span className="text-[10px] text-neutral-slate">
+                      {diagnosisFee === 0
+                        ? "Diagnosis bebas biaya permohonan awal"
+                        : "Diamankan di rekening penampung escrow Servio"}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-base sm:text-lg font-black text-primary font-display">
+                      {totalPayNow === 0 ? "Rp 0 (Gratis)" : `Rp ${totalPayNow.toLocaleString("id-ID")}`}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 4: Pemilihan Metode Pembayaran (Wajib Bagian 2 - jika diagnosisFee > 0) */}
+              {diagnosisFee > 0 && (
+                <div className="p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600">
+                        <QrCode size={18} weight="bold" />
+                      </div>
+                      <div>
+                        <h3 className="text-xs sm:text-sm font-bold text-neutral-dark font-display">
+                          Pilih Metode Pembayaran
+                        </h3>
+                        <p className="text-[11px] text-neutral-slate">
+                          Hanya menampilkan kanal pembayaran yang aktif dan didukung Finance 06.
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full shrink-0">
+                      Verifikasi 24 Jam
+                    </span>
+                  </div>
+
+                  <div className="space-y-3">
+                    {/* QRIS */}
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedPaymentMethod("QRIS")}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setSelectedPaymentMethod("QRIS");
+                        }
+                      }}
+                      className={`flex items-start sm:items-center justify-between p-3.5 rounded-xl border transition cursor-pointer select-none ${
+                        selectedPaymentMethod === "QRIS"
+                          ? "border-primary bg-primary/5 ring-1 ring-primary shadow-2xs"
+                          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
+                      }`}
+                    >
+                      <div className="flex items-start sm:items-center gap-3">
+                        <div className={`p-2 rounded-lg ${selectedPaymentMethod === "QRIS" ? "bg-primary text-white" : "bg-slate-100 text-slate-600"}`}>
+                          <QrCode size={22} weight="bold" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-neutral-dark">QRIS Dinamis</span>
+                            <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                              Rekomendasi Instan
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-neutral-slate mt-0.5">
+                            BCA Mobile, Livin Mandiri, BRImo, BNI Mobile, GoPay, OVO, DANA, ShopeePay & Semua Aplikasi QRIS
+                          </p>
+                        </div>
+                      </div>
+                      <div className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 mt-0.5 sm:mt-0 ${
+                        selectedPaymentMethod === "QRIS" ? "border-primary bg-primary text-white" : "border-slate-300"
+                      }`}>
+                        {selectedPaymentMethod === "QRIS" && <Check size={12} weight="bold" />}
+                      </div>
+                    </div>
+
+                    {/* Virtual Account Grid */}
+                    <div className="pt-1">
+                      <span className="text-[11px] font-bold text-neutral-slate uppercase tracking-wider block mb-2">
+                        Virtual Account (Transfer Otomatis)
+                      </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {[
+                          { id: "BCA_VA" as const, name: "BCA Virtual Account", desc: "BCA Mobile, KlikBCA & ATM BCA" },
+                          { id: "MANDIRI_VA" as const, name: "Mandiri Virtual Account", desc: "Livin' by Mandiri, ATM Mandiri" },
+                          { id: "BRI_VA" as const, name: "BRI Virtual Account (BRIVA)", desc: "BRImo, ATM BRI, Agen BRILink" },
+                          { id: "BNI_VA" as const, name: "BNI Virtual Account", desc: "BNI Mobile Banking, ATM BNI" },
+                        ].map((va) => {
+                          const isSelected = selectedPaymentMethod === va.id;
+                          return (
+                            <div
+                              key={va.id}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => setSelectedPaymentMethod(va.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setSelectedPaymentMethod(va.id);
+                                }
+                              }}
+                              className={`flex items-start justify-between p-3 rounded-xl border transition cursor-pointer select-none ${
+                                isSelected
+                                  ? "border-primary bg-primary/5 ring-1 ring-primary shadow-2xs"
+                                  : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50"
+                              }`}
+                            >
+                              <div className="flex items-start gap-2.5">
+                                <div className={`p-1.5 rounded-lg shrink-0 ${isSelected ? "bg-primary text-white" : "bg-slate-100 text-slate-600"}`}>
+                                  <Bank size={18} weight="bold" />
+                                </div>
+                                <div>
+                                  <span className="text-xs font-bold text-neutral-dark block">{va.name}</span>
+                                  <span className="text-[10px] text-neutral-slate">{va.desc}</span>
+                                </div>
+                              </div>
+                              <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 mt-0.5 ${
+                                isSelected ? "border-primary bg-primary text-white" : "border-slate-300"
+                              }`}>
+                                {isSelected && <Check size={10} weight="bold" />}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Card 5: Kebijakan & Persetujuan (Wajib Bagian 3) */}
+              <div className="p-4 sm:p-5 rounded-2xl bg-amber-50/70 border border-amber-200/90 text-xs space-y-3.5">
+                <div className="flex items-center gap-2 font-bold font-display text-amber-900">
+                  <ShieldCheck size={18} weight="fill" className="text-amber-600" />
+                  <span>Kebijakan Transaksi, SLA Provider & Jaminan Uang Aman</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px] text-amber-950">
+                  <div className="p-3 rounded-xl bg-white/90 border border-amber-200/70 space-y-1">
+                    <span className="font-bold flex items-center gap-1.5 text-amber-900">
+                      🔍 Ketentuan Diagnosis
+                    </span>
+                    <p className="text-neutral-dark leading-relaxed">
+                      Teknisi bersertifikasi akan datang ke lokasi sesuai jadwal untuk melakukan pemeriksaan fisik dan mendiagnosis kendala unit Anda.
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-white/90 border border-amber-200/70 space-y-1">
+                    <span className="font-bold flex items-center gap-1.5 text-amber-900">
+                      ⏱️ SLA Keputusan Provider (2 Jam)
+                    </span>
+                    <p className="text-neutral-dark leading-relaxed">
+                      Mitra penyedia jasa memiliki batas waktu 2 jam operasional untuk menerima atau menolak permohonan order booking Anda.
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-white/90 border border-amber-200/70 space-y-1">
+                    <span className="font-bold flex items-center gap-1.5 text-emerald-800">
+                      🛡️ Refund Penuh 100% S-Pay
+                    </span>
+                    <p className="text-neutral-dark leading-relaxed">
+                      Apabila Mitra menolak order atau terjadi pembatalan sebelum teknisi OTW, dana diagnosis 100% dikreditkan instan ke Saldo S-Pay Anda tanpa potongan (Section 50).
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-white/90 border border-amber-200/70 space-y-1">
+                    <span className="font-bold flex items-center gap-1.5 text-primary">
+                      📝 Persetujuan Biaya di Lokasi
+                    </span>
+                    <p className="text-neutral-dark leading-relaxed">
+                      Biaya pengerjaan servis dan penggantian suku cadang memerlukan persetujuan eksplisit (Customer Consent) Anda di aplikasi sebelum teknisi memulai perbaikan fisik.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-amber-200/80">
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={termsAccepted}
+                      onChange={(e) => setTermsAccepted(e.target.checked)}
+                      className="mt-0.5 rounded text-primary focus:ring-primary w-4 h-4 cursor-pointer"
+                    />
+                    <span className="text-[11px] text-neutral-dark leading-snug">
+                      Saya telah membaca, memahami, dan menyetujui seluruh ketentuan diagnosis, SLA penyedia jasa, jaminan refund penuh 100%{warrantyInfo.enabled ? `, serta ketentuan ${warrantyInfo.label}` : ""}.
+                    </span>
+                  </label>
+                </div>
               </div>
             </div>
           )}
@@ -1087,12 +1698,29 @@ function BookingWizardContent() {
             ) : (
               <button
                 type="button"
-                disabled={isSubmitting}
+                disabled={isSubmitting || !termsAccepted || (diagnosisFee > 0 && !selectedPaymentMethod)}
                 onClick={handleSubmit}
-                className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-display font-bold text-xs sm:text-sm hover:bg-emerald-700 transition-all flex items-center gap-2 shadow-servio-md active:scale-95 disabled:opacity-50"
+                className="px-6 py-3 rounded-xl bg-emerald-600 text-white font-display font-bold text-xs sm:text-sm hover:bg-emerald-700 transition-all flex items-center gap-2 shadow-servio-md active:scale-95 disabled:opacity-50 cursor-pointer"
               >
-                <ShieldCheck size={18} weight="fill" />
-                <span>{isSubmitting ? "Menyimpan ke Database..." : "Kirim Permohonan Booking"}</span>
+                {diagnosisFee > 0 ? (
+                  <>
+                    <CreditCard size={18} weight="fill" />
+                    <span>
+                      {isSubmitting
+                        ? "Menghubungkan ke Finance 06..."
+                        : `BOOKING & BAYAR (Rp ${totalPayNow.toLocaleString("id-ID")})`}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle size={18} weight="fill" />
+                    <span>
+                      {isSubmitting
+                        ? "Menyimpan ke Database..."
+                        : "KONFIRMASI BOOKING (GRATIS)"}
+                    </span>
+                  </>
+                )}
               </button>
             )}
           </div>

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Contracts\FinanceServiceClientInterface;
 use App\Http\Resources\ProviderOrderResource;
 use App\Models\ServiceOrder;
 use App\Services\ProviderDispatchService;
@@ -18,6 +19,7 @@ class ProviderOrderController
 {
     public function __construct(
         private readonly ProviderDispatchService $dispatchService,
+        private readonly FinanceServiceClientInterface $financeClient,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -29,6 +31,7 @@ class ProviderOrderController
             ->with([
                 'booking.activeAssignment.attempt',
                 'visit',
+                'consents',
                 'execution.evidences',
                 'diagnosisVersions.workItems',
                 'diagnosisVersions.partItems',
@@ -77,6 +80,7 @@ class ProviderOrderController
         $query = ServiceOrder::with([
             'booking.activeAssignment.attempt',
             'visit',
+            'consents',
             'execution.evidences',
             'diagnosisVersions.workItems',
             'diagnosisVersions.partItems',
@@ -100,6 +104,176 @@ class ProviderOrderController
         }
 
         return ApiResponse::success(new ProviderOrderResource($order));
+    }
+
+    /**
+     * Provider accept incoming booking order (Gate C)
+     */
+    public function accept(Request $request, string $id): JsonResponse
+    {
+        /** @var AuthenticatedActor $actor */
+        $actor = $request->attributes->get('actor');
+
+        $order = ServiceOrder::with(['booking', 'paymentObligations'])->where('id', $id)->first();
+        if (!$order) {
+            return ApiResponse::error('ORDER_JASA_NOT_FOUND', 'Pesanan jasa tidak ditemukan.', 404);
+        }
+
+        if (!$actor->isAdmin() && $order->provider_org_id !== $actor->organizationId) {
+            return ApiResponse::error('ORDER_JASA_FORBIDDEN', 'Akses ditolak. Pesanan bukan milik organisasi Anda.', 403);
+        }
+
+        if ($order->provider_decision_status === 'ACCEPTED') {
+            return ApiResponse::success(
+                new ProviderOrderResource($order->fresh(['booking.activeAssignment.attempt', 'visit', 'execution', 'diagnosisVersions', 'paymentObligations'])),
+                200,
+                ['message' => 'Pesanan sudah diterima sebelumnya.']
+            );
+        }
+
+        if ($order->provider_decision_status === 'REJECTED' || in_array($order->status, ['CANCELLED', 'COMPLETED'])) {
+            return ApiResponse::error('ORDER_JASA_INVALID_STATE', "Pesanan berstatus {$order->status} dan tidak dapat diterima.", 422);
+        }
+
+        $order->provider_decision_status = 'ACCEPTED';
+        $order->provider_decision_at = now();
+        $order->provider_decision_by = $actor->id;
+        $order->save();
+
+        $nextSeq = ($order->events()->max('sequence_no') ?? 0) + 1;
+        \App\Support\DomainEventLogger::recordOrderEvent(
+            orderId: $order->id,
+            sequenceNo: $nextSeq,
+            eventType: 'PROVIDER_ORDER_ACCEPTED',
+            fromState: $order->status,
+            toState: $order->status,
+            actorId: $actor->id,
+            actorType: $actor->role,
+            metadata: ['provider_decision_status' => 'ACCEPTED']
+        );
+
+        \App\Support\DomainEventLogger::recordAuditLog(
+            actor: "{$actor->role}:{$actor->id}",
+            action: 'PROVIDER_ACCEPT_ORDER',
+            resource: "ServiceOrder:{$order->id}",
+            reason: "Mitra penyedia jasa menyetujui pesanan {$order->order_no}"
+        );
+
+        return ApiResponse::success(
+            new ProviderOrderResource($order->fresh(['booking.activeAssignment.attempt', 'visit', 'execution', 'diagnosisVersions', 'paymentObligations'])),
+            200,
+            ['message' => 'Pesanan berhasil diterima. Silakan pilih dan tugaskan teknisi.']
+        );
+    }
+
+    /**
+     * Provider reject incoming booking order (Gate C & Section 50)
+     */
+    public function reject(Request $request, string $id): JsonResponse
+    {
+        /** @var AuthenticatedActor $actor */
+        $actor = $request->attributes->get('actor');
+
+        $validated = $request->validate([
+            'reason' => 'required|string|min:3|max:1000',
+        ]);
+
+        $order = ServiceOrder::with(['booking', 'paymentObligations'])->where('id', $id)->first();
+        if (!$order) {
+            return ApiResponse::error('ORDER_JASA_NOT_FOUND', 'Pesanan jasa tidak ditemukan.', 404);
+        }
+
+        if (!$actor->isAdmin() && $order->provider_org_id !== $actor->organizationId) {
+            return ApiResponse::error('ORDER_JASA_FORBIDDEN', 'Akses ditolak. Pesanan bukan milik organisasi Anda.', 403);
+        }
+
+        if (in_array($order->status, ['IN_PROGRESS', 'COMPLETED', 'CANCELLED'])) {
+            return ApiResponse::error('ORDER_JASA_INVALID_STATE', "Pesanan dalam status {$order->status} tidak dapat ditolak.", 422);
+        }
+
+        $fromStatus = $order->status;
+        $now = now();
+        $order->provider_decision_status = 'REJECTED';
+        $order->provider_decision_at = $now;
+        $order->provider_decision_by = $actor->id;
+        $order->provider_rejection_reason = $validated['reason'];
+        $order->status = 'CANCELLED';
+        $order->phase = 'CANCELLED';
+        $order->cancelled_at = $now;
+        $order->cancel_reason_code = 'PROVIDER_REJECTED';
+        $order->save();
+
+        if ($order->booking) {
+            \App\Models\BookingActiveAssignment::where('booking_id', $order->booking->id)->delete();
+        }
+
+        // Check if diagnosis fee was paid -> auto 100% refund via Finance 06
+        $diagPaid = $order->paymentObligations()
+            ->where('purpose', 'DIAGNOSIS')
+            ->where('state', 'PAID')
+            ->first();
+
+        $refundRef = null;
+        if ($diagPaid && $diagPaid->principal_idr > 0) {
+            try {
+                $refundRes = $this->financeClient->processCancellationRefund(
+                    orderId: $order->id,
+                    amountIdr: (int) $diagPaid->principal_idr,
+                    customerId: $order->customer_id,
+                    reason: "Mitra penyedia jasa menolak reservasi: {$validated['reason']}"
+                );
+                $refundRef = $refundRes['refund_id'] ?? $refundRes['id'] ?? null;
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning("Finance refund on provider rejection failed: " . $e->getMessage());
+            }
+        }
+
+        // Record in CancellationRecord
+        \App\Models\CancellationRecord::where('order_id', $order->id)->delete();
+        \App\Models\CancellationRecord::forceCreate([
+            'id' => (string) \Illuminate\Support\Str::ulid(),
+            'order_id' => $order->id,
+            'cancelled_by_type' => 'PROVIDER',
+            'cancelled_by_id' => $actor->id,
+            'reason_code' => 'PROVIDER_REJECTED',
+            'reason_text' => $validated['reason'],
+            'status_at_cancel' => $fromStatus,
+            'diagnosis_fulfilled' => false,
+            'refund_eligibility_snapshot' => $diagPaid ? 'FULL' : 'NONE',
+            'refund_finance_ref' => $refundRef,
+            'cancelled_at' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $nextSeq = ($order->events()->max('sequence_no') ?? 0) + 1;
+        \App\Support\DomainEventLogger::recordOrderEvent(
+            orderId: $order->id,
+            sequenceNo: $nextSeq,
+            eventType: 'PROVIDER_ORDER_REJECTED',
+            fromState: $fromStatus,
+            toState: 'CANCELLED',
+            actorId: $actor->id,
+            actorType: $actor->role,
+            metadata: [
+                'provider_decision_status' => 'REJECTED',
+                'reason' => $validated['reason'],
+                'refund_triggered' => (bool) $diagPaid,
+            ]
+        );
+
+        \App\Support\DomainEventLogger::recordAuditLog(
+            actor: "{$actor->role}:{$actor->id}",
+            action: 'PROVIDER_REJECT_ORDER',
+            resource: "ServiceOrder:{$order->id}",
+            reason: "Mitra penyedia jasa menolak pesanan {$order->order_no}: {$validated['reason']}"
+        );
+
+        return ApiResponse::success(
+            new ProviderOrderResource($order->fresh(['booking.activeAssignment.attempt', 'visit', 'execution', 'diagnosisVersions', 'paymentObligations'])),
+            200,
+            ['message' => 'Pesanan telah ditolak dan dibatalkan.' . ($diagPaid ? ' Pengembalian dana 100% biaya survei/diagnosis telah diproses ke S-Pay pelanggan.' : '')]
+        );
     }
 
     /**

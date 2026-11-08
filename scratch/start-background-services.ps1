@@ -1,12 +1,14 @@
-# Script to run all 6 microservices in the background without opening terminal windows
+# Script to run all 8 microservices in the background without opening terminal windows
 
 $services = @(
     @{ Name = "Identity Service (Modul 01)"; Dir = "backend\services\identity-service"; Port = 8001 },
     @{ Name = "Category Service (Modul 02)"; Dir = "backend\services\category-service"; Port = 8002 },
     @{ Name = "Product Service (Modul 03)"; Dir = "backend\services\product-service"; Port = 8003 },
     @{ Name = "Service Offering (Modul 04)"; Dir = "backend\services\service-service"; Port = 8004 },
-    @{ Name = "Order Barang Service (Modul 05)"; Dir = "backend\services\order-barang-service"; Port = 8005 },
-    @{ Name = "Finance Service (Modul 06)"; Dir = "backend\services\finance-service"; Port = 8006 }
+    @{ Name = "Order Barang Service (Modul 05A)"; Dir = "backend\services\order-barang-service"; Port = 8005 },
+    @{ Name = "Finance Service (Modul 06)"; Dir = "backend\services\finance-service"; Port = 8006 },
+    @{ Name = "Order Jasa Service (Modul 05B)"; Dir = "backend\services\order-jasa-service"; Port = 8007 },
+    @{ Name = "After-Sales Service (Modul 07)"; Dir = "backend\services\after-sales-service"; Port = 8008 }
 )
 
 $baseDir = $PSScriptRoot
@@ -26,7 +28,7 @@ if (-not (Test-Path $logsDir)) {
     New-Item -ItemType Directory -Path $logsDir -Force | Out-Null
 }
 
-Write-Host "Stopping any existing processes on ports 8001-8006..."
+Write-Host "Stopping any existing processes on ports 8001-8008..."
 foreach ($svc in $services) {
     $port = $svc.Port
     $conns = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
@@ -43,7 +45,9 @@ foreach ($svc in $services) {
 
 Start-Sleep -Seconds 1
 
-Write-Host "Starting all 6 microservices in background (hidden)..."
+Write-Host "Starting all 8 microservices in background (hidden)..."
+$env:PHP_CLI_SERVER_WORKERS = "4"
+
 foreach ($svc in $services) {
     $svcPath = Join-Path $repoRoot $svc.Dir
     $stdoutLog = Join-Path $logsDir ("service-" + $svc.Port + ".log")
@@ -64,8 +68,8 @@ foreach ($svc in $services) {
     Write-Host ("Started " + $svc.Name + " (Port " + $svc.Port + ") with PID: " + $proc.Id)
 }
 
-Write-Host "Waiting 3 seconds for services to initialize..."
-Start-Sleep -Seconds 3
+Write-Host "Waiting 4 seconds for services to initialize..."
+Start-Sleep -Seconds 4
 
 Write-Host "`n--- Verification Status ---"
 foreach ($svc in $services) {

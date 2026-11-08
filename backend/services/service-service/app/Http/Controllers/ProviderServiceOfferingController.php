@@ -41,7 +41,7 @@ class ProviderServiceOfferingController extends Controller
         $actor = $request->attributes->get('actor');
         $limit = min(max((int) $request->query('limit', 20), 1), 100);
 
-        $query = ServiceOffering::with(['definition', 'media', 'primaryMedia', 'coverageCities'])
+        $query = ServiceOffering::with(['definition', 'media', 'primaryMedia'])
             ->where('provider_organization_id', $actor->organizationId);
 
         if ($status = $request->query('status')) {
@@ -71,7 +71,7 @@ class ProviderServiceOfferingController extends Controller
         /** @var AuthenticatedActor $actor */
         $actor = $request->attributes->get('actor');
 
-        $offering = ServiceOffering::with(['definition', 'media', 'coverageCities', 'capabilities'])
+        $offering = ServiceOffering::with(['definition', 'media', 'capabilities'])
             ->where('provider_organization_id', $actor->organizationId)
             ->find($id);
 
@@ -165,22 +165,8 @@ class ProviderServiceOfferingController extends Controller
                 'duration_unit' => $duration['unit'] ?? null,
                 'status' => 'DRAFT',
                 'lock_version' => 1,
+                'warranty_config' => $request->input('warranty_config'),
             ]);
-
-            // Save initial coverage cities if provided
-            if ($cityCodes = $request->input('coverage_city_codes')) {
-                foreach (array_unique($cityCodes) as $cityCode) {
-                    $normCity = CityRegistryClient::normalize($cityCode);
-                    if (CityRegistryClient::isValid($normCity)) {
-                        ServiceCoverageCity::create([
-                            'id' => (string) Str::uuid(),
-                            'offering_id' => $offering->id,
-                            'city_code' => $normCity,
-                            'city_label_snapshot' => CityRegistryClient::getLabel($normCity),
-                        ]);
-                    }
-                }
-            }
 
             // Save capabilities if provided
             if ($capIds = $request->input('capability_ids')) {
@@ -205,7 +191,7 @@ class ProviderServiceOfferingController extends Controller
                 offeringId: $offering->id
             );
 
-            $offering->load(['definition', 'media', 'coverageCities', 'capabilities']);
+            $offering->load(['definition', 'media', 'capabilities']);
 
             return ApiResponse::success(
                 $this->formatOfferingDetail($offering),
@@ -295,6 +281,10 @@ class ProviderServiceOfferingController extends Controller
                 $offering->duration_unit = $dur['unit'] ?? null;
             }
 
+            if ($request->has('warranty_config')) {
+                $offering->warranty_config = $request->input('warranty_config');
+            }
+
             $offering->lock_version += 1;
             $offering->save();
 
@@ -316,7 +306,7 @@ class ProviderServiceOfferingController extends Controller
                 aggregateVersion: $offering->lock_version
             );
 
-            $offering->load(['definition', 'media', 'coverageCities', 'capabilities']);
+            $offering->load(['definition', 'media', 'capabilities']);
 
             return ApiResponse::success(
                 $this->formatOfferingDetail($offering),
@@ -334,7 +324,7 @@ class ProviderServiceOfferingController extends Controller
         /** @var AuthenticatedActor $actor */
         $actor = $request->attributes->get('actor');
 
-        $offering = ServiceOffering::with(['definition', 'media', 'coverageCities'])
+        $offering = ServiceOffering::with(['definition', 'media'])
             ->where('provider_organization_id', $actor->organizationId)
             ->find($id);
 
@@ -401,16 +391,7 @@ class ProviderServiceOfferingController extends Controller
                 );
             }
 
-            // 4. Must have at least 1 coverage city
-            if ($offering->coverageCities->isEmpty()) {
-                return ApiResponse::error(
-                    'SERVICE_COVERAGE_REQUIRED',
-                    'Penawaran jasa wajib memiliki minimal satu kota layanan aktif sebelum dapat dipublikasikan.',
-                    409
-                );
-            }
-
-            // 5. Must have at least 1 primary media with READY status
+            // 4. Must have at least 1 primary media with READY status
             $hasPrimaryReadyMedia = $offering->media()
                 ->where('is_primary', true)
                 ->where('storage_state', 'READY')
@@ -473,7 +454,7 @@ class ProviderServiceOfferingController extends Controller
                 aggregateVersion: $offering->lock_version
             );
 
-            $offering->load(['definition', 'media', 'coverageCities', 'capabilities']);
+            $offering->load(['definition', 'media', 'capabilities']);
 
             $responseCode = match($targetStatus) {
                 'ACTIVE' => 'SERVICE_OFFERING_ACTIVATED',
@@ -491,7 +472,7 @@ class ProviderServiceOfferingController extends Controller
                     'published_at' => $offering->activated_at?->toISOString(),
                 ],
                 'public_eligible' => $targetStatus === 'ACTIVE',
-                'coverage_city_codes' => $offering->coverageCities->pluck('city_code')->values()->all(),
+                'coverage_city_codes' => [],
                 'lock_version' => $offering->lock_version,
             ], $responseCode, 200);
         });
@@ -505,8 +486,7 @@ class ProviderServiceOfferingController extends Controller
         /** @var AuthenticatedActor $actor */
         $actor = $request->attributes->get('actor');
 
-        $offering = ServiceOffering::with('coverageCities')
-            ->where('provider_organization_id', $actor->organizationId)
+        $offering = ServiceOffering::where('provider_organization_id', $actor->organizationId)
             ->find($id);
 
         if (! $offering) {
@@ -519,75 +499,14 @@ class ProviderServiceOfferingController extends Controller
             return ApiResponse::error('SERVICE_VERSION_CONFLICT', 'Data telah diubah oleh operasi lain.', 409);
         }
 
-        $rawCodes = $request->input('city_codes', []);
-        $cleanCodes = array_values(array_unique(array_filter($rawCodes)));
+        $offering->lock_version += 1;
+        $offering->save();
 
-        // If offering is ACTIVE, empty coverage is forbidden
-        if ($offering->isActive() && empty($cleanCodes)) {
-            return ApiResponse::error(
-                'SERVICE_COVERAGE_REQUIRED',
-                'Penawaran jasa aktif wajib memiliki minimal satu kota layanan.',
-                409
-            );
-        }
-
-        // Validate all city codes against Indonesian city registry
-        $invalidCodes = [];
-        foreach ($cleanCodes as $code) {
-            if (! CityRegistryClient::isValid($code)) {
-                $invalidCodes[] = $code;
-            }
-        }
-
-        if (! empty($invalidCodes)) {
-            return ApiResponse::error(
-                'SERVICE_COVERAGE_CITY_INVALID',
-                'Satu atau lebih kode kota administratif tidak valid.',
-                422,
-                ['city_codes' => $invalidCodes]
-            );
-        }
-
-        return DB::transaction(function () use ($offering, $cleanCodes) {
-            ServiceCoverageCity::where('offering_id', $offering->id)->delete();
-
-            foreach ($cleanCodes as $code) {
-                $norm = CityRegistryClient::normalize($code);
-                ServiceCoverageCity::create([
-                    'id' => (string) Str::uuid(),
-                    'offering_id' => $offering->id,
-                    'city_code' => $norm,
-                    'city_label_snapshot' => CityRegistryClient::getLabel($norm),
-                ]);
-            }
-
-            $offering->lock_version += 1;
-            $offering->save();
-
-            RecordServiceAudit::execute(
-                entityType: 'SERVICE_OFFERING',
-                entityId: $offering->id,
-                action: 'REPLACE_COVERAGE_CITIES',
-                before: null,
-                after: ['coverage_city_codes' => $cleanCodes],
-                offeringId: $offering->id
-            );
-
-            OutboxPublisher::record(
-                aggregateType: 'SERVICE_OFFERING',
-                aggregateId: $offering->id,
-                eventType: 'ServiceOfferingCoverageChanged.v1',
-                payload: ['offering_id' => $offering->id, 'city_codes' => $cleanCodes],
-                offeringId: $offering->id,
-                aggregateVersion: $offering->lock_version
-            );
-
-            return ApiResponse::success([
-                'id' => $offering->id,
-                'coverage_city_codes' => $cleanCodes,
-                'lock_version' => $offering->lock_version,
-            ], 'SERVICE_COVERAGE_UPDATED', 200);
-        });
+        return ApiResponse::success([
+            'id' => $offering->id,
+            'coverage_city_codes' => [],
+            'lock_version' => $offering->lock_version,
+        ], 'SERVICE_COVERAGE_UPDATED', 200);
     }
 
     /**
@@ -712,7 +631,7 @@ class ProviderServiceOfferingController extends Controller
                 'max' => $o->duration_max,
                 'unit' => $o->duration_unit,
             ],
-            'coverage_city_codes' => $o->coverageCities->pluck('city_code')->values()->all(),
+            'coverage_city_codes' => [],
             'capability_ids' => $o->capabilities ? $o->capabilities->pluck('id')->values()->all() : [],
             'media' => $o->media->map(fn ($m) => [
                 'id' => $m->id,
@@ -723,6 +642,7 @@ class ProviderServiceOfferingController extends Controller
             ])->values()->all(),
             'status' => $o->status,
             'lock_version' => $o->lock_version,
+            'warranty_config' => $o->warranty_config,
             'created_at' => $o->created_at?->toISOString(),
             'updated_at' => $o->updated_at?->toISOString(),
         ];

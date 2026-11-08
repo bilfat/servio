@@ -18,6 +18,7 @@ import {
   Image as ImageIcon,
   UploadSimple,
   X,
+  ArrowSquareOut,
 } from "@phosphor-icons/react";
 import { useUrlQueryState } from "@/hooks/useUrlQueryState";
 import { productsApi, taxonomyApi, productVariantsApi, productMediaApi } from "@/lib/servioApi";
@@ -105,7 +106,14 @@ function MerchantProductsContent() {
   // Warranty Policy Configuration State (Phase 07 Preset Integration)
   const { warrantyPresets } = useAfterSales();
   const activeMerchantPresets = useMemo(() => {
-    return (warrantyPresets || []).filter((p: any) => p.organizationId === "merch-jaya-motor" && p.isActive);
+    return (warrantyPresets || []).filter(
+      (p: any) =>
+        (p.organizationType === "MERCHANT" ||
+          p.organizationId === "merch-jaya-motor" ||
+          p.organizationId === "0c1467e7-af68-4b26-ae84-daa41d51aed0" ||
+          (p.organizationId && p.organizationId.toLowerCase().includes("merch"))) &&
+        p.isActive
+    );
   }, [warrantyPresets]);
 
   const [hasWarranty, setHasWarranty] = useState<boolean>(true);
@@ -315,13 +323,36 @@ function MerchantProductsContent() {
           price: v.price,
           stock: v.stock,
         })),
-        warrantyPolicy: Number(warrantyDuration) > 0 ? {
-          durationMonths: Number(warrantyDuration),
-          type: warrantyType,
-          coverage: warrantyCoverage.trim(),
-          exclusions: warrantyExclusions.trim(),
-          terms: "Wajib menyertakan bukti invoice transaksi resmi dan segel unit tidak rusak.",
-        } : null,
+        warrantyPolicy: (() => {
+          const curPreset = activeMerchantPresets.find(
+            (p: any) => p.id === (selectedPresetId || activeMerchantPresets[0]?.id)
+          );
+          if (hasWarranty && curPreset) {
+            return {
+              presetId: curPreset.id,
+              preset_id: curPreset.id,
+              name: curPreset.name,
+              durationDays: curPreset.durationDays,
+              duration_days: curPreset.durationDays,
+              durationMonths: Math.round(curPreset.durationDays / 30) || 1,
+              coverage: curPreset.coverage || "Perbaikan atau penanganan purna jual jika suku cadang mengalami cacat manufaktur atau malafungsi operasional.",
+              exclusions: curPreset.exclusions || "Tidak ada pengecualian khusus.",
+              terms: curPreset.terms || "Klaim dapat diajukan pelanggan melalui pusat purnajual selama masa garansi aktif dengan melampirkan bukti kendala produk.",
+            };
+          }
+          if (hasWarranty && Number(warrantyDuration) > 0) {
+            return {
+              durationMonths: Number(warrantyDuration),
+              durationDays: Number(warrantyDuration) * 30,
+              duration_days: Number(warrantyDuration) * 30,
+              type: warrantyType,
+              coverage: warrantyCoverage.trim() || "Perbaikan atau penanganan purna jual jika suku cadang mengalami cacat manufaktur atau malafungsi operasional.",
+              exclusions: warrantyExclusions.trim() || "Tidak ada pengecualian khusus.",
+              terms: "Klaim dapat diajukan pelanggan melalui pusat purnajual selama masa garansi aktif dengan melampirkan bukti kendala produk.",
+            };
+          }
+          return null;
+        })(),
       });
 
       const newProductId = res.data?.productId;
@@ -392,13 +423,28 @@ function MerchantProductsContent() {
       const isRegistered = brands.some((b) => b.name.toLowerCase() === currentBrand.toLowerCase());
       setIsEditCustomBrand(!isRegistered && Boolean(currentBrand));
       setEditDescription(full.description || "");
-      const hasExistingWar = Boolean(full.warrantyPolicy?.durationMonths && full.warrantyPolicy.durationMonths > 0);
+      let pol = full.warrantyPolicy || (full as any).warranty_policy;
+      if (typeof pol === "string" && pol.trim().startsWith("{")) {
+        try { pol = JSON.parse(pol); } catch {}
+      }
+      const hasExistingWar = Boolean(
+        pol && (
+          (pol.durationMonths && pol.durationMonths > 0) ||
+          (pol.durationDays && pol.durationDays > 0) ||
+          (pol.duration_days && pol.duration_days > 0) ||
+          pol.presetId || pol.preset_id
+        )
+      );
       setEditHasWarranty(hasExistingWar);
-      setEditSelectedPresetId(activeMerchantPresets[0]?.id || "");
-      setEditWarrantyDuration(full.warrantyPolicy?.durationMonths ?? 0);
-      setEditWarrantyType(full.warrantyPolicy?.type || "MANUFACTURER_AND_STORE");
-      setEditWarrantyCoverage(full.warrantyPolicy?.coverage || "Cacat manufaktur, kegagalan fungsi kelistrikan suku cadang");
-      setEditWarrantyExclusions(full.warrantyPolicy?.exclusions || "Kerusakan fisik akibat benturan, kesalahan instalasi non-resmi, atau korsleting");
+      if (pol?.presetId || pol?.preset_id) {
+        setEditSelectedPresetId(pol.presetId || pol.preset_id);
+      } else if (activeMerchantPresets[0]?.id) {
+        setEditSelectedPresetId(activeMerchantPresets[0].id);
+      }
+      setEditWarrantyDuration(pol?.durationMonths ?? (pol?.durationDays ? Math.round(pol.durationDays / 30) : 0));
+      setEditWarrantyType(pol?.type || "MANUFACTURER_AND_STORE");
+      setEditWarrantyCoverage(pol?.coverage || "Cacat manufaktur, kegagalan fungsi kelistrikan suku cadang");
+      setEditWarrantyExclusions(pol?.exclusions || "Kerusakan fisik akibat benturan, kesalahan instalasi non-resmi, atau korsleting");
       setEditFormError(null);
     } catch {
       setEditingProduct(p);
@@ -417,6 +463,39 @@ function MerchantProductsContent() {
     }
 
     try {
+      const curEditPreset = activeMerchantPresets.find(
+        (p: any) => p.id === (editSelectedPresetId || activeMerchantPresets[0]?.id)
+      );
+      const computedEditWarrantyPolicy = editHasWarranty ? (
+        curEditPreset ? {
+          presetId: curEditPreset.id,
+          preset_id: curEditPreset.id,
+          name: curEditPreset.name,
+          durationDays: curEditPreset.durationDays,
+          duration_days: curEditPreset.durationDays,
+          durationMonths: Math.round(curEditPreset.durationDays / 30) || 1,
+          coverage: curEditPreset.coverage || "Perbaikan atau penanganan purna jual jika suku cadang mengalami cacat manufaktur atau malafungsi operasional.",
+          exclusions: curEditPreset.exclusions || "Tidak ada pengecualian khusus.",
+          terms: curEditPreset.terms || "Klaim dapat diajukan pelanggan melalui pusat purnajual selama masa garansi aktif dengan melampirkan bukti kendala produk.",
+        } : (editingProduct?.warrantyPolicy ? {
+          ...editingProduct.warrantyPolicy,
+          presetId: editSelectedPresetId || editingProduct.warrantyPolicy.presetId || editingProduct.warrantyPolicy.preset_id,
+          preset_id: editSelectedPresetId || editingProduct.warrantyPolicy.preset_id || editingProduct.warrantyPolicy.presetId,
+          terms: editingProduct.warrantyPolicy.terms || "Klaim dapat diajukan pelanggan melalui pusat purnajual selama masa garansi aktif dengan melampirkan bukti kendala produk.",
+        } : {
+          presetId: editSelectedPresetId || "preset-merch-01",
+          preset_id: editSelectedPresetId || "preset-merch-01",
+          name: "Garansi Toko",
+          durationDays: Number(editWarrantyDuration) > 0 ? Number(editWarrantyDuration) * 30 : 30,
+          duration_days: Number(editWarrantyDuration) > 0 ? Number(editWarrantyDuration) * 30 : 30,
+          durationMonths: Number(editWarrantyDuration) || 1,
+          type: editWarrantyType || "MANUFACTURER_AND_STORE",
+          coverage: editWarrantyCoverage.trim() || "Perbaikan atau penanganan purna jual jika suku cadang mengalami cacat manufaktur atau malafungsi operasional.",
+          exclusions: editWarrantyExclusions.trim() || "Tidak ada pengecualian khusus.",
+          terms: "Klaim dapat diajukan pelanggan melalui pusat purnajual selama masa garansi aktif dengan melampirkan bukti kendala produk.",
+        })
+      ) : null;
+
       await productsApi.update(
         editingProduct.productId,
         {
@@ -425,13 +504,32 @@ function MerchantProductsContent() {
           name: editName.trim(),
           brandName: editBrandName.trim() || undefined,
           description: editDescription.trim() || undefined,
+          warrantyPolicy: computedEditWarrantyPolicy,
         },
         editingProduct.lockVersion || 1
       );
 
+      setProducts((prev) =>
+        prev.map((item) =>
+          item.productId === editingProduct.productId
+            ? {
+                ...item,
+                name: editName.trim(),
+                categoryId: editCategoryId,
+                subcategoryId: editSubcategoryId || item.subcategoryId,
+                brandName: editBrandName.trim() || item.brandName,
+                description: editDescription.trim() || item.description,
+                warrantyPolicy: computedEditWarrantyPolicy,
+                warranty_policy: computedEditWarrantyPolicy,
+                lockVersion: (item.lockVersion || 1) + 1,
+              }
+            : item
+        )
+      );
+
       setEditingProduct(null);
       setToastMessage(`Produk "${editName}" berhasil diperbarui!`);
-      loadData();
+      await loadData();
     } catch (err: unknown) {
       const e = err as any;
       setEditFormError(e.message || "Gagal memperbarui produk.");
@@ -888,6 +986,7 @@ function MerchantProductsContent() {
                     <th className="py-3.5 px-4">Kategori &amp; Subkategori</th>
                     <th className="py-3.5 px-4">Varian &amp; Rentang Harga</th>
                     <th className="py-3.5 px-4">Total Stok</th>
+                    <th className="py-3.5 px-4">Garansi Toko</th>
                     <th className="py-3.5 px-4">Status</th>
                     <th className="py-3.5 px-4 pr-6 text-right">Aksi</th>
                   </tr>
@@ -995,6 +1094,46 @@ function MerchantProductsContent() {
                           >
                             {p.totalStock ?? p.variants?.reduce((acc, v) => acc + (v.stock || 0), 0) ?? 0} Unit
                           </span>
+                        </td>
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          {(() => {
+                            let pol = p.warrantyPolicy || (p as any).warranty_policy;
+                            while (typeof pol === "string") {
+                              try {
+                                const parsed = JSON.parse(pol);
+                                if (parsed === pol) break;
+                                pol = parsed;
+                              } catch {
+                                break;
+                              }
+                            }
+                            const hasWar = Boolean(
+                              pol && (
+                                (pol.durationDays && pol.durationDays > 0) ||
+                                (pol.duration_days && pol.duration_days > 0) ||
+                                (pol.durationMonths && pol.durationMonths > 0) ||
+                                (pol.duration_months && pol.duration_months > 0) ||
+                                pol.presetId || pol.preset_id ||
+                                (pol.name && pol.name !== "Tanpa Garansi")
+                              )
+                            );
+                            if (!hasWar) {
+                              return (
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-slate-400 bg-slate-50 border border-slate-200 text-[10px] font-medium">
+                                  Tidak Ada Garansi Toko
+                                </span>
+                              );
+                            }
+                            const days = pol.durationDays || pol.duration_days || (pol.durationMonths ? pol.durationMonths * 30 : (pol.duration_months ? pol.duration_months * 30 : null));
+                            const name = pol.name || pol.presetName || pol.preset_name || "Garansi Toko";
+                            const label = days ? `${name} — ${days} Hari` : name;
+                            return (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold shadow-2xs">
+                                <ShieldCheck size={13} weight="fill" className="text-emerald-600 shrink-0" />
+                                <span>{label}</span>
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="py-3.5 px-4">
                           <Badge
@@ -1472,9 +1611,6 @@ function MerchantProductsContent() {
                       Pilih opsi garansi aktif milik toko Anda untuk produk ini
                     </p>
                   </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-[#0F4C81] border border-sky-200">
-                    DATA SIMULASI
-                  </span>
                 </div>
 
                 {/* Toggle Ada Garansi? Ya/Tidak */}
@@ -1535,15 +1671,32 @@ function MerchantProductsContent() {
                           );
                           if (!curPreset) return null;
                           return (
-                            <div className="p-2.5 rounded-xl bg-white border border-slate-200/90 text-[11px] space-y-1">
-                              <p className="text-slate-700 font-semibold">
-                                <span className="text-[#0F4C81] font-bold">Cakupan:</span> {curPreset.coverage}
-                              </p>
-                              {curPreset.exclusions && (
-                                <p className="text-slate-500">
-                                  <span className="text-rose-600 font-bold">Pengecualian:</span> {curPreset.exclusions}
+                            <div className="p-3 rounded-2xl bg-white border border-slate-200/90 text-[11px] space-y-2 shadow-2xs">
+                              <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                                <div>
+                                  <span className="font-extrabold text-[#0F4C81] text-xs block">{curPreset.name}</span>
+                                  <span className="text-[10px] text-slate-500 font-medium">Durasi: {curPreset.durationDays} Hari Kalender</span>
+                                </div>
+                                <Link
+                                  href="/merchant/warranty"
+                                  target="_blank"
+                                  className="text-[10px] font-bold text-[#0F4C81] hover:underline flex items-center gap-1"
+                                >
+                                  <span>Kelola Pilihan Garansi</span>
+                                  <ArrowSquareOut size={11} weight="bold" />
+                                </Link>
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-slate-700">
+                                  <span className="font-bold text-slate-800">Cakupan Garansi:</span> {curPreset.coverage}
                                 </p>
-                              )}
+                                <p className="text-slate-600">
+                                  <span className="font-bold text-slate-700">Pengecualian:</span> {curPreset.exclusions || "Tidak ada pengecualian khusus."}
+                                </p>
+                                <p className="text-slate-500 text-[10px]">
+                                  <span className="font-bold text-slate-600">Syarat &amp; Ketentuan:</span> {curPreset.terms || "Klaim dapat diajukan pelanggan melalui pusat purnajual selama masa garansi aktif dengan melampirkan bukti kendala produk."}
+                                </p>
+                              </div>
                             </div>
                           );
                         })()}
@@ -1744,9 +1897,6 @@ function MerchantProductsContent() {
                       Pilih opsi garansi aktif milik toko Anda
                     </p>
                   </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-[#0F4C81] border border-sky-200">
-                    DATA SIMULASI
-                  </span>
                 </div>
 
                 <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
@@ -1805,15 +1955,32 @@ function MerchantProductsContent() {
                           );
                           if (!curPreset) return null;
                           return (
-                            <div className="p-2.5 rounded-xl bg-white border border-slate-200/90 text-[11px] space-y-1">
-                              <p className="text-slate-700 font-semibold">
-                                <span className="text-[#0F4C81] font-bold">Cakupan:</span> {curPreset.coverage}
-                              </p>
-                              {curPreset.exclusions && (
-                                <p className="text-slate-500">
-                                  <span className="text-rose-600 font-bold">Pengecualian:</span> {curPreset.exclusions}
+                            <div className="p-3 rounded-2xl bg-white border border-slate-200/90 text-[11px] space-y-2 shadow-2xs">
+                              <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                                <div>
+                                  <span className="font-extrabold text-[#0F4C81] text-xs block">{curPreset.name}</span>
+                                  <span className="text-[10px] text-slate-500 font-medium">Durasi: {curPreset.durationDays} Hari Kalender</span>
+                                </div>
+                                <Link
+                                  href="/merchant/warranty"
+                                  target="_blank"
+                                  className="text-[10px] font-bold text-[#0F4C81] hover:underline flex items-center gap-1"
+                                >
+                                  <span>Kelola Pilihan Garansi</span>
+                                  <ArrowSquareOut size={11} weight="bold" />
+                                </Link>
+                              </div>
+                              <div className="space-y-1">
+                                <p className="text-slate-700">
+                                  <span className="font-bold text-slate-800">Cakupan Garansi:</span> {curPreset.coverage}
                                 </p>
-                              )}
+                                <p className="text-slate-600">
+                                  <span className="font-bold text-slate-700">Pengecualian:</span> {curPreset.exclusions || "Tidak ada pengecualian khusus."}
+                                </p>
+                                <p className="text-slate-500 text-[10px]">
+                                  <span className="font-bold text-slate-600">Syarat &amp; Ketentuan:</span> {curPreset.terms || "Klaim dapat diajukan pelanggan melalui pusat purnajual selama masa garansi aktif dengan melampirkan bukti kendala produk."}
+                                </p>
+                              </div>
                             </div>
                           );
                         })()}

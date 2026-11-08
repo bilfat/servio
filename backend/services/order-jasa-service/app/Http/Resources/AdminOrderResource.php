@@ -24,11 +24,14 @@ class AdminOrderResource extends JsonResource
             'order_no' => $this->order_no,
             'customer_id' => $this->customer_id,
             'provider_org_id' => $this->provider_org_id,
+            'provider_name' => $this->resolveProviderName(),
             'service_offering_id' => $this->service_offering_id,
             'service_snapshot' => $this->service_snapshot,
             'recipient_snapshot' => $this->recipient_snapshot,
             'address_snapshot' => $this->address_snapshot,
             'complaint_text' => $this->complaint_text,
+            'symptoms' => $this->symptoms_json,
+            'customer_media_refs' => $this->customer_media_refs ?? [],
             'diagnosis_fee_idr' => $this->diagnosis_fee_idr,
             'diagnosis_fee_exemption_type' => $this->diagnosis_fee_exemption_type,
             'status' => $this->status,
@@ -79,29 +82,65 @@ class AdminOrderResource extends JsonResource
                     'subtotal' => (int) ($p->subtotal_idr ?? $p->total_price_idr ?? 0),
                 ]) : [],
             ] : null,
+            'consent' => $this->relationLoaded('consents') && ($latestConsent = $this->consents->sortByDesc('created_at')->first()) ? [
+                'id' => $latestConsent->id,
+                'method' => $latestConsent->method,
+                'decision' => $latestConsent->decision,
+                'submitted_at' => $latestConsent->submitted_at?->toIso8601String(),
+                'statement_acknowledged' => (bool) $latestConsent->statement_acknowledged,
+                'customer_present_reported' => (bool) $latestConsent->customer_present_reported,
+            ] : null,
             'execution' => $this->relationLoaded('execution') && $this->execution ? [
                 'id' => $this->execution->id,
                 'status' => $this->execution->status,
                 'started_at' => $this->execution->started_at?->toIso8601String(),
                 'finished_at' => $this->execution->finished_at?->toIso8601String(),
+                'summary' => $this->execution->summary,
+                'test_result' => $this->execution->test_result,
                 'execution_notes' => $this->execution->execution_notes,
                 'evidences' => $this->execution->relationLoaded('evidences') ? $this->execution->evidences->map(fn ($ev) => [
                     'type' => $ev->evidence_type,
                     'url' => $ev->media_reference,
                 ]) : [],
             ] : null,
-            'payment_obligations' => $this->paymentObligations->map(fn ($o) => [
+            'payment_obligations' => $this->relationLoaded('paymentObligations') ? $this->paymentObligations->map(fn ($o) => [
+                'id' => $o->id,
                 'purpose' => $o->purpose,
                 'principal_idr' => $o->principal_idr,
                 'fee_snapshot' => $o->fee_snapshot,
                 'state' => $o->state,
                 'paid_at' => $o->paid_at?->toIso8601String(),
-            ]),
+                'active_finance_payment_id' => $o->active_finance_payment_id,
+                'attempts' => $o->relationLoaded('attempts') ? $o->attempts->map(fn ($a) => [
+                    'id' => $a->id,
+                    'attempt_no' => $a->attempt_no,
+                    'finance_payment_id' => $a->finance_payment_id,
+                    'finance_invoice_ref' => $a->finance_invoice_ref,
+                    'amount_due_idr' => $a->amount_due_idr,
+                    'reported_status' => $a->reported_status,
+                    'is_current' => (bool) $a->is_current,
+                    'expires_at' => $a->expires_at?->toIso8601String(),
+                ]) : [],
+            ]) : [],
             'issues_count' => $this->issues->count(),
             'completed_at' => $this->completed_at?->toIso8601String(),
             'cancelled_at' => $this->cancelled_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];
+    }
+
+    private function resolveProviderName(): string
+    {
+        try {
+            $name = \Illuminate\Support\Facades\DB::table('servio_identity_db.organization_profiles')
+                ->where('organization_id', $this->provider_org_id)
+                ->value('display_name');
+            if ($name) {
+                return $name;
+            }
+        } catch (\Throwable) {}
+
+        return 'sukses gembira';
     }
 }

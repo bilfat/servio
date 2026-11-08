@@ -29,12 +29,14 @@ class Product extends Model
         'subcategory_id',
         'status',
         'lock_version',
+        'warranty_policy',
     ];
 
     protected function casts(): array
     {
         return [
             'lock_version' => 'integer',
+            'warranty_policy' => 'array',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
             'deleted_at' => 'datetime',

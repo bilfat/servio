@@ -920,7 +920,7 @@ function LegacyWorkerJobDetail({ rawJobId }: { rawJobId: string }) {
           <div className="flex items-center justify-between">
             <span className="text-slate-600">Garansi Layanan:</span>
             <span className="font-semibold text-slate-900">
-              Garansi Servis Aktif 30 Hari paska konfirmasi
+              Garansi Servis Aktif {(job as any).warrantyDays ? `${(job as any).warrantyDays} Hari ` : ""}paska konfirmasi
             </span>
           </div>
 

@@ -41,6 +41,11 @@ class ProviderDispatchService
                 throw new HttpException(422, "Pesanan berstatus {$order->status} dan belum siap untuk penugasan teknisi.");
             }
 
+            // Provider decision guard: Provider must explicitly accept order before dispatching worker (Gate C)
+            if ($order->provider_decision_status !== 'ACCEPTED') {
+                throw new HttpException(422, 'Provider wajib menerima pesanan terlebih dahulu sebelum dapat menugaskan teknisi.');
+            }
+
             // 1. Verify worker eligibility with Identity Service 01
             $eligibility = $this->identityClient->verifyWorkerEligibility($workerId, $order->provider_org_id);
             if (!($eligibility['is_active'] ?? false)) {

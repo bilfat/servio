@@ -765,6 +765,13 @@ class ProfileOrganizationController extends Controller
             ]);
         }
 
+        OutboxService::publish('organization', $org->id, 'identity.organization.profile_updated.v1', [
+            'organization_id' => $org->id,
+            'display_name' => $prof->display_name,
+            'legal_name' => $prof->legal_name,
+            'changed_by' => $user->id,
+        ]);
+
         AuditService::log($user->id, 'IDENTITY_ORG_PROFILE_UPDATED', 'organization_profile', $org->id, 'SUCCESS');
 
         return ApiResponse::success([

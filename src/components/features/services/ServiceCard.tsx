@@ -10,6 +10,7 @@ import {
   Clock,
   Storefront,
   CheckCircle,
+  Star,
 } from "@phosphor-icons/react";
 import { formatRupiah } from "@/components/data-display/PriceBreakdown";
 
@@ -26,7 +27,11 @@ export interface ServiceCardData {
   rating?: number;
   reviewCount?: number;
   warrantyDays?: number;
+  warrantyName?: string;
   providerName: string;
+  providerId?: string;
+  providerRating?: number;
+  providerReviewCount?: number;
   isVerifiedProvider?: boolean;
   thumbnailUrl?: string | null;
   warrantyEnabled?: boolean;
@@ -79,6 +84,24 @@ export function ServiceCard({
 
   const durationStr = formatDuration(service.durationMin, service.durationMax, service.durationUnit);
 
+  // Rating Gabungan Katalog Jasa & Provider (Rata-rata akurat per katalog, tidak dipisah)
+  const hasServiceRating = Boolean((service.reviewCount ?? 0) > 0 && (service.rating ?? 0) > 0);
+  const hasProviderRating = Boolean((service.providerReviewCount ?? 0) > 0 && (service.providerRating ?? 0) > 0);
+
+  let combinedRating: number | null = null;
+  if (hasServiceRating && hasProviderRating) {
+    combinedRating = ((service.rating ?? 0) + (service.providerRating ?? 0)) / 2;
+  } else if (hasServiceRating) {
+    combinedRating = service.rating ?? null;
+  } else if (hasProviderRating) {
+    combinedRating = service.providerRating ?? null;
+  }
+
+  const reviewCountDisplay =
+    (service.reviewCount ?? 0) > 0
+      ? service.reviewCount
+      : (service.providerReviewCount ?? 0);
+
   return (
     <div
       className={`rounded-2xl border border-slate-200/90 bg-white overflow-hidden shadow-servio-xs hover:shadow-servio-md hover:border-primary/40 transition-all duration-200 flex flex-col font-body text-left group ${className}`}
@@ -111,6 +134,12 @@ export function ServiceCard({
           <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-white/95 text-slate-800 shadow-xs backdrop-blur-xs font-display truncate max-w-[180px] border border-white/60">
             {service.category}
           </span>
+          {Boolean(service.warrantyEnabled || (service.warrantyDays || 0) > 0) && (
+            <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-50/95 text-emerald-800 border border-emerald-300 flex items-center gap-1 shrink-0 shadow-2xs backdrop-blur-xs">
+              <ShieldCheck size={12} weight="fill" className="text-emerald-600" />
+              <span>Tersedia Garansi</span>
+            </span>
+          )}
         </div>
 
         {/* Bottom Badges in Image (Survey Fee & GPS Distance) */}
@@ -138,7 +167,7 @@ export function ServiceCard({
               title={`Jarak mitra dari lokasi GPS Anda: ${service.distance}`}
             >
               <MapPin size={11} weight="fill" className="text-emerald-600 shrink-0" />
-              <span>{service.distance}</span>
+              <span>{service.distance.startsWith("±") || service.distance.startsWith(">") ? service.distance : `±${service.distance}`}</span>
             </span>
           )}
         </div>
@@ -155,17 +184,23 @@ export function ServiceCard({
             {service.title}
           </Link>
 
-          {/* Provider / Toko Info: Logo Toko + Nama Provider Jasa */}
+          {/* Provider / Toko Info: Logo Toko + Nama Provider Jasa + Provider Rating */}
           <div className="flex items-center justify-between gap-1.5 bg-slate-50 border border-slate-100 rounded-lg px-2 py-1 text-xs">
-            <div className="flex items-center gap-1.5 min-w-0 flex-1" title={`Penyedia Jasa: ${service.providerName}`}>
+            <Link
+              href={service.providerId ? `/providers/${service.providerId}` : "#"}
+              className="flex items-center gap-1.5 min-w-0 flex-1 hover:text-primary transition-colors"
+              title={`Penyedia Jasa: ${service.providerName}`}
+            >
               <Storefront size={14} weight="duotone" className="text-primary shrink-0" />
               <span className="text-xs font-bold text-slate-800 truncate">
                 {service.providerName && service.providerName !== "Penyedia Jasa"
                   ? service.providerName
                   : "Mitra Resmi SERVIO"}
               </span>
-            </div>
-            {service.isVerifiedProvider && (
+            </Link>
+
+            {/* Provider Verification Badge (Rating digabung pada card utama) */}
+            {service.isVerifiedProvider ? (
               <span
                 title="Mitra Resmi Terverifikasi SERVIO"
                 className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 shrink-0"
@@ -173,18 +208,43 @@ export function ServiceCard({
                 <ShieldCheck size={10} weight="fill" className="text-emerald-600 shrink-0" />
                 <span>Resmi</span>
               </span>
-            )}
+            ) : null}
           </div>
 
-          {/* Meta Info: Duration badge */}
-          {durationStr && (
-            <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+          {/* Meta Info: Duration & Single Unified Average Rating */}
+          <div className="flex items-center justify-between gap-1.5 flex-wrap pt-0.5">
+            {durationStr ? (
               <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
                 <Clock size={11} weight="bold" className="text-slate-500" />
                 <span>Pengerjaan: {durationStr}</span>
               </span>
-            </div>
-          )}
+            ) : (
+              <span />
+            )}
+            {combinedRating !== null ? (
+              <span
+                className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-200"
+                title={
+                  hasServiceRating && hasProviderRating
+                    ? `Rating rata-rata: ${combinedRating.toFixed(1)} (Layanan: ${(service.rating ?? 0).toFixed(1)} & Penyedia: ${(service.providerRating ?? 0).toFixed(1)})`
+                    : hasServiceRating
+                    ? `Rating layanan: ${(service.rating ?? 0).toFixed(1)} (${service.reviewCount} penilaian)`
+                    : `Rating penyedia: ${(service.providerRating ?? 0).toFixed(1)} (${service.providerReviewCount} ulasan)`
+                }
+              >
+                <Star size={11} weight="fill" className="text-amber-400" />
+                <span>{combinedRating.toFixed(1)}</span>
+                <span className="text-slate-400 font-normal">
+                  ({reviewCountDisplay} penilaian)
+                </span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[10px] text-slate-400">
+                <Star size={11} className="text-slate-300" />
+                <span>Belum ada penilaian</span>
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Pricing & CTA */}

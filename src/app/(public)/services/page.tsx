@@ -39,6 +39,7 @@ import {
   resolveLocationToCityCode,
   getCityNameByCode,
 } from "@/lib/servioApi";
+import { afterSalesApi, CatalogRatingSummaryItem } from "@/lib/afterSalesApi";
 
 type ServiceSortOption = "RELEVANT" | "PRICE_LOW" | "PRICE_HIGH";
 
@@ -248,11 +249,55 @@ function ServicesCatalogContent() {
     };
   }, []);
 
-  // Fetch live services from backend database for the selected city
+  // Fetch live services from backend database for the active GPS/address location
   const { services, isLoading } = useServices({
+    lat: activeLocation?.latitude,
+    lng: activeLocation?.longitude,
     cityCode: selectedCityCode,
     searchQuery: debouncedSearch.trim() || undefined,
   });
+
+  // Batch load Phase 07 SERVICE ratings and PROVIDER ratings for all visible service cards (PUB02)
+  const [serviceRatings, setServiceRatings] = useState<Record<string, CatalogRatingSummaryItem>>({});
+  const [providerRatings, setProviderRatings] = useState<Record<string, CatalogRatingSummaryItem>>({});
+
+  useEffect(() => {
+    const allIds = Array.from(new Set(services.map((s) => s.id).filter(Boolean)));
+    if (allIds.length > 0) {
+      afterSalesApi.public
+        .getBatchRatingsSummary("SERVICE", allIds)
+        .then((res) => {
+          if (res.data) {
+            setServiceRatings((prev) => ({ ...prev, ...res.data }));
+          }
+        })
+        .catch(() => {});
+    }
+
+    const providerIds = Array.from(
+      new Set(
+        services
+          .map(
+            (s) =>
+              s.providerId ||
+              (s as any).organization_id ||
+              (s as any).provider?.id ||
+              (s as any).providerOrganizationId
+          )
+          .filter(Boolean) as string[]
+      )
+    );
+    if (providerIds.length > 0) {
+      afterSalesApi.public
+        .getBatchRatingsSummary("PROVIDER", providerIds)
+        .then((res) => {
+          if (res.data) {
+            setProviderRatings((prev) => ({ ...prev, ...res.data }));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [services]);
 
   // Calculate active filters count
   const isFilterActive =
@@ -378,14 +423,28 @@ function ServicesCatalogContent() {
       (s.categoryName && s.categoryName !== "Kategori Jasa" && s.categoryName !== "Servis & Perbaikan" ? s.categoryName : null) ||
       "Layanan Jasa";
 
-    // Distance calculated from active user location (GPS)
-    const distanceStr = getStoreDistance({
-      city: activeLocation?.city,
-      latitude: activeLocation?.latitude,
-      longitude: activeLocation?.longitude,
+    // Distance calculated from Provider workshop coordinates to active user location
+    const provLat = Number((s as any).providerWorkshop?.latitude ?? (s as any).providerWorkshop?.lat ?? (s as any).provider?.latitude ?? -6.2361);
+    const provLng = Number((s as any).providerWorkshop?.longitude ?? (s as any).providerWorkshop?.lng ?? (s as any).provider?.longitude ?? 106.8522);
+    const provCity = (s as any).providerWorkshop?.city || (s as any).providerWorkshop?.office_city || "Jakarta Selatan";
+
+    const calculatedDist = getStoreDistance({
+      city: provCity,
+      latitude: provLat,
+      longitude: provLng,
       name: s.providerName,
       id: s.providerId || s.id,
     });
+    const distanceStr = (s as any).distance || calculatedDist;
+
+    const ratingInfo = serviceRatings[s.id];
+    const provId =
+      s.providerId ||
+      (s as any).organization_id ||
+      (s as any).provider?.id ||
+      (s as any).providerOrganizationId ||
+      "";
+    const provRatingInfo = provId ? providerRatings[provId] : null;
 
     return {
       id: s.id,
@@ -395,7 +454,51 @@ function ServicesCatalogContent() {
       priceMin: s.priceMin ?? s.basePrice,
       priceMax: s.priceMax ?? s.basePrice,
       pricingModel: s.pricingModel,
-      providerName: s.providerName || "Penyedia Jasa",
+      rating: ratingInfo?.average_rating ?? s.rating ?? (s as any).serviceRating ?? 0,
+      reviewCount: ratingInfo?.total_reviews ?? s.reviewCount ?? (s as any).serviceReviewCount ?? 0,
+      providerId: provId,
+      providerRating: provRatingInfo?.average_rating ?? (s as any).providerRating ?? (s as any).provider?.rating,
+      providerReviewCount: provRatingInfo?.total_reviews ?? (s as any).providerReviewCount ?? (s as any).provider?.reviewCount,
+      warrantyDays: (() => {
+        let wCfg = (s as any).warranty_config || (s as any).warrantyConfig;
+        if (typeof wCfg === "string" && wCfg.trim().startsWith("{")) {
+          try {
+            wCfg = JSON.parse(wCfg);
+          } catch {
+            wCfg = null;
+          }
+        }
+        return Number(wCfg?.durationDays ?? wCfg?.duration_days ?? (s as any).warrantyDurationDays ?? (s as any).warranty_duration_days ?? (s as any).warrantyDays ?? 0);
+      })(),
+      warrantyEnabled: (() => {
+        let wCfg = (s as any).warranty_config || (s as any).warrantyConfig;
+        if (typeof wCfg === "string" && wCfg.trim().startsWith("{")) {
+          try {
+            wCfg = JSON.parse(wCfg);
+          } catch {
+            wCfg = null;
+          }
+        }
+        const d = Number(wCfg?.durationDays ?? wCfg?.duration_days ?? (s as any).warrantyDurationDays ?? (s as any).warranty_duration_days ?? (s as any).warrantyDays ?? 0);
+        return Boolean(
+          wCfg?.warrantyEnabled ??
+          wCfg?.warranty_enabled ??
+          s.warrantyEnabled ??
+          ((wCfg?.presetId || wCfg?.preset_id || wCfg?.warranty_option_id || d > 0) && d > 0)
+        );
+      })(),
+      warrantyName: (() => {
+        let wCfg = (s as any).warranty_config || (s as any).warrantyConfig;
+        if (typeof wCfg === "string" && wCfg.trim().startsWith("{")) {
+          try {
+            wCfg = JSON.parse(wCfg);
+          } catch {
+            wCfg = null;
+          }
+        }
+        return wCfg?.presetName || wCfg?.name;
+      })(),
+      providerName: s.providerName || (s as any).providerWorkshop?.store_name || (s as any).provider?.store_name || "sukses gembira",
       isVerifiedProvider: s.isVerifiedProvider,
       thumbnailUrl: s.thumbnailUrl,
       description: s.description || s.shortDescription || "",
@@ -651,20 +754,6 @@ function ServicesCatalogContent() {
       {/* 5. SERVICES CATALOG GRID (CARD KATALOG LAYANAN DENGAN INFORMASI LENGKAP)  */}
       {/* ========================================================================= */}
       <div className="w-full max-w-[1440px] 2xl:max-w-[1560px] mx-auto px-4 sm:px-6 lg:px-8 xl:px-10 py-6 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
-          <div>
-            <h2 className="font-display font-bold text-lg text-slate-900 flex items-center gap-2">
-              <span>Layanan Tersedia di {activeCityName}</span>
-              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                {isLoading ? "Memuat..." : `${filteredAndSortedServices.length} Layanan`}
-              </span>
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Setiap kartu jasa menyertakan rentang biaya, biaya survei, nama penyedia, estimasi jarak GPS, dan durasi pengerjaan.
-            </p>
-          </div>
-        </div>
-
         {/* Loading Skeleton */}
         {isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
@@ -685,12 +774,14 @@ function ServicesCatalogContent() {
             </div>
             <div className="space-y-1">
               <h3 className="font-bold text-sm text-neutral-dark">
-                Tidak Ada Layanan yang Cocok di {activeCityName}
+                {isFilterActive
+                  ? "Tidak Ada Layanan yang Cocok dengan Filter"
+                  : "Belum Ada Penyedia Jasa yang Melayani Lokasi Ini"}
               </h3>
               <p className="text-xs text-neutral-slate max-w-sm mx-auto">
                 {isFilterActive
                   ? "Tidak ada layanan yang sesuai dengan kombinasi filter Anda. Coba hapus beberapa filter atau ubah kata kunci pencarian."
-                  : `Mitra teknisi resmi belum tersedia untuk wilayah administratif ${selectedCityCode}. Silakan pilih kota terdekat.`}
+                  : `Mitra penyedia jasa saat ini belum menjangkau titik lokasi Anda (${activeLocation.displayName || activeLocation.city}). Silakan ubah titik lokasi atau deteksi ulang GPS.`}
               </p>
             </div>
             <div className="flex items-center justify-center gap-2 pt-2">
@@ -698,27 +789,19 @@ function ServicesCatalogContent() {
                 <button
                   type="button"
                   onClick={handleClearAllFilters}
-                  className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition shadow-xs cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-[#0F4C81] text-white text-xs font-bold hover:bg-[#0d3f6c] transition shadow-xs cursor-pointer"
                 >
                   Reset Semua Filter
                 </button>
               ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => handleCityChange("JKT-SEL")}
-                    className="px-3.5 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition shadow-xs cursor-pointer"
-                  >
-                    Lihat Jakarta Selatan
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleCityChange("JKT-BARAT")}
-                    className="px-3.5 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-100 transition shadow-xs cursor-pointer"
-                  >
-                    Lihat Jakarta Barat
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={openLocationModal}
+                  className="px-4 py-2 rounded-xl bg-[#0F4C81] text-white text-xs font-bold hover:bg-[#0d3f6c] transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <MapPin size={14} weight="fill" />
+                  <span>Ubah Titik Lokasi / Deteksi GPS</span>
+                </button>
               )}
             </div>
           </div>

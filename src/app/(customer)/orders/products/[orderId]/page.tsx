@@ -25,13 +25,16 @@ import {
   X,
   ArrowSquareOut,
   Eye,
+  Star,
 } from "@phosphor-icons/react";
 import { formatDateTimeIndo } from "@/features/order-barang/helpers";
 import { Toast } from "@/components/feedback/Toast";
 import { useAfterSales } from "@/features/afterSales/useAfterSales";
 import { ProductReturnModal } from "@/components/features/afterSales/ProductReturnModal";
 import { WarrantyClaimModal } from "@/components/features/afterSales/WarrantyClaimModal";
+import { OrderReviewModal } from "@/components/features/afterSales/OrderReviewModal";
 import { CustomerWarrantyEntitlement } from "@/types/afterSales";
+import { afterSalesApi, ReviewSubmission } from "@/lib/afterSalesApi";
 
 import { useOrderBarang, mapBackendOrderToMock } from "@/features/order-barang/hooks/useOrderBarang";
 import { orderBarangStore } from "@/features/order-barang/orderBarangStore";
@@ -452,8 +455,31 @@ export default function ProductOrderDetailPage() {
     const found = warranties.find(
       (w) => w.orderId === orderId || w.orderId === orderData.id || w.orderNumber === orderData.orderNumber
     );
-    return found || warranties[0] || null;
+    return found || null;
   }, [warranties, orderId, orderData.id, orderData.orderNumber]);
+
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [existingOrderReview, setExistingOrderReview] = useState<ReviewSubmission | null>(null);
+
+  useEffect(() => {
+    if (!orderId) return;
+    afterSalesApi.customer
+      .getMyReview(orderId)
+      .then((res) => {
+        if (res.success && res.data && res.data.id) {
+          setExistingOrderReview(res.data);
+        }
+      })
+      .catch(() => {});
+  }, [orderId]);
+
+  // Active After-Sales Case (Claim or Return) for this Order
+  const activeCase = useMemo(() => {
+    if (!cases || cases.length === 0) return null;
+    return cases.find(
+      (c) => c.sourceOrderId === orderId || c.sourceOrderId === orderData.id || c.sourceOrderNumber === orderData.orderNumber
+    );
+  }, [cases, orderId, orderData.id, orderData.orderNumber]);
 
   // Status configuration badge
   const getStatusBadgeConfig = () => {
@@ -1451,6 +1477,29 @@ export default function ProductOrderDetailPage() {
                     </p>
                   </div>
 
+                  {/* Active Case Banner if exists */}
+                  {activeCase && (
+                    <div className="p-3.5 rounded-2xl bg-indigo-50 border border-indigo-200 text-xs space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200">
+                          Kasus Resolusi Aktif
+                        </span>
+                        <span className="font-mono font-bold text-indigo-900 text-[11px]">
+                          #{activeCase.caseNumber}
+                        </span>
+                      </div>
+                      <p className="text-slate-700 text-[11px]">
+                        Status: <strong>{activeCase.mainStatus}</strong> ({activeCase.customerRequestedSolution || "Dalam Penanganan"})
+                      </p>
+                      <Link
+                        href={`/complaints/${activeCase.id}`}
+                        className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-center block transition shadow-xs"
+                      >
+                        Buka Detail Pengajuan &amp; Status Kasus &rarr;
+                      </Link>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <button
                       type="button"
@@ -1469,16 +1518,49 @@ export default function ProductOrderDetailPage() {
                     </Link>
                   </div>
 
-                  {/* After-Sales Claim button */}
-                  <div className="pt-1">
+                  {/* After-Sales Claim & Review buttons */}
+                  <div className="pt-1 space-y-2">
                     <button
                       type="button"
-                      onClick={() => setIsClaimModalOpen(true)}
-                      className="w-full py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      onClick={() => setIsReviewModalOpen(true)}
+                      className="w-full py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
                     >
-                      <ShieldCheck size={15} />
-                      <span>Pusat Garansi &amp; Klaim Purnajual</span>
+                      <Star size={15} weight="fill" className="text-amber-500" />
+                      <span>
+                        {existingOrderReview
+                          ? "Lihat Penilaian Produk & Toko"
+                          : "Beri Ulasan Produk & Toko"}
+                      </span>
                     </button>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {associatedWarranty ? (
+                        <button
+                          type="button"
+                          onClick={() => setIsClaimModalOpen(true)}
+                          className="w-full py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <ShieldCheck size={15} />
+                          <span>Ajukan Klaim Garansi</span>
+                        </button>
+                      ) : (
+                        <Link
+                          href="/warranties"
+                          className="w-full py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold transition flex items-center justify-center gap-1.5"
+                        >
+                          <ShieldCheck size={15} />
+                          <span>Pusat Garansi</span>
+                        </Link>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setIsReturnModalOpen(true)}
+                        className="w-full py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <ArrowsClockwise size={15} />
+                        <span>Ajukan Retur Barang</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1722,6 +1804,37 @@ export default function ProductOrderDetailPage() {
           }}
         />
       )}
+
+      {/* Review Modal (Phase 07 C05 / C07) */}
+      <OrderReviewModal
+        isOpen={isReviewModalOpen}
+        onClose={() => setIsReviewModalOpen(false)}
+        target={{
+          sourceKind: "GOODS",
+          orderId: orderData.id || orderId,
+          subOrderId: orderData.id || orderId,
+          orderNumber: orderData.orderNumber || orderId,
+          orderedAt: orderData.createdAt,
+          completedAt: orderData.completedAt || orderData.deliveredAt,
+          businessOrgId: (realBackendOrder as any)?.merchant_org_id || (storeOrder as any)?.merchantId || "merch-jaya-motor",
+          businessName: orderData.merchantName || "Toko Official",
+          items: (orderData.items || []).map((it: any) => ({
+            orderItemId: it.id,
+            targetId: it.productId || it.id,
+            title: it.title,
+            imageUrl: it.imageUrl,
+            quantity: it.quantity,
+            variantLabel: it.variant,
+            price: it.unitPrice,
+          })),
+          existingSubmission: existingOrderReview,
+        }}
+        onSubmitted={(sub) => {
+          setExistingOrderReview(sub);
+          setToastType("success");
+          setToastMessage("Penilaian produk dan toko berhasil disimpan!");
+        }}
+      />
 
       {/* Lightbox Popup: Perbesar Gambar Bukti Paket Sampai */}
       {previewPodPhoto && (

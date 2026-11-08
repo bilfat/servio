@@ -48,6 +48,7 @@ import {
   ArrowCounterClockwise,
   ArrowsClockwise,
   XCircle,
+  ArrowSquareOut,
 } from "@phosphor-icons/react";
 import { ProviderMasterService, ProviderServiceMethod } from "@/types/domain";
 
@@ -110,7 +111,12 @@ export default function ProviderServiceOfferingsPage() {
   const { warrantyPresets } = useAfterSales();
   const activeProviderPresets = useMemo(() => {
     return (warrantyPresets || []).filter(
-      (p: any) => (p.organizationId === currentProviderId || p.organizationType === "PROVIDER") && p.isActive
+      (p: any) =>
+        (p.organizationType === "PROVIDER" ||
+          p.organizationId === "0740d857-b665-4191-aaf5-d7dd3611dc1d" ||
+          p.organizationId === currentProviderId ||
+          (p.organizationId && p.organizationId.toLowerCase().includes("prov"))) &&
+        p.isActive
     );
   }, [warrantyPresets, currentProviderId]);
   const [selectedServicePresetId, setSelectedServicePresetId] = useState<string>("preset-prov-01");
@@ -703,16 +709,17 @@ export default function ProviderServiceOfferingsPage() {
     setEditNewPhotos([]);
     setEditNewPhotoPreviews([]);
 
-    const cfg = (service as any).warrantyConfig || repo.getServiceWarrantyConfig(service.id);
-    if (cfg?.warrantyEnabled !== undefined) {
-      setEditWarrantySupported(Boolean(cfg.warrantyEnabled));
-    } else {
-      setEditWarrantySupported(isStoreActive);
-    }
-    if (cfg?.warrantyEnabled && cfg?.durationDays > 0) {
-      setEditWarrantyDurationDays(cfg.durationDays);
-    } else {
-      setEditWarrantyDurationDays(activeDurations[0]?.durationDays || 30);
+    const cfg = (service as any).warrantyConfig || (service as any).warranty_config || repo.getServiceWarrantyConfig(service.id);
+    const hasWar = cfg?.warrantyEnabled !== undefined
+      ? Boolean(cfg.warrantyEnabled)
+      : Boolean((cfg?.durationDays && cfg.durationDays > 0) || (cfg?.duration_days && cfg.duration_days > 0) || (service as any).warrantyDays > 0 || isStoreActive);
+    setEditWarrantySupported(hasWar);
+    const warDays = cfg?.durationDays || cfg?.duration_days || (service as any).warrantyDays || activeDurations[0]?.durationDays || 30;
+    setEditWarrantyDurationDays(warDays);
+    if (cfg?.warranty_option_id || cfg?.presetId) {
+      setEditSelectedServicePresetId(cfg.warranty_option_id || cfg.presetId);
+    } else if (activeProviderPresets[0]?.id) {
+      setEditSelectedServicePresetId(activeProviderPresets[0].id);
     }
   };
 
@@ -797,7 +804,27 @@ export default function ProviderServiceOfferingsPage() {
 
       const isSurveyPaid = surveyFeeType === "PAID" && Number(surveyFee) > 0;
 
-      const created = await providerServiceApi.create({
+      const curPreset = activeProviderPresets.find(
+        (p: any) => p.id === (selectedServicePresetId || activeProviderPresets[0]?.id)
+      );
+      const computedWarrantyConfig = isWarrantySupported ? {
+        warrantyEnabled: true,
+        warranty_option_id: curPreset?.id || null,
+        presetId: curPreset?.id || null,
+        name: curPreset?.name || `Garansi Layanan ${warrantyDurationDays} Hari`,
+        presetName: curPreset?.name || `Garansi Layanan ${warrantyDurationDays} Hari`,
+        duration_days: curPreset?.durationDays || warrantyDurationDays || 30,
+        durationDays: curPreset?.durationDays || warrantyDurationDays || 30,
+        coverage: curPreset?.coverage || "Jaminan perbaikan ulang purna jual untuk pengerjaan teknisi.",
+        exclusions: (curPreset?.exclusions && curPreset.exclusions.trim() !== "" && curPreset.exclusions !== "null") ? curPreset.exclusions : "Tidak ada pengecualian khusus.",
+        terms: curPreset?.terms || "Klaim dapat diajukan konsumen di pusat purnajual selama masa garansi aktif dengan mengunggah foto/video kendala pengerjaan teknisi.",
+      } : {
+        warrantyEnabled: false,
+        duration_days: 0,
+        durationDays: 0,
+      };
+
+      const created = await (providerServiceApi.create as any)({
         service_definition_id: defId,
         display_name: serviceName.trim(),
         description: serviceDesc.trim(),
@@ -822,6 +849,7 @@ export default function ProviderServiceOfferingsPage() {
           unit: durationUnit,
         },
         coverage_city_codes: selectedCityCodes,
+        warranty_config: computedWarrantyConfig,
       });
 
       const createdOfferingId = (created as any)?.data?.id || (created as any)?.id;
@@ -906,7 +934,27 @@ export default function ProviderServiceOfferingsPage() {
 
       const isSurveyPaid = editSurveyFeeType === "PAID" && Number(editSurveyFee) > 0;
 
-      // 1. Update basic info & pricing & duration & survey
+      const curEditPreset = activeProviderPresets.find(
+        (p: any) => p.id === (editSelectedServicePresetId || activeProviderPresets[0]?.id)
+      );
+      const computedEditWarrantyConfig = editWarrantySupported ? {
+        warrantyEnabled: true,
+        warranty_option_id: curEditPreset?.id || null,
+        presetId: curEditPreset?.id || null,
+        name: curEditPreset?.name || `Garansi Layanan ${editWarrantyDurationDays} Hari`,
+        presetName: curEditPreset?.name || `Garansi Layanan ${editWarrantyDurationDays} Hari`,
+        duration_days: curEditPreset?.durationDays || editWarrantyDurationDays || 30,
+        durationDays: curEditPreset?.durationDays || editWarrantyDurationDays || 30,
+        coverage: curEditPreset?.coverage || "Jaminan perbaikan ulang purna jual untuk pengerjaan teknisi.",
+        exclusions: (curEditPreset?.exclusions && curEditPreset.exclusions.trim() !== "" && curEditPreset.exclusions !== "null") ? curEditPreset.exclusions : "Tidak ada pengecualian khusus.",
+        terms: curEditPreset?.terms || "Klaim dapat diajukan konsumen di pusat purnajual selama masa garansi aktif dengan mengunggah foto/video kendala pengerjaan teknisi.",
+      } : {
+        warrantyEnabled: false,
+        duration_days: 0,
+        durationDays: 0,
+      };
+
+      // 1. Update basic info & pricing & duration & survey & warranty
       const updateRes = await providerServiceApi.update(
         editingService.id,
         {
@@ -927,6 +975,7 @@ export default function ProviderServiceOfferingsPage() {
             max: editDurationMax,
             unit: editDurationUnit,
           },
+          warranty_config: computedEditWarrantyConfig,
         },
         lockVersion
       );
@@ -1414,6 +1463,28 @@ export default function ProviderServiceOfferingsPage() {
         </div>
       </div>
 
+      {/* Informational Banner: Jangkauan operasional diatur terpusat di Area & Cakupan Layanan */}
+      <div className="p-3.5 rounded-2xl bg-sky-50/80 border border-sky-200/90 flex items-center justify-between gap-3 text-xs mb-4">
+        <div className="flex items-center gap-2.5 text-sky-950">
+          <div className="w-8 h-8 rounded-xl bg-[#0F4C81] text-white flex items-center justify-center shrink-0">
+            <MapPin size={16} weight="fill" />
+          </div>
+          <div>
+            <span className="font-extrabold text-slate-900 block">Jangkauan Wilayah Layanan Terpusat</span>
+            <span className="text-slate-600 text-[11px]">
+              Cakupan operasional seluruh katalog layanan jasa mengikuti konfigurasi terpusat pada menu Area & Cakupan Layanan Provider.
+            </span>
+          </div>
+        </div>
+        <Link
+          href="/provider/service-area"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white text-[#0F4C81] border border-sky-200 font-extrabold text-xs hover:bg-sky-100/70 transition shadow-2xs shrink-0"
+        >
+          <span>Atur Area Layanan</span>
+          <ArrowSquareOut size={13} weight="bold" />
+        </Link>
+      </div>
+
       {/* Service Offerings Display: Table View (Default) vs Card View */}
       {filteredServices.length === 0 ? (
         <div className="bg-white rounded-3xl border border-slate-200/80 p-12 text-center shadow-xs space-y-3">
@@ -1453,8 +1524,7 @@ export default function ProviderServiceOfferingsPage() {
                   <th className="py-3 px-3 min-w-[160px]">Penetapan Harga</th>
                   <th className="py-3 px-3 min-w-[125px]">Biaya Survei</th>
                   <th className="py-3 px-3 min-w-[95px]">Durasi</th>
-                  <th className="py-3 px-3 min-w-[180px]">Cakupan Kota</th>
-                  <th className="py-3 px-3 min-w-[115px]">Garansi</th>
+                  <th className="py-3 px-3 min-w-[140px]">Garansi Layanan</th>
                   <th className="py-3 px-3 min-w-[125px]">Status & Versi</th>
                   <th className="py-3 px-3 min-w-[120px] text-right">Aksi</th>
                 </tr>
@@ -1589,41 +1659,28 @@ export default function ProviderServiceOfferingsPage() {
                         </div>
                       </td>
 
-                      {/* 7. Cakupan Kota */}
-                      <td className="py-3 px-3 align-top">
-                        <div className="space-y-1">
-                          <span className="text-[10px] font-bold text-slate-500 block">
-                            {service.coverageCityCodes?.length || 0} Kota Terdaftar
-                          </span>
-                          <div className="flex flex-wrap gap-1 max-w-[200px]">
-                            {(service.coverageCityCodes || []).map((code: string) => {
-                              const city = getCityInfo(code);
-                              return (
-                                <span
-                                  key={code}
-                                  title={`${city.name} (${city.province})`}
-                                  className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 transition cursor-help"
-                                >
-                                  {code}
-                                </span>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* 8. Garansi */}
-                      <td className="py-3 px-3 align-top">
-                        {isWarrantyOn ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
-                            <ShieldCheck size={12} weight="fill" />
-                            <span>✓ Garansi Aktif</span>
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded text-slate-400 bg-slate-50 border border-slate-200 text-[10px] font-medium">
-                            Tanpa Garansi
-                          </span>
-                        )}
+                      {/* Garansi */}
+                      <td className="py-3 px-3 align-top whitespace-nowrap">
+                        {(() => {
+                          const cfg = (service as any).warrantyConfig || (service as any).warranty_config || repo.getServiceWarrantyConfig(service.id);
+                          const isWarOn = Boolean(cfg?.warrantyEnabled ?? ((service as any).warrantyDays > 0));
+                          const days = cfg?.durationDays || cfg?.duration_days || (service as any).warrantyDays || 30;
+                          const name = cfg?.name || cfg?.presetName;
+                          if (!isWarOn) {
+                            return (
+                              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-slate-400 bg-slate-50 border border-slate-200 text-[10px] font-medium">
+                                Tidak Ada Garansi Layanan
+                              </span>
+                            );
+                          }
+                          const label = name ? `${name} — ${days} Hari` : `Garansi — ${days} Hari`;
+                          return (
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold shadow-2xs">
+                              <ShieldCheck size={13} weight="fill" className="text-emerald-600 shrink-0" />
+                              <span>{label}</span>
+                            </span>
+                          );
+                        })()}
                       </td>
 
                       {/* 9. Status & Versi */}
@@ -1766,18 +1823,21 @@ export default function ProviderServiceOfferingsPage() {
                           {service.categoryName || "Kategori"} &bull; {service.subcategoryName || "Jasa"}
                         </span>
                         {(() => {
-                          const cfg = (service as any).warrantyConfig || repo.getServiceWarrantyConfig(service.id);
-                          if (cfg?.warrantyEnabled) {
+                          const cfg = (service as any).warrantyConfig || (service as any).warranty_config || repo.getServiceWarrantyConfig(service.id);
+                          const isWarOn = Boolean(cfg?.warrantyEnabled ?? ((service as any).warrantyDays > 0));
+                          const days = cfg?.durationDays || cfg?.duration_days || (service as any).warrantyDays || 30;
+                          const name = cfg?.name || cfg?.presetName;
+                          if (isWarOn) {
                             return (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 shadow-xs">
-                                <ShieldCheck size={12} weight="fill" />
-                                ✓ Garansi Tersedia
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1 shadow-xs">
+                                <ShieldCheck size={12} weight="fill" className="text-emerald-600" />
+                                {name ? `${name} (${days} Hari)` : `Garansi ${days} Hari`}
                               </span>
                             );
                           }
                           return (
                             <span className="text-[10px] font-medium px-2 py-0.5 rounded text-slate-400 bg-slate-50 border border-slate-200">
-                              Tidak Ada Garansi
+                              Tanpa Garansi
                             </span>
                           );
                         })()}
@@ -1821,7 +1881,7 @@ export default function ProviderServiceOfferingsPage() {
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/70 space-y-1.5 text-xs">
                   <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400">
                     <span>Konfigurasi Penawaran</span>
-                    <span className="text-[#0F4C81]">{service.coverageCityCodes?.length || 0} Kota Terdaftar</span>
+                    <span className="text-emerald-700 font-bold">Radius Operasional</span>
                   </div>
                   <div className="flex justify-between items-center font-bold">
                     <span className="text-slate-600">Range Estimasi:</span>
@@ -1932,9 +1992,12 @@ export default function ProviderServiceOfferingsPage() {
             : ["JKT-BARAT", "JKT-SEL", "TNG-KOTA"];
 
         const CategoryIcon = getCategoryIcon(inspectingService.categoryId, inspectingService.categoryName);
-        const warrantyConfig = (inspectingService as any).warrantyConfig || repo.getServiceWarrantyConfig(inspectingService.id);
-        const hasWarranty = warrantyConfig?.warrantyEnabled !== undefined ? Boolean(warrantyConfig.warrantyEnabled) : isStoreActive;
-        const warrantyDays = warrantyConfig?.durationDays || 30;
+        const warrantyConfig = (inspectingService as any).warrantyConfig || (inspectingService as any).warranty_config || inspectingService.rawOffering?.warranty_config || repo.getServiceWarrantyConfig(inspectingService.id);
+        const hasWarranty = warrantyConfig?.warrantyEnabled !== undefined
+          ? Boolean(warrantyConfig.warrantyEnabled)
+          : Boolean((warrantyConfig?.durationDays && warrantyConfig.durationDays > 0) || (warrantyConfig?.duration_days && warrantyConfig.duration_days > 0) || (inspectingService as any).warrantyDays > 0 || isStoreActive);
+        const warrantyDays = warrantyConfig?.durationDays || warrantyConfig?.duration_days || (inspectingService as any).warrantyDays || 30;
+        const warrantyPresetName = warrantyConfig?.name || warrantyConfig?.presetName;
 
         return (
           <Modal
@@ -2208,73 +2271,32 @@ export default function ProviderServiceOfferingsPage() {
                     </div>
                   </div>
 
-                  {/* 4. Cakupan Wilayah Kota Administratif */}
-                  <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-3">
-                    <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+                  {/* 4. Garansi Layanan (Tersambung ke Database Garansi) */}
+                  <div className="p-4 rounded-2xl bg-white border-2 border-emerald-500/30 shadow-2xs space-y-3.5">
+                    <div className="flex items-center justify-between pb-2.5 border-b border-emerald-100">
                       <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full bg-[#0F4C81] ring-4 ring-sky-100" />
+                        <ShieldCheck size={17} weight="bold" className="text-emerald-600" />
                         <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">
-                          4. Cakupan Wilayah Kota Administratif
+                          4. Pengaturan Garansi Layanan
                         </h4>
                       </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-[#0F4C81] border border-sky-200">
-                        {cities.length} Kota Terdaftar
+                      <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs">
+                        <CheckCircle size={12} weight="bold" className="text-emerald-600" />
+                        <span>Tersambung ke Database Garansi</span>
                       </span>
-                    </div>
-
-                    <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 rounded-xl border border-slate-200">
-                      {cities.map((code: string) => {
-                        const cityInfo = getCityInfo(code);
-                        return (
-                          <span
-                            key={code}
-                            className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-[#0F4C81] text-white shadow-2xs flex items-center gap-1"
-                          >
-                            <Check size={11} weight="bold" />
-                            <span>{cityInfo.name}</span>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* 5. Garansi Layanan (Dengan Keterangan Belum Disimpan ke Database) */}
-                  <div className="p-4 rounded-2xl bg-white border-2 border-amber-400/40 shadow-2xs space-y-3.5">
-                    <div className="flex items-center justify-between pb-2.5 border-b border-amber-100">
-                      <div className="flex items-center gap-2">
-                        <ShieldCheck size={17} weight="bold" className="text-amber-600" />
-                        <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">
-                          5. Pengaturan Garansi Layanan
-                        </h4>
-                      </div>
-                      <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-300 flex items-center gap-1 shadow-2xs">
-                        <WarningCircle size={12} weight="bold" className="text-amber-600" />
-                        <span>Belum Disimpan ke Database</span>
-                      </span>
-                    </div>
-
-                    {/* Keterangan Status Database */}
-                    <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-200/90 text-amber-900 space-y-1">
-                      <div className="flex items-center gap-1.5 font-bold text-[11px] text-amber-800">
-                        <Info size={14} weight="fill" className="text-amber-600 shrink-0" />
-                        <span>Keterangan Status Database:</span>
-                      </div>
-                      <p className="text-[11px] text-amber-700 leading-relaxed">
-                        Bagian garansi ini saat ini <strong className="font-extrabold underline decoration-amber-500">belum dimasukkan / belum disimpan ke dalam database</strong> (Modul 04 Service Offering). Nilai garansi di bawah ini berstatus simulasi lokal.
-                      </p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3 pt-1">
-                      <div className="p-3 bg-amber-50/40 rounded-xl border border-amber-200/60">
-                        <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block mb-1">
+                      <div className="p-3 bg-emerald-50/40 rounded-xl border border-emerald-200/60">
+                        <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block mb-1">
                           Status Garansi Servis
                         </span>
                         <p className="font-bold text-slate-800 text-xs">
-                          {hasWarranty ? "Didukung Mitra" : "Tidak Tersedia"}
+                          {hasWarranty ? (warrantyPresetName ? `${warrantyPresetName} (Aktif)` : "Garansi Aktif") : "Tidak Tersedia"}
                         </p>
                       </div>
-                      <div className="p-3 bg-amber-50/40 rounded-xl border border-amber-200/60">
-                        <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block mb-1">
+                      <div className="p-3 bg-emerald-50/40 rounded-xl border border-emerald-200/60">
+                        <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block mb-1">
                           Durasi Jaminan Garansi
                         </span>
                         <p className="font-bold text-slate-800 text-xs">
@@ -2815,69 +2837,19 @@ export default function ProviderServiceOfferingsPage() {
                   </div>
                 </div>
 
-                {/* 4. Cakupan Wilayah Kota Administratif */}
-                <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-3">
-                  <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+                {/* 4. Garansi Layanan (Tersambung ke Database Garansi Modul 07) */}
+                <div className="p-4 rounded-2xl bg-white border-2 border-emerald-500/30 shadow-2xs space-y-3.5">
+                  <div className="flex items-center justify-between pb-2.5 border-b border-emerald-100">
                     <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-[#0F4C81] ring-4 ring-sky-100" />
+                      <ShieldCheck size={17} weight="bold" className="text-emerald-600" />
                       <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">
-                        4. Cakupan Wilayah Kota Administratif
+                        4. Pengaturan Garansi Layanan
                       </h4>
                     </div>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-[#0F4C81] border border-sky-200">
-                      {selectedCityCodes.length} Kota Terpilih
+                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs">
+                      <ShieldCheck size={12} weight="fill" className="text-emerald-600" />
+                      <span>Tersambung ke Database Garansi</span>
                     </span>
-                  </div>
-
-                  <p className="text-[11px] text-slate-500 leading-normal">
-                    Pilih kota administratif tempat teknisi Anda dapat melayani pesanan. Data ini disimpan langsung ke tabel database <code className="font-mono text-[10px] bg-slate-100 px-1 py-0.5 rounded">service_coverage_cities</code>.
-                  </p>
-
-                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-200">
-                    {OFFICIAL_CITIES.map((c) => {
-                      const isSelected = selectedCityCodes.includes(c.code);
-                      return (
-                        <button
-                          key={c.code}
-                          type="button"
-                          onClick={() => handleToggleCityCode(c.code)}
-                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer ${isSelected
-                            ? "bg-[#0F4C81] text-white shadow-2xs"
-                            : "bg-white text-slate-600 border border-slate-200 hover:border-slate-300"
-                            }`}
-                        >
-                          <span>{c.name}</span>
-                          {isSelected && <Check size={11} weight="bold" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* 5. Garansi Layanan (DENGAN KETERANGAN JELAS BELUM DISIMPAN KE DATABASE) */}
-                <div className="p-4 rounded-2xl bg-white border-2 border-amber-400/40 shadow-2xs space-y-3.5">
-                  <div className="flex items-center justify-between pb-2.5 border-b border-amber-100">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck size={17} weight="bold" className="text-amber-600" />
-                      <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">
-                        5. Pengaturan Garansi Layanan
-                      </h4>
-                    </div>
-                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-300 flex items-center gap-1 shadow-2xs">
-                      <WarningCircle size={12} weight="bold" className="text-amber-600" />
-                      <span>Belum Disimpan ke Database</span>
-                    </span>
-                  </div>
-
-                  {/* Keterangan Status Database sesuai instruksi user */}
-                  <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-200/90 text-amber-900 space-y-1">
-                    <div className="flex items-center gap-1.5 font-bold text-[11px] text-amber-800">
-                      <Info size={14} weight="fill" className="text-amber-600 shrink-0" />
-                      <span>Keterangan Status Database:</span>
-                    </div>
-                    <p className="text-[11px] text-amber-700 leading-relaxed">
-                      Bagian garansi ini saat ini <strong className="font-extrabold underline decoration-amber-500">belum dimasukkan / belum disimpan ke dalam database</strong> (Modul 04 Service Offering). Pilihan garansi yang Anda atur di bawah ini berstatus simulasi lokal dan belum masuk ke database utama.
-                    </p>
                   </div>
 
                   {/* Toggle Garansi */}
@@ -2905,37 +2877,120 @@ export default function ProviderServiceOfferingsPage() {
                     </button>
                   </div>
 
-                  {/* Durasi Garansi jika aktif */}
+                  {/* Opsi Garansi jika aktif */}
                   {isWarrantySupported && (
-                    <div className="space-y-2 pt-1 border-t border-slate-100">
-                      <label className="block font-bold text-slate-700">Pilih Durasi Garansi</label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {[7, 14, 30, 60, 90].map((days) => (
-                          <button
-                            key={days}
-                            type="button"
-                            onClick={() => setWarrantyDurationDays(days)}
-                            className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${warrantyDurationDays === days
-                              ? "bg-[#0F4C81] text-white shadow-2xs"
-                              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                              }`}
+                    <div className="space-y-3 pt-2 border-t border-slate-100">
+                      {activeProviderPresets.length > 0 ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="block font-bold text-slate-700 text-xs">
+                              Pilih Opsi Garansi Aktif (dari Sidebar Garansi):
+                            </label>
+                            <Link
+                              href="/provider/warranty"
+                              target="_blank"
+                              className="text-[10px] font-bold text-[#0F4C81] hover:underline flex items-center gap-1"
+                            >
+                              <span>Atur di Sidebar</span>
+                              <ArrowSquareOut size={11} weight="bold" />
+                            </Link>
+                          </div>
+                          <select
+                            value={selectedServicePresetId || activeProviderPresets[0]?.id}
+                            onChange={(e) => {
+                              setSelectedServicePresetId(e.target.value);
+                              const cur = activeProviderPresets.find((p: any) => p.id === e.target.value);
+                              if (cur) setWarrantyDurationDays(cur.durationDays);
+                            }}
+                            className="w-full text-xs p-2.5 bg-white border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
                           >
-                            {days} Hari
-                          </button>
-                        ))}
-                      </div>
-                      <div className="flex items-center gap-2 pt-1">
-                        <span className="text-[11px] text-slate-500 font-medium">Durasi kustom:</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={365}
-                          value={warrantyDurationDays}
-                          onChange={(e) => setWarrantyDurationDays(Number(e.target.value))}
-                          className="w-20 px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-bold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
-                        />
-                        <span className="text-xs text-slate-600 font-bold">Hari</span>
-                      </div>
+                            {activeProviderPresets.map((preset: any) => (
+                              <option key={preset.id} value={preset.id}>
+                                {preset.name} ({preset.durationDays} Hari Kalender)
+                              </option>
+                            ))}
+                          </select>
+
+                          {/* Preset preview card */}
+                          {(() => {
+                            const curPreset = activeProviderPresets.find(
+                              (p: any) => p.id === (selectedServicePresetId || activeProviderPresets[0]?.id)
+                            );
+                            if (!curPreset) return null;
+                            return (
+                              <div className="p-3 rounded-2xl bg-white border border-slate-200/90 text-[11px] space-y-2 shadow-2xs">
+                                <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                                  <div>
+                                    <span className="font-extrabold text-[#0F4C81] text-xs block">{curPreset.name}</span>
+                                    <span className="text-[10px] text-slate-500 font-medium">Durasi: {curPreset.durationDays} Hari Kalender</span>
+                                  </div>
+                                  <Link
+                                    href="/provider/warranty"
+                                    target="_blank"
+                                    className="text-[10px] font-bold text-[#0F4C81] hover:underline flex items-center gap-1"
+                                  >
+                                    <span>Kelola Pilihan Garansi</span>
+                                    <ArrowSquareOut size={11} weight="bold" />
+                                  </Link>
+                                </div>
+                                <div className="space-y-1">
+                                  <p className="text-slate-700">
+                                    <span className="font-bold text-slate-800">Cakupan Garansi:</span> {curPreset.coverage || "Jaminan perbaikan ulang purna jual untuk pengerjaan teknisi."}
+                                  </p>
+                                  <p className="text-slate-600">
+                                    <span className="font-bold text-slate-700">Pengecualian:</span> {curPreset.exclusions || "Tidak ada pengecualian khusus."}
+                                  </p>
+                                  <p className="text-slate-500 text-[10px]">
+                                    <span className="font-bold text-slate-600">Syarat &amp; Ketentuan:</span> Klaim dapat diajukan konsumen di pusat purnajual selama masa garansi aktif dengan mengunggah foto/video kendala pengerjaan teknisi.
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs flex items-center justify-between">
+                            <span className="text-amber-800 font-medium">Belum ada opsi garansi yang dibuat di sidebar Garansi.</span>
+                            <Link
+                              href="/provider/warranty"
+                              target="_blank"
+                              className="px-3 py-1 bg-[#0F4C81] text-white rounded-lg font-bold text-[11px] hover:bg-[#0B3860] shrink-0 flex items-center gap-1"
+                            >
+                              <span>Atur Garansi</span>
+                              <ArrowSquareOut size={12} weight="bold" />
+                            </Link>
+                          </div>
+                          <label className="block font-bold text-slate-700">Durasi Garansi Standar</label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {[7, 14, 30, 60, 90].map((days) => (
+                              <button
+                                key={days}
+                                type="button"
+                                onClick={() => setWarrantyDurationDays(days)}
+                                className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${warrantyDurationDays === days
+                                  ? "bg-[#0F4C81] text-white shadow-2xs"
+                                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                                  }`}
+                              >
+                                {days} Hari
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-2 pt-1">
+                            <span className="text-[11px] text-slate-500 font-medium">Durasi kustom:</span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={365}
+                              value={warrantyDurationDays}
+                              onChange={(e) => setWarrantyDurationDays(Number(e.target.value))}
+                              className="w-20 px-2.5 py-1 rounded-lg border border-slate-200 text-xs font-bold text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-[#0F4C81]/20 focus:border-[#0F4C81]"
+                            />
+                            <span className="text-xs text-slate-600 font-bold">Hari</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3400,69 +3455,19 @@ export default function ProviderServiceOfferingsPage() {
                   </div>
                 </div>
 
-                {/* 4. Cakupan Wilayah Kota Administratif */}
-                <div className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-3">
-                  <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
+                {/* 4. Garansi Layanan (Tersambung ke Database Garansi Modul 07) */}
+                <div className="p-4 rounded-2xl bg-white border-2 border-emerald-500/30 shadow-2xs space-y-3.5">
+                  <div className="flex items-center justify-between pb-2.5 border-b border-emerald-100">
                     <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-[#0F4C81] ring-4 ring-sky-100" />
+                      <ShieldCheck size={17} weight="bold" className="text-emerald-600" />
                       <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">
-                        4. Cakupan Wilayah Kota Administratif
+                        4. Pengaturan Garansi Layanan
                       </h4>
                     </div>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-[#0F4C81] border border-sky-200">
-                      {editCityCodes.length} Kota Terpilih
+                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300 flex items-center gap-1 shadow-2xs">
+                      <ShieldCheck size={12} weight="fill" className="text-emerald-600" />
+                      <span>Tersambung ke Database Garansi</span>
                     </span>
-                  </div>
-
-                  <p className="text-[11px] text-slate-500 leading-normal">
-                    Pilih kota administratif tempat teknisi Anda dapat melayani pesanan (tabel <code className="font-mono text-[10px] bg-slate-100 px-1 py-0.5 rounded">service_coverage_cities</code>).
-                  </p>
-
-                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-200">
-                    {OFFICIAL_CITIES.map((c) => {
-                      const isSelected = editCityCodes.includes(c.code);
-                      return (
-                        <button
-                          key={c.code}
-                          type="button"
-                          onClick={() => handleToggleEditCityCode(c.code)}
-                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer ${isSelected
-                            ? "bg-[#0F4C81] text-white shadow-2xs"
-                            : "bg-white text-slate-600 border border-slate-200 hover:border-slate-300"
-                            }`}
-                        >
-                          <span>{c.name}</span>
-                          {isSelected && <Check size={11} weight="bold" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* 5. Garansi Layanan (Dengan Keterangan Belum Disimpan ke Database) */}
-                <div className="p-4 rounded-2xl bg-white border-2 border-amber-400/40 shadow-2xs space-y-3.5">
-                  <div className="flex items-center justify-between pb-2.5 border-b border-amber-100">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck size={17} weight="bold" className="text-amber-600" />
-                      <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">
-                        5. Pengaturan Garansi Layanan
-                      </h4>
-                    </div>
-                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-300 flex items-center gap-1 shadow-2xs">
-                      <WarningCircle size={12} weight="bold" className="text-amber-600" />
-                      <span>Belum Disimpan ke Database</span>
-                    </span>
-                  </div>
-
-                  {/* Keterangan Status Database sesuai instruksi user */}
-                  <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-200/90 text-amber-900 space-y-1">
-                    <div className="flex items-center gap-1.5 font-bold text-[11px] text-amber-800">
-                      <Info size={14} weight="fill" className="text-amber-600 shrink-0" />
-                      <span>Keterangan Status Database:</span>
-                    </div>
-                    <p className="text-[11px] text-amber-700 leading-relaxed">
-                      Bagian garansi ini saat ini <strong className="font-extrabold underline decoration-amber-500">belum dimasukkan / belum disimpan ke dalam database</strong> (Modul 04 Service Offering). Pilihan garansi yang Anda atur di bawah ini berstatus simulasi lokal dan belum masuk ke database utama.
-                    </p>
                   </div>
 
                   {/* Toggle Garansi */}
@@ -3476,7 +3481,7 @@ export default function ProviderServiceOfferingsPage() {
                       onClick={() => setEditWarrantySupported(!editWarrantySupported)}
                       className={`px-3 py-1.5 rounded-xl font-bold text-xs transition flex items-center gap-1.5 cursor-pointer ${editWarrantySupported
                         ? "bg-emerald-600 text-white shadow-2xs"
-                        : "bg-slate-200 text-slate-600"
+                        : "bg-slate-200 text-slate-600 hover:bg-slate-300"
                         }`}
                     >
                       <span>{editWarrantySupported ? "Aktif" : "Nonaktif"}</span>
@@ -3484,21 +3489,93 @@ export default function ProviderServiceOfferingsPage() {
                   </div>
 
                   {editWarrantySupported && (
-                    <div className="pt-2 border-t border-slate-100">
-                      <label className="block font-bold text-slate-700 mb-1">
-                        Pilih Durasi Jaminan Garansi
-                      </label>
-                      <select
-                        value={editWarrantyDurationDays}
-                        onChange={(e) => setEditWarrantyDurationDays(Number(e.target.value))}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-800 text-xs"
-                      >
-                        {activeDurations.map((d) => (
-                          <option key={d.id} value={d.durationDays}>
-                            Garansi {d.durationDays} Hari Kalender
-                          </option>
-                        ))}
-                      </select>
+                    <div className="space-y-3 pt-2 border-t border-slate-100">
+                      {activeProviderPresets.length > 0 ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <label className="block font-bold text-slate-700 text-xs">
+                              Pilih Opsi Garansi Aktif (dari Sidebar Garansi):
+                            </label>
+                            <Link
+                              href="/provider/warranty"
+                              target="_blank"
+                              className="text-[10px] font-bold text-[#0F4C81] hover:underline flex items-center gap-1"
+                            >
+                              <span>Atur di Sidebar</span>
+                              <ArrowSquareOut size={11} weight="bold" />
+                            </Link>
+                          </div>
+                          <select
+                            value={editSelectedServicePresetId || activeProviderPresets[0]?.id}
+                            onChange={(e) => {
+                              setEditSelectedServicePresetId(e.target.value);
+                              const cur = activeProviderPresets.find((p: any) => p.id === e.target.value);
+                              if (cur) setEditWarrantyDurationDays(cur.durationDays);
+                            }}
+                            className="w-full text-xs p-2.5 bg-white border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-[#0F4C81]/20 focus:outline-none"
+                          >
+                            {activeProviderPresets.map((preset: any) => (
+                              <option key={preset.id} value={preset.id}>
+                                {preset.name} ({preset.durationDays} Hari Kalender)
+                              </option>
+                            ))}
+                          </select>
+
+                          {/* Preset preview card */}
+                          {(() => {
+                            const curPreset = activeProviderPresets.find(
+                              (p: any) => p.id === (editSelectedServicePresetId || activeProviderPresets[0]?.id)
+                            );
+                            if (!curPreset) return null;
+                            return (
+                              <div className="p-3 rounded-2xl bg-white border border-slate-200/90 text-[11px] space-y-2 shadow-2xs">
+                                <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                                  <div>
+                                    <span className="font-extrabold text-[#0F4C81] text-xs block">{curPreset.name}</span>
+                                    <span className="text-[10px] text-slate-500 font-medium">Durasi: {curPreset.durationDays} Hari Kalender</span>
+                                  </div>
+                                  <Link
+                                    href="/provider/warranty"
+                                    target="_blank"
+                                    className="text-[10px] font-bold text-[#0F4C81] hover:underline flex items-center gap-1"
+                                  >
+                                    <span>Kelola Pilihan Garansi</span>
+                                    <ArrowSquareOut size={11} weight="bold" />
+                                  </Link>
+                                </div>
+                                <div className="space-y-1">
+                                  <p className="text-slate-700">
+                                    <span className="font-bold text-slate-800">Cakupan Garansi:</span> {curPreset.coverage || "Jaminan perbaikan ulang purna jual untuk pengerjaan teknisi."}
+                                  </p>
+                                  <p className="text-slate-600">
+                                    <span className="font-bold text-slate-700">Pengecualian:</span> {curPreset.exclusions || "Tidak ada pengecualian khusus."}
+                                  </p>
+                                  <p className="text-slate-500 text-[10px]">
+                                    <span className="font-bold text-slate-600">Syarat &amp; Ketentuan:</span> Klaim dapat diajukan konsumen di pusat purnajual selama masa garansi aktif dengan mengunggah foto/video kendala pengerjaan teknisi.
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <label className="block font-bold text-slate-700 mb-1">
+                            Pilih Durasi Jaminan Garansi
+                          </label>
+                          <select
+                            value={editWarrantyDurationDays}
+                            onChange={(e) => setEditWarrantyDurationDays(Number(e.target.value))}
+                            className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-800 text-xs"
+                          >
+                            {activeDurations.map((d) => (
+                              <option key={d.id} value={d.durationDays}>
+                                Garansi {d.durationDays} Hari Kalender
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

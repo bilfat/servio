@@ -18,7 +18,7 @@ class ServiceGovernanceController extends Controller
     {
         $limit = min(max((int) $request->query('limit', 20), 1), 100);
 
-        $query = ServiceOffering::with(['definition', 'primaryMedia', 'coverageCities']);
+        $query = ServiceOffering::with(['definition', 'primaryMedia']);
 
         if ($provId = $request->query('provider_id')) {
             $query->where('provider_organization_id', $provId);
@@ -31,9 +31,6 @@ class ServiceGovernanceController extends Controller
         }
         if ($subcatId = $request->query('subcategory_id')) {
             $query->whereHas('definition', fn ($q) => $q->where('subcategory_id', $subcatId));
-        }
-        if ($cityCode = $request->query('city_code')) {
-            $query->whereHas('coverageCities', fn ($q) => $q->where('city_code', strtoupper(trim($cityCode))));
         }
         if ($search = $request->query('search')) {
             $query->where('display_name', 'like', "%{$search}%");
@@ -61,7 +58,7 @@ class ServiceGovernanceController extends Controller
                     'fee_idr' => $o->survey_fee_idr,
                 ],
                 'status' => $o->status,
-                'coverage_city_codes' => $o->coverageCities->pluck('city_code')->values()->all(),
+                'coverage_city_codes' => [],
                 'primary_media_url' => $o->primaryMedia ? "/api/v1/service-media/{$o->primaryMedia->id}" : null,
                 'updated_at' => $o->updated_at?->toISOString(),
             ];
@@ -81,7 +78,7 @@ class ServiceGovernanceController extends Controller
      */
     public function show(string $id): JsonResponse
     {
-        $offering = ServiceOffering::with(['definition', 'media', 'coverageCities', 'capabilities'])->find($id);
+        $offering = ServiceOffering::with(['definition', 'media', 'capabilities'])->find($id);
         if (! $offering) {
             return ApiResponse::error('SERVICE_NOT_FOUND', 'Penawaran jasa tidak ditemukan.', 404);
         }

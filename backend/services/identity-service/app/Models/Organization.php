@@ -52,4 +52,14 @@ class Organization extends Model
     {
         return $this->belongsTo(BusinessApplication::class, 'approved_application_id', 'id');
     }
+
+    public function getNameAttribute(): ?string
+    {
+        return $this->profile?->display_name ?? $this->profile?->legal_name;
+    }
+
+    public function getLegalNameAttribute(): ?string
+    {
+        return $this->profile?->legal_name;
+    }
 }

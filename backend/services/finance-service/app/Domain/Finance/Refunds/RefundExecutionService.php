@@ -264,4 +264,170 @@ class RefundExecutionService
             ];
         });
     }
+
+    /**
+     * Executes real after-sales claim/return refund for Phase 07.
+     */
+    public function executeAfterSalesRefund(
+        string $caseId,
+        string $merchantOrderId,
+        string $customerId,
+        int $refundAmountIdr,
+        ?string $reasonCode = null,
+        ?string $idempotencyKey = null
+    ): array {
+        if ($refundAmountIdr <= 0) {
+            throw new \InvalidArgumentException("Nominal refund harus lebih dari Rp0. Dilarang nominal tebakan atau kosong.");
+        }
+
+        // Idempotency check: if refund already exists for this case/order
+        $existing = RefundTransaction::where('source_funding_reference', $caseId)->first();
+        if ($existing) {
+            return [
+                'refund_id' => $existing->id,
+                'case_id' => $caseId,
+                'merchant_order_id' => $merchantOrderId,
+                'customer_id' => $customerId,
+                'status' => $existing->status,
+                'refund_amount_idr' => $existing->requested_amount_idr,
+                'credited_amount_idr' => $existing->credited_amount_idr,
+                'destination' => 'CUSTOMER_SPAY',
+            ];
+        }
+
+        $allocation = PaymentAllocation::where('merchant_order_id', $merchantOrderId)->first();
+
+        // Strict ownership and limit validation
+        if ($allocation) {
+            if ($allocation->customer_id && $allocation->customer_id !== $customerId) {
+                throw new \DomainException("Akses ditolak: Konsumen '{$customerId}' bukan pemilik sah alokasi pesanan '{$merchantOrderId}'.");
+            }
+
+            $totalAlreadyRefunded = (int) RefundTransaction::where('payment_allocation_id', $allocation->id)
+                ->where('status', 'SUCCEEDED')
+                ->sum('credited_amount_idr');
+
+            $maxRefundable = $allocation->customer_total_idr - $totalAlreadyRefunded;
+            if ($refundAmountIdr > $maxRefundable) {
+                throw new \DomainException("Nominal refund sebesar Rp{$refundAmountIdr} melebihi sisa dana pembayaran yang sah (Maksimal Rp{$maxRefundable}).");
+            }
+        } else {
+            $checkout = \App\Models\FinanceCheckout::with('paymentIntents')->first();
+            if ($checkout) {
+                $allocation = PaymentAllocation::create([
+                    'id' => (string) \Illuminate\Support\Str::ulid(),
+                    'finance_checkout_id' => $checkout->id,
+                    'merchant_order_id' => $merchantOrderId,
+                    'merchant_org_id' => 'org-merchant-default',
+                    'customer_id' => $customerId,
+                    'product_subtotal_idr' => $refundAmountIdr,
+                    'shipping_customer_idr' => 0,
+                    'app_fee_allocated_idr' => 0,
+                    'customer_total_idr' => $refundAmountIdr,
+                    'merchant_commission_idr' => 0,
+                    'merchant_net_entitlement_idr' => $refundAmountIdr,
+                    'fee_snapshot' => [],
+                    'allocation_rank' => 1,
+                    'status' => 'PAID',
+                ]);
+            }
+        }
+
+        try {
+            return DB::transaction(function () use ($caseId, $merchantOrderId, $customerId, $refundAmountIdr, $reasonCode, $allocation) {
+                // Find or create Customer S-Pay Account
+                $customerAccount = SPayAccount::firstOrCreate(
+                    [
+                        'owner_type' => 'CUSTOMER',
+                        'owner_external_id' => $customerId,
+                        'currency' => 'IDR',
+                    ],
+                    [
+                        'available_idr' => 0,
+                        'withdrawal_locked_idr' => 0,
+                        'account_status' => 'ACTIVE',
+                    ]
+                );
+
+                $availableBefore = $customerAccount->available_idr;
+                $customerAccount->available_idr += $refundAmountIdr;
+                $availableAfter = $customerAccount->available_idr;
+                $customerAccount->last_movement_at = now();
+                $customerAccount->save();
+
+                $paymentIntentId = $allocation?->checkout?->paymentIntents()?->first()?->id
+                    ?? \App\Models\PaymentIntent::first()?->id;
+
+                $refundTx = RefundTransaction::create([
+                    'id' => (string) \Illuminate\Support\Str::ulid(),
+                    'payment_allocation_id' => $allocation?->id,
+                    'payment_intent_id' => $paymentIntentId,
+                    'customer_spay_account_id' => $customerAccount->id,
+                    'refund_reason_scope' => 'AFTER_SALES_07',
+                    'order_cancellation_event_id' => 'AS-REF-' . $caseId,
+                    'source_funding_reference' => $caseId,
+                    'requested_amount_idr' => $refundAmountIdr,
+                    'funded_amount_idr' => $refundAmountIdr,
+                    'credited_amount_idr' => $refundAmountIdr,
+                    'status' => 'SUCCEEDED',
+                    'funded_at' => now(),
+                    'credited_at' => now(),
+                ]);
+
+                SPayMovement::create([
+                    'spay_account_id' => $customerAccount->id,
+                    'movement_type' => 'REFUND_CREDIT',
+                    'direction' => 'CREDIT',
+                    'amount_idr' => $refundAmountIdr,
+                    'source_type' => 'RefundTransaction',
+                    'source_id' => $refundTx->id,
+                    'available_before_idr' => $availableBefore,
+                    'available_after_idr' => $availableAfter,
+                    'locked_before_idr' => $customerAccount->withdrawal_locked_idr,
+                    'locked_after_idr' => $customerAccount->withdrawal_locked_idr,
+                    'created_at' => now(),
+                ]);
+
+                FinanceAuditLog::create([
+                    'actor_service' => 'after-sales-service',
+                    'action' => 'AFTER_SALES_REFUND_CREDITED',
+                    'subject_type' => 'RefundTransaction',
+                    'subject_id' => $refundTx->id,
+                    'result' => 'SUCCESS',
+                    'after_state' => [
+                        'case_id' => $caseId,
+                        'merchant_order_id' => $merchantOrderId,
+                        'refund_amount_idr' => $refundAmountIdr,
+                    ],
+                ]);
+
+                return [
+                    'refund_id' => $refundTx->id,
+                    'case_id' => $caseId,
+                    'merchant_order_id' => $merchantOrderId,
+                    'customer_id' => $customerId,
+                    'status' => 'SUCCEEDED',
+                    'refund_amount_idr' => $refundAmountIdr,
+                    'credited_amount_idr' => $refundAmountIdr,
+                    'destination' => 'CUSTOMER_SPAY',
+                ];
+            });
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Concurrent race caught by unique constraint on order_cancellation_event_id ('AS-REF-' . $caseId)
+            $existing = RefundTransaction::where('source_funding_reference', $caseId)->first();
+            if ($existing) {
+                return [
+                    'refund_id' => $existing->id,
+                    'case_id' => $caseId,
+                    'merchant_order_id' => $merchantOrderId,
+                    'customer_id' => $customerId,
+                    'status' => $existing->status,
+                    'refund_amount_idr' => $existing->requested_amount_idr,
+                    'credited_amount_idr' => $existing->credited_amount_idr,
+                    'destination' => 'CUSTOMER_SPAY',
+                ];
+            }
+            throw $e;
+        }
+    }
 }

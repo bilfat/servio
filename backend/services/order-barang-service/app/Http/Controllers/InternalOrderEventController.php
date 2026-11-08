@@ -362,4 +362,91 @@ class InternalOrderEventController extends Controller
             'hold_sequence' => $order->hold_sequence,
         ], 'HOLD_STATE_PERSISTED');
     }
+
+    /**
+     * Create real non-commercial replacement fulfillment record for Phase 07.
+     */
+    public function createReplacement(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'case_id' => 'required|string',
+            'source_order_id' => 'required|string',
+            'merchant_org_id' => 'required|string',
+            'customer_id' => 'required|string',
+            'items' => 'required|array',
+            'waybill_number' => 'nullable|string',
+            'courier_name' => 'nullable|string',
+        ]);
+
+        // Idempotent lookup
+        $existing = \App\Models\OrderReplacement::where('case_id', $validated['case_id'])->first();
+        if ($existing) {
+            return ApiResponse::success($existing, 'REPLACEMENT_FULFILLMENT_EXISTS');
+        }
+
+        try {
+            $replacement = \App\Models\OrderReplacement::create([
+                'case_id' => $validated['case_id'],
+                'source_order_id' => $validated['source_order_id'],
+                'merchant_org_id' => $validated['merchant_org_id'],
+                'customer_id' => $validated['customer_id'],
+                'items_json' => $validated['items'],
+                'status' => 'PREPARING',
+                'waybill_number' => $validated['waybill_number'] ?? ('REP-' . strtoupper(\Illuminate\Support\Str::random(10))),
+                'courier_name' => $validated['courier_name'] ?? 'SERVIO Express',
+            ]);
+
+            return ApiResponse::success($replacement, 'REPLACEMENT_FULFILLMENT_CREATED');
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Concurrent race condition caught by DB unique constraint
+            $existing = \App\Models\OrderReplacement::where('case_id', $validated['case_id'])->first();
+            if ($existing) {
+                return ApiResponse::success($existing, 'REPLACEMENT_FULFILLMENT_EXISTS');
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Read real replacement fulfillment record.
+     */
+    public function showReplacement(string $id): JsonResponse
+    {
+        $replacement = \App\Models\OrderReplacement::find($id);
+        if (!$replacement) {
+            // Check by case_id fallback
+            $replacement = \App\Models\OrderReplacement::where('case_id', $id)->first();
+        }
+
+        if (!$replacement) {
+            return ApiResponse::error('REPLACEMENT_NOT_FOUND', 'Data replacement fulfillment tidak ditemukan.', 404);
+        }
+
+        return ApiResponse::success($replacement, 'REPLACEMENT_FULFILLMENT_LOADED');
+    }
+
+    /**
+     * Advance replacement fulfillment to delivered status with authentic POD.
+     */
+    public function deliverReplacement(Request $request, string $id): JsonResponse
+    {
+        $replacement = \App\Models\OrderReplacement::find($id)
+            ?? \App\Models\OrderReplacement::where('case_id', $id)->first();
+
+        if (!$replacement) {
+            return ApiResponse::error('REPLACEMENT_NOT_FOUND', 'Data replacement fulfillment tidak ditemukan.', 404);
+        }
+
+        $validated = $request->validate([
+            'proof_of_delivery' => 'required|string',
+        ]);
+
+        $replacement->update([
+            'status' => 'DELIVERED',
+            'proof_of_delivery' => $validated['proof_of_delivery'],
+            'delivered_at' => now(),
+        ]);
+
+        return ApiResponse::success($replacement, 'REPLACEMENT_DELIVERED');
+    }
 }

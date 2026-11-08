@@ -27,8 +27,11 @@ export type ServiceOrderSubStatus =
   | "DIAGNOSING"
   | "WAITING_CUSTOMER_CONSENT"
   | "IN_PERSON_CONSENT_RECORDED"
+  | "PRICE_APPROVED"
   | "EXECUTING"
   | "WORK_FINISHED"
+  | "WAITING_WORKER_CLOSE_VISIT"
+  | "VISIT_CLOSED"
   | "AWAITING_CUSTOMER_CONFIRMATION"
   // COMPLETED
   | "COMPLETED_NORMAL"
@@ -39,7 +42,8 @@ export type ServiceOrderSubStatus =
   | "CANCELLED_PRICE_REJECTED"
   | "CANCELLED_SPAREPART_UNAVAILABLE"
   | "CANCELLED_REMOTE_TIMEOUT"
-  | "CANCELLED_OPERATIONAL_FAILURE";
+  | "CANCELLED_OPERATIONAL_FAILURE"
+  | "CANCELLED_PROVIDER_REJECTED";
 
 export type CustomerTabType =
   | "BELUM_BAYAR"
@@ -50,6 +54,7 @@ export type CustomerTabType =
 
 export type WorkerTabType =
   | "TUGAS_MASUK"
+  | "HARI_INI"
   | "TERJADWAL"
   | "BERLANGSUNG"
   | "SELESAI"
@@ -334,6 +339,10 @@ export interface ServiceOrder {
   status: ServiceOrderStatus;
   subStatus: ServiceOrderSubStatus;
 
+  providerDecisionStatus?: "PENDING" | "ACCEPTED" | "REJECTED";
+  providerDecisionAt?: string | null;
+  providerRejectionReason?: string | null;
+
   assignment?: WorkerAssignment;
   assignmentHistory?: WorkerAssignment[];
 
@@ -371,6 +380,7 @@ export interface BookingCreationInput {
   address: ServiceAddressSnapshot;
   scheduledDate: string;
   scheduledTimeSlot: string;
+  paymentMethod?: "QRIS" | "BCA_VA" | "MANDIRI_VA" | "BRI_VA" | "BNI_VA";
 }
 
 /**

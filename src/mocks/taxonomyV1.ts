@@ -138,7 +138,7 @@ export const INITIAL_PROVIDER_MASTER_SERVICES: ProviderMasterService[] = [
   {
     id: "pms-smt-001",
     providerId: "usr-prov-001",
-    providerName: "PT Servio Mandiri Teknik",
+    providerName: "sukses gembira",
     categoryId: "cat-repair",
     categoryName: "Repair & Technical",
     subcategoryId: "sub-ac-cooling",
@@ -156,7 +156,7 @@ export const INITIAL_PROVIDER_MASTER_SERVICES: ProviderMasterService[] = [
   {
     id: "pms-smt-002",
     providerId: "usr-prov-001",
-    providerName: "PT Servio Mandiri Teknik",
+    providerName: "sukses gembira",
     categoryId: "cat-repair",
     categoryName: "Repair & Technical",
     subcategoryId: "sub-ac-cooling",
@@ -174,7 +174,7 @@ export const INITIAL_PROVIDER_MASTER_SERVICES: ProviderMasterService[] = [
   {
     id: "pms-smt-003",
     providerId: "usr-prov-001",
-    providerName: "PT Servio Mandiri Teknik",
+    providerName: "sukses gembira",
     categoryId: "cat-repair",
     categoryName: "Repair & Technical",
     subcategoryId: "sub-ac-cooling",
@@ -192,7 +192,7 @@ export const INITIAL_PROVIDER_MASTER_SERVICES: ProviderMasterService[] = [
   {
     id: "pms-smt-004",
     providerId: "usr-prov-001",
-    providerName: "PT Servio Mandiri Teknik",
+    providerName: "sukses gembira",
     categoryId: "cat-repair",
     categoryName: "Repair & Technical",
     subcategoryId: "sub-electrical",
@@ -210,7 +210,7 @@ export const INITIAL_PROVIDER_MASTER_SERVICES: ProviderMasterService[] = [
   {
     id: "pms-smt-005",
     providerId: "usr-prov-001",
-    providerName: "PT Servio Mandiri Teknik",
+    providerName: "sukses gembira",
     categoryId: "cat-automotive",
     categoryName: "Automotive",
     subcategoryId: "sub-car",

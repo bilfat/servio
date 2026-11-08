@@ -1,39 +1,7 @@
 
+   WARN  Unable to respect the `PHP_CLI_SERVER_WORKERS` environment variable without the `--no-reload` flag. Only creating a single server.  
+
    INFO  Server running on [http://127.0.0.1:8006].  
 
   Press Ctrl+C to stop the server
 
-  PHP Fatal error:  Maximum execution time of 60 seconds exceeded in D:\website latihan\servio_web_13\backend\services\finance-service\vendor\composer\ClassLoader.php on line 429
-  PHP Fatal error:  Uncaught Error: Class "Illuminate\View\Factory" not found in D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\View\ViewServiceProvider.php:74
-  Stack trace:
-  #0 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\View\ViewServiceProvider.php(47): Illuminate\View\ViewServiceProvider->createFactory(Object(Illuminate\View\Engines\EngineResolver), Object(Illuminate\View\FileViewFinder), Object(Illuminate\Events\Dispatcher))
-  #1 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Container\Container.php(1115): Illuminate\View\ViewServiceProvider->Illuminate\View\{closure}(Object(Illuminate\Foundation\Application), Array)
-  #2 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Container\Container.php(933): Illuminate\Container\Container->build(Object(Closure))
-  #3 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Foundation\Application.php(1078): Illuminate\Container\Container->resolve('view', Array, true)
-  #4 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Container\Container.php(864): Illuminate\Foundation\Application->resolve('view', Array)
-  #5 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Foundation\Application.php(1058): Illuminate\Container\Container->make('view', Array)
-  #6 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Container\Container.php(1805): Illuminate\Foundation\Application->make('view')
-  #7 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Routing\RoutingServiceProvider.php(177): Illuminate\Container\Container->offsetGet('Illuminate\\Cont...')
-  #8 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Container\Container.php(1115): Illuminate\Routing\RoutingServiceProvider->Illuminate\Routing\{closure}(Object(Illuminate\Foundation\Application), Array)
-  #9 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Container\Container.php(933): Illuminate\Container\Container->build(Object(Closure))
-  #10 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Foundation\Application.php(1078): Illuminate\Container\Container->resolve('Illuminate\\Cont...', Array, true)
-  #11 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Container\Container.php(864): Illuminate\Foundation\Application->resolve('Illuminate\\Cont...', Array)
-  #12 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Foundation\Application.php(1058): Illuminate\Container\Container->make('Illuminate\\Cont...', Array)
-  #13 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Foundation\helpers.php(138): Illuminate\Foundation\Application->make('Illuminate\\Cont...', Array)
-  #14 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Foundation\helpers.php(850): app('Illuminate\\Cont...')
-  #15 D:\website latihan\servio_web_13\backend\services\finance-service\app\Support\ApiResponse.php(75): response()
-  #16 D:\website latihan\servio_web_13\backend\services\finance-service\bootstrap\app.php(76): App\Support\ApiResponse::error('FINANCE_INTERNA...', 'Maximum executi...', 500, Array)
-  #17 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Foundation\Exceptions\Handler.php(717): {closure}(Object(Symfony\Component\ErrorHandler\Error\FatalError), Object(Illuminate\Http\Request))
-  #18 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Foundation\Exceptions\Handler.php(618): Illuminate\Foundation\Exceptions\Handler->renderViaCallbacks(Object(Illuminate\Http\Request), Object(Symfony\Component\ErrorHandler\Error\FatalError))
-  #19 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Foundation\Bootstrap\HandleExceptions.php(225): Illuminate\Foundation\Exceptions\Handler->render(Object(Illuminate\Http\Request), Object(Symfony\Component\ErrorHandler\Error\FatalError))
-  #20 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Foundation\Bootstrap\HandleExceptions.php(202): Illuminate\Foundation\Bootstrap\HandleExceptions->renderHttpResponse(Object(Symfony\Component\ErrorHandler\Error\FatalError))
-  #21 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Foundation\Bootstrap\HandleExceptions.php(238): Illuminate\Foundation\Bootstrap\HandleExceptions->handleException(Object(Symfony\Component\ErrorHandler\Error\FatalError))
-  #22 D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\Foundation\Bootstrap\HandleExceptions.php(262): Illuminate\Foundation\Bootstrap\HandleExceptions->handleShutdown()
-  #23 [internal function]: Illuminate\Foundation\Bootstrap\HandleExceptions->Illuminate\Foundation\Bootstrap\{closure}()
-  #24 {main}
-  thrown in D:\website latihan\servio_web_13\backend\services\finance-service\vendor\laravel\framework\src\Illuminate\View\ViewServiceProvider.php on line 74
-  2026-11-02 11:48:41 /api/v1/finance/spay/me ............................................................ ~ 1mnt 4dt
-  2026-11-02 11:49:45 ...................................................................................... ~ 0.84ms
-  2026-11-02 11:49:45 ..................................................................................... ~ 14.59ms
-  127.0.0.1:57137 Invalid request (An existing connection was forcibly closed by the remote host)
-  2026-11-02 11:49:45 ..................................................................................... ~ 10.05ms

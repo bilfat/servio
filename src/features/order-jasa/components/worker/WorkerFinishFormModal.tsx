@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { Modal } from "@/components/ui/Modal";
 import {
   Wrench,
@@ -10,8 +10,43 @@ import {
   Cube,
   ShieldCheck,
   Info,
+  X,
 } from "@phosphor-icons/react";
 import { ServiceOrder } from "../../types";
+
+const compressImageFile = (file: File): Promise<string> => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxDim = 1280;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.75));
+      };
+      img.onerror = () => {
+        resolve(e.target?.result as string);
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+};
 
 interface WorkerFinishFormModalProps {
   isOpen: boolean;
@@ -44,6 +79,47 @@ export function WorkerFinishFormModal({
       ? order.execution.afterPhotos
       : []
   );
+
+  const beforeFileInputRef = useRef<HTMLInputElement | null>(null);
+  const afterFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleBeforePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const fileArray = Array.from(files);
+    for (const file of fileArray) {
+      try {
+        const compressed = await compressImageFile(file);
+        setBeforePhotos((prev) => [...prev, compressed]);
+      } catch {
+        // Fallback
+      }
+    }
+    if (beforeFileInputRef.current) beforeFileInputRef.current.value = "";
+  };
+
+  const handleAfterPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const fileArray = Array.from(files);
+    for (const file of fileArray) {
+      try {
+        const compressed = await compressImageFile(file);
+        setAfterPhotos((prev) => [...prev, compressed]);
+      } catch {
+        // Fallback
+      }
+    }
+    if (afterFileInputRef.current) afterFileInputRef.current.value = "";
+  };
+
+  const handleRemoveBeforePhoto = (index: number) => {
+    setBeforePhotos((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleRemoveAfterPhoto = (index: number) => {
+    setAfterPhotos((prev) => prev.filter((_, idx) => idx !== index));
+  };
 
   const [workSummary, setWorkSummary] = useState(
     order.execution?.workSummary || ""
@@ -86,52 +162,82 @@ export function WorkerFinishFormModal({
         {/* Foto Sebelum & Sesudah */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-2xl border border-slate-200 bg-slate-50">
           <div>
-            <label className="text-[11px] font-bold text-slate-700 block mb-1">
-              Foto Sebelum Pengerjaan ({beforePhotos.length})
-            </label>
+            <input
+              type="file"
+              ref={beforeFileInputRef}
+              accept="image/*"
+              multiple
+              onChange={handleBeforePhotoUpload}
+              className="hidden"
+            />
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] font-bold text-slate-700 block">
+                Foto Sebelum ({beforePhotos.length})
+              </label>
+              <span className="text-[9px] text-slate-400">Pilih dari folder</span>
+            </div>
             <div className="flex items-center gap-2 overflow-x-auto pb-1">
               {beforePhotos.map((url, i) => (
-                <div key={i} className="w-16 h-16 rounded-xl overflow-hidden border border-slate-200 shrink-0">
+                <div key={i} className="w-16 h-16 rounded-xl overflow-hidden border border-slate-200 shrink-0 relative group shadow-2xs">
                   <img src={url} alt={`Before ${i + 1}`} className="w-full h-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveBeforePhoto(i)}
+                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center text-[10px] shadow-xs cursor-pointer transition"
+                    title="Hapus foto"
+                  >
+                    <X size={10} weight="bold" />
+                  </button>
                 </div>
               ))}
               <button
                 type="button"
-                onClick={() => {
-                  const url = window.prompt("Masukkan URL / path foto sebelum pengerjaan:");
-                  if (url && url.trim()) {
-                    setBeforePhotos((prev) => [...prev, url.trim()]);
-                  }
-                }}
-                className="w-16 h-16 rounded-xl border-2 border-dashed border-slate-300 hover:border-primary flex flex-col items-center justify-center text-slate-400 hover:text-primary transition shrink-0 cursor-pointer"
+                onClick={() => beforeFileInputRef.current?.click()}
+                className="w-16 h-16 rounded-xl border-2 border-dashed border-slate-300 hover:border-primary flex flex-col items-center justify-center text-slate-400 hover:text-primary transition shrink-0 cursor-pointer bg-white"
+                title="Pilih foto sebelum dari komputer"
               >
-                <Camera size={15} />
+                <Camera size={16} />
                 <span className="text-[8px] font-bold mt-0.5">+ Foto</span>
               </button>
             </div>
           </div>
 
           <div>
-            <label className="text-[11px] font-bold text-slate-700 block mb-1">
-              Foto Sesudah Pengerjaan ({afterPhotos.length})
-            </label>
+            <input
+              type="file"
+              ref={afterFileInputRef}
+              accept="image/*"
+              multiple
+              onChange={handleAfterPhotoUpload}
+              className="hidden"
+            />
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-[11px] font-bold text-slate-700 block">
+                Foto Sesudah ({afterPhotos.length})
+              </label>
+              <span className="text-[9px] text-slate-400">Pilih dari folder</span>
+            </div>
             <div className="flex items-center gap-2 overflow-x-auto pb-1">
               {afterPhotos.map((url, i) => (
-                <div key={i} className="w-16 h-16 rounded-xl overflow-hidden border border-slate-200 shrink-0">
+                <div key={i} className="w-16 h-16 rounded-xl overflow-hidden border border-slate-200 shrink-0 relative group shadow-2xs">
                   <img src={url} alt={`After ${i + 1}`} className="w-full h-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveAfterPhoto(i)}
+                    className="absolute top-1 right-1 w-5 h-5 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center text-[10px] shadow-xs cursor-pointer transition"
+                    title="Hapus foto"
+                  >
+                    <X size={10} weight="bold" />
+                  </button>
                 </div>
               ))}
               <button
                 type="button"
-                onClick={() => {
-                  const url = window.prompt("Masukkan URL / path foto sesudah pengerjaan:");
-                  if (url && url.trim()) {
-                    setAfterPhotos((prev) => [...prev, url.trim()]);
-                  }
-                }}
-                className="w-16 h-16 rounded-xl border-2 border-dashed border-slate-300 hover:border-primary flex flex-col items-center justify-center text-slate-400 hover:text-primary transition shrink-0 cursor-pointer"
+                onClick={() => afterFileInputRef.current?.click()}
+                className="w-16 h-16 rounded-xl border-2 border-dashed border-slate-300 hover:border-primary flex flex-col items-center justify-center text-slate-400 hover:text-primary transition shrink-0 cursor-pointer bg-white"
+                title="Pilih foto sesudah dari komputer"
               >
-                <Camera size={15} />
+                <Camera size={16} />
                 <span className="text-[8px] font-bold mt-0.5">+ Foto</span>
               </button>
             </div>

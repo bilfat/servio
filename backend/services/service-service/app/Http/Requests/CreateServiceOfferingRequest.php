@@ -48,6 +48,8 @@ class CreateServiceOfferingRequest extends FormRequest
 
             'capability_ids' => 'nullable|array',
             'capability_ids.*' => 'uuid',
+
+            'warranty_config' => 'nullable',
         ];
     }
 

@@ -12,6 +12,7 @@ use App\Models\ServiceFinanceEntitlementRef;
 use App\Models\ServiceOrder;
 use App\Models\ServiceOrderEvent;
 use App\Models\ServicePaymentObligation;
+use App\Models\ServiceVisit;
 use App\Support\AuthenticatedActor;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -84,8 +85,14 @@ class CompletionAndSettlementService
                 );
             }
 
+            // Strict V3 Rule: Worker must have finished work and closed the visit (VISIT_CLOSED)
+            $visit = ServiceVisit::where('order_id', $order->id)->first();
+            if (!$visit || !in_array($visit->status, ['CLOSED', 'VISIT_CLOSED'], true) || empty($visit->visit_closed_at)) {
+                throw new HttpException(422, 'Teknisi belum mengakhiri kunjungan (VISIT_CLOSED). Pelanggan hanya dapat menyelesaikan pesanan setelah teknisi mengakhiri kunjungan.');
+            }
+
             // Verify order lifecycle status
-            $validOrderStatuses = ['EXECUTION_PAID', 'WORKER_FINISHED', 'VISIT_CLOSED'];
+            $validOrderStatuses = ['VISIT_CLOSED', 'EXECUTION_PAID', 'WORKER_FINISHED'];
             if (!in_array($order->status, $validOrderStatuses, true)) {
                 throw new HttpException(422, "Status pesanan saat ini ({$order->status}) belum memenuhi syarat untuk diselesaikan.");
             }
@@ -191,8 +198,65 @@ class CompletionAndSettlementService
                 resource: "ServiceOrder:{$order->id}"
             );
 
+            // 5. Notify After-Sales Service if warranty was promised
+            $this->notifyAfterSalesWarranty($order);
+
             return $order;
         });
+    }
+
+    private function notifyAfterSalesWarranty(ServiceOrder $order): void
+    {
+        try {
+            $snap = $order->service_snapshot ?? [];
+            $wCfg = $snap['warranty_config'] ?? ($snap['warranty_policy'] ?? ($snap['warrantyPolicy'] ?? null));
+            if (is_string($wCfg)) {
+                $wCfg = json_decode($wCfg, true) ?: null;
+            }
+
+            $days = (int) ($wCfg['duration_days'] ?? ($wCfg['durationDays'] ?? 0));
+            if ($days > 0) {
+                $baseUrl = config('services.after_sales.base_url', 'http://127.0.0.1:8008');
+                $key = config('services.after_sales.internal_key', 'servio_local_internal_service_key_2026');
+
+                \Illuminate\Support\Facades\Http::timeout(3)
+                    ->withHeaders([
+                        'X-Internal-Service-Key' => $key,
+                        'X-Source-Service' => '05B',
+                    ])
+                    ->post("{$baseUrl}/internal/v1/after-sales/order-completions", [
+                        'source_kind' => 'SERVICE',
+                        'order_id' => (string) $order->id,
+                        'completed_at' => $order->completed_at?->toIso8601String() ?? now()->toIso8601String(),
+                        'items' => [
+                            [
+                                'order_item_key' => (string) ($order->service_offering_id ?: $order->id),
+                                'catalog_ref' => (string) ($order->service_offering_id ?: $order->id),
+                                'item_title' => $snap['name'] ?? ($snap['title'] ?? ($snap['display_name'] ?? 'Layanan Jasa Bergaransi')),
+                                'item_image_url' => $snap['image_url'] ?? ($snap['primary_media']['url'] ?? null),
+                                'quantity' => 1,
+                                'customer_id' => (string) $order->customer_id,
+                                'owner_org_type' => 'PROVIDER',
+                                'owner_org_id' => (string) $order->provider_org_id,
+                                'organization_name' => $snap['provider_name'] ?? ($snap['provider']['store_name'] ?? 'Mitra Penyedia Jasa'),
+                                'order_number' => (string) ($order->order_no ?: $order->id),
+                                'has_warranty' => true,
+                                'snapshot_name' => $wCfg['name'] ?? ($wCfg['presetName'] ?? 'Garansi Layanan Resmi'),
+                                'snapshot_duration_days' => $days,
+                                'snapshot_coverage' => $wCfg['coverage'] ?? ($wCfg['coverage_text'] ?? 'Perbaikan ulang atas kendala yang muncul pasca servis'),
+                                'snapshot_exclusion' => $wCfg['exclusions'] ?? ($wCfg['exclusion_text'] ?? 'Kerusakan di luar lingkup servis sebelumnya'),
+                                'catalog_snapshot' => [
+                                    'name' => $snap['name'] ?? ($snap['title'] ?? null),
+                                    'image_url' => $snap['image_url'] ?? null,
+                                    'price_idr' => (int) ($snap['base_price_idr'] ?? ($snap['price'] ?? 0)),
+                                ],
+                            ]
+                        ],
+                    ]);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("CompletionAndSettlementService: after-sales notification failed: " . $e->getMessage());
+        }
     }
 
     /**

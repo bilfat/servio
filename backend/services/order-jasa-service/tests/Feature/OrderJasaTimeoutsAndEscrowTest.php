@@ -152,6 +152,18 @@ class OrderJasaTimeoutsAndEscrowTest extends TestCase
         $order = $this->createBaseOrder($customerId, 'EXECUTION_PAID');
         $now = now();
 
+        ServiceVisit::forceCreate([
+            'id' => (string) Str::ulid(),
+            'order_id' => $order->id,
+            'worker_id' => 'WKR-01',
+            'status' => 'CLOSED',
+            'arrived_at' => $now->copy()->subHours(2),
+            'visit_closed_at' => $now->copy()->subHour(),
+            'version' => 1,
+            'created_at' => $now->copy()->subHours(2),
+            'updated_at' => $now->copy()->subHour(),
+        ]);
+
         // Obligation is PAID and verified
         $paymentId = 'PAY-' . Str::ulid();
         $obligation = ServicePaymentObligation::forceCreate([

@@ -455,19 +455,6 @@ function ProductPaymentContent() {
           </div>
         )}
 
-        {/* COMPACT DEMO NOTICE BANNER */}
-        <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-900 text-xs flex items-center justify-between gap-3 shadow-2xs">
-          <div className="flex items-center gap-2 min-w-0">
-            <Info size={16} weight="fill" className="text-amber-600 shrink-0" />
-            <p className="text-[11px] leading-tight truncate">
-              <strong className="font-bold text-amber-950">SIMULASI DEMO:</strong> QRIS dan nomor Virtual Account di bawah adalah instrumen pengujian demo, bukan rekening bank aktif.
-            </p>
-          </div>
-          <span className="text-[10px] font-bold text-amber-800 bg-amber-100/70 px-2 py-0.5 rounded-full shrink-0 border border-amber-200">
-            Demo Testing Mode
-          </span>
-        </div>
-
         {/* SIDE-BY-SIDE HORIZONTAL 2-COLUMN LAYOUT */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
           {/* LEFT COLUMN: 6 / 12 cols (Header, Struk Rincian Pesanan & Total Tagihan) */}
@@ -682,7 +669,7 @@ function ProductPaymentContent() {
               {/* Payment Method Switcher */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-slate-700 block">
-                  Metode Pembayaran Demo:
+                  Metode Pembayaran:
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
@@ -696,7 +683,7 @@ function ProductPaymentContent() {
                     }`}
                   >
                     <QrCode size={16} weight="duotone" />
-                    <span>QRIS Instant (DEMO)</span>
+                    <span>QRIS Instant</span>
                   </button>
 
                   <button
@@ -710,7 +697,7 @@ function ProductPaymentContent() {
                     }`}
                   >
                     <Bank size={16} weight="duotone" />
-                    <span>Virtual Account (DEMO)</span>
+                    <span>Virtual Account</span>
                   </button>
                 </div>
               </div>

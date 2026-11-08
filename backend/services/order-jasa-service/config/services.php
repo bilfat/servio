@@ -47,6 +47,12 @@ return [
         'timeout_ms' => (float) env('SERVICE_CATEGORY_TIMEOUT_MS', 1500),
     ],
 
+    'after_sales' => [
+        'base_url' => env('AFTER_SALES_INTERNAL_BASE_URL', 'http://127.0.0.1:8008'),
+        'internal_key' => env('SERVICE_INTERNAL_SERVICE_KEY', 'servio_local_internal_service_key_2026'),
+        'timeout_ms' => (float) env('SERVICE_AFTER_SALES_TIMEOUT_MS', 2000),
+    ],
+
     'gateway' => [
         'key' => env('SERVICE_GATEWAY_KEY'),
     ],

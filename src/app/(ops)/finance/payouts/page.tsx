@@ -434,7 +434,7 @@ export default function VendorPayoutOperationsPage() {
                                   className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-xs"
                                 >
                                   <PlayCircle className="w-3.5 h-3.5 mr-1" weight="bold" />
-                                  Simulasi Payout
+                                  Proses Payout
                                 </Button>
                               )}
                             </div>
@@ -754,13 +754,13 @@ export default function VendorPayoutOperationsPage() {
       <Modal
         isOpen={!!simulationWithdrawal}
         onClose={() => !isSimulating && setSimulationWithdrawal(null)}
-        title="Simulasi Payout Transfer Bank Mock"
+        title="Konfirmasi Status Payout Transfer Bank"
         size="md"
       >
         {simulationWithdrawal && (
           <div className="space-y-4 text-left font-body text-xs">
             <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 leading-relaxed">
-              <strong>Simulasi Demo Bank:</strong> Digunakan untuk memverifikasi callback simulasi transfer bank (SUCCEEDED / FAILED). Jika gagal, saldo yang terkunci akan otomatis dikembalikan ke saldo S-Pay tersedia.
+              <strong>Konfirmasi Transfer Bank:</strong> Digunakan untuk memverifikasi status penyelesaian transfer bank (SUCCEEDED / FAILED). Jika gagal, saldo yang terkunci akan otomatis dikembalikan ke saldo S-Pay tersedia.
             </div>
 
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
@@ -784,7 +784,7 @@ export default function VendorPayoutOperationsPage() {
 
             <div>
               <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                Pilih Hasil Simulasi Transfer
+                Pilih Status Penyelesaian Transfer
               </label>
               <div className="grid grid-cols-2 gap-3">
                 <button

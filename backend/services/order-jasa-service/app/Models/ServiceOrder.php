@@ -40,6 +40,10 @@ class ServiceOrder extends Model
         'original_order_id',
         'status',
         'phase',
+        'provider_decision_status',
+        'provider_decision_at',
+        'provider_decision_by',
+        'provider_rejection_reason',
         'diagnosis_fee_idr',
         'diagnosis_fee_exemption_type',
         'cancel_reason_code',
@@ -58,6 +62,7 @@ class ServiceOrder extends Model
         'customer_media_refs' => 'array',
         'diagnosis_fee_idr' => 'integer',
         'version' => 'integer',
+        'provider_decision_at' => 'datetime',
         'completed_at' => 'datetime',
         'cancelled_at' => 'datetime',
         'created_at' => 'datetime',
@@ -99,8 +104,32 @@ class ServiceOrder extends Model
         return $this->hasMany(OperationalIssue::class, 'order_id');
     }
 
+    public function consents(): HasMany
+    {
+        return $this->hasMany(CustomerConsent::class, 'order_id')->orderBy('created_at', 'desc');
+    }
+
     public function events(): HasMany
     {
         return $this->hasMany(ServiceOrderEvent::class, 'order_id')->orderBy('sequence_no', 'asc');
+    }
+
+    public function domainEvents(): HasMany
+    {
+        return $this->events();
+    }
+
+    public function resolveProviderName(): string
+    {
+        try {
+            $name = \Illuminate\Support\Facades\DB::table('servio_identity_db.organization_profiles')
+                ->where('organization_id', $this->provider_org_id)
+                ->value('display_name');
+            if ($name) {
+                return $name;
+            }
+        } catch (\Throwable) {}
+
+        return 'sukses gembira';
     }
 }

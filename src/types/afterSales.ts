@@ -5,7 +5,9 @@ export type AfterSalesMainStatus =
   | "UNDER_REVIEW"        // Ditinjau
   | "IN_RESOLUTION"       // Dalam Penyelesaian
   | "COMPLETED"           // Selesai
-  | "REJECTED";           // Ditolak
+  | "REJECTED"            // Ditolak
+  | "CANCELLED"           // Dibatalkan
+  | "AWAITING_RETURN";    // Menunggu Pengembalian Fisik
 
 export type AfterSalesSpecialCondition =
   | "NONE"
@@ -20,6 +22,9 @@ export type RefundStepStatus =
   | "APPROVED"          // Disetujui (hak pengembalian tercatat)
   | "PROCESSING"        // Diproses (sedang ditangani, dana belum tersedia)
   | "COMPLETED_DEMO"    // Berhasil (Simulasi, bukan dana nyata)
+  | "SUCCEEDED"         // Berhasil (dana telah masuk ke saldo S-Pay)
+  | "REVERSED"          // Dibatalkan / dikembalikan
+  | "PENDING"           // Menunggu antrean
   | "FAILED";           // Terkendala (saldo tidak berubah)
 
 export interface RefundBreakdown {
@@ -30,6 +35,7 @@ export interface RefundBreakdown {
   approvedAt: string;
   refundReference: string;
   status: RefundStepStatus;
+  financeStatus?: string;
   statusNote?: string;
   payoutDestination?: string; // e.g. "Saldo S-Pay Customer (Simulasi)"
 }
@@ -61,18 +67,58 @@ export interface ReplacementProgress {
   deliveredAt?: string;
 }
 
+export interface ShippingExpenseDetail {
+  expenseType: "INITIAL_PURCHASE_SHIPPING" | "RETURN_SHIPPING" | "REPLACEMENT_SHIPPING";
+  feePayer: "MERCHANT" | "CUSTOMER" | "PLATFORM" | "CARRIER";
+  actualFeeIdr: number;
+  paidBy: "MERCHANT" | "CUSTOMER" | "PLATFORM" | "CARRIER";
+  verificationStatus: "PENDING_VERIFICATION" | "VERIFIED" | "DISPUTED" | "NOT_APPLICABLE";
+  approvedReimbursementIdr: number;
+  reimbursementStatus: "NOT_REQUIRED" | "PENDING_FINANCE_CONTRACT" | "PROCESSING" | "SUCCEEDED" | "REJECTED";
+  receiptRef?: string;
+  notes?: string;
+}
+
 export interface ReturnShippingDetail {
   requiresPhysicalReturn: boolean;
-  shippingFeePayer: "MERCHANT" | "CUSTOMER";
+  noReturnReason?: string;
+  shippingFeePayer: "MERCHANT" | "CUSTOMER" | "THIRD_PARTY";
   feePayerExplanation: string;
+  recipientName?: string;
+  recipientPhone?: string;
   returnAddress?: string;
+  packagingInstructions?: string;
+  shippingFeeMethod?: string;
+  reimbursementInstructions?: string;
+  deadlineAt?: string;
   courierName?: string;
   trackingNumber?: string;
+  shippedAt?: string;
   shippingFeeReceiptUrl?: string;
+  feePaymentProofUrl?: string;
   claimedShippingFee?: number;
+  customerNotes?: string;
   receivedByMerchant?: boolean;
+  receivedAt?: string;
+  receivedBy?: string;
+  quantityReceived?: number;
+  packageCondition?: string;
+  receiptProofUrl?: string;
+  receiptNotes?: string;
+  receiptStatus?: "RECEIVED" | "DISPUTED_NOT_RECEIVED";
+  disputeReason?: string;
   inspectedByMerchant?: boolean;
+  inspectedAt?: string;
+  inspectedBy?: string;
+  quantityInspected?: number;
+  quantityApproved?: number;
+  inspectionOutcome?: "MATCHED" | "PARTIAL" | "MISMATCH";
+  itemCondition?: string;
+  isSkuMatched?: boolean;
+  isIssueMatched?: boolean;
+  isComponentsComplete?: boolean;
   inspectionNote?: string;
+  inspectionEvidence?: string[];
 }
 
 export interface TimelineActivity {
@@ -109,10 +155,14 @@ export interface AfterSalesCase {
   warrantyExpiryDate?: string;
   customerRequestedSolution?: AfterSalesSolutionType;
   approvedSolution?: AfterSalesSolutionType;
+  chosenSolution?: AfterSalesSolutionType;
   merchantAlternativeProposal?: {
+    proposalId?: string;
     solution: AfterSalesSolutionType;
+    rawSolutionCode?: string;
     note: string;
     proposedAt: string;
+    state?: string;
     customerAccepted?: boolean;
   };
   submittedAt: string;
@@ -126,44 +176,69 @@ export interface AfterSalesCase {
   warrantyJob?: WarrantyJobProgress;
   replacementShipment?: ReplacementProgress;
   returnShipping?: ReturnShippingDetail;
+  shippingExpenses?: ShippingExpenseDetail[];
   refundDetail?: RefundBreakdown;
+  refundTrack?: RefundBreakdown;
   reportedToSupport?: boolean;
   reportDetails?: {
     reportId: string;
     reportedAt: string;
     reason: string;
   };
+  backend?: any;
 }
 
 export interface WarrantyPreset {
   id: string;
   organizationId: string;
   organizationType: "MERCHANT" | "PROVIDER";
+  slug?: string;
   name: string;
   durationDays: number; // positive integer, free user input
   coverage: string;
   exclusions: string;
+  terms?: string;
   isActive: boolean;
+  version?: number;
   usageCount: number;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface CustomerWarrantyEntitlement {
   id: string;
   warrantyNumber: string;
   orderId: string;
+  merchantOrderId?: string;
   orderNumber: string;
+  orderItemKey?: string;
+  catalogRef?: string;
   itemType: "PRODUCT" | "SERVICE";
   itemTitle: string;
   itemImageUrl?: string;
   organizationId: string;
   organizationName: string;
+  ownerOrgType?: "MERCHANT" | "PROVIDER";
   presetName: string;
   durationDays: number;
+  orderedAt?: string;
+  completedAt?: string;
   startDate: string;
   endDate: string;
   coverage: string;
+  exclusions?: string;
   terms: string;
+  quantity?: number;
+  claimedQuantity?: number;
+  remainingQuantity?: number;
+  status?: "PENDING_START" | "ACTIVE" | "CLAIM_LOCKED" | "CONSUMED" | "EXPIRED" | "CANCELLED" | "CLAIMED" | "VOID";
   isActive: boolean;
   activeCaseId?: string;
+  activeCaseStatus?: AfterSalesMainStatus;
+  activeCaseNumber?: string;
+  remainingDays?: number;
+  hasActiveCase?: boolean;
+  isClaimEligible?: boolean;
+  catalogSnapshot?: any;
+  cases?: any[];
 }

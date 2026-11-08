@@ -60,4 +60,50 @@ class InternalRefundController extends Controller
             'is_real_refund' => false,
         ]);
     }
+
+    public function processAfterSalesRefund(\Illuminate\Http\Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'case_id' => 'required|string',
+            'merchant_order_id' => 'required|string',
+            'customer_id' => 'required|string',
+            'refund_amount_idr' => 'required|integer|min:1',
+            'reason_code' => 'nullable|string',
+            'idempotency_key' => 'nullable|string',
+        ]);
+
+        try {
+            $result = $this->refundService->executeAfterSalesRefund(
+                caseId: $validated['case_id'],
+                merchantOrderId: $validated['merchant_order_id'],
+                customerId: $validated['customer_id'],
+                refundAmountIdr: (int) $validated['refund_amount_idr'],
+                reasonCode: $validated['reason_code'] ?? null,
+                idempotencyKey: $validated['idempotency_key'] ?? null
+            );
+
+            return ApiResponse::success($result, 200);
+        } catch (\DomainException|\InvalidArgumentException $e) {
+            return ApiResponse::error('REFUND_VALIDATION_FAILED', $e->getMessage(), 422);
+        }
+    }
+
+    public function showRefund(string $refundId): JsonResponse
+    {
+        $refund = RefundTransaction::find($refundId);
+        if (!$refund) {
+            return ApiResponse::error('REFUND_NOT_FOUND', 'Data refund tidak ditemukan.', 404);
+        }
+
+        return ApiResponse::success([
+            'refund_id' => $refund->id,
+            'case_id' => $refund->source_funding_reference,
+            'customer_id' => $refund->customerSPayAccount?->owner_external_id,
+            'status' => $refund->status,
+            'refund_amount_idr' => $refund->requested_amount_idr,
+            'credited_amount_idr' => $refund->credited_amount_idr,
+            'destination' => 'CUSTOMER_SPAY',
+            'created_at' => $refund->created_at?->toIso8601String(),
+        ], 200);
+    }
 }

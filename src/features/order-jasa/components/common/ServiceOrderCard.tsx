@@ -12,6 +12,7 @@ import {
   CreditCard,
   ArrowRight,
   CheckCircle,
+  XCircle,
   WarningCircle,
   Buildings,
   Phone,
@@ -52,6 +53,8 @@ interface ServiceOrderCardProps {
   onPrimaryAction?: (order: ServiceOrder) => void;
   onSecondaryAction?: (order: ServiceOrder) => void;
   onViewDetail?: (order: ServiceOrder) => void;
+  onAcceptOrder?: (order: ServiceOrder) => void;
+  onRejectOrder?: (order: ServiceOrder) => void;
 }
 
 export function ServiceOrderCard({
@@ -60,8 +63,20 @@ export function ServiceOrderCard({
   onPrimaryAction,
   onSecondaryAction,
   onViewDetail,
+  onAcceptOrder,
+  onRejectOrder,
 }: ServiceOrderCardProps) {
-  const badgeInfo = getSubStatusBadgeInfo(order.subStatus);
+  const isRejectedByProvider =
+    order.providerDecisionStatus === "REJECTED" ||
+    order.subStatus === "CANCELLED_PROVIDER_REJECTED";
+
+  const badgeInfo = isRejectedByProvider
+    ? {
+        label: "Ditolak Mitra Toko",
+        variant: "danger" as const,
+        description: "Pesanan ditolak oleh mitra toko. Dana survei 100% dikembalikan otomatis ke akun S-Pay pelanggan.",
+      }
+    : getSubStatusBadgeInfo(order.subStatus);
 
   const formatRupiah = (val?: number) => {
     if (val === undefined || val === null) return "Rp 0";
@@ -220,6 +235,34 @@ export function ServiceOrderCard({
             <p className="text-[11px] text-slate-500 line-clamp-1 italic">
               &quot;{order.complaint.description}&quot;
             </p>
+
+            {/* Complaint photos preview */}
+            {order.complaint.photos && order.complaint.photos.length > 0 && (
+              <div className="flex items-center gap-1.5 pt-1">
+                {order.complaint.photos.slice(0, 3).map((photoUrl, idx) => (
+                  <a
+                    key={idx}
+                    href={photoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    title="Foto Kerusakan Pelanggan"
+                    className="w-8 h-8 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 shrink-0 hover:opacity-85 transition-opacity block shadow-2xs"
+                  >
+                    <img
+                      src={photoUrl}
+                      alt="Foto Kerusakan"
+                      className="w-full h-full object-cover"
+                    />
+                  </a>
+                ))}
+                {order.complaint.photos.length > 3 && (
+                  <span className="text-[10px] font-semibold text-slate-400 pl-0.5">
+                    +{order.complaint.photos.length - 3}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -241,7 +284,20 @@ export function ServiceOrderCard({
 
         {/* Financial / Assigned Worker Snapshot */}
         <div className="md:col-span-3 space-y-1 text-xs border-t md:border-t-0 md:border-l border-slate-100 pt-3 md:pt-0 md:pl-4">
-          {role === "PROVIDER" && order.status === "COMPLETED" ? (
+          {order.status === "CANCELLED" || order.providerDecisionStatus === "REJECTED" ? (
+            <div className="p-3 rounded-2xl bg-rose-50/80 border border-rose-200 text-[11px] space-y-1.5">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-700 block">
+                {order.providerDecisionStatus === "REJECTED" ? "Ditolak Mitra Toko" : "Pesanan Dibatalkan"}
+              </span>
+              <p className="text-slate-800 font-medium line-clamp-2 italic leading-snug">
+                &quot;{order.cancellation?.reasonDetail || order.providerRejectionReason || "Pesanan ditolak/dibatalkan"}&quot;
+              </p>
+              <div className="pt-1 border-t border-rose-200/60 flex items-center gap-1 font-bold text-emerald-700 text-[10px]">
+                <ShieldCheck size={13} weight="fill" className="text-emerald-600 shrink-0" />
+                <span>Refund 100% S-Pay (Rp {(order.serviceSnapshot.diagnosisFee || 50000).toLocaleString("id-ID")})</span>
+              </div>
+            </div>
+          ) : role === "PROVIDER" && order.status === "COMPLETED" ? (
             <div className="space-y-1 p-2.5 rounded-2xl bg-sky-50/80 border border-sky-100 text-[11px]">
               <div className="flex justify-between items-center text-slate-600">
                 <span>Pengerjaan:</span>
@@ -322,8 +378,8 @@ export function ServiceOrderCard({
         </p>
 
         <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-          {/* Secondary Action if available */}
-          {onSecondaryAction && (
+          {/* Secondary Action if available (except Worker which has dedicated Tolak button) */}
+          {onSecondaryAction && role !== "WORKER" && (
             <button
               type="button"
               onClick={() => onSecondaryAction(order)}
@@ -367,40 +423,148 @@ export function ServiceOrderCard({
             </button>
           )}
 
-          {role === "CUSTOMER" && order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION" && (
+          {role === "CUSTOMER" && (order.subStatus === "VISIT_CLOSED" || (order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION" && order.visit?.status === "CLOSED")) && (
             <button
               type="button"
               onClick={() => (onPrimaryAction ? onPrimaryAction(order) : undefined)}
               className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
             >
               <CheckCircle size={15} weight="bold" />
-              <span>Konfirmasi Selesai</span>
+              <span>Pekerjaan Telah Selesai</span>
             </button>
           )}
 
-          {role === "WORKER" && order.assignment?.status === "ASSIGNED" && (
-            <button
-              type="button"
-              onClick={() => (onPrimaryAction ? onPrimaryAction(order) : undefined)}
-              className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
-            >
-              <CheckCircle size={15} weight="bold" />
-              <span>Terima Tugas</span>
-            </button>
+          {role === "WORKER" && (order.assignment?.status === "ASSIGNED" || order.subStatus === "ASSIGNED_PENDING" || (order.assignment?.status as any) === "PENDING") && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => (onSecondaryAction ? onSecondaryAction(order) : undefined)}
+                className="px-3.5 py-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <XCircle size={15} weight="bold" />
+                <span>Tolak</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => (onPrimaryAction ? onPrimaryAction(order) : undefined)}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <CheckCircle size={15} weight="bold" />
+                <span>Terima Tugas</span>
+              </button>
+            </div>
           )}
 
           {role === "WORKER" && order.subStatus === "WORKER_ACCEPTED" && (
+            (() => {
+              const todayJakarta = new Intl.DateTimeFormat("en-CA", {
+                timeZone: "Asia/Jakarta",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+              }).format(new Date());
+              const isTodayOrPast = !order.schedule?.date || order.schedule.date <= todayJakarta;
+              if (!isTodayOrPast) return null;
+              return (
+                <button
+                  type="button"
+                  onClick={() => (onPrimaryAction ? onPrimaryAction(order) : undefined)}
+                  className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <ArrowRight size={15} weight="bold" />
+                  <span>Mulai Perjalanan</span>
+                </button>
+              );
+            })()
+          )}
+
+          {role === "WORKER" && (order.subStatus === "WORKER_OTW" || order.visit?.status === "OTW" || order.visit?.status === "ON_THE_WAY") && (
             <button
               type="button"
               onClick={() => (onPrimaryAction ? onPrimaryAction(order) : undefined)}
               className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
             >
-              <ArrowRight size={15} weight="bold" />
-              <span>Mulai Perjalanan</span>
+              <MapPin size={15} weight="bold" />
+              <span>Tiba di Lokasi</span>
             </button>
           )}
 
-          {role === "PROVIDER" && (order.subStatus === "UNASSIGNED" || order.subStatus === "ASSIGNED_PENDING") && (
+          {role === "WORKER" && (order.subStatus === "WORKER_ARRIVED" || order.visit?.status === "ARRIVED") && (
+            <button
+              type="button"
+              onClick={() => (onPrimaryAction ? onPrimaryAction(order) : undefined)}
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <Wrench size={15} weight="bold" />
+              <span>Mulai Pemeriksaan</span>
+            </button>
+          )}
+
+          {role === "WORKER" && order.subStatus === "WAITING_CUSTOMER_CONSENT" && (
+            <Link
+              href={`/worker/jobs/${order.id}`}
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <CheckCircle size={15} weight="bold" />
+              <span>Persetujuan di Lokasi</span>
+            </Link>
+          )}
+
+          {role === "WORKER" && order.subStatus === "PRICE_APPROVED" && (
+            <button
+              type="button"
+              onClick={() => (onPrimaryAction ? onPrimaryAction(order) : undefined)}
+              className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-dark text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <Wrench size={15} weight="bold" />
+              <span>Lanjutkan Pengerjaan</span>
+            </button>
+          )}
+
+          {role === "WORKER" && order.subStatus === "EXECUTING" && (
+            <button
+              type="button"
+              onClick={() => (onPrimaryAction ? onPrimaryAction(order) : undefined)}
+              className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <CheckCircle size={15} weight="bold" />
+              <span>Selesai Pengerjaan</span>
+            </button>
+          )}
+
+          {role === "WORKER" && (order.subStatus === "WAITING_WORKER_CLOSE_VISIT" || order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION" || order.paymentSummary?.executionPayment?.status === "PAID") && order.visit?.status !== "CLOSED" && (
+            <button
+              type="button"
+              onClick={() => (onPrimaryAction ? onPrimaryAction(order) : undefined)}
+              className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <CheckCircle size={15} weight="bold" />
+              <span>Akhiri Kunjungan</span>
+            </button>
+          )}
+
+          {role === "PROVIDER" && order.subStatus === "UNASSIGNED" && order.providerDecisionStatus !== "ACCEPTED" && (
+            <>
+              <button
+                type="button"
+                onClick={() => (onRejectOrder ? onRejectOrder(order) : undefined)}
+                className="px-3.5 py-2 rounded-xl border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <XCircle size={15} weight="bold" />
+                <span>Tolak Order</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => (onAcceptOrder ? onAcceptOrder(order) : undefined)}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+              >
+                <CheckCircle size={15} weight="bold" />
+                <span>Terima Order</span>
+              </button>
+            </>
+          )}
+
+          {role === "PROVIDER" && ((order.subStatus === "UNASSIGNED" && order.providerDecisionStatus === "ACCEPTED") || order.subStatus === "ASSIGNED_PENDING") && (
             <button
               type="button"
               onClick={() => (onPrimaryAction ? onPrimaryAction(order) : undefined)}

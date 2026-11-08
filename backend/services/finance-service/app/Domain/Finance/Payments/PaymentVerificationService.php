@@ -104,6 +104,22 @@ class PaymentVerificationService
             // 3. Status check under lock: already PAID (idempotent, no duplicate mutations)
             // A payment that is already PAID cannot transition to EXPIRED or FAILED.
             if ($intent->status === 'PAID') {
+                if ($outcome === 'SUCCESS') {
+                    // Re-dispatch confirmation to ensure downstream services are in sync
+                    OutboxEvent::create([
+                        'event_type' => 'finance.payment.confirmed.v1',
+                        'aggregate_type' => 'PaymentIntent',
+                        'aggregate_id' => $intent->id,
+                        'payload' => [
+                            'checkout_group_id' => $intent->checkout?->checkout_group_id,
+                            'payment_id' => $intent->id,
+                            'amount_idr' => $intent->amount_idr,
+                            'currency' => $intent->currency,
+                            'paid_at' => ($intent->paid_at ?? now())->toIso8601String(),
+                            'merchant_order_ids' => $intent->checkout?->paymentAllocations?->pluck('merchant_order_id')->filter()->values()->all() ?? [],
+                        ],
+                    ]);
+                }
                 return $intent->load('checkout.paymentAllocations');
             }
 

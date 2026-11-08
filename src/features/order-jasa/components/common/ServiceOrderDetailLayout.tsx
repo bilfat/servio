@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   CreditCard,
   ArrowLeft,
+  ArrowRight,
   CheckCircle,
   WarningCircle,
   Buildings,
@@ -26,15 +27,24 @@ import {
   Bank,
   FileText,
   CurrencyCircleDollar,
+  Star,
+  XCircle,
+  Eye,
 } from "@phosphor-icons/react";
 import { ServiceOrder } from "../../types";
 import { getSubStatusBadgeInfo } from "../../constants";
-import { ServiceTimeline } from "./ServiceTimeline";
-import { ServiceStatusTimeline } from "./ServiceStatusTimeline";
+import { ServiceOrderStageBanner } from "./ServiceOrderStageBanner";
+import { CurrentOrderStatusPanel } from "./CurrentOrderStatusPanel";
+import { OrderActivityHistoryModal } from "./OrderActivityHistoryModal";
 import { DiagnosisReviewModal } from "./DiagnosisReviewModal";
 import { SparepartSourceModal } from "./SparepartSourceModal";
 import { FollowUpOrderDraftModal } from "./FollowUpOrderDraftModal";
+import { CompleteOrderSummaryModal } from "./CompleteOrderSummaryModal";
 import { getStoredWorkerPhoto, useWorkerPhoto } from "@/features/worker/workerPhotoHelper";
+import { useAfterSales } from "@/features/afterSales/useAfterSales";
+import { OrderReviewModal } from "@/components/features/afterSales/OrderReviewModal";
+import { WarrantyClaimModal } from "@/components/features/afterSales/WarrantyClaimModal";
+import { afterSalesApi, ReviewSubmission } from "@/lib/afterSalesApi";
 
 function DetailWorkerAvatar({
   workerId,
@@ -84,6 +94,8 @@ export function ServiceOrderDetailLayout({
 
   const {
     cancelBooking,
+    acceptOrder,
+    rejectOrder,
     assignWorker,
     acceptAssignment,
     rejectAssignment,
@@ -121,6 +133,7 @@ export function ServiceOrderDetailLayout({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+
     const handleUpdate = (e: any) => {
       const updatedId = e?.detail?.orderId;
       if (!updatedId || updatedId === order.id || updatedId === order.orderNumber) {
@@ -129,11 +142,35 @@ export function ServiceOrderDetailLayout({
     };
     window.addEventListener(ORDER_JASA_UPDATED_EVENT, handleUpdate);
 
-    // Adaptive auto-refresh: poll every 3.5s when active tab, and recheck on visibility/focus
+    // Cross-tab & Cross-role real-time broadcast channel synchronization
+    let channel: BroadcastChannel | null = null;
+    try {
+      if ("BroadcastChannel" in window) {
+        channel = new BroadcastChannel("servio_order_jasa_channel");
+        channel.onmessage = (e) => {
+          const updatedId = e?.data?.orderId;
+          if (!updatedId || updatedId === order.id || updatedId === order.orderNumber) {
+            refreshCurrentOrder(order.id);
+          }
+        };
+      }
+    } catch {
+      // fallback ignore
+    }
+
+    // Storage event fallback for cross-tab sync
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key === "servio_service_orders_cache_v2") {
+        refreshCurrentOrder(order.id);
+      }
+    };
+    window.addEventListener("storage", handleStorageEvent);
+
+    // Adaptive auto-refresh: poll every 2s when active tab, and recheck on visibility/focus
     const intervalId = setInterval(() => {
       if (typeof document !== "undefined" && document.hidden) return;
       refreshCurrentOrder(order.id);
-    }, 3500);
+    }, 2000);
 
     const handleVisibility = () => {
       if (typeof document !== "undefined" && !document.hidden) {
@@ -146,6 +183,8 @@ export function ServiceOrderDetailLayout({
 
     return () => {
       window.removeEventListener(ORDER_JASA_UPDATED_EVENT, handleUpdate);
+      window.removeEventListener("storage", handleStorageEvent);
+      if (channel) channel.close();
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("focus", handleVisibility);
       clearInterval(intervalId);
@@ -162,6 +201,8 @@ export function ServiceOrderDetailLayout({
   const [isWorkerConsentOpen, setIsWorkerConsentOpen] = useState(false);
   const [isWorkerFinishOpen, setIsWorkerFinishOpen] = useState(false);
   const [isProviderAssignOpen, setIsProviderAssignOpen] = useState(false);
+  const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
+  const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
 
   // Payment modal state
   const [activePaymentModal, setActivePaymentModal] = useState<{
@@ -179,6 +220,58 @@ export function ServiceOrderDetailLayout({
 
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+
+  // Provider order rejection modal state (Section 50 S-Pay Guarantee)
+  const [showProviderRejectModal, setShowProviderRejectModal] = useState(false);
+  const [providerRejectReason, setProviderRejectReason] = useState("Jadwal teknisi penuh");
+
+  // Worker task rejection modal state
+  const [showWorkerRejectModal, setShowWorkerRejectModal] = useState(false);
+  const [workerRejectReason, setWorkerRejectReason] = useState("Jadwal bentrok dengan pekerjaan lain");
+  const [workerRejectNotes, setWorkerRejectNotes] = useState("");
+
+  // Phase 07 After-Sales & Review state
+  const { warranties, cases } = useAfterSales();
+  const [isServiceReviewModalOpen, setIsServiceReviewModalOpen] = useState(false);
+  const [isServiceClaimModalOpen, setIsServiceClaimModalOpen] = useState(false);
+  const [existingServiceReview, setExistingServiceReview] = useState<ReviewSubmission | null>(null);
+
+  const associatedWarranty = React.useMemo(() => {
+    if (!warranties || warranties.length === 0) return null;
+    return (
+      warranties.find(
+        (w) => w.orderId === order.id || w.orderNumber === order.orderNumber
+      ) || null
+    );
+  }, [warranties, order.id, order.orderNumber]);
+
+  const activeAfterSalesCase = React.useMemo(() => {
+    if (!cases || cases.length === 0) return null;
+    return (
+      cases.find(
+        (c) => c.sourceOrderId === order.id || c.sourceOrderNumber === order.orderNumber
+      ) || null
+    );
+  }, [cases, order.id, order.orderNumber]);
+
+  const isWarrantyReworkJob = Boolean(
+    (order as any).isWarrantyJob ||
+      (order as any).caseId ||
+      order.serviceSnapshot.title.toLowerCase().includes("garansi") ||
+      activeAfterSalesCase?.warrantyJob
+  );
+
+  useEffect(() => {
+    if (role !== "CUSTOMER" || !order.id) return;
+    afterSalesApi.customer
+      .getMyReview(order.id)
+      .then((res) => {
+        if (res.success && res.data && res.data.id) {
+          setExistingServiceReview(res.data);
+        }
+      })
+      .catch(() => {});
+  }, [role, order.id]);
 
   const badgeInfo = getSubStatusBadgeInfo(order.subStatus);
 
@@ -231,6 +324,12 @@ export function ServiceOrderDetailLayout({
         </Link>
 
         <div className="flex items-center gap-2 flex-wrap">
+          {isWarrantyReworkJob && (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-100 text-purple-800 border border-purple-300 text-[11px] font-bold">
+              <ShieldCheck size={14} weight="fill" />
+              GARANSI — PEKERJAAN ULANG
+            </span>
+          )}
           <span className="font-mono text-xs font-bold text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
             #{order.orderNumber}
           </span>
@@ -242,435 +341,408 @@ export function ServiceOrderDetailLayout({
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. TWO-COLUMN RESPONSIVE LAYOUT                                           */}
+      {/* 2. HERO ANIMATED 14-STAGE LIFECYCLE BANNER                                */}
+      {/* ========================================================================= */}
+      <ServiceOrderStageBanner order={order} role={role} />
+
+      {/* ========================================================================= */}
+      {/* 3. TWO-COLUMN RESPONSIVE LAYOUT                                           */}
       {/* ========================================================================= */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* ======================================================================= */}
         {/* KOLOM KIRI (lg:col-span-7 xl:col-span-7): STATUS OPERASIONAL & RIWAYAT  */}
         {/* ======================================================================= */}
         <div className="lg:col-span-7 xl:col-span-7 space-y-6">
-          {/* Card 1: Tindakan Status Operasional & Tombol Aksi */}
-          <div className="bg-white rounded-3xl border border-slate-200/90 shadow-servio-xs p-5 sm:p-6 space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                Tindakan Status Saat Ini
-              </span>
-              <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${badgeColorClass}`}>
-                {badgeInfo.label}
-              </span>
-            </div>
+          {/* 1. HERO ACTIVE STATUS PANEL (DYNAMIC MULTI-ROLE REPLACEMENT) */}
+          <CurrentOrderStatusPanel
+            order={order}
+            role={role}
+            onOpenSummaryModal={() => setIsSummaryModalOpen(true)}
+            onOpenActivityHistoryModal={() => setIsActivityModalOpen(true)}
+            onAcceptOrder={
+              role === "PROVIDER"
+                ? async () => {
+                    setIsActionLoading(true);
+                    try {
+                      await acceptOrder(order.id);
+                      await refreshCurrentOrder(order.id);
+                      setToastMessage("Pesanan berhasil diterima! Silakan pilih dan tugaskan teknisi.");
+                    } catch (err: any) {
+                      setToastMessage(err?.message || "Gagal menerima pesanan.");
+                    } finally {
+                      setIsActionLoading(false);
+                    }
+                  }
+                : role === "WORKER"
+                ? async () => {
+                    setIsActionLoading(true);
+                    try {
+                      await acceptAssignment(order.id);
+                      await refreshCurrentOrder(order.id);
+                      setToastMessage("Penugasan diterima! Siap berangkat sesuai jadwal.");
+                    } catch (err: any) {
+                      setToastMessage(err?.message || "Gagal menerima tugas.");
+                    } finally {
+                      setIsActionLoading(false);
+                    }
+                  }
+                : undefined
+            }
+            onRejectOrder={
+              role === "PROVIDER"
+                ? () => {
+                    setProviderRejectReason("Jadwal teknisi penuh");
+                    setShowProviderRejectModal(true);
+                  }
+                : role === "WORKER"
+                ? () => {
+                    setWorkerRejectReason("Jadwal bentrok dengan pekerjaan lain");
+                    setWorkerRejectNotes("");
+                    setShowWorkerRejectModal(true);
+                  }
+                : undefined
+            }
+            onAssignWorker={() => setIsProviderAssignOpen(true)}
+            onPayDiagnosis={() => {
+              if (diagPayment) {
+                setActivePaymentModal({
+                  type: "DIAGNOSIS",
+                  invoiceNo: diagPayment.invoiceNo,
+                  paymentId: diagPayment.paymentId,
+                  amount: diagPayment.amount,
+                  method: diagPayment.method || "QRIS",
+                  vaNumber: diagPayment.vaNumber || "827708123456789",
+                  expiresAt: diagPayment.expiresAt,
+                });
+                setSelectedMethod(diagPayment.method || "QRIS");
+              }
+            }}
+            onPayExecution={() => {
+              if (execPayment) {
+                setActivePaymentModal({
+                  type: "EXECUTION",
+                  invoiceNo: execPayment.invoiceNo,
+                  paymentId: execPayment.paymentId,
+                  amount: execPayment.amount,
+                  method: execPayment.method || "BCA_VA",
+                  vaNumber: execPayment.vaNumber || "827708123456789",
+                  expiresAt: execPayment.expiresAt,
+                });
+                setSelectedMethod(execPayment.method || "BCA_VA");
+              }
+            }}
+            onReviewDiagnosis={() => setIsDiagnosisReviewOpen(true)}
+            onConfirmCompleted={async () => {
+              setIsActionLoading(true);
+              try {
+                await confirmCustomerCompleted(order.id);
+                await refreshCurrentOrder(order.id);
+                setToastMessage("Terima kasih! Pesanan servis berhasil diselesaikan.");
+              } catch (err: any) {
+                setToastMessage(err?.message || "Gagal mengonfirmasi selesai.");
+              } finally {
+                setIsActionLoading(false);
+              }
+            }}
+            onRetryPayment={async () => {
+              setIsRetryingPayment(true);
+              try {
+                await retryPayment(order.id);
+                await refreshCurrentOrder(order.id);
+                setToastMessage("Tagihan pengganti berhasil diterbitkan! Nomor invoice baru siap dibayar.");
+              } catch (e: any) {
+                setToastMessage(e?.message || "Gagal membuat tagihan pengganti.");
+              } finally {
+                setIsRetryingPayment(false);
+              }
+            }}
+            onStartTrip={async () => {
+              setIsActionLoading(true);
+              try {
+                await startTrip(order.id);
+                await refreshCurrentOrder(order.id);
+                setToastMessage("Status diubah: Menuju Lokasi.");
+              } catch (err: any) {
+                setToastMessage(err?.message || "Gagal memperbarui status.");
+              } finally {
+                setIsActionLoading(false);
+              }
+            }}
+            onArrive={async () => {
+              setIsActionLoading(true);
+              try {
+                await arriveAtLocation(order.id);
+                await refreshCurrentOrder(order.id);
+                setToastMessage("Status diubah: Telah Tiba di Lokasi.");
+              } catch (err: any) {
+                setToastMessage(err?.message || "Gagal memperbarui status.");
+              } finally {
+                setIsActionLoading(false);
+              }
+            }}
+            onStartDiagnosis={() => setIsWorkerDiagnosisOpen(true)}
+            onOpenDiagnosisForm={() => setIsWorkerDiagnosisOpen(true)}
+            onInPersonConsent={() => setIsWorkerConsentOpen(true)}
+            onStartExecution={async () => {
+              setIsActionLoading(true);
+              try {
+                await startExecution(order.id);
+                await refreshCurrentOrder(order.id);
+                setToastMessage("Pengerjaan fisik dimulai. Status: Sedang Dikerjakan.");
+              } catch (err: any) {
+                setToastMessage(err?.message || "Gagal memulai pengerjaan.");
+              } finally {
+                setIsActionLoading(false);
+              }
+            }}
+            onOpenFinishForm={() => setIsWorkerFinishOpen(true)}
+            onCloseVisit={async () => {
+              setIsActionLoading(true);
+              try {
+                await endVisit(order.id);
+                await refreshCurrentOrder(order.id);
+                setToastMessage("Kunjungan operasional berhasil diakhiri (VISIT_CLOSED).");
+              } catch (err: any) {
+                setToastMessage(err?.message || "Gagal mengakhiri kunjungan.");
+              } finally {
+                setIsActionLoading(false);
+              }
+            }}
+            isActionLoading={isActionLoading || isRetryingPayment}
+          />
 
-            <p className="text-xs text-slate-600 leading-relaxed font-medium">
-              {badgeInfo.description}
-            </p>
-
-            {/* Role-Specific Operational CTA Buttons */}
-            <div className="space-y-2 pt-1">
-              {/* Customer Actions */}
-              {role === "CUSTOMER" && (
-                <>
-                  {order.subStatus === "DIAGNOSIS_PENDING" && diagPayment && (
-                    <div className="space-y-2">
-                      <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
-                        <span className="font-bold block">Tagihan Biaya Diagnosis</span>
-                        <span className="text-lg font-bold font-display text-amber-900 font-mono">
-                          {formatRupiah(diagPayment.amount)}
-                        </span>
-                        <span className="text-[10px] text-amber-700 block mt-0.5">Batas waktu pembayaran 6 jam</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActivePaymentModal({
-                            type: "DIAGNOSIS",
-                            invoiceNo: diagPayment.invoiceNo,
-                            paymentId: diagPayment.paymentId,
-                            amount: diagPayment.amount,
-                            method: diagPayment.method || "QRIS",
-                            vaNumber: diagPayment.vaNumber || "827708123456789",
-                            expiresAt: diagPayment.expiresAt,
-                          });
-                          setSelectedMethod(diagPayment.method || "QRIS");
-                        }}
-                        className="w-full py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition shadow-xs flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        <CreditCard size={16} weight="bold" />
-                        <span>Bayar Biaya Diagnosis</span>
-                      </button>
-                    </div>
-                  )}
-
-                  {order.subStatus === "WAITING_CUSTOMER_CONSENT" && (
-                    <button
-                      type="button"
-                      onClick={() => setIsDiagnosisReviewOpen(true)}
-                      className="w-full py-3 px-4 rounded-xl bg-primary hover:bg-primary-dark text-white font-bold text-xs transition shadow-xs flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      <CheckCircle size={16} weight="bold" />
-                      <span>Tanggapi Hasil Pemeriksaan</span>
-                    </button>
-                  )}
-
-                  {(order.subStatus === "WORK_FINISHED" || order.subStatus === "EXECUTION_PENDING") && execPayment && execPayment.status !== "PAID" && (
-                    <div className="space-y-2">
-                      <div className="p-3.5 rounded-2xl bg-sky-50 border border-sky-200 text-[#0F4C81] text-xs space-y-1">
-                        <span className="font-bold block text-sm">Pekerjaan Selesai — Menunggu Pembayaran</span>
-                        <div className="flex justify-between items-center pt-1 font-mono">
-                          <span className="text-slate-600">Total Tagihan Akhir:</span>
-                          <span className="text-lg font-bold font-display text-primary">{formatRupiah(execPayment.amount)}</span>
-                        </div>
-                        <p className="text-[11px] text-slate-500">Termasuk subtotal pengerjaan &amp; biaya layanan aplikasi.</p>
-                        <span className="text-[10px] text-amber-700 block font-semibold">Batas waktu pembayaran: 6 jam</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActivePaymentModal({
-                            type: "EXECUTION",
-                            invoiceNo: execPayment.invoiceNo,
-                            paymentId: execPayment.paymentId,
-                            amount: execPayment.amount,
-                            method: execPayment.method || "BCA_VA",
-                            vaNumber: execPayment.vaNumber || "827708123456789",
-                            expiresAt: execPayment.expiresAt,
-                          });
-                          setSelectedMethod(execPayment.method || "BCA_VA");
-                        }}
-                        className="w-full py-3 px-4 rounded-xl bg-primary hover:bg-primary-dark text-white font-bold text-xs transition shadow-xs flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        <CreditCard size={16} weight="bold" />
-                        <span>Bayar Sekarang</span>
-                      </button>
-                    </div>
-                  )}
-
-                  {order.subStatus === "PAYMENT_OVERDUE" && (
-                    <div className="space-y-2">
-                      <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs space-y-1">
-                        <div className="flex items-center gap-1.5 font-bold text-rose-800">
-                          <WarningCircle size={16} weight="fill" className="text-rose-600 shrink-0" />
-                          <span>Batas Waktu Pembayaran Kadaluarsa</span>
-                        </div>
-                        <p className="text-[11px] text-rose-700 leading-snug">
-                          Invoice pengerjaan sebelumnya telah melewati batas waktu SLA 6 jam. Pesanan tetap aman dan tidak dibatalkan otomatis. Silakan buat tagihan pengganti untuk melanjutkan pelunasan.
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        disabled={isRetryingPayment}
-                        onClick={async () => {
-                          setIsRetryingPayment(true);
-                          try {
-                            await retryPayment(order.id);
-                            setToastMessage("Tagihan pengganti berhasil diterbitkan! Nomor invoice baru siap dibayar.");
-                          } catch (e: any) {
-                            setToastMessage(e?.message || "Gagal membuat tagihan pengganti.");
-                          } finally {
-                            setIsRetryingPayment(false);
-                          }
-                        }}
-                        className="w-full py-3 px-4 rounded-xl bg-primary hover:bg-primary-dark text-white font-bold text-xs transition shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                      >
-                        <ArrowsClockwise size={16} weight="bold" className={isRetryingPayment ? "animate-spin" : ""} />
-                        <span>{isRetryingPayment ? "Menerbitkan Tagihan..." : "Buat Tagihan Pengganti & Bayar"}</span>
-                      </button>
-                    </div>
-                  )}
-
-                  {order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION" && (
-                    <button
-                      type="button"
-                      disabled={isActionLoading}
-                      onClick={async () => {
-                        setIsActionLoading(true);
-                        try {
-                          await confirmCustomerCompleted(order.id);
-                          await refreshCurrentOrder(order.id);
-                          setToastMessage("Terima kasih! Pesanan servis berhasil dikonfirmasi selesai.");
-                        } catch (err: any) {
-                          setToastMessage(err?.message || "Gagal mengonfirmasi selesai.");
-                        } finally {
-                          setIsActionLoading(false);
-                        }
-                      }}
-                      className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                    >
-                      <CheckCircle size={16} weight="bold" className={isActionLoading ? "animate-spin" : ""} />
-                      <span>{isActionLoading ? "Memproses..." : "Konfirmasi Selesai Pengerjaan"}</span>
-                    </button>
-                  )}
-
-                  {/* Cancel Button if before OTW */}
-                  {(order.subStatus === "DIAGNOSIS_PENDING" ||
-                    order.subStatus === "UNASSIGNED" ||
-                    order.subStatus === "ASSIGNED_PENDING" ||
-                    order.subStatus === "WORKER_ACCEPTED") && (
-                    <button
-                      type="button"
-                      onClick={() => setShowCancelModal(true)}
-                      className="w-full py-2.5 px-4 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-xs transition cursor-pointer"
-                    >
-                      Batalkan Pesanan
-                    </button>
-                  )}
-                </>
-              )}
-
-              {/* Worker Actions */}
-              {role === "WORKER" && (
-                <>
-                  {order.assignment?.status === "ASSIGNED" && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        disabled={isActionLoading}
-                        onClick={async () => {
-                          setIsActionLoading(true);
-                          try {
-                            await rejectAssignment(order.id, "Jadwal bersamaan dengan penugasan lain");
-                            await refreshCurrentOrder(order.id);
-                            setToastMessage("Penugasan ditolak.");
-                          } catch (err: any) {
-                            setToastMessage(err?.message || "Gagal menolak tugas.");
-                          } finally {
-                            setIsActionLoading(false);
-                          }
-                        }}
-                        className="py-2.5 px-3 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-xs transition disabled:opacity-50"
-                      >
-                        Tolak Tugas
-                      </button>
-                      <button
-                        type="button"
-                        disabled={isActionLoading}
-                        onClick={async () => {
-                          setIsActionLoading(true);
-                          try {
-                            await acceptAssignment(order.id);
-                            await refreshCurrentOrder(order.id);
-                            setToastMessage("Penugasan diterima! Siap berangkat sesuai jadwal.");
-                          } catch (err: any) {
-                            setToastMessage(err?.message || "Gagal menerima tugas.");
-                          } finally {
-                            setIsActionLoading(false);
-                          }
-                        }}
-                        className="py-2.5 px-3 rounded-xl bg-primary hover:bg-primary-dark text-white font-bold text-xs transition shadow-xs flex items-center justify-center gap-1 disabled:opacity-50"
-                      >
-                        <CheckCircle size={14} weight="bold" className={isActionLoading ? "animate-spin" : ""} />
-                        <span>{isActionLoading ? "Menerima..." : "Terima Tugas"}</span>
-                      </button>
-                    </div>
-                  )}
-
-                  {order.subStatus === "WORKER_ACCEPTED" && (
-                    <button
-                      type="button"
-                      disabled={isActionLoading}
-                      onClick={async () => {
-                        setIsActionLoading(true);
-                        try {
-                          await startTrip(order.id);
-                          await refreshCurrentOrder(order.id);
-                          setToastMessage("Status diubah: Menuju Lokasi.");
-                        } catch (err: any) {
-                          setToastMessage(err?.message || "Gagal memperbarui status.");
-                        } finally {
-                          setIsActionLoading(false);
-                        }
-                      }}
-                      className="w-full py-3 px-4 rounded-xl bg-primary hover:bg-primary-dark text-white font-bold text-xs transition shadow-xs flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      <Wrench size={16} weight="bold" className={isActionLoading ? "animate-spin" : ""} />
-                      <span>{isActionLoading ? "Memperbarui..." : "Mulai Perjalanan (OTW)"}</span>
-                    </button>
-                  )}
-
-                  {order.subStatus === "WORKER_OTW" && (
-                    <button
-                      type="button"
-                      disabled={isActionLoading}
-                      onClick={async () => {
-                        setIsActionLoading(true);
-                        try {
-                          await arriveAtLocation(order.id);
-                          await refreshCurrentOrder(order.id);
-                          setToastMessage("Status diubah: Telah Tiba di Lokasi.");
-                        } catch (err: any) {
-                          setToastMessage(err?.message || "Gagal memperbarui status.");
-                        } finally {
-                          setIsActionLoading(false);
-                        }
-                      }}
-                      className="w-full py-3 px-4 rounded-xl bg-primary hover:bg-primary-dark text-white font-bold text-xs transition shadow-xs flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      <MapPin size={16} weight="bold" className={isActionLoading ? "animate-spin" : ""} />
-                      <span>{isActionLoading ? "Memperbarui..." : "Saya Sudah Tiba"}</span>
-                    </button>
-                  )}
-
-                  {order.subStatus === "WORKER_ARRIVED" && (
-                    <button
-                      type="button"
-                      onClick={() => setIsWorkerDiagnosisOpen(true)}
-                      className="w-full py-3 px-4 rounded-xl bg-primary hover:bg-primary-dark text-white font-bold text-xs transition shadow-xs flex items-center justify-center gap-2"
-                    >
-                      <Wrench size={16} weight="bold" />
-                      <span>Isi Hasil Pemeriksaan &amp; Biaya</span>
-                    </button>
-                  )}
-
-                  {order.subStatus === "WAITING_CUSTOMER_CONSENT" && (
-                    <div className="space-y-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsWorkerConsentOpen(true)}
-                        className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-xs flex items-center justify-center gap-1.5"
-                      >
-                        <CheckCircle size={15} weight="bold" />
-                        <span>Catat Persetujuan di Lokasi</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setIsWorkerDiagnosisOpen(true)}
-                        className="w-full py-2 px-3 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition"
-                      >
-                        Revisi Rincian Biaya
-                      </button>
-                    </div>
-                  )}
-
-                  {(order.subStatus === "IN_PERSON_CONSENT_RECORDED" || order.subStatus === "EXECUTING") && (
-                    <button
-                      type="button"
-                      onClick={() => setIsWorkerFinishOpen(true)}
-                      className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-xs flex items-center justify-center gap-2"
-                    >
-                      <CheckCircle size={16} weight="bold" />
-                      <span>Selesaikan Pekerjaan (Upload Bukti)</span>
-                    </button>
-                  )}
-
-                  {order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION" && (
-                    <button
-                      type="button"
-                      disabled={isActionLoading}
-                      onClick={async () => {
-                        setIsActionLoading(true);
-                        try {
-                          await endVisit(order.id);
-                          await refreshCurrentOrder(order.id);
-                          setToastMessage("Kunjungan selesai dan diakhiri.");
-                        } catch (err: any) {
-                          setToastMessage(err?.message || "Gagal mengakhiri kunjungan.");
-                        } finally {
-                          setIsActionLoading(false);
-                        }
-                      }}
-                      className="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition disabled:opacity-50"
-                    >
-                      <span>{isActionLoading ? "Memproses..." : "Akhiri Kunjungan"}</span>
-                    </button>
-                  )}
-                </>
-              )}
-
-              {/* Provider Actions */}
-              {role === "PROVIDER" && (
-                <>
-                  {order.subStatus === "UNASSIGNED" && (
-                    <button
-                      type="button"
-                      onClick={() => setIsProviderAssignOpen(true)}
-                      className="w-full py-3 px-4 rounded-xl bg-primary hover:bg-primary-dark text-white font-bold text-xs transition shadow-xs flex items-center justify-center gap-2"
-                    >
-                      <User size={16} weight="bold" />
-                      <span>Pilih &amp; Tugaskan Teknisi</span>
-                    </button>
-                  )}
-                  {order.subStatus === "ASSIGNED_PENDING" && (
-                    <button
-                      type="button"
-                      onClick={() => setIsProviderAssignOpen(true)}
-                      className="w-full py-2.5 px-4 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs transition"
-                    >
-                      Ganti Teknisi
-                    </button>
-                  )}
-                </>
-              )}
-
-              {/* Finance Ops Gateway Actions */}
-              {role === "FINANCE" && (
-                <div className="space-y-2 p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs">
-                  <span className="font-bold text-amber-900 block">Gateway Pembayaran (Finance Service 06)</span>
-                  {diagPayment?.status === "PENDING" && (
-                    <button
-                      type="button"
-                      disabled={isActionLoading}
-                      onClick={async () => {
-                        setIsActionLoading(true);
-                        try {
-                          await simulateFinancePayment(diagPayment.invoiceNo, "PAID");
-                          await refreshCurrentOrder(order.id);
-                          setToastMessage("Konfirmasi: Tagihan diagnosis berhasil diselesaikan di Finance 06.");
-                        } catch (err: any) {
-                          setToastMessage(err?.message || "Gagal memproses simulasi pembayaran.");
-                        } finally {
-                          setIsActionLoading(false);
-                        }
-                      }}
-                      className="w-full py-2 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition cursor-pointer disabled:opacity-50"
-                    >
-                      Konfirmasi Pembayaran Diagnosis (Finance 06)
-                    </button>
-                  )}
-                  {execPayment?.status === "PENDING" && (
-                    <button
-                      type="button"
-                      disabled={isActionLoading}
-                      onClick={async () => {
-                        setIsActionLoading(true);
-                        try {
-                          await simulateFinancePayment(execPayment.invoiceNo, "PAID");
-                          await refreshCurrentOrder(order.id);
-                          setToastMessage("Konfirmasi: Tagihan pengerjaan berhasil diselesaikan di Finance 06.");
-                        } catch (err: any) {
-                          setToastMessage(err?.message || "Gagal memproses simulasi pembayaran.");
-                        } finally {
-                          setIsActionLoading(false);
-                        }
-                      }}
-                      className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition cursor-pointer disabled:opacity-50"
-                    >
-                      Konfirmasi Pembayaran Pengerjaan (Finance 06)
-                    </button>
-                  )}
-                  {providerFunds?.status === "HELD" && (
-                    <button
-                      type="button"
-                      disabled={isActionLoading}
-                      onClick={async () => {
-                        setIsActionLoading(true);
-                        try {
-                          await simulateReleaseFunds120h(order.id);
-                          await refreshCurrentOrder(order.id);
-                          setToastMessage("Pelepasan Dana: Masa hold 120 jam diselesaikan, dana kini AVAILABLE di S-Pay.");
-                        } catch (err: any) {
-                          setToastMessage(err?.message || "Gagal melepaskan dana.");
-                        } finally {
-                          setIsActionLoading(false);
-                        }
-                      }}
-                      className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer disabled:opacity-50"
-                    >
-                      Rilis Dana Penahanan (120 Jam SLA)
-                    </button>
-                  )}
+          {/* Card Khusus: Pesanan Ditolak / Dibatalkan (Section 50 Jaminan S-Pay 100% Refund) */}
+          {(order.status === "CANCELLED" || order.providerDecisionStatus === "REJECTED") && (
+            <div className="bg-rose-50/70 rounded-3xl border border-rose-200 p-5 sm:p-6 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-rose-200/80">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0 border border-rose-200">
+                    <XCircle size={22} weight="bold" />
+                  </div>
+                  <div>
+                    <h3 className="font-heading font-bold text-sm sm:text-base text-rose-950">
+                      {order.providerDecisionStatus === "REJECTED" || order.subStatus === "CANCELLED_PROVIDER_REJECTED"
+                        ? "Pesanan Ditolak oleh Mitra Toko"
+                        : "Pesanan Telah Dibatalkan"}
+                    </h3>
+                    <p className="text-[11px] text-rose-800">
+                      {order.cancellation?.cancelledAt
+                        ? `Dibatalkan pada: ${new Date(order.cancellation.cancelledAt).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })} WIB`
+                        : "Pesanan telah resmi dihentikan oleh sistem"}
+                    </p>
+                  </div>
                 </div>
+                <span className="text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full bg-rose-200 text-rose-900 border border-rose-300">
+                  Status: Batal
+                </span>
+              </div>
+
+              {/* Alasan Penolakan / Pembatalan Resmi dari Database */}
+              <div className="p-3.5 rounded-2xl bg-white/90 border border-rose-200/90 space-y-1.5 text-xs shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-rose-800 uppercase tracking-wider block">
+                    Alasan {order.providerDecisionStatus === "REJECTED" ? "Penolakan Mitra" : "Pembatalan"}:
+                  </span>
+                  <span className="text-[10px] font-medium text-slate-500">
+                    Pihak: {order.cancellation?.cancelledByName || (order.providerDecisionStatus === "REJECTED" ? order.providerName : "Pelanggan")}
+                  </span>
+                </div>
+                <p className="text-slate-900 font-semibold italic text-xs sm:text-sm bg-rose-50/50 p-2.5 rounded-xl border border-rose-100">
+                  &ldquo;{order.cancellation?.reasonDetail || order.providerRejectionReason || "Pesanan tidak dapat dipenuhi oleh penyedia jasa."}&rdquo;
+                </p>
+              </div>
+
+              {/* Jaminan Pengembalian Dana 100% S-Pay (Section 50) */}
+              <div className="p-3.5 rounded-2xl bg-emerald-50/90 border border-emerald-200 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-emerald-950 flex items-center gap-1.5">
+                    <ShieldCheck size={16} weight="fill" className="text-emerald-600" />
+                    <span>Jaminan S-Pay 100% Refund (Section 50)</span>
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    Refund Sukses 100%
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-700">
+                  <span>Nominal Biaya Survei/Diagnosis:</span>
+                  <span className="font-mono font-bold text-emerald-800 text-sm">
+                    {formatRupiah(order.serviceSnapshot.diagnosisFee || 50000)}
+                  </span>
+                </div>
+                <p className="text-[11px] text-emerald-800 leading-snug">
+                  Seluruh dana biaya survei telah dikembalikan secara utuh tanpa potongan ke saldo dompet S-Pay pelanggan.
+                </p>
+                <div className="pt-1">
+                  <Link
+                    href={role === "CUSTOMER" ? "/customer/spay" : "/provider/spay"}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 hover:text-emerald-950 underline"
+                  >
+                    <span>Cek Saldo Dompet S-Pay</span>
+                    <ArrowRight size={12} weight="bold" />
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Customer pre-OTW Cancel Shortcut */}
+          {role === "CUSTOMER" &&
+            (order.subStatus === "DIAGNOSIS_PENDING" ||
+              order.subStatus === "UNASSIGNED" ||
+              order.subStatus === "ASSIGNED_PENDING" ||
+              order.subStatus === "WORKER_ACCEPTED") && (
+              <div className="flex justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowCancelModal(true)}
+                  className="px-4 py-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-xs transition cursor-pointer"
+                >
+                  Batalkan Pesanan
+                </button>
+              </div>
+            )}
+
+          {/* Customer After-Sales & Review Shortcuts for COMPLETED orders */}
+          {role === "CUSTOMER" && order.status === "COMPLETED" && (
+            <div className="p-4 rounded-3xl bg-emerald-50/70 border border-emerald-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-bold text-emerald-900 text-xs">
+                  <ShieldCheck size={16} weight="fill" className="text-emerald-600" />
+                  <span>Layanan Selesai — Purnajual &amp; Penilaian</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsServiceReviewModalOpen(true)}
+                  className="w-full py-2 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Star size={14} weight="fill" className="text-amber-500" />
+                  <span>{existingServiceReview ? "Lihat Penilaian Anda" : "Beri Rating & Ulasan"}</span>
+                </button>
+                {associatedWarranty ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsServiceClaimModalOpen(true)}
+                    className="w-full py-2 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <ShieldCheck size={14} weight="bold" />
+                    <span>Ajukan Klaim Garansi</span>
+                  </button>
+                ) : (
+                  <Link
+                    href="/warranties"
+                    className="w-full py-2 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-xs transition flex items-center justify-center gap-1.5"
+                  >
+                    <ShieldCheck size={14} weight="bold" />
+                    <span>Pusat Garansi Servio</span>
+                  </Link>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Worker on-site issue reporting */}
+          {role === "WORKER" &&
+            (order.subStatus === "WORK_FINISHED" ||
+              order.subStatus === "EXECUTION_PENDING" ||
+              order.subStatus === "PAYMENT_OVERDUE") &&
+            order.paymentSummary?.executionPayment?.status !== "PAID" && (
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center justify-between gap-3">
+                <span className="text-[11px] leading-snug">
+                  Pelanggan dapat membayar via QRIS/VA. Jika perlu meninggalkan lokasi sebelum pembayaran, laporkan kendala:
+                </span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const reason = prompt("Masukkan alasan kendala pembayaran di lokasi:");
+                    if (reason) {
+                      try {
+                        await reportPaymentIssue(order.id, reason);
+                        await endVisit(order.id);
+                        await refreshCurrentOrder(order.id);
+                        setToastMessage("Kendala pembayaran dilaporkan dan kunjungan ditutup.");
+                      } catch (e: any) {
+                        setToastMessage(e?.message || "Gagal melaporkan kendala.");
+                      }
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-xl border border-amber-300 hover:bg-amber-100 text-amber-800 font-bold text-xs transition shrink-0 cursor-pointer"
+                >
+                  Laporkan Kendala
+                </button>
+              </div>
+            )}
+
+          {/* Finance Ops Gateway Simulation */}
+          {role === "FINANCE" && (
+            <div className="space-y-2 p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs">
+              <span className="font-bold text-amber-900 block">Gateway Pembayaran (Finance Service 06)</span>
+              {diagPayment?.status === "PENDING" && (
+                <button
+                  type="button"
+                  disabled={isActionLoading}
+                  onClick={async () => {
+                    setIsActionLoading(true);
+                    try {
+                      await simulateFinancePayment(diagPayment.invoiceNo, "PAID");
+                      await refreshCurrentOrder(order.id);
+                      setToastMessage("Konfirmasi: Tagihan diagnosis berhasil diselesaikan di Finance 06.");
+                    } catch (err: any) {
+                      setToastMessage(err?.message || "Gagal memproses simulasi pembayaran.");
+                    } finally {
+                      setIsActionLoading(false);
+                    }
+                  }}
+                  className="w-full py-2 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition cursor-pointer disabled:opacity-50"
+                >
+                  Konfirmasi Pembayaran Diagnosis (Finance 06)
+                </button>
+              )}
+              {execPayment?.status === "PENDING" && (
+                <button
+                  type="button"
+                  disabled={isActionLoading}
+                  onClick={async () => {
+                    setIsActionLoading(true);
+                    try {
+                      await simulateFinancePayment(execPayment.invoiceNo, "PAID");
+                      await refreshCurrentOrder(order.id);
+                      setToastMessage("Konfirmasi: Tagihan pengerjaan berhasil diselesaikan di Finance 06.");
+                    } catch (err: any) {
+                      setToastMessage(err?.message || "Gagal memproses simulasi pembayaran.");
+                    } finally {
+                      setIsActionLoading(false);
+                    }
+                  }}
+                  className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition cursor-pointer disabled:opacity-50"
+                >
+                  Konfirmasi Pembayaran Pengerjaan (Finance 06)
+                </button>
+              )}
+              {providerFunds?.status === "HELD" && (
+                <button
+                  type="button"
+                  disabled={isActionLoading}
+                  onClick={async () => {
+                    setIsActionLoading(true);
+                    try {
+                      await simulateReleaseFunds120h(order.id);
+                      await refreshCurrentOrder(order.id);
+                      setToastMessage("Pelepasan Dana: Masa hold 120 jam diselesaikan, dana kini AVAILABLE di S-Pay.");
+                    } catch (err: any) {
+                      setToastMessage(err?.message || "Gagal melepaskan dana.");
+                    } finally {
+                      setIsActionLoading(false);
+                    }
+                  }}
+                  className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer disabled:opacity-50"
+                >
+                  Rilis Dana Penahanan (120 Jam SLA)
+                </button>
               )}
             </div>
-          </div>
+          )}
 
           {/* Card 2: Profil Teknisi Bertugas (Hanya setelah ACCEPTED) */}
           {order.assignment && order.assignment.status === "ACCEPTED" && (
@@ -727,14 +799,39 @@ export function ServiceOrderDetailLayout({
               </div>
 
               {/* Temuan */}
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1.5 text-xs">
-                <span className="text-[10px] font-bold text-slate-400 uppercase block">Temuan Kerusakan:</span>
-                <p className="text-slate-800 font-medium">{order.diagnosis.findings}</p>
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-2 text-xs">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase block">Temuan Kerusakan:</span>
+                  <p className="text-slate-800 font-medium">{order.diagnosis.findings}</p>
+                </div>
+                {order.diagnosis.rootCause && (
+                  <div className="pt-1.5 border-t border-slate-200/50">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Penyebab Utama:</span>
+                    <p className="text-slate-700">{order.diagnosis.rootCause}</p>
+                  </div>
+                )}
+                {order.diagnosis.recommendedActions && (
+                  <div className="pt-1.5 border-t border-slate-200/50">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Rekomendasi Tindakan:</span>
+                    <p className="text-slate-700">{order.diagnosis.recommendedActions}</p>
+                  </div>
+                )}
                 {order.diagnosis.damagePhotos && order.diagnosis.damagePhotos.length > 0 && (
-                  <div className="flex items-center gap-2 pt-1">
-                    {order.diagnosis.damagePhotos.map((photo, i) => (
-                      <img key={i} src={photo} alt="Bukti" className="w-14 h-14 rounded-xl object-cover border border-slate-200" />
-                    ))}
+                  <div className="pt-2 border-t border-slate-200/50">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1.5">
+                      Foto Bukti Pemeriksaan ({order.diagnosis.damagePhotos.length}):
+                    </span>
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                      {order.diagnosis.damagePhotos.map((photo, i) => (
+                        <a key={i} href={photo} target="_blank" rel="noreferrer" className="shrink-0 group">
+                          <img
+                            src={photo}
+                            alt={`Bukti ${i + 1}`}
+                            className="w-16 h-16 rounded-xl object-cover border border-slate-200 group-hover:opacity-80 transition shadow-2xs"
+                          />
+                        </a>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -784,17 +881,21 @@ export function ServiceOrderDetailLayout({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 block mb-1">Foto Sebelum:</span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {order.execution.beforePhotos.map((p, i) => (
-                      <img key={i} src={p} alt="Before" className="w-20 h-20 rounded-xl object-cover border border-slate-200" />
+                      <a key={i} href={p} target="_blank" rel="noopener noreferrer" title="Buka Foto Sebelum Pengerjaan">
+                        <img src={p} alt="Before" className="w-20 h-20 rounded-xl object-cover border border-slate-200 hover:opacity-85 transition cursor-pointer shadow-2xs" />
+                      </a>
                     ))}
                   </div>
                 </div>
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 block mb-1">Foto Sesudah:</span>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {order.execution.afterPhotos.map((p, i) => (
-                      <img key={i} src={p} alt="After" className="w-20 h-20 rounded-xl object-cover border border-slate-200" />
+                      <a key={i} href={p} target="_blank" rel="noopener noreferrer" title="Buka Foto Sesudah Pengerjaan">
+                        <img src={p} alt="After" className="w-20 h-20 rounded-xl object-cover border border-slate-200 hover:opacity-85 transition cursor-pointer shadow-2xs" />
+                      </a>
                     ))}
                   </div>
                 </div>
@@ -829,15 +930,7 @@ export function ServiceOrderDetailLayout({
             </div>
           )}
 
-          {/* Card 6: Riwayat Alur Status Jasa dengan Animasi Vertikal & Jejak Waktu */}
-          <ServiceStatusTimeline order={order} />
-        </div>
-
-        {/* ======================================================================= */}
-        {/* KOLOM KANAN (lg:col-span-5 xl:col-span-5): DATA TETAP & FINANSIAL       */}
-        {/* ======================================================================= */}
-        <div className="lg:col-span-5 xl:col-span-5 space-y-6 lg:sticky lg:top-20">
-          {/* Card 1: Ringkasan Pembayaran Finansial (Harga) */}
+          {/* 3. CARD RINGKASAN PEMBAYARAN & FINANSIAL (DINAMIS SESUAI ROLE) */}
           <div className="bg-white rounded-3xl border border-slate-200/90 shadow-servio-xs p-5 sm:p-6 space-y-4">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
               Ringkasan Pembayaran &amp; Biaya
@@ -906,6 +999,145 @@ export function ServiceOrderDetailLayout({
                     <div className="text-[10px] text-slate-400 font-mono">
                       Ref: {execPayment.invoiceNo}
                     </div>
+
+                    {/* CONFIRMED LUNAS BANNER */}
+                    {execPayment.status === "PAID" && (
+                      <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-800">
+                        <div className="flex items-center gap-2">
+                          <CheckCircle size={18} weight="fill" className="text-emerald-600 shrink-0" />
+                          <span className="font-medium">
+                            Pembayaran tagihan pengerjaan telah lunas diverifikasi oleh Finance 06. Dana diamankan di penampung resmi.
+                          </span>
+                        </div>
+                        <span className="font-mono font-bold text-emerald-900 shrink-0 ml-2">LUNAS</span>
+                      </div>
+                    )}
+
+                    {/* INLINE PAYMENT SELECTION & ACTION (FOR INSTANT CUSTOMER PAYMENT / SIMULATION) */}
+                    {execPayment.status !== "PAID" && (
+                      <div className="pt-3 border-t border-slate-200/80 space-y-3">
+                        <div className="space-y-1.5">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                            Pilih Metode Pembayaran
+                          </span>
+                          <div className="grid grid-cols-2 gap-2">
+                            {[
+                              { id: "QRIS", name: "QRIS Dinamis" },
+                              { id: "BCA_VA", name: "BCA Virtual Account" },
+                              { id: "MANDIRI_VA", name: "Mandiri VA" },
+                              { id: "BRI_VA", name: "BRI Virtual Account" },
+                            ].map((m) => (
+                              <button
+                                key={m.id}
+                                type="button"
+                                onClick={() => setSelectedMethod(m.id)}
+                                className={`p-2 rounded-xl border text-left text-xs font-bold transition-all cursor-pointer ${
+                                  selectedMethod === m.id
+                                    ? "border-primary bg-sky-50 text-primary ring-1 ring-primary"
+                                    : "border-slate-200 text-slate-700 hover:bg-slate-100"
+                                }`}
+                              >
+                                {m.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Instruction display */}
+                        {selectedMethod === "QRIS" ? (
+                          <div className="p-3 bg-white rounded-xl border border-slate-200 text-center space-y-1.5">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase block">
+                              Scan QRIS via Mobile Banking / E-Wallet
+                            </span>
+                            <div className="w-28 h-28 mx-auto bg-slate-50 rounded-lg flex items-center justify-center border border-slate-200 overflow-hidden p-1">
+                              <img
+                                src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=00020101021226580016ID.CO.SERVIO.WWW01189360099900000123455204581253033605802ID5913SERVIO PAY6007JAKARTA"
+                                alt="QRIS Payment Code"
+                                className="w-full h-full object-contain"
+                              />
+                            </div>
+                            <span className="text-[10px] text-slate-400 block font-mono">
+                              NMID: ID1020000123456 • SERVIO PAY
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase block">
+                              Nomor Virtual Account ({selectedMethod.replace("_VA", "")})
+                            </span>
+                            <div className="flex items-center justify-between bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 font-mono text-xs font-bold text-slate-900">
+                              <span>{execPayment.vaNumber || "827708123456789"}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (typeof navigator !== "undefined" && navigator.clipboard) {
+                                    navigator.clipboard.writeText(execPayment.vaNumber || "827708123456789");
+                                  }
+                                  setToastMessage("Nomor VA berhasil disalin!");
+                                }}
+                                className="text-primary hover:underline font-sans font-bold text-[11px] cursor-pointer"
+                              >
+                                Salin
+                              </button>
+                            </div>
+                            <span className="text-[10px] text-slate-400 block">
+                              Transfer dapat dilakukan dari ATM, m-Banking, atau internet banking mana pun.
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Pay action buttons */}
+                        <div className="space-y-2 pt-1">
+                          <button
+                            type="button"
+                            disabled={isSimulatingPayment}
+                            onClick={async () => {
+                              setIsSimulatingPayment(true);
+                              try {
+                                await simulateFinancePayment(
+                                  execPayment.paymentId || execPayment.invoiceNo,
+                                  "PAID",
+                                  order.id,
+                                  execPayment.amount
+                                );
+                                await refreshCurrentOrder(order.id);
+                                setToastMessage("Pembayaran berhasil diverifikasi oleh Finance! Pesanan otomatis beralih ke tahap menunggu teknisi menutup kunjungan.");
+                              } catch (e: any) {
+                                setToastMessage(e?.message || "Gagal memproses pembayaran ke Finance.");
+                              } finally {
+                                setIsSimulatingPayment(false);
+                              }
+                            }}
+                            className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-xs flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                          >
+                            <CheckCircle size={16} weight="bold" className={isSimulatingPayment ? "animate-spin" : ""} />
+                            <span>
+                              {isSimulatingPayment
+                                ? "Memverifikasi ke Finance 06..."
+                                : `Bayar & Lunasi Tagihan (${formatRupiah(execPayment.amount)}) — Kirim ke Finance 06`}
+                            </span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActivePaymentModal({
+                                type: "EXECUTION",
+                                invoiceNo: execPayment.invoiceNo,
+                                paymentId: execPayment.paymentId,
+                                amount: execPayment.amount,
+                                method: selectedMethod,
+                                vaNumber: execPayment.vaNumber || "827708123456789",
+                                expiresAt: execPayment.expiresAt,
+                              });
+                            }}
+                            className="w-full py-2 px-3 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 font-bold text-xs transition cursor-pointer"
+                          >
+                            Buka Dialog Pembayaran Lengkap
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="p-3 rounded-2xl bg-slate-50 border border-slate-100 text-xs text-slate-500">
@@ -975,12 +1207,13 @@ export function ServiceOrderDetailLayout({
                     <div className="pt-2 border-t border-slate-200 flex justify-between items-center">
                       <span className="font-bold text-slate-900 text-sm">Total Nilai Pengerjaan:</span>
                       <span className="font-mono font-bold text-base text-primary">
-                        {formatRupiah(
-                          order.diagnosis?.costBreakdown?.grandTotal ||
-                          execPayment?.executionSubtotal ||
-                          execPayment?.amount ||
-                          200000
-                        )}
+                        {order.diagnosis?.costBreakdown?.grandTotal
+                          ? formatRupiah(order.diagnosis.costBreakdown.grandTotal)
+                          : execPayment?.executionSubtotal
+                          ? formatRupiah(execPayment.executionSubtotal)
+                          : execPayment?.amount
+                          ? formatRupiah(execPayment.amount)
+                          : "Menunggu Pemeriksaan Fisik"}
                       </span>
                     </div>
                   </div>
@@ -1015,19 +1248,31 @@ export function ServiceOrderDetailLayout({
                     <div className="flex justify-between items-center text-slate-600 pl-2">
                       <span>• Jasa Pengerjaan:</span>
                       <span className="font-mono">
-                        {formatRupiah(providerFunds?.laborAmount ?? (execPayment?.laborSubtotal || 175000))}
+                        {formatRupiah(
+                          order.diagnosis?.costBreakdown?.workTotal ??
+                          providerFunds?.laborAmount ??
+                          (execPayment?.laborSubtotal || 0)
+                        )}
                       </span>
                     </div>
                     <div className="flex justify-between items-center text-slate-600 pl-2">
                       <span>• Suku Cadang Bengkel:</span>
                       <span className="font-mono">
-                        {formatRupiah(providerFunds?.partsAmount ?? (execPayment?.partsSubtotal || 25000))}
+                        {formatRupiah(
+                          order.diagnosis?.costBreakdown?.sparepartTotal ??
+                          providerFunds?.partsAmount ??
+                          (execPayment?.partsSubtotal || 0)
+                        )}
                       </span>
                     </div>
                     <div className="flex justify-between items-center font-semibold text-slate-800 pl-2 pt-0.5 border-t border-sky-100">
                       <span>Subtotal Pengerjaan:</span>
                       <span className="font-mono">
-                        {formatRupiah(providerFunds?.executionGross ?? (execPayment?.executionSubtotal || 200000))}
+                        {formatRupiah(
+                          order.diagnosis?.costBreakdown?.grandTotal ??
+                          providerFunds?.executionGross ??
+                          (execPayment?.executionSubtotal || 0)
+                        )}
                       </span>
                     </div>
                   </div>
@@ -1092,8 +1337,13 @@ export function ServiceOrderDetailLayout({
               </div>
             )}
           </div>
+        </div>
 
-          {/* Card 2: Alamat Pengerjaan & Pelanggan */}
+        {/* ======================================================================= */}
+        {/* KOLOM KANAN (lg:col-span-5 xl:col-span-5): DATA STATIS (TETAP / PATEN)  */}
+        {/* ======================================================================= */}
+        <div className="lg:col-span-5 xl:col-span-5 space-y-6 lg:sticky lg:top-20">
+          {/* Card 1: Alamat Pengerjaan & Pelanggan */}
           <div className="bg-white rounded-3xl border border-slate-200/90 shadow-servio-xs p-5 sm:p-6 space-y-3.5 text-xs">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
               Alamat Pengerjaan &amp; Pelanggan
@@ -1134,10 +1384,10 @@ export function ServiceOrderDetailLayout({
             </div>
           </div>
 
-          {/* Card 3: Detail Layanan & Keluhan Kerusakan */}
+          {/* Card 2: Layanan Dipesan & Garansi Resmi */}
           <div className="bg-white rounded-3xl border border-slate-200/90 shadow-servio-xs p-5 sm:p-6 space-y-4">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-              Layanan &amp; Keluhan Kerusakan
+              Layanan Dipesan &amp; Garansi
             </span>
 
             <div className="flex items-start gap-3.5">
@@ -1172,10 +1422,34 @@ export function ServiceOrderDetailLayout({
                   <Buildings size={13} className="text-primary shrink-0" weight="bold" />
                   <span className="font-medium text-slate-800">{order.providerName}</span>
                 </div>
+
+                <div className="pt-1">
+                  {order.serviceSnapshot.warrantyDurationDays && order.serviceSnapshot.warrantyDurationDays > 0 ? (
+                    <div className="space-y-1.5">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
+                        <ShieldCheck size={13} weight="fill" className="text-emerald-600" />
+                        Garansi {order.serviceSnapshot.warrantyDurationDays} Hari Servio
+                      </span>
+                      <p className="text-[10px] text-slate-500 leading-relaxed">
+                        Jaminan purnajual terproteksi: Perbaikan ulang gratis untuk kendala komponen yang sama selama {order.serviceSnapshot.warrantyDurationDays} hari kalender.
+                      </p>
+                    </div>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[10px] font-medium">
+                      Tanpa Garansi
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
+          </div>
 
-            {/* Keluhan & Gejala */}
+          {/* Card 3: Keluhan Kerusakan & Bukti Awal */}
+          <div className="bg-white rounded-3xl border border-slate-200/90 shadow-servio-xs p-5 sm:p-6 space-y-3.5 text-xs">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+              Keluhan &amp; Gejala Kerusakan
+            </span>
+
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-2 text-xs">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                 Keluhan Pelanggan:
@@ -1195,9 +1469,22 @@ export function ServiceOrderDetailLayout({
               )}
 
               {order.complaint.photos && order.complaint.photos.length > 0 && (
-                <div className="pt-1.5 flex items-center gap-2">
+                <div className="pt-1.5 flex items-center gap-2 flex-wrap">
                   {order.complaint.photos.map((p, i) => (
-                    <img key={i} src={p} alt="Kondisi Awal" className="w-14 h-14 rounded-xl object-cover border border-slate-200" />
+                    <a
+                      key={i}
+                      href={p}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Lihat Foto Kerusakan Awal"
+                      className="group/img relative rounded-xl overflow-hidden border border-slate-200 hover:border-primary transition-all cursor-pointer block shadow-2xs"
+                    >
+                      <img
+                        src={p}
+                        alt="Kondisi Awal"
+                        className="w-14 h-14 object-cover group-hover/img:scale-105 transition-transform"
+                      />
+                    </a>
                   ))}
                 </div>
               )}
@@ -1209,6 +1496,20 @@ export function ServiceOrderDetailLayout({
       {/* ========================================================================= */}
       {/* 3. MODALS ATTACHMENTS                                                     */}
       {/* ========================================================================= */}
+      {/* Complete Structured Order Summary Modal (Section 26: A-H) */}
+      <CompleteOrderSummaryModal
+        isOpen={isSummaryModalOpen}
+        onClose={() => setIsSummaryModalOpen(false)}
+        order={order}
+      />
+
+      {/* Authenticated Timeline Activity History Modal */}
+      <OrderActivityHistoryModal
+        isOpen={isActivityModalOpen}
+        onClose={() => setIsActivityModalOpen(false)}
+        order={order}
+      />
+
       {order.diagnosis && (
         <DiagnosisReviewModal
           isOpen={isDiagnosisReviewOpen}
@@ -1223,9 +1524,12 @@ export function ServiceOrderDetailLayout({
             setIsActionLoading(true);
             try {
               await respondRemoteConsent(order.id, true);
+              try {
+                await startExecution(order.id);
+              } catch {}
               await refreshCurrentOrder(order.id);
               setIsDiagnosisReviewOpen(false);
-              setToastMessage("Rincian biaya disetujui! Teknisi dapat segera memulai pekerjaan.");
+              setToastMessage("Rincian biaya disetujui! Status: Pengerjaan Servis Sedang Berlangsung.");
             } catch (err: any) {
               setToastMessage(err?.message || "Gagal menyetujui rincian biaya.");
             } finally {
@@ -1320,6 +1624,22 @@ export function ServiceOrderDetailLayout({
             setIsActionLoading(false);
           }
         }}
+        onAcceptInPerson={async (diag) => {
+          setIsActionLoading(true);
+          try {
+            await submitDiagnosis(order.id, diag);
+            await recordInPersonConsent(order.id, "Persetujuan lisan di lokasi dicatat resmi oleh teknisi.");
+            try {
+              await startExecution(order.id);
+            } catch {}
+            await refreshCurrentOrder(order.id);
+            setToastMessage("Persetujuan di lokasi berhasil dicatat! Status: Pengerjaan Servis Dimulai.");
+          } catch (err: any) {
+            setToastMessage(err?.message || "Gagal mencatat persetujuan di lokasi.");
+          } finally {
+            setIsActionLoading(false);
+          }
+        }}
       />
 
       <WorkerInPersonConsentModal
@@ -1330,8 +1650,11 @@ export function ServiceOrderDetailLayout({
           setIsActionLoading(true);
           try {
             await recordInPersonConsent(order.id, notes);
+            try {
+              await startExecution(order.id);
+            } catch {}
             await refreshCurrentOrder(order.id);
-            setToastMessage("Persetujuan lisan di lokasi telah dicatat resmi. Anda dapat mulai bekerja!");
+            setToastMessage("Persetujuan lisan di lokasi telah dicatat resmi. Pengerjaan servis sedang berlangsung!");
           } catch (err: any) {
             setToastMessage(err?.message || "Gagal mencatat persetujuan.");
           } finally {
@@ -1376,6 +1699,242 @@ export function ServiceOrderDetailLayout({
           }
         }}
       />
+
+      {/* Provider Order Rejection Modal with Section 50 S-Pay Guarantee */}
+      {showProviderRejectModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-white rounded-3xl p-6 shadow-2xl space-y-4 border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 text-rose-600 font-bold text-base">
+                <WarningCircle size={20} weight="fill" />
+                <span>Tolak &amp; Batalkan Pesanan</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowProviderRejectModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer transition"
+              >
+                <X size={18} weight="bold" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs text-slate-600">
+              <p>
+                Anda akan menolak pesanan <strong className="text-slate-900 font-bold">#{order.orderNumber}</strong> ({order.serviceSnapshot.title}) dari pelanggan <strong className="text-slate-900 font-bold">{order.customerName}</strong>.
+              </p>
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 space-y-1">
+                <span className="font-bold flex items-center gap-1.5">
+                  <ShieldCheck size={15} weight="fill" className="text-amber-600 shrink-0" />
+                  Jaminan S-Pay Pelanggan (Section 50)
+                </span>
+                <p className="text-[11px] leading-relaxed text-amber-800">
+                  Jika pelanggan telah membayar biaya diagnosis/survei, dana sebesar <strong className="font-bold">Rp {(order.serviceSnapshot.diagnosisFee || 50000).toLocaleString("id-ID")}</strong> akan otomatis dikembalikan 100% ke akun S-Pay pelanggan tanpa potongan.
+                </p>
+              </div>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!providerRejectReason.trim()) return;
+                setIsActionLoading(true);
+                try {
+                  await rejectOrder(order.id, providerRejectReason.trim());
+                  await refreshCurrentOrder(order.id);
+                  setShowProviderRejectModal(false);
+                  setToastMessage(`Pesanan #${order.orderNumber} telah ditolak. Jika ada biaya diagnosis terbayar, dana telah di-refund 100% ke akun S-Pay pelanggan.`);
+                } catch (err: any) {
+                  setToastMessage(err?.message || "Gagal menolak pesanan.");
+                } finally {
+                  setIsActionLoading(false);
+                }
+              }}
+              className="space-y-4"
+            >
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 block">
+                  Alasan Penolakan <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={providerRejectReason}
+                  onChange={(e) => setProviderRejectReason(e.target.value)}
+                  placeholder="Contoh: Jadwal operasional penuh, kapasitas servis tidak mencukupi, atau alamat di luar jangkauan."
+                  className="w-full text-xs p-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+                />
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {[
+                    "Jadwal teknisi penuh",
+                    "Kapasitas servis tidak mencukupi",
+                    "Alamat di luar area jangkauan",
+                    "Peralatan servis sedang maintenance",
+                  ].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setProviderRejectReason(preset)}
+                      className={`text-[11px] px-2.5 py-1 rounded-lg border font-medium transition cursor-pointer ${
+                        providerRejectReason === preset
+                          ? "bg-rose-50 border-rose-300 text-rose-700 font-bold"
+                          : "bg-slate-100 border-transparent hover:bg-slate-200 text-slate-700"
+                      }`}
+                    >
+                      {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={isActionLoading}
+                  onClick={() => setShowProviderRejectModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isActionLoading || providerRejectReason.trim().length < 3}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isActionLoading ? (
+                    <>
+                      <ArrowsClockwise size={14} weight="bold" className="animate-spin" />
+                      <span>Memproses Refund...</span>
+                    </>
+                  ) : (
+                    "Konfirmasi Tolak & Refund 100%"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Worker Task Rejection Modal */}
+      {showWorkerRejectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start justify-between gap-3 border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-100">
+                  <XCircle size={22} weight="bold" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-bold text-base text-slate-900">
+                    Tolak Penugasan Pekerjaan
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Order #{order.orderNumber} • {order.serviceSnapshot.title}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowWorkerRejectModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm p-1 rounded-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+                <p className="font-bold mb-1">Perhatian Teknisi:</p>
+                <p>
+                  Penolakan tugas akan mengembalikan pesanan ke antrean Provider agar dapat ditugaskan ke teknisi lain. Pelanggan tidak perlu melakukan pemesanan ulang.
+                </p>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1.5">
+                  Pilih Alasan Penolakan <span className="text-rose-500">*</span>
+                </label>
+                <div className="space-y-2">
+                  {[
+                    "Jadwal bentrok dengan pekerjaan lain",
+                    "Keahlian atau perlengkapan tidak sesuai dengan keluhan pelanggan",
+                    "Jarak lokasi / kendala transportasi di luar jangkauan operasional",
+                    "Kondisi darurat operasional / kesehatan",
+                    "Lainnya",
+                  ].map((opt) => (
+                    <label
+                      key={opt}
+                      className={`flex items-center gap-2.5 p-3 rounded-xl border text-xs cursor-pointer transition ${
+                        workerRejectReason === opt
+                          ? "border-rose-400 bg-rose-50/50 text-rose-950 font-semibold"
+                          : "border-slate-200 hover:bg-slate-50 text-slate-700"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="workerRejectReasonModal"
+                        value={opt}
+                        checked={workerRejectReason === opt}
+                        onChange={() => setWorkerRejectReason(opt)}
+                        className="text-rose-600 focus:ring-rose-500"
+                      />
+                      <span>{opt}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Catatan Tambahan (Opsional)
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Tambahkan detail kendala operasional untuk pihak Provider..."
+                  value={workerRejectNotes}
+                  onChange={(e) => setWorkerRejectNotes(e.target.value)}
+                  className="w-full p-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-rose-500 focus:outline-hidden"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={isActionLoading}
+                onClick={() => setShowWorkerRejectModal(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 transition"
+              >
+                Kembali
+              </button>
+              <button
+                type="button"
+                disabled={isActionLoading || !workerRejectReason}
+                onClick={async () => {
+                  setIsActionLoading(true);
+                  try {
+                    const finalReason = workerRejectNotes.trim()
+                      ? `${workerRejectReason}: ${workerRejectNotes.trim()}`
+                      : workerRejectReason;
+                    await rejectAssignment(order.id, finalReason);
+                    await refreshCurrentOrder(order.id);
+                    setToastMessage(`Penugasan #${order.orderNumber} telah ditolak. Pesanan dikembalikan ke antrean Provider.`);
+                    setShowWorkerRejectModal(false);
+                  } catch (err: any) {
+                    setToastMessage(err?.message || "Gagal menolak tugas.");
+                  } finally {
+                    setIsActionLoading(false);
+                  }
+                }}
+                className="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition shadow-xs flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <XCircle size={15} weight="bold" />
+                <span>{isActionLoading ? "Menolak..." : "Konfirmasi Tolak Tugas"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Cancel Order Modal */}
       {showCancelModal && (
@@ -1602,6 +2161,49 @@ export function ServiceOrderDetailLayout({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Phase 07 Service Order Review Modal (C06 / C07) */}
+      <OrderReviewModal
+        isOpen={isServiceReviewModalOpen}
+        onClose={() => setIsServiceReviewModalOpen(false)}
+        target={{
+          sourceKind: "SERVICE",
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          orderedAt: order.createdAt,
+          completedAt: (order as any).completedAt || order.updatedAt,
+          businessOrgId: order.providerId || "prov-surya-teknik",
+          businessName: order.providerName || "Penyedia Jasa",
+          items: [
+            {
+              orderItemId: order.id,
+              targetId: (order as any).serviceId || order.serviceSnapshot.id || order.id,
+              title: order.serviceSnapshot.title,
+              quantity: 1,
+              variantLabel: order.serviceSnapshot.categoryName,
+              price: (order as any).pricing?.finalTotal ?? order.paymentSummary?.executionPayment?.amount ?? (order.serviceSnapshot as any).minPrice,
+            },
+          ],
+          existingSubmission: existingServiceReview,
+        }}
+        onSubmitted={(sub) => {
+          setExistingServiceReview(sub);
+          setToastMessage("Penilaian layanan jasa dan penyedia berhasil disimpan!");
+        }}
+      />
+
+      {/* Phase 07 Service Warranty Claim Modal (C13) */}
+      {isServiceClaimModalOpen && associatedWarranty && (
+        <WarrantyClaimModal
+          isOpen={isServiceClaimModalOpen}
+          onClose={() => setIsServiceClaimModalOpen(false)}
+          warranty={associatedWarranty}
+          onSuccess={() => {
+            setIsServiceClaimModalOpen(false);
+            setToastMessage("Klaim garansi layanan jasa berhasil diajukan!");
+          }}
+        />
       )}
     </div>
   );

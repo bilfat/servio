@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ShieldCheck,
@@ -12,6 +12,7 @@ import {
   WarningCircle,
   X,
   CheckCircle,
+  UploadSimple,
 } from "@phosphor-icons/react";
 import { useAfterSales } from "@/features/afterSales/useAfterSales";
 import { CustomerWarrantyEntitlement } from "@/types/afterSales";
@@ -47,13 +48,19 @@ export function WarrantyClaimModal({
   warranty,
   onSuccess,
 }: WarrantyClaimModalProps) {
-  const { submitClaim, cases } = useAfterSales();
+  const { submitClaim, cases, refreshData } = useAfterSales();
 
   const isProduct = warranty.itemType === "PRODUCT";
   const reasonOptions = isProduct ? PRODUCT_REASONS : SERVICE_REASONS;
 
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const [selectedReason, setSelectedReason] = useState(reasonOptions[0]);
   const [description, setDescription] = useState("");
+  const [chosenSolution, setChosenSolution] = useState<"REPLACEMENT" | "REWORK" | "REFUND">(
+    isProduct ? "REPLACEMENT" : "REWORK"
+  );
+  const [claimedQuantity, setClaimedQuantity] = useState<number>(1);
   const [evidencePreviews, setEvidencePreviews] = useState<string[]>([
     "https://images.unsplash.com/photo-1581092160607-ee22621dd758?w=600&auto=format&fit=crop&q=80",
   ]);
@@ -68,8 +75,24 @@ export function WarrantyClaimModal({
       c.mainStatus !== "REJECTED"
   );
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const fileArray = Array.from(files).slice(0, 4 - evidencePreviews.length);
+    fileArray.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result && typeof event.target.result === "string") {
+          setEvidencePreviews((prev) => [...prev, event.target!.result as string]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
   const handleAddSampleEvidence = () => {
-    if (evidencePreviews.length >= 3) return;
+    if (evidencePreviews.length >= 4) return;
     const samples = [
       "https://images.unsplash.com/photo-1581092335397-9583fe92d232?w=600&auto=format&fit=crop&q=80",
       "https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=600&auto=format&fit=crop&q=80",
@@ -81,7 +104,7 @@ export function WarrantyClaimModal({
     setEvidencePreviews((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
@@ -100,14 +123,19 @@ export function WarrantyClaimModal({
     setIsSubmitting(true);
 
     try {
-      const newCase = submitClaim({
+      const snap = typeof (warranty as any).catalogSnapshot === "string"
+        ? (() => { try { return JSON.parse((warranty as any).catalogSnapshot); } catch { return {}; } })()
+        : ((warranty as any).catalogSnapshot || {});
+      const effectiveItemPrice = Number(snap?.price ?? snap?.unit_price ?? 150000);
+
+      const newCase = await submitClaim({
         caseType: isProduct ? "claim_product" : "claim_service",
         sourceOrderId: warranty.orderId,
         sourceOrderNumber: warranty.orderNumber,
         itemTitle: warranty.itemTitle,
         itemImageUrl: warranty.itemImageUrl,
         itemCategory: isProduct ? "Suku Cadang & Komponen" : "Jasa Layanan",
-        itemPrice: 150000,
+        itemPrice: effectiveItemPrice,
         organizationId: warranty.organizationId,
         organizationName: warranty.organizationName,
         organizationType: isProduct ? "MERCHANT" : "PROVIDER",
@@ -118,12 +146,14 @@ export function WarrantyClaimModal({
         issueReason: selectedReason,
         issueDescription: description.trim(),
         evidenceMedia: evidencePreviews,
-        customerRequestedSolution: "REPAIR",
+        customerRequestedSolution: chosenSolution as any,
+        quantity: claimedQuantity,
       });
 
+      await refreshData();
       setIsSubmitting(false);
       onClose();
-      if (onSuccess) {
+      if (onSuccess && newCase) {
         onSuccess(newCase.id);
       }
     } catch (err: any) {
@@ -198,7 +228,9 @@ export function WarrantyClaimModal({
                 </div>
                 <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-200/60 flex items-center justify-between">
                   <span>Kadaluarsa:</span>
-                  <span className="font-semibold text-slate-700">{warranty.endDate}</span>
+                  <span className="font-semibold text-slate-700">
+                    {warranty.endDate ? new Date(warranty.endDate).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "-"}
+                  </span>
                 </div>
               </div>
 
@@ -219,14 +251,34 @@ export function WarrantyClaimModal({
                   <label className="text-xs font-bold text-slate-800 block">
                     Foto Bukti Kendala:
                   </label>
-                  <button
-                    type="button"
-                    onClick={handleAddSampleEvidence}
-                    disabled={evidencePreviews.length >= 3}
-                    className="text-[11px] text-blue-600 font-bold hover:underline disabled:opacity-40"
-                  >
-                    + Tambah Contoh
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={handleFileUpload}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={evidencePreviews.length >= 4}
+                      className="text-[11px] text-primary font-bold hover:underline disabled:opacity-40 flex items-center gap-1 cursor-pointer"
+                    >
+                      <UploadSimple size={12} weight="bold" />
+                      Pilih Foto
+                    </button>
+                    <span className="text-slate-300">|</span>
+                    <button
+                      type="button"
+                      onClick={handleAddSampleEvidence}
+                      disabled={evidencePreviews.length >= 4}
+                      className="text-[11px] text-blue-600 font-bold hover:underline disabled:opacity-40 cursor-pointer"
+                    >
+                      + Contoh
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap gap-2.5">
@@ -247,10 +299,17 @@ export function WarrantyClaimModal({
                       </button>
                     </div>
                   ))}
+                  {evidencePreviews.length < 4 && (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-16 h-16 rounded-xl border-2 border-dashed border-slate-300 hover:border-primary flex flex-col items-center justify-center text-slate-400 hover:text-primary transition cursor-pointer"
+                    >
+                      <Camera size={18} weight="bold" />
+                      <span className="text-[9px] mt-0.5 font-bold">Upload</span>
+                    </button>
+                  )}
                 </div>
-                <p className="text-[10px] text-slate-400 italic leading-tight">
-                  Pratinjau lokal demo simulasi — tidak ada berkas yang diunggah ke server nyata.
-                </p>
               </div>
             </div>
 
@@ -270,6 +329,34 @@ export function WarrantyClaimModal({
                   {errorMessage}
                 </div>
               )}
+
+              {warranty.quantity && warranty.quantity > 1 ? (
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-800 block">
+                    Jumlah Unit yang Diklaim:
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={warranty.quantity}
+                      value={claimedQuantity}
+                      onChange={(e) =>
+                        setClaimedQuantity(
+                          Math.min(
+                            warranty.quantity || 1,
+                            Math.max(1, parseInt(e.target.value) || 1)
+                          )
+                        )
+                      }
+                      className="w-24 p-2 text-xs border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    />
+                    <span className="text-xs text-slate-500">
+                      dari total {warranty.quantity} unit bergaransi sah
+                    </span>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="space-y-1">
                 <label className="text-xs font-bold text-slate-800 block">
@@ -303,6 +390,47 @@ export function WarrantyClaimModal({
                   placeholder="Ceritakan kendala yang terjadi secara rinci sejak barang/layanan diterima..."
                   className="w-full p-3 text-xs border border-slate-200 rounded-xl bg-white font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-800 block">
+                  Solusi yang Diharapkan <span className="text-rose-500">*</span>:
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setChosenSolution(isProduct ? "REPLACEMENT" : "REWORK")}
+                    className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                      chosenSolution === (isProduct ? "REPLACEMENT" : "REWORK")
+                        ? "border-blue-600 bg-blue-50/70 text-blue-900"
+                        : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                    }`}
+                  >
+                    <div className="text-xs font-bold">
+                      {isProduct ? "Ganti Unit Baru (Replacement)" : "Pengerjaan Ulang (Rework)"}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">
+                      {isProduct
+                        ? "Kirim unit pengganti baru"
+                        : "Teknisi datang servis ulang garansi"}
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setChosenSolution("REFUND")}
+                    className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                      chosenSolution === "REFUND"
+                        ? "border-blue-600 bg-blue-50/70 text-blue-900"
+                        : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                    }`}
+                  >
+                    <div className="text-xs font-bold">Pengembalian Dana (Refund)</div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">
+                      Pengembalian dana ke saldo S-Pay
+                    </div>
+                  </button>
+                </div>
               </div>
 
               {/* SLA Notice */}

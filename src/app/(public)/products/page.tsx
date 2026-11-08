@@ -32,10 +32,11 @@ import {
 } from "@phosphor-icons/react";
 import { productsApi, taxonomyApi, shopsApi } from "@/lib/servioApi";
 import { ApiProduct, ApiShopProfile, ApiBrand, getProductMediaUrl } from "@/types/domain";
+import { afterSalesApi, CatalogRatingSummaryItem } from "@/lib/afterSalesApi";
 import { useCart } from "@/features/cart/useCart";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
-import { useActiveLocation, isSameCity } from "@/context/LocationContext";
+import { useActiveLocation, isSameCity, calculateStoreDistanceKm } from "@/context/LocationContext";
 
 type ProductSortOption = "POPULAR" | "PRICE_LOW" | "PRICE_HIGH";
 
@@ -83,6 +84,8 @@ function ProductCatalogContent() {
   const [matchedMerchants, setMatchedMerchants] = useState<ApiShopProfile[]>([]);
   const [selectedShop, setSelectedShop] = useState<ApiShopProfile | null>(null);
   const [recommendations, setRecommendations] = useState<ApiProduct[]>([]);
+  const [productRatings, setProductRatings] = useState<Record<string, CatalogRatingSummaryItem>>({});
+  const [merchantRatings, setMerchantRatings] = useState<Record<string, CatalogRatingSummaryItem>>({});
   const [loading, setLoading] = useState(true);
 
   const [searchQuery, setSearchQuery] = useState(initialSearch);
@@ -203,6 +206,41 @@ function ProductCatalogContent() {
     loadProducts();
   }, [loadProducts]);
 
+  // Batch load Phase 07 PRODUCT ratings and MERCHANT ratings for all visible catalog cards (PUB01)
+  useEffect(() => {
+    const allIds = Array.from(
+      new Set([...products, ...recommendations].map((p) => p.productId).filter(Boolean))
+    );
+    if (allIds.length > 0) {
+      afterSalesApi.public
+        .getBatchRatingsSummary("PRODUCT", allIds)
+        .then((res) => {
+          if (res.data) {
+            setProductRatings((prev) => ({ ...prev, ...res.data }));
+          }
+        })
+        .catch(() => {});
+    }
+
+    const merchantIds = Array.from(
+      new Set(
+        [...products, ...recommendations]
+          .map((p) => p.merchantOrganizationId || (p as any).merchantId || p.merchant?.id)
+          .filter(Boolean) as string[]
+      )
+    );
+    if (merchantIds.length > 0) {
+      afterSalesApi.public
+        .getBatchRatingsSummary("MERCHANT", merchantIds)
+        .then((res) => {
+          if (res.data) {
+            setMerchantRatings((prev) => ({ ...prev, ...res.data }));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [products, recommendations]);
+
   // Available subcategories for current category selection
   const availableSubcategories = useMemo(() => {
     if (selectedCategories.length === 0) {
@@ -315,10 +353,35 @@ function ProductCatalogContent() {
       });
     }
 
-    // Enforce: Hanya menampilkan toko yang sekota dengan lokasi aktif pembeli/guest (luar kota tidak ditampilkan)
+    // Aturan Jangkauan Katalog Barang: Berdasarkan Pengaturan Pengiriman Merchant (Radius Efektif max 80 km)
+    // Tanpa batasan administratif kota: Pelanggan beda kota tapi dalam radius tetap tampil, sekota tapi luar radius tidak tampil.
     list = list.filter((p) => {
+      // 1. Cek status keaktifan pengiriman lokal toko jika dispesifikasikan
+      if ((p.merchant as any)?.is_enabled === false || (p.merchant as any)?.isEnabled === false) {
+        return false;
+      }
+
       const mCity = p.merchant?.city || p.merchantCity || "Jakarta Selatan";
-      return isSameCity(mCity, activeLocation.city);
+      const merchantRadius = Number(
+        (p.merchant as any)?.maximum_distance_km ??
+        (p.merchant as any)?.delivery_radius ??
+        (p as any).deliveryRadiusKm ??
+        25
+      );
+      const effectiveRadius = Math.min(Math.max(merchantRadius, 1), 80);
+
+      const distKm = calculateStoreDistanceKm(activeLocation, {
+        city: mCity,
+        latitude: p.merchant?.latitude,
+        longitude: p.merchant?.longitude,
+        id: p.merchantOrganizationId || p.merchant?.id,
+        name: p.merchantName || p.merchant?.name,
+      });
+
+      if (distKm !== null) {
+        return distKm <= effectiveRadius;
+      }
+      return true;
     });
 
     if (sortBy === "PRICE_LOW") {
@@ -328,13 +391,35 @@ function ProductCatalogContent() {
       return list.sort((a, b) => (b.maxPrice || b.minPrice || 0) - (a.maxPrice || a.minPrice || 0));
     }
     return list;
-  }, [products, selectedCategories, selectedSubcategories, selectedBrands, categories, subcategories, sortBy, activeLocation.city]);
+  }, [products, selectedCategories, selectedSubcategories, selectedBrands, categories, subcategories, sortBy, activeLocation]);
 
   const sortedRecommendations = useMemo(() => {
-    // Hanya rekomendasikan toko yang sekota dengan lokasi pembeli
+    // Rekomendasi: Berdasarkan radius pengiriman efektif merchant (max 80 km platform ceiling)
     const list = [...recommendations].filter((p) => {
+      if ((p.merchant as any)?.is_enabled === false || (p.merchant as any)?.isEnabled === false) {
+        return false;
+      }
       const mCity = p.merchant?.city || p.merchantCity || "Jakarta Selatan";
-      return isSameCity(mCity, activeLocation.city);
+      const merchantRadius = Number(
+        (p.merchant as any)?.maximum_distance_km ??
+        (p.merchant as any)?.delivery_radius ??
+        (p as any).deliveryRadiusKm ??
+        25
+      );
+      const effectiveRadius = Math.min(Math.max(merchantRadius, 1), 80);
+
+      const distKm = calculateStoreDistanceKm(activeLocation, {
+        city: mCity,
+        latitude: p.merchant?.latitude,
+        longitude: p.merchant?.longitude,
+        id: p.merchantOrganizationId || p.merchant?.id,
+        name: p.merchantName || p.merchant?.name,
+      });
+
+      if (distKm !== null) {
+        return distKm <= effectiveRadius;
+      }
+      return true;
     });
     if (sortBy === "PRICE_LOW") {
       return list.sort((a, b) => (a.minPrice || 0) - (b.minPrice || 0));
@@ -372,16 +457,33 @@ function ProductCatalogContent() {
               {categories.find((c) => c.id === p.categoryId)?.name || p.categoryName || p.categoryId}
             </span>
             <div className="flex items-center gap-1">
-              {p.warrantyPolicy?.durationMonths ? (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1 shrink-0">
-                  <ShieldCheck size={12} weight="fill" className="text-emerald-600" />
-                  Garansi {p.warrantyPolicy.durationMonths} Bln
-                </span>
-              ) : (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 flex items-center gap-1 shrink-0">
-                  Non-Garansi
-                </span>
-              )}
+              {(() => {
+                let pol = p.warrantyPolicy || (p as any).warranty_policy;
+                while (typeof pol === "string") {
+                  try {
+                    const parsed = JSON.parse(pol);
+                    if (parsed === pol) break;
+                    pol = parsed;
+                  } catch {
+                    break;
+                  }
+                }
+                const days = pol?.durationDays || pol?.duration_days || (pol?.durationMonths ? pol.durationMonths * 30 : (pol?.duration_months ? pol.duration_months * 30 : null));
+                const hasWar = Boolean(
+                  pol && (
+                    (days && days > 0) ||
+                    pol.presetId || pol.preset_id ||
+                    (pol.name && pol.name !== "Tanpa Garansi")
+                  )
+                );
+                if (!hasWar) return null;
+                return (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1 shrink-0">
+                    <ShieldCheck size={12} weight="fill" className="text-emerald-600" />
+                    <span>Tersedia Garansi</span>
+                  </span>
+                );
+              })()}
               {isOutOfStock ? (
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">
                   Habis
@@ -449,13 +551,13 @@ function ProductCatalogContent() {
 
                   {/* Distance Pill: Menampilkan Jarak km dari Lokasi User (Bukan teks "Sekota") */}
                   {(() => {
-                    const distanceStr = getStoreDistance(
-                      p.merchant || {
-                        city: pMerchantCity,
-                        name: p.merchantName,
-                        id: p.merchantOrganizationId,
-                      }
-                    );
+                    const distanceStr = getStoreDistance({
+                      city: p.merchant?.city || pMerchantCity,
+                      latitude: p.merchant?.latitude,
+                      longitude: p.merchant?.longitude,
+                      name: p.merchantName || p.merchant?.name || (p.merchant as any)?.store_name,
+                      id: p.merchantOrganizationId || p.merchant?.id || (p.merchant as any)?.organization_id,
+                    });
                     return (
                       <span
                         className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 shadow-2xs shrink-0"
@@ -475,9 +577,58 @@ function ProductCatalogContent() {
                 {p.name}
               </h2>
             </Link>
-            <p className="text-[10px] text-slate-400">
-              {p.variantCount || p.variants?.length || 1} Pilihan Varian
-            </p>
+            <div className="flex items-center justify-between gap-2 pt-0.5">
+              <p className="text-[10px] text-slate-400">
+                {p.variantCount || p.variants?.length || 1} Pilihan Varian
+              </p>
+              {/* Rating Gabungan Produk & Toko (Rata-rata akurat per katalog, tidak dipisah) */}
+              {(() => {
+                const mId = p.merchantOrganizationId || (p as any).merchantId || p.merchant?.id;
+                const mRating = mId ? merchantRatings[mId] : null;
+                const mAvg = mRating?.average_rating ?? (p as any).merchantRating ?? (p.merchant as any)?.rating ?? 0;
+                const mTotal = mRating?.total_reviews ?? (p as any).merchantReviewCount ?? (p.merchant as any)?.reviewCount ?? 0;
+
+                const ratingInfo = productRatings[p.productId];
+                const pAvg = ratingInfo?.average_rating ?? (p as any).rating ?? 0;
+                const pTotal = ratingInfo?.total_reviews ?? (p as any).reviewCount ?? 0;
+
+                const hasProdRating = pTotal > 0 && pAvg > 0;
+                const hasStoreRating = mTotal > 0 && mAvg > 0;
+
+                let combinedAvg: number | null = null;
+                if (hasProdRating && hasStoreRating) {
+                  combinedAvg = (pAvg + mAvg) / 2;
+                } else if (hasProdRating) {
+                  combinedAvg = pAvg;
+                } else if (hasStoreRating) {
+                  combinedAvg = mAvg;
+                }
+
+                const reviewCount = pTotal > 0 ? pTotal : mTotal;
+
+                return combinedAvg !== null ? (
+                  <span
+                    className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-200"
+                    title={
+                      hasProdRating && hasStoreRating
+                        ? `Rating rata-rata: ${combinedAvg.toFixed(1)} (Produk: ${pAvg.toFixed(1)} & Toko: ${mAvg.toFixed(1)})`
+                        : hasProdRating
+                        ? `Rating produk: ${pAvg.toFixed(1)} (${pTotal} penilaian)`
+                        : `Rating reputasi toko: ${mAvg.toFixed(1)} (${mTotal} ulasan)`
+                    }
+                  >
+                    <Star size={11} weight="fill" className="text-amber-400" />
+                    <span>{combinedAvg.toFixed(1)}</span>
+                    <span className="text-slate-400 font-normal">({reviewCount} penilaian)</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-slate-400">
+                    <Star size={11} className="text-slate-300" />
+                    <span>Belum ada penilaian</span>
+                  </span>
+                );
+              })()}
+            </div>
           </div>
 
           <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
@@ -861,37 +1012,6 @@ function ProductCatalogContent() {
 
         {/* SECTION 1: MAIN SEARCHED / SELECTED SHOP PRODUCTS */}
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-3">
-            <div>
-              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                {selectedShop ? (
-                  <>
-                    <Storefront size={20} className="text-[#0F4C81]" weight="bold" />
-                    <span>Semua Katalog Produk dari {selectedShop.name}</span>
-                  </>
-                ) : matchedMerchants.length > 0 ? (
-                  <>
-                    <Package size={20} className="text-[#0F4C81]" weight="bold" />
-                    <span>Katalog Produk dari Toko Yang Dicari</span>
-                  </>
-                ) : (
-                  <>
-                    <Package size={20} className="text-[#0F4C81]" weight="bold" />
-                    <span>Katalog Suku Cadang &amp; Komponen</span>
-                  </>
-                )}
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                  {sortedProducts.length} Produk
-                </span>
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {selectedShop
-                  ? `Seluruh produk terdaftar di bawah pengawasan toko resmi ${selectedShop.name}`
-                  : "Produk suku cadang AC dan pendingin dengan jaminan garansi resmi"}
-              </p>
-            </div>
-          </div>
-
           {loading ? (
             <div className="p-20 text-center text-xs text-slate-400">Memuat katalog resmi SERVIO...</div>
           ) : sortedProducts.length === 0 ? (
@@ -900,11 +1020,11 @@ function ProductCatalogContent() {
                 <Storefront size={32} weight="duotone" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-slate-900">Belum Ada Toko di {activeLocation.city}</h3>
+                <h3 className="text-sm font-bold text-slate-900">Belum Ada Toko yang Menjangkau Lokasi Anda</h3>
                 <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
                   {selectedShop
-                    ? `Toko ${selectedShop.name} belum memiliki produk aktif di kota ${activeLocation.city}.`
-                    : `Saat ini belum ada toko mitra yang aktif di kota ${activeLocation.city}. Silakan ganti titik lokasi pengiriman untuk menemukan suku cadang di kota terdekat.`}
+                    ? `Toko ${selectedShop.name} belum memiliki jangkauan pengiriman ke lokasi Anda (${activeLocation.displayName || activeLocation.city}).`
+                    : `Saat ini belum ada toko mitra yang menjangkau lokasi pengiriman Anda (${activeLocation.displayName || activeLocation.city}). Silakan ubah titik lokasi atau pilih alamat lain.`}
                 </p>
               </div>
               <button
@@ -913,7 +1033,7 @@ function ProductCatalogContent() {
                 className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0F4C81] text-white text-xs font-bold hover:bg-[#0c3c66] transition shadow-xs cursor-pointer mx-auto"
               >
                 <MapPin size={14} weight="bold" />
-                <span>Ganti Titik Lokasi Pengiriman</span>
+                <span>Ubah Lokasi Pengiriman</span>
               </button>
             </div>
           ) : (

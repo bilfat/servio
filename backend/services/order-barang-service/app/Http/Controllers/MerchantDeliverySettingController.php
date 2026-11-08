@@ -92,7 +92,7 @@ class MerchantDeliverySettingController extends Controller
 
         $validated = $request->validate([
             'is_enabled' => 'required|boolean',
-            'maximum_distance_km' => 'required|numeric|min:0.1|max:100',
+            'maximum_distance_km' => 'required|numeric|min:0.1|max:80',
             'tiers' => 'required|array|min:1',
             'tiers.*.from_km' => 'required|numeric|min:0',
             'tiers.*.to_km' => 'required|numeric|gt:tiers.*.from_km',
@@ -168,7 +168,7 @@ class MerchantDeliverySettingController extends Controller
 
         $originLat = $setting?->origin_lat ?? $originInfo['latitude'] ?? -6.1805;
         $originLng = $setting?->origin_lng ?? $originInfo['longitude'] ?? 106.8284;
-        $maxDistanceKm = (float) ($setting?->maximum_distance_km ?? 25.0);
+        $maxDistanceKm = min((float) ($setting?->maximum_distance_km ?? 25.0), 80.0);
         $isEnabled = (bool) ($setting?->is_enabled ?? true);
 
         // Destination coordinates

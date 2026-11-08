@@ -41,6 +41,7 @@ class ServiceOffering extends Model
         'status',
         'lock_version',
         'activated_at',
+        'warranty_config',
     ];
 
     protected function casts(): array
@@ -56,17 +57,13 @@ class ServiceOffering extends Model
             'duration_max' => 'integer',
             'lock_version' => 'integer',
             'activated_at' => 'datetime',
+            'warranty_config' => 'array',
         ];
     }
 
     public function definition(): BelongsTo
     {
         return $this->belongsTo(ServiceDefinition::class, 'service_definition_id');
-    }
-
-    public function coverageCities(): HasMany
-    {
-        return $this->hasMany(ServiceCoverageCity::class, 'offering_id');
     }
 
     public function media(): HasMany

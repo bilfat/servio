@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { usePathname } from "next/navigation";
+import { useActiveRole } from "@/context/RoleContext";
 import {
   MockMerchantOrder,
   MockCheckoutGroup,
@@ -392,6 +394,9 @@ const CACHE_KEY_CUST_ORDERS = "servio_cache_customer_orders_real_v5";
 const CACHE_KEY_MERCH_ORDERS = "servio_cache_merchant_orders_real_v5";
 
 export function useOrderBarang() {
+  const pathname = usePathname();
+  const { activeRole, isAuthenticated, isPublicGuest } = useActiveRole();
+
   const [backendCustomerOrders, setBackendCustomerOrders] = useState<MockMerchantOrder[]>(() => {
     if (typeof window !== "undefined") {
       try {
@@ -477,8 +482,38 @@ export function useOrderBarang() {
     if (!silent) {
       setIsLoadingBackend(true);
     }
-    try {
-      await Promise.all([
+
+    const isMerchantPath = Boolean(
+      pathname?.startsWith("/merchant") || pathname?.startsWith("/business/merchant")
+    );
+    const isCustomerPath = Boolean(
+      pathname?.startsWith("/orders") ||
+      pathname?.startsWith("/cart") ||
+      pathname?.startsWith("/checkout") ||
+      pathname?.startsWith("/customer") ||
+      pathname === "/"
+    );
+
+    // Only fetch customer orders if authenticated as CUSTOMER (or on customer paths without MERCHANT role)
+    const shouldFetchCustomer =
+      Boolean(isAuthenticated) &&
+      !isPublicGuest &&
+      activeRole !== "MERCHANT" &&
+      !isMerchantPath &&
+      (activeRole === "CUSTOMER" || isCustomerPath);
+
+    // Only fetch merchant orders if authenticated as MERCHANT or accessing merchant paths
+    const shouldFetchMerchant =
+      Boolean(isAuthenticated) &&
+      !isPublicGuest &&
+      activeRole !== "CUSTOMER" &&
+      !isCustomerPath &&
+      (activeRole === "MERCHANT" || isMerchantPath);
+
+    const promises: Promise<void>[] = [];
+
+    if (shouldFetchCustomer) {
+      promises.push(
         (async () => {
           try {
             const custRes = await orderBarangApi.customer.getOrders(undefined, 1, 100);
@@ -542,10 +577,24 @@ export function useOrderBarang() {
               }
               return merged;
             });
-          } catch (custErr) {
+          } catch (custErr: any) {
+            const errMsg = String(custErr?.message || "");
+            if (
+              custErr?.status === 403 ||
+              custErr?.status === 401 ||
+              errMsg.includes("tidak memiliki izin") ||
+              errMsg.includes("403")
+            ) {
+              return;
+            }
             console.warn("Backend customer orders sync error:", custErr);
           }
-        })(),
+        })()
+      );
+    }
+
+    if (shouldFetchMerchant) {
+      promises.push(
         (async () => {
           try {
             const merchRes = await orderBarangApi.merchant.getOrders(undefined, 1, 100);
@@ -607,18 +656,33 @@ export function useOrderBarang() {
               }
               return merged;
             });
-          } catch (merchErr) {
+          } catch (merchErr: any) {
+            const errMsg = String(merchErr?.message || "");
+            if (
+              merchErr?.status === 403 ||
+              merchErr?.status === 401 ||
+              errMsg.includes("tidak memiliki izin") ||
+              errMsg.includes("403")
+            ) {
+              return;
+            }
             console.warn("Backend merchant orders sync error:", merchErr);
           }
-        })(),
-      ]);
+        })()
+      );
+    }
+
+    try {
+      if (promises.length > 0) {
+        await Promise.all(promises);
+      }
     } finally {
       if (!silent) {
         setIsLoadingBackend(false);
       }
       setHasLoadedBackend(true);
     }
-  }, []);
+  }, [activeRole, isAuthenticated, isPublicGuest, pathname]);
 
   useEffect(() => {
     // If we have cached orders, sync silently without blocking UI

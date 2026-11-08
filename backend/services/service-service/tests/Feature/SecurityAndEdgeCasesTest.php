@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Infrastructure\Category\CategoryServiceClient;
 use App\Infrastructure\Identity\IdentityServiceClient;
 use App\Models\Capability;
-use App\Models\ServiceCoverageCity;
 use App\Models\ServiceDefinition;
 use App\Models\ServiceOffering;
 use App\Models\ServiceOfferingMedia;
@@ -506,13 +505,6 @@ class SecurityAndEdgeCasesTest extends TestCase
             'survey_fee_idr' => 50000,
             'status' => 'DRAFT',
             'lock_version' => 1,
-        ]);
-
-        ServiceCoverageCity::create([
-            'id' => (string) Str::uuid(),
-            'offering_id' => $offering->id,
-            'city_code' => 'JKT-BARAT',
-            'city_label_snapshot' => 'Kota Administrasi Jakarta Barat',
         ]);
 
         ServiceOfferingMedia::create([

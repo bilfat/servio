@@ -1490,17 +1490,6 @@ export default function AdminServiceOperationsPage() {
                         </span>
                       </div>
 
-                      {/* Keterangan Status Database */}
-                      <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-200/90 text-amber-900 space-y-1">
-                        <div className="flex items-center gap-1.5 font-bold text-[11px] text-amber-800">
-                          <Info size={14} weight="fill" className="text-amber-600 shrink-0" />
-                          <span>Keterangan Status Database:</span>
-                        </div>
-                        <p className="text-[11px] text-amber-700 leading-relaxed">
-                          Bagian garansi ini saat ini <strong className="font-extrabold underline decoration-amber-500">belum dimasukkan / belum disimpan ke dalam database</strong> (Modul 04 Service Offering). Nilai garansi berstatus simulasi lokal.
-                        </p>
-                      </div>
-
                       <div className="grid grid-cols-2 gap-3 pt-1">
                         <div className="p-3 bg-amber-50/40 rounded-xl border border-amber-200/60">
                           <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block mb-1">

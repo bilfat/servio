@@ -82,7 +82,7 @@ export function ProductReturnModal({
     setEvidencePreviews((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
@@ -106,7 +106,7 @@ export function ProductReturnModal({
     setIsSubmitting(true);
 
     try {
-      const newCase = submitReturn({
+      const newCase = await submitReturn({
         sourceOrderId: orderId,
         sourceOrderNumber: orderNumber,
         itemTitle: currentItem.productTitle,
@@ -125,7 +125,7 @@ export function ProductReturnModal({
 
       setIsSubmitting(false);
       onClose();
-      if (onSuccess) {
+      if (onSuccess && newCase) {
         onSuccess(newCase.id);
       }
     } catch (err: any) {
@@ -279,9 +279,6 @@ export function ProductReturnModal({
                     </div>
                   ))}
                 </div>
-                <p className="text-[10px] text-slate-400 italic leading-tight">
-                  Pratinjau lokal hanya untuk simulasi — tidak ada berkas yang diunggah ke server nyata.
-                </p>
               </div>
             </div>
 

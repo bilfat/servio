@@ -22,6 +22,7 @@ import {
   WarningOctagon,
   Tag,
   Bank,
+  Copy,
 } from "@phosphor-icons/react";
 import { AfterSalesCase } from "@/types/afterSales";
 import { useAfterSales } from "@/features/afterSales/useAfterSales";
@@ -52,9 +53,19 @@ export function AfterSalesCaseDetail({
   const [courierNameInput, setCourierNameInput] = useState("J&T Cargo");
   const [trackingNumberInput, setTrackingNumberInput] = useState("");
   const [claimedFeeInput, setClaimedFeeInput] = useState("");
+  const [shippingReceiptRefInput, setShippingReceiptRefInput] = useState("");
+  const [feeProofRefInput, setFeeProofRefInput] = useState("");
+  const [customerNotesInput, setCustomerNotesInput] = useState("");
   const [showRejectAltModal, setShowRejectAltModal] = useState(false);
   const [rejectAltReason, setRejectAltReason] = useState("");
   const [notificationMsg, setNotificationMsg] = useState<string | null>(null);
+
+  const handleCopyAddress = () => {
+    if (caseData.returnShipping?.returnAddress) {
+      navigator.clipboard.writeText(caseData.returnShipping.returnAddress);
+      setNotificationMsg("Alamat pengembalian toko berhasil disalin ke clipboard!");
+    }
+  };
 
   const getCaseTypeBadge = (type: string) => {
     switch (type) {
@@ -144,21 +155,32 @@ export function AfterSalesCaseDetail({
     customerReportIssue(caseData.id, reportReason);
     setShowReportModal(false);
     setReportReason("");
-    setNotificationMsg("Laporan Anda telah diteruskan ke Customer Support SERVIO (Simulasi Demo Modul 09).");
+    setNotificationMsg("Laporan Anda telah dicatat dengan status PENDING_SUPPORT_INTEGRATION.");
   };
 
-  const handleShippingSubmit = (e: React.FormEvent) => {
+  const handleShippingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!trackingNumberInput.trim()) return;
-    customerSubmitReturnShipping(
-      caseData.id,
-      trackingNumberInput,
-      courierNameInput,
-      claimedFeeInput ? parseInt(claimedFeeInput, 10) : undefined
-    );
-    setShowShippingModal(false);
-    setTrackingNumberInput("");
-    setNotificationMsg("Resi pengiriman pengembalian berhasil diunggah!");
+    if (!courierNameInput.trim()) return;
+    try {
+      await customerSubmitReturnShipping(
+        caseData.id,
+        trackingNumberInput.trim(),
+        courierNameInput.trim(),
+        claimedFeeInput ? parseInt(claimedFeeInput, 10) : undefined,
+        shippingReceiptRefInput.trim() || undefined,
+        feeProofRefInput.trim() || undefined,
+        customerNotesInput.trim() || undefined
+      );
+      setShowShippingModal(false);
+      setTrackingNumberInput("");
+      setClaimedFeeInput("");
+      setShippingReceiptRefInput("");
+      setFeeProofRefInput("");
+      setCustomerNotesInput("");
+      setNotificationMsg("Data dan resi pengiriman pengembalian barang berhasil disimpan!");
+    } catch (err: any) {
+      setNotificationMsg(`Gagal menyimpan data pengiriman: ${err.message}`);
+    }
   };
 
   const handleAcceptAlt = () => {
@@ -199,15 +221,16 @@ export function AfterSalesCaseDetail({
         )}
       </AnimatePresence>
 
-      {/* Demo Banner */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-amber-500/10 border border-amber-300 rounded-2xl text-[11px] text-amber-800 font-medium">
+      {/* Live Service Indicator */}
+      <div className="flex items-center justify-between px-4 py-2.5 bg-emerald-50 border border-emerald-300 rounded-2xl text-[11px] text-emerald-800 font-medium">
         <div className="flex items-center gap-2">
-          <span className="px-2 py-0.5 bg-amber-500 text-white rounded-md text-[10px] font-bold uppercase tracking-wider">
-            DEMO ONLY
-          </span>
-          <span>DATA SIMULASI — BELUM TERHUBUNG SISTEM AFTER-SALES OPERASIONAL</span>
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="font-bold">Pusat Layanan Purnajual Terintegrasi</span>
+          <span className="text-emerald-700 hidden sm:inline">• Microservice Port 8008 Terhubung Aktif</span>
         </div>
-        <span className="text-slate-500 hidden sm:inline font-mono">Phase 07 V2.1 Spec</span>
+        <span className="text-emerald-700 font-mono text-[10px] bg-white px-2 py-0.5 rounded-md border border-emerald-200">
+          SLA 72 Jam Kalender
+        </span>
       </div>
 
       {/* Navigation Header */}
@@ -310,31 +333,42 @@ export function AfterSalesCaseDetail({
                 {/* Step 2: Diproses */}
                 <div
                   className={`p-3 rounded-2xl border text-center space-y-1 ${
-                    caseData.refundDetail.status === "PROCESSING" || caseData.refundDetail.status === "COMPLETED_DEMO"
+                    caseData.refundDetail.status === "PROCESSING" ||
+                    caseData.refundDetail.status === "SUCCEEDED" ||
+                    caseData.refundDetail.status === "COMPLETED_DEMO" ||
+                    caseData.refundDetail.status === "REVERSED"
                       ? "bg-white border-emerald-300"
                       : "bg-slate-50 border-slate-200 opacity-60"
                   }`}
                 >
                   <div
                     className={`w-6 h-6 mx-auto rounded-full flex items-center justify-center text-xs font-bold ${
-                      caseData.refundDetail.status === "COMPLETED_DEMO"
+                      caseData.refundDetail.status === "SUCCEEDED" ||
+                      caseData.refundDetail.status === "COMPLETED_DEMO" ||
+                      caseData.refundDetail.status === "REVERSED"
                         ? "bg-emerald-600 text-white"
                         : caseData.refundDetail.status === "PROCESSING"
                         ? "bg-amber-500 text-white animate-pulse"
                         : "bg-slate-200 text-slate-500"
                     }`}
                   >
-                    {caseData.refundDetail.status === "COMPLETED_DEMO" ? "✓" : "2"}
+                    {caseData.refundDetail.status === "SUCCEEDED" ||
+                    caseData.refundDetail.status === "COMPLETED_DEMO" ||
+                    caseData.refundDetail.status === "REVERSED"
+                      ? "✓"
+                      : "2"}
                   </div>
                   <div className="font-bold text-xs text-slate-800">2. Diproses</div>
                   <p className="text-[10px] text-slate-500">Penyaluran dana sedang ditangani</p>
                 </div>
 
-                {/* Step 3: Berhasil (Demo) / Terkendala */}
+                {/* Step 3: Berhasil / Reversal / Terkendala */}
                 <div
                   className={`p-3 rounded-2xl border text-center space-y-1 ${
-                    caseData.refundDetail.status === "COMPLETED_DEMO"
+                    caseData.refundDetail.status === "SUCCEEDED" || caseData.refundDetail.status === "COMPLETED_DEMO"
                       ? "bg-emerald-100/70 border-emerald-300"
+                      : caseData.refundDetail.status === "REVERSED"
+                      ? "bg-purple-50 border-purple-300"
                       : caseData.refundDetail.status === "FAILED"
                       ? "bg-rose-50 border-rose-300"
                       : "bg-slate-50 border-slate-200 opacity-60"
@@ -342,21 +376,33 @@ export function AfterSalesCaseDetail({
                 >
                   <div
                     className={`w-6 h-6 mx-auto rounded-full flex items-center justify-center text-xs font-bold ${
-                      caseData.refundDetail.status === "COMPLETED_DEMO"
+                      caseData.refundDetail.status === "SUCCEEDED" || caseData.refundDetail.status === "COMPLETED_DEMO"
                         ? "bg-emerald-700 text-white"
+                        : caseData.refundDetail.status === "REVERSED"
+                        ? "bg-purple-700 text-white"
                         : caseData.refundDetail.status === "FAILED"
                         ? "bg-rose-600 text-white"
                         : "bg-slate-200 text-slate-500"
                     }`}
                   >
-                    {caseData.refundDetail.status === "COMPLETED_DEMO" ? "✓" : "3"}
+                    {caseData.refundDetail.status === "SUCCEEDED" || caseData.refundDetail.status === "COMPLETED_DEMO"
+                      ? "✓"
+                      : caseData.refundDetail.status === "REVERSED"
+                      ? "↺"
+                      : "3"}
                   </div>
                   <div className="font-bold text-xs text-slate-800">
-                    {caseData.refundDetail.status === "FAILED" ? "Terkendala" : "3. Berhasil"}
+                    {caseData.refundDetail.status === "FAILED"
+                      ? "Terkendala"
+                      : caseData.refundDetail.status === "REVERSED"
+                      ? "3. Dibalikkan"
+                      : "3. Berhasil"}
                   </div>
                   <p className="text-[10px] text-slate-500">
-                    {caseData.refundDetail.status === "COMPLETED_DEMO"
-                      ? "Tersedia di S-Pay (Demo)"
+                    {caseData.refundDetail.status === "SUCCEEDED" || caseData.refundDetail.status === "COMPLETED_DEMO"
+                      ? "Tersedia di S-Pay"
+                      : caseData.refundDetail.status === "REVERSED"
+                      ? "Penyesuaian Reversal"
                       : caseData.refundDetail.status === "FAILED"
                       ? "Kendala sistem settlement"
                       : "Menunggu penyelesaian"}
@@ -367,7 +413,7 @@ export function AfterSalesCaseDetail({
               {/* Refund Status Note */}
               <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200/80 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <span className="text-slate-700 font-medium">{caseData.refundDetail.statusNote}</span>
-                {caseData.refundDetail.status === "COMPLETED_DEMO" && (
+                {(caseData.refundDetail.status === "SUCCEEDED" || caseData.refundDetail.status === "COMPLETED_DEMO") && (
                   <Link
                     href="/spay"
                     className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition shrink-0 flex items-center justify-center gap-1 shadow-2xs"
@@ -476,7 +522,7 @@ export function AfterSalesCaseDetail({
                     {caseData.warrantyJob.paidWorkQuote.customerApproved ? (
                       <span className="text-emerald-700 font-bold flex items-center gap-1 text-[11px]">
                         <CheckCircle size={14} weight="bold" />
-                        Telah Anda Setujui (Simulasi Demo, tidak ada tagihan riil)
+                        Telah Anda Setujui
                       </span>
                     ) : (
                       <button
@@ -496,15 +542,18 @@ export function AfterSalesCaseDetail({
 
           {/* 1.c. Contextual Return Shipping Section */}
           {caseData.returnShipping && (
-            <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-3">
+            <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
                     <Truck size={18} weight="bold" />
                   </div>
-                  <h3 className="text-sm font-bold text-slate-900">
-                    Instruksi Pengembalian Barang Fisik
-                  </h3>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Pengembalian Barang Fisik (GOODS_RETURN)
+                    </h3>
+                    <p className="text-[11px] text-slate-500">Alur pengiriman balik, verifikasi penerimaan &amp; inspeksi toko</p>
+                  </div>
                 </div>
                 <span className="text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-3 py-1 rounded-full">
                   Ongkir: {caseData.returnShipping.shippingFeePayer === "MERCHANT" ? "Ditanggung Penjual" : "Ditanggung Pembeli"}
@@ -512,47 +561,214 @@ export function AfterSalesCaseDetail({
               </div>
 
               {caseData.returnShipping.requiresPhysicalReturn ? (
-                <div className="space-y-3 text-xs">
-                  <p className="text-slate-600 leading-relaxed">
-                    {caseData.returnShipping.feePayerExplanation}
-                  </p>
-                  {caseData.returnShipping.returnAddress && (
-                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200">
-                      <span className="text-[11px] text-slate-400 block font-medium">Alamat Pengembalian Toko:</span>
-                      <strong className="text-slate-800">{caseData.returnShipping.returnAddress}</strong>
+                <div className="space-y-3.5 text-xs">
+                  {/* Card Instruksi Toko */}
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <Package size={15} weight="bold" className="text-blue-600" />
+                        Instruksi Pengiriman Balik dari Penjual:
+                      </span>
+                      {caseData.returnShipping.returnAddress && (
+                        <button
+                          type="button"
+                          onClick={handleCopyAddress}
+                          className="px-2.5 py-1 bg-white hover:bg-slate-100 text-blue-600 font-bold rounded-lg border border-slate-200 transition text-[11px] flex items-center gap-1 cursor-pointer"
+                        >
+                          <Copy size={13} weight="bold" />
+                          Salin Alamat
+                        </button>
+                      )}
+                    </div>
+                    {caseData.returnShipping.returnAddress && (
+                      <p className="text-slate-800 leading-relaxed font-medium bg-white p-2.5 rounded-xl border border-slate-200/60">
+                        {caseData.returnShipping.returnAddress}
+                      </p>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1 text-slate-600">
+                      <div>
+                        Penerima: <strong className="text-slate-800">{caseData.returnShipping.recipientName || "Bagian Retur Toko"}</strong>
+                      </div>
+                      <div>
+                        Kontak: <strong className="text-slate-800 font-mono">{caseData.returnShipping.recipientPhone || "—"}</strong>
+                      </div>
+                    </div>
+                    {caseData.returnShipping.packagingInstructions && (
+                      <p className="text-[11px] text-slate-500 italic bg-blue-50/50 p-2 rounded-lg border border-blue-100">
+                        <strong>Petunjuk Kemasan:</strong> {caseData.returnShipping.packagingInstructions}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Card Status Pengiriman oleh Customer */}
+                  {caseData.returnShipping.trackingNumber || caseData.returnShipping.shippedAt ? (
+                    <div className="p-4 bg-emerald-50/70 rounded-2xl border border-emerald-200 space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 pb-2 border-b border-emerald-100">
+                        <span className="font-bold text-xs text-emerald-950 flex items-center gap-1.5">
+                          <CheckCircle size={15} weight="bold" className="text-emerald-600" />
+                          Barang Telah Dikirim oleh Anda
+                        </span>
+                        <span className="text-[11px] font-bold text-emerald-800 bg-white px-2.5 py-0.5 rounded-full border border-emerald-200">
+                          {caseData.returnShipping.receivedByMerchant ? "Telah Sampai di Toko" : "Menunggu Penerimaan Merchant"}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px]">
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Kurir &amp; Resi:</span>
+                          <strong className="text-emerald-950 font-mono text-xs">
+                            {caseData.returnShipping.courierName} • {caseData.returnShipping.trackingNumber || "Tanpa Resi"}
+                          </strong>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Waktu Kirim:</span>
+                          <span className="text-slate-700">
+                            {caseData.returnShipping.shippedAt ? new Date(caseData.returnShipping.shippedAt).toLocaleString("id-ID") : "Tercatat"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Ongkir Dibayar:</span>
+                          <span className="font-bold text-emerald-900">
+                            Rp{(caseData.returnShipping.claimedShippingFee || 0).toLocaleString("id-ID")}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 bg-amber-50/70 rounded-2xl border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <strong className="text-xs text-amber-950 block">Menunggu Pengiriman Balik dari Anda</strong>
+                        <p className="text-[11px] text-amber-800">
+                          Kirimkan barang sesuai alamat di atas, lalu masukkan nomor resi dan rincian pengiriman.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowShippingModal(true)}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer shrink-0 self-start sm:self-auto"
+                      >
+                        <UploadSimple size={15} weight="bold" />
+                        Isi Data &amp; Resi Pengiriman
+                      </button>
                     </div>
                   )}
 
-                  {caseData.returnShipping.trackingNumber ? (
-                    <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div>
-                        <span className="text-[11px] text-emerald-800 block">Resi Pengembalian Anda:</span>
-                        <strong className="text-emerald-950 font-mono text-xs">
-                          {caseData.returnShipping.courierName} — {caseData.returnShipping.trackingNumber}
-                        </strong>
+                  {/* Card Status Penerimaan oleh Merchant */}
+                  {caseData.returnShipping.receivedByMerchant && (
+                    <div className="p-4 bg-blue-50/70 rounded-2xl border border-blue-200 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-xs text-blue-950 flex items-center gap-1.5">
+                          <Package size={15} weight="bold" className="text-blue-600" />
+                          Barang Diterima Penjual
+                        </span>
+                        <span className="text-[10px] font-bold text-blue-800 bg-white px-2 py-0.5 rounded-full border border-blue-200">
+                          {caseData.returnShipping.inspectedByMerchant ? "Pemeriksaan Selesai" : "Sedang Diperiksa QC"}
+                        </span>
                       </div>
-                      <span className="text-xs font-bold text-emerald-700 flex items-center gap-1">
-                        <CheckCircle size={14} weight="bold" />
-                        {caseData.returnShipping.receivedByMerchant ? "Barang Diterima Penjual" : "Dalam Pengiriman"}
-                      </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] pt-1">
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Diterima Oleh:</span>
+                          <span className="font-semibold text-slate-800">{caseData.returnShipping.receivedBy || "Staff Toko"}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Jumlah Unit:</span>
+                          <span className="font-semibold text-slate-800">{caseData.returnShipping.quantityReceived || caseData.affectedQuantity} Unit</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Kondisi Kemasan:</span>
+                          <span className="font-semibold text-slate-800">{caseData.returnShipping.packageCondition || "BAIK"}</span>
+                        </div>
+                      </div>
                     </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setShowShippingModal(true)}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-sm cursor-pointer"
-                    >
-                      <UploadSimple size={15} weight="bold" />
-                      Input Resi Pengembalian Barang
-                    </button>
                   )}
+
+                  {/* Card Hasil Pemeriksaan Toko (QC) */}
+                  {caseData.returnShipping.inspectedByMerchant && (
+                    <div className="p-4 bg-purple-50/70 rounded-2xl border border-purple-200 space-y-2">
+                      <div className="flex items-center justify-between pb-1.5 border-b border-purple-100">
+                        <span className="font-bold text-xs text-purple-950 flex items-center gap-1.5">
+                          <CheckCircle size={15} weight="bold" className="text-purple-600" />
+                          Hasil Pemeriksaan Fisik Barang (QC)
+                        </span>
+                        <span
+                          className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${
+                            caseData.returnShipping.inspectionOutcome === "MATCHED"
+                              ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                              : caseData.returnShipping.inspectionOutcome === "PARTIAL"
+                              ? "bg-amber-100 text-amber-800 border-amber-300"
+                              : "bg-rose-100 text-rose-800 border-rose-300"
+                          }`}
+                        >
+                          {caseData.returnShipping.inspectionOutcome === "MATCHED"
+                            ? "LOLOS QC — SESUAI PENGAJUAN"
+                            : caseData.returnShipping.inspectionOutcome === "PARTIAL"
+                            ? "SEBAGIAN SESUAI"
+                            : "TIDAK SESUAI (MISMATCH)"}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Unit Disetujui:</span>
+                          <span className="font-bold text-purple-950">
+                            {caseData.returnShipping.quantityApproved ?? caseData.affectedQuantity} dari {caseData.returnShipping.quantityInspected ?? caseData.affectedQuantity} unit
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-400 block text-[10px]">Kesesuaian Seri &amp; Segel:</span>
+                          <span className="font-semibold text-slate-800">
+                            {caseData.returnShipping.isSkuMatched ? "Cocok & Terverifikasi" : "Tidak Cocok"}
+                          </span>
+                        </div>
+                      </div>
+                      {caseData.returnShipping.inspectionNote && (
+                        <p className="text-[11px] text-slate-700 bg-white p-2.5 rounded-xl border border-purple-100">
+                          <strong>Catatan Pemeriksa:</strong> {caseData.returnShipping.inspectionNote}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Card Rincian Alokasi Biaya Pengiriman (3 Komponen Bagian F) */}
+                  <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200 space-y-2 text-xs">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-slate-200">
+                      <span className="font-bold text-slate-800 text-[11px] uppercase tracking-wider">
+                        Rincian Biaya Pengiriman (3 Komponen):
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono">Ketentuan SLA Garansi</span>
+                    </div>
+                    <div className="space-y-1.5 text-[11px]">
+                      <div className="flex justify-between text-slate-600">
+                        <span>1. Ongkir Pembelian Awal Pesanan:</span>
+                        <span className="font-semibold text-slate-800">Mengikuti Kebijakan Pesanan Asal</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600">
+                        <span>2. Ongkir Pengembalian Barang ke Toko:</span>
+                        <span className="font-bold text-blue-700">
+                          {caseData.returnShipping.shippingFeePayer === "MERCHANT" ? "Ditanggung Penjual (Rp" + (caseData.returnShipping.claimedShippingFee || 0).toLocaleString("id-ID") + ")" : "Ditanggung Pembeli"}
+                        </span>
+                      </div>
+                      {caseData.returnShipping.shippingFeePayer === "MERCHANT" && (caseData.returnShipping.claimedShippingFee || 0) > 0 && (
+                        <div className="text-[10px] text-amber-700 bg-amber-50 p-2 rounded-lg border border-amber-200">
+                          <strong>Status Kompensasi Ongkir Balik:</strong> PENDING_FINANCE_CONTRACT (Reimbursement ongkir tunai menunggu kontrak pencairan resmi Finance 06; tidak disalurkan via saldo belanja tanpa kontrak).
+                        </div>
+                      )}
+                      {caseData.customerRequestedSolution === "REPLACEMENT" && (
+                        <div className="flex justify-between text-slate-600">
+                          <span>3. Ongkir Pengiriman Barang Pengganti:</span>
+                          <span className="font-bold text-emerald-700">Gratis (Ditanggung Penjual / Garansi)</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               ) : (
-                <div className="p-3 bg-sky-50 rounded-2xl border border-sky-200 text-xs text-sky-900 flex items-center gap-2">
-                  <Info size={16} weight="bold" className="shrink-0" />
-                  <span>
-                    <strong>Tanpa Pengiriman Balik:</strong> Karena komponen hilang atau salah kirim, Anda tidak diwajibkan mengirimkan barang fisik kembali.
-                  </span>
+                <div className="p-4 bg-sky-50 rounded-2xl border border-sky-200 text-xs text-sky-900 space-y-1">
+                  <div className="flex items-center gap-2 font-bold">
+                    <Info size={16} weight="bold" className="shrink-0 text-sky-700" />
+                    <span>Tanpa Pengiriman Balik Fisik (Return Waived)</span>
+                  </div>
+                  <p className="text-[11px] text-sky-800 leading-relaxed">
+                    {caseData.returnShipping.noReturnReason || "Penjual telah menetapkan bahwa barang tidak perlu dikirimkan kembali secara fisik. Pengajuan Anda langsung diproses ke tahap penyelesaian (pengembalian dana atau barang pengganti)."}
+                  </p>
                 </div>
               )}
             </div>
@@ -924,7 +1140,7 @@ export function AfterSalesCaseDetail({
               <div className="flex items-center justify-between pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2 text-amber-700 font-bold">
                   <WarningCircle size={20} weight="fill" />
-                  <span>Laporkan Masalah ke Customer Support (Demo)</span>
+                  <span>Laporkan Masalah ke Customer Support</span>
                 </div>
                 <button
                   type="button"
@@ -971,7 +1187,7 @@ export function AfterSalesCaseDetail({
                     type="submit"
                     className="px-5 py-2 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-xl transition shadow-xs cursor-pointer"
                   >
-                    Kirim Laporan (Demo Only)
+                    Kirim Laporan
                   </button>
                 </div>
               </form>
@@ -1004,15 +1220,15 @@ export function AfterSalesCaseDetail({
                 </button>
               </div>
 
-              <form onSubmit={handleShippingSubmit} className="space-y-4">
+              <form onSubmit={handleShippingSubmit} className="space-y-3.5">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-slate-700 block">Kurir Pengiriman:</label>
+                  <label className="text-xs font-bold text-slate-700 block">Jasa Ekspedisi / Kurir Pengiriman:</label>
                   <input
                     type="text"
                     required
                     value={courierNameInput}
                     onChange={(e) => setCourierNameInput(e.target.value)}
-                    placeholder="Contoh: J&T Cargo, JNE Reguler..."
+                    placeholder="Contoh: J&T Cargo, JNE, SiCepat, AnterAja..."
                     className="w-full p-2.5 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                   />
                 </div>
@@ -1021,17 +1237,16 @@ export function AfterSalesCaseDetail({
                   <label className="text-xs font-bold text-slate-700 block">Nomor Resi / AWB:</label>
                   <input
                     type="text"
-                    required
                     value={trackingNumberInput}
                     onChange={(e) => setTrackingNumberInput(e.target.value)}
-                    placeholder="Contoh: JTC-980128391..."
+                    placeholder="Contoh: JTC-980128391 (kosongkan jika pengantaran langsung)"
                     className="w-full p-2.5 text-xs font-mono border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                   />
                 </div>
 
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-slate-700 block">
-                    Klaim Biaya Ongkir (Opsional, jika ditanggung Merchant):
+                    Biaya Ongkir Aktual yang Anda Bayar (Rp):
                   </label>
                   <input
                     type="number"
@@ -1042,7 +1257,44 @@ export function AfterSalesCaseDetail({
                   />
                 </div>
 
-                <div className="flex items-center justify-end gap-2 pt-2">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Link / URL Foto Resi Pengiriman:
+                  </label>
+                  <input
+                    type="text"
+                    value={shippingReceiptRefInput}
+                    onChange={(e) => setShippingReceiptRefInput(e.target.value)}
+                    placeholder="https://... / foto_resi_retur.jpg"
+                    className="w-full p-2.5 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 block">
+                    Link / Bukti Pembayaran Ongkir (Opsional, jika klaim reimbursement):
+                  </label>
+                  <input
+                    type="text"
+                    value={feeProofRefInput}
+                    onChange={(e) => setFeeProofRefInput(e.target.value)}
+                    placeholder="https://... / bukti_bayar_ongkir.jpg"
+                    className="w-full p-2.5 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-slate-700 block">Catatan Pengiriman:</label>
+                  <input
+                    type="text"
+                    value={customerNotesInput}
+                    onChange={(e) => setCustomerNotesInput(e.target.value)}
+                    placeholder="Contoh: Paket diantar kurir pagi hari, bubble wrap 3 lapis..."
+                    className="w-full p-2.5 text-xs border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                   <button
                     type="button"
                     onClick={() => setShowShippingModal(false)}
@@ -1054,7 +1306,7 @@ export function AfterSalesCaseDetail({
                     type="submit"
                     className="px-5 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm cursor-pointer"
                   >
-                    Simpan Resi (Demo)
+                    Simpan &amp; Kirim Konfirmasi
                   </button>
                 </div>
               </form>

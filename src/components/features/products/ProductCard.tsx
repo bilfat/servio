@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { ShoppingCart, CheckCircle, Warning, Package, ShieldCheck } from "@phosphor-icons/react";
+import { ShoppingCart, CheckCircle, Warning, Package, ShieldCheck, Star } from "@phosphor-icons/react";
 import { formatRupiah } from "@/components/data-display/PriceBreakdown";
 
 export interface ProductCardData {
@@ -13,7 +13,10 @@ export interface ProductCardData {
   stock: number;
   compatibilityTags: string[];
   merchantName: string;
-  rating: number;
+  rating?: number;
+  reviewCount?: number;
+  merchantRating?: number;
+  merchantReviewCount?: number;
   thumbnailUrl?: string;
   warrantyMonths?: number;
 }
@@ -32,6 +35,26 @@ export function ProductCard({
   const isOutOfStock = product.stock <= 0;
   const isLowStock = product.stock > 0 && product.stock <= 3;
 
+  // Rating Gabungan Katalog Produk & Toko (Rata-rata akurat per katalog, tidak dipisah)
+  const hasProdRating = Boolean((product.reviewCount ?? 0) > 0 && (product.rating ?? 0) > 0);
+  const hasMerchantRating = Boolean((product.merchantReviewCount ?? 0) > 0 && (product.merchantRating ?? 0) > 0);
+
+  let combinedRating: number | null = null;
+  if (hasProdRating && hasMerchantRating) {
+    combinedRating = ((product.rating ?? 0) + (product.merchantRating ?? 0)) / 2;
+  } else if (hasProdRating) {
+    combinedRating = product.rating ?? null;
+  } else if (hasMerchantRating) {
+    combinedRating = product.merchantRating ?? null;
+  } else if ((product.rating ?? 0) > 0) {
+    combinedRating = product.rating ?? null;
+  }
+
+  const reviewCountDisplay =
+    (product.reviewCount ?? 0) > 0
+      ? product.reviewCount
+      : (product.merchantReviewCount ?? 0);
+
   return (
     <div className={`rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-servio-xs hover:shadow-servio-md transition-all flex flex-col justify-between font-body text-left group ${className}`}>
       {/* Product Image Box */}
@@ -42,10 +65,17 @@ export function ProductCard({
           </span>
 
           <div className="flex items-center gap-1 shrink-0">
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-              <ShieldCheck size={12} weight="fill" className="text-emerald-600" />
-              Garansi {product.warrantyMonths ?? 12} Bln
-            </span>
+            {Boolean(
+              (product.warrantyMonths && product.warrantyMonths > 0) ||
+              ((product as any).warrantyDays && (product as any).warrantyDays > 0) ||
+              (product as any).warrantyPolicy ||
+              (product as any).warranty_policy
+            ) && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                <ShieldCheck size={12} weight="fill" className="text-emerald-600" />
+                Tersedia Garansi
+              </span>
+            )}
             {isOutOfStock ? (
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-neutral-slate">
                 Habis
@@ -95,6 +125,36 @@ export function ProductCard({
               ))}
             </div>
           )}
+
+          {/* Rating Gabungan Produk & Toko */}
+          <div className="flex items-center justify-between gap-2 pt-0.5">
+            <span className="text-[10px] text-neutral-slate">
+              {product.stock > 0 ? `Stok: ${product.stock}` : "Stok habis"}
+            </span>
+            {combinedRating !== null ? (
+              <span
+                className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-200"
+                title={
+                  hasProdRating && hasMerchantRating
+                    ? `Rating rata-rata: ${combinedRating.toFixed(1)} (Produk: ${(product.rating ?? 0).toFixed(1)} & Toko: ${(product.merchantRating ?? 0).toFixed(1)})`
+                    : hasProdRating
+                    ? `Rating produk: ${(product.rating ?? 0).toFixed(1)} (${product.reviewCount} penilaian)`
+                    : `Rating reputasi toko: ${(product.merchantRating ?? 0).toFixed(1)} (${product.merchantReviewCount} ulasan)`
+                }
+              >
+                <Star size={11} weight="fill" className="text-amber-400" />
+                <span>{combinedRating.toFixed(1)}</span>
+                <span className="text-slate-400 font-normal">
+                  ({reviewCountDisplay} penilaian)
+                </span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[10px] text-slate-400">
+                <Star size={11} className="text-slate-300" />
+                <span>Belum ada penilaian</span>
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Price & Add to Cart */}

@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# backend vendor & storage
+backend/**/vendor/
+backend/**/storage/framework/cache/
+backend/**/storage/framework/sessions/
+backend/**/storage/framework/views/
+

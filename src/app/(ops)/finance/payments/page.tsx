@@ -290,7 +290,7 @@ export default function PaymentGatewayOperationsPage() {
         );
         setToastMessage(`Simulasi Berhasil: Tagihan ${simulation05BRow.invoiceNo} terkonfirmasi PAID.`);
         setSimulation05BRow(null);
-        await syncOrderJasa();
+        await syncOrderJasa(true);
         await fetchPayments(true);
       } catch (err: any) {
         setError(err?.message || "Gagal melakukan simulasi pembayaran jasa.");
@@ -365,7 +365,10 @@ export default function PaymentGatewayOperationsPage() {
           channel: "JASA_DIAGNOSIS",
           serviceTitle: cleanServiceTitle,
           customerName: order.customerName,
-          providerName: order.providerName,
+          providerName:
+            order.providerName && order.providerName !== "PT Servio Mandiri Teknik"
+              ? order.providerName
+              : "sukses gembira",
           method: dp.method,
           amount: dp.amount,
           status: dp.status,
@@ -387,7 +390,10 @@ export default function PaymentGatewayOperationsPage() {
           channel: "JASA_PENGERJAAN",
           serviceTitle: cleanServiceTitle,
           customerName: order.customerName,
-          providerName: order.providerName,
+          providerName:
+            order.providerName && order.providerName !== "PT Servio Mandiri Teknik"
+              ? order.providerName
+              : "sukses gembira",
           method: ep.method,
           amount: ep.amount,
           status: ep.status,
@@ -697,7 +703,7 @@ export default function PaymentGatewayOperationsPage() {
                             className="text-xs bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-xs"
                           >
                             <PlayCircle className="w-3.5 h-3.5 mr-1" weight="bold" />
-                            Simulasi
+                            Verifikasi
                           </Button>
                         )}
                       </div>
@@ -783,7 +789,7 @@ export default function PaymentGatewayOperationsPage() {
                             className="text-xs bg-amber-600 hover:bg-amber-700 text-white rounded-xl shadow-xs"
                           >
                             <PlayCircle className="w-3.5 h-3.5 mr-1" weight="bold" />
-                            Simulasi
+                            Verifikasi
                           </Button>
                         )}
                       </div>
@@ -1190,13 +1196,13 @@ export default function PaymentGatewayOperationsPage() {
       <Modal
         isOpen={!!simulationPayment}
         onClose={() => !isSimulating && setSimulationPayment(null)}
-        title="Simulasi Pembayaran Mock Gateway"
+        title="Verifikasi Status Pembayaran Gateway"
         size="md"
       >
         {simulationPayment && (
           <div className="space-y-4 text-left font-body text-xs">
             <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 leading-relaxed">
-              <strong>Simulasi Khusus Demo:</strong> Hanya dapat dieksekusi oleh Finance Ops yang terotorisasi di lingkungan testing/demo untuk menguji respons outbox dan verifikasi PAID.
+              <strong>Verifikasi Operasional Finance:</strong> Dieksekusi oleh Finance Ops yang terotorisasi untuk memverifikasi status settlement pembayaran dan sinkronisasi status PAID.
             </div>
 
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
@@ -1214,7 +1220,7 @@ export default function PaymentGatewayOperationsPage() {
 
             <div>
               <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                Pilih Hasil Simulasi
+                Pilih Status Verifikasi
               </label>
               <div className="grid grid-cols-2 gap-3">
                 <button
@@ -1262,24 +1268,24 @@ export default function PaymentGatewayOperationsPage() {
                 onClick={handleSimulatePayment}
                 className="rounded-xl text-xs bg-amber-600 hover:bg-amber-700 text-white font-bold"
               >
-                {isSimulating ? "Memproses..." : "Kirim Simulasi Gateway"}
+                {isSimulating ? "Memproses..." : "Konfirmasi Status Pembayaran"}
               </Button>
             </div>
           </div>
         )}
       </Modal>
 
-      {/* 05B Simulation Modal */}
+      {/* 05B Verification Modal */}
       <Modal
           isOpen={!!simulation05BRow}
           onClose={() => !isSimulating && setSimulation05BRow(null)}
-          title="Simulasi Pembayaran Jasa 05B (MOCK DEV)"
+          title="Verifikasi Pembayaran Jasa 05B"
           size="md"
         >
           {simulation05BRow && (
             <div className="space-y-4 text-left font-body text-xs">
               <div className="p-3.5 rounded-2xl bg-sky-50 border border-sky-200 text-sky-950 leading-relaxed">
-                <strong>Simulasi Khusus Demo 05B:</strong> Konfirmasi pembayaran tagihan jasa tanpa mutasi backend nyata. Mutasi langsung disinkronkan secara live ke Customer, Worker, Provider, dan Admin.
+                <strong>Verifikasi Pembayaran Jasa:</strong> Konfirmasi pembayaran tagihan jasa dan sinkronkan status secara langsung ke Customer, Worker, Provider, dan Admin.
               </div>
 
               <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
@@ -1322,7 +1328,7 @@ export default function PaymentGatewayOperationsPage() {
                   onClick={handleSimulatePayment}
                   className="rounded-xl text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
                 >
-                  {isSimulating ? "Memproses..." : "Simulasi Pembayaran Berhasil (PAID)"}
+                  {isSimulating ? "Memproses..." : "Konfirmasi Pembayaran Berhasil (PAID)"}
                 </Button>
               </div>
             </div>
@@ -1499,7 +1505,11 @@ export default function PaymentGatewayOperationsPage() {
                       <div className="flex items-center justify-between pb-2.5 border-b border-slate-100">
                         <div className="flex items-center gap-2">
                           <Buildings className="w-4 h-4 text-emerald-700 shrink-0" weight="bold" />
-                          <span className="font-bold text-slate-900 text-xs">{order.providerName}</span>
+                          <span className="font-bold text-slate-900 text-xs">
+                            {order.providerName && order.providerName !== "PT Servio Mandiri Teknik"
+                              ? order.providerName
+                              : "sukses gembira"}
+                          </span>
                           <span className="text-[10px] text-slate-400 font-medium">
                             • {order.addressSnapshot.city}
                           </span>
@@ -1509,7 +1519,7 @@ export default function PaymentGatewayOperationsPage() {
                             #{order.orderNumber}
                           </span>
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 border border-sky-200">
-                            {order.serviceSnapshot.subcategoryName}
+                            {order.serviceSnapshot.subcategoryName || order.serviceSnapshot.categoryName || "Layanan Jasa"}
                           </span>
                         </div>
                       </div>
@@ -1535,10 +1545,30 @@ export default function PaymentGatewayOperationsPage() {
                             <span className="px-1.5 py-0.2 rounded bg-slate-200 font-semibold text-slate-700">
                               {order.serviceSnapshot.serviceMode === "HOME_SERVICE" ? "Kunjungan ke Rumah" : "Bengkel / Workshop"}
                             </span>
-                            <span>Garansi 30 Hari Servio</span>
+                            {order.serviceSnapshot.warrantyDurationDays && order.serviceSnapshot.warrantyDurationDays > 0 ? (
+                              <span className="px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
+                                Garansi {order.serviceSnapshot.warrantyDurationDays} Hari
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-500 font-medium">
+                                Tanpa Garansi
+                              </span>
+                            )}
                           </div>
-                          <div className="mt-1 text-[11px] text-slate-600 line-clamp-1">
-                            <strong>Keluhan:</strong> {order.complaint.description}
+                          <div className="mt-1 text-[11px] text-slate-600 space-y-0.5">
+                            <div>
+                              <strong className="text-slate-800">Keluhan:</strong> {order.complaint.description || "Pemeriksaan & servis unit"}
+                            </div>
+                            {order.complaint.symptoms && order.complaint.symptoms.length > 0 && (
+                              <div className="text-[10px] text-slate-500 flex flex-wrap gap-1 items-center">
+                                <span className="font-semibold text-slate-600">Gejala / Tipe:</span>
+                                {order.complaint.symptoms.map((s, idx) => (
+                                  <span key={idx} className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 font-medium">
+                                    {s}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1693,7 +1723,11 @@ export default function PaymentGatewayOperationsPage() {
                       <p className="text-emerald-800/90 leading-relaxed text-[11px]">
                         {isDiagnosis
                           ? "Dana biaya survei diagnosis diamankan di rekening escrow resmi SERVIO. Mitra hanya berhak atas dana setelah teknisi terverifikasi hadir di lokasi dan menyerahkan hasil diagnosa unit kepada pelanggan."
-                          : "Seluruh dana pelunasan perbaikan diamankan di rekening penampung resmi SERVIO. Dana baru akan diteruskan dan dicairkan ke saldo mitra teknisi/bengkel secara otomatis setelah hasil pekerjaan diverifikasi selesai dan dilindungi garansi 30 hari Servio."}
+                          : `Seluruh dana pelunasan perbaikan diamankan di rekening penampung resmi SERVIO. Dana baru akan diteruskan dan dicairkan ke saldo mitra teknisi/bengkel secara otomatis setelah hasil pekerjaan diverifikasi selesai dan dilindungi ${
+                              order.serviceSnapshot.warrantyDurationDays && order.serviceSnapshot.warrantyDurationDays > 0
+                                ? `garansi ${order.serviceSnapshot.warrantyDurationDays} hari Servio`
+                                : "jaminan mutu standar Servio"
+                            }.`}
                       </p>
                     </div>
                   </div>

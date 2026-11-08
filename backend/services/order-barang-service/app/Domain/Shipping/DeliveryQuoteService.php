@@ -60,15 +60,6 @@ class DeliveryQuoteService
             throw new DeliveryException('ORIGIN_COORDINATES_MISSING', 'Titik lokasi toko belum dikonfigurasi.');
         }
 
-        // Region verification: City/Regency code match
-        if ($setting->origin_region_code && $destRegionCode) {
-            $normOrigin = strtoupper(str_replace(['KOTA_', 'KABUPATEN_', ' ', '-'], ['', '', '_', '_'], $setting->origin_region_code));
-            $normDest = strtoupper(str_replace(['KOTA_', 'KABUPATEN_', ' ', '-'], ['', '', '_', '_'], $destRegionCode));
-            if ($normOrigin !== $normDest && !str_contains($normOrigin, $normDest) && !str_contains($normDest, $normOrigin)) {
-                throw new DeliveryException('OUT_OF_CITY', 'Alamat tujuan berada di luar kota/kabupaten toko.');
-            }
-        }
-
         $distanceKm = $this->computeHaversineDistance(
             (float) $setting->origin_lat,
             (float) $setting->origin_lng,
@@ -76,10 +67,12 @@ class DeliveryQuoteService
             $destLng
         );
 
-        if ($distanceKm > (float) $setting->maximum_distance_km) {
+        $effectiveMaxKm = min((float) $setting->maximum_distance_km, 80.0);
+
+        if ($distanceKm > $effectiveMaxKm) {
             throw new DeliveryException(
                 'DELIVERY_OUT_OF_RANGE',
-                "Jarak pengiriman ({$distanceKm} km) melebihi jangkauan maksimum toko ({$setting->maximum_distance_km} km)."
+                "Jarak pengiriman ({$distanceKm} km) melebihi jangkauan maksimum toko ({$effectiveMaxKm} km)."
             );
         }
 

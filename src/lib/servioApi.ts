@@ -14,6 +14,7 @@ import { domainRepository } from "@/lib/repository/domainRepository";
 export interface ApiResponse<T = unknown> {
   message?: string;
   data?: T;
+  meta?: Record<string, any>;
   errors?: Record<string, string[]>;
   matchedMerchants?: import("@/types/domain").ApiShopProfile[];
   shopProfile?: import("@/types/domain").ApiShopProfile;
@@ -217,12 +218,12 @@ export const MOCK_USERS_BY_ROLE: Record<string, any> = {
     role: "SERVICE_PROVIDER",
     status: "ACTIVE",
     organizationId: "0740d857-b665-4191-aaf5-d7dd3611dc1d",
-    organizationName: "PT Servio Mandiri Teknik",
+    organizationName: "sukses gembira",
     providerId: "prov-bintang-teknik",
     businessProfile: {
       businessData: {
-        legalName: "PT Servio Mandiri Teknik",
-        brandName: "Bintang Teknik Mandiri",
+        legalName: "sukses gembira",
+        brandName: "sukses gembira",
         businessType: "SERVICE_PROVIDER",
         status: "VERIFIED",
         registrationNumber: "REG-2026-0001",
@@ -329,11 +330,11 @@ export const MOCK_USERS_BY_ROLE: Record<string, any> = {
     status: "ACTIVE",
     employeeId: "SMT-AHMAD-RWS",
     organizationId: "0740d857-b665-4191-aaf5-d7dd3611dc1d",
-    organizationName: "PT Servio Mandiri Teknik",
+    organizationName: "sukses gembira",
     providerId: "prov-bintang-teknik",
     workerProfile: {
       providerId: "prov-bintang-teknik",
-      providerName: "PT Servio Mandiri Teknik",
+      providerName: "sukses gembira",
       specialization: "AC & HVAC Specialist",
       status: "ACTIVE",
     },
@@ -808,8 +809,8 @@ export function mapServiceToCatalog(s: any): any {
     display_name: s.display_name || s.name || s.title || "Layanan Jasa",
     description: s.fullDescription || s.shortDescription || s.description || "Layanan service teknisi profesional bergaransi resmi.",
     shortDescription: s.shortDescription || s.description || "",
-    providerId: s.providerId || s.provider_organization_id || "usr-prov-001",
-    providerName: s.providerName || s.provider_name || "PT Servio Mandiri Teknik",
+    providerId: s.providerId || s.provider_organization_id || "0740d857-b665-4191-aaf5-d7dd3611dc1d",
+    providerName: s.providerName || s.provider_name || s.provider?.store_name || s.provider?.display_name || "sukses gembira",
     isVerifiedProvider: s.isVerifiedProvider ?? true,
     categoryId: s.categoryId || s.domainId || "080142ee-0a66-434a-988e-8bc29a8f05fd",
     categoryName: catName,
@@ -970,6 +971,15 @@ const ORDER_JASA_BASE_URL =
     ? "/api/v1/order-jasa"
     : (process.env.NEXT_PUBLIC_ORDER_JASA_API_URL || "http://127.0.0.1:8007/api/v1/order-jasa");
 
+const AFTER_SALES_SERVICE_ROOT =
+  typeof window !== "undefined"
+    ? ""
+    : (process.env.NEXT_PUBLIC_AFTER_SALES_SERVICE_URL || "http://127.0.0.1:8008");
+const AFTER_SALES_BASE_URL =
+  typeof window !== "undefined"
+    ? "/api/v1/after-sales"
+    : (process.env.NEXT_PUBLIC_AFTER_SALES_API_URL || "http://127.0.0.1:8008/api/v1/after-sales");
+
 
 let csrfPromise: Promise<void> | null = null;
 
@@ -1068,6 +1078,13 @@ function isOrderJasaRoute(path: string): boolean {
   const p = path.replace(/^\/api\/v1/, "");
   return (
     p.startsWith("/order-jasa")
+  );
+}
+
+function isAfterSalesRoute(path: string): boolean {
+  const p = path.replace(/^\/api\/v1/, "");
+  return (
+    p.startsWith("/after-sales")
   );
 }
 
@@ -1189,6 +1206,7 @@ export async function apiFetch<T = unknown>(
       const targetUrl = `${IDENTITY_BASE_URL.replace(/\/+$/, "")}/${cleanPath.replace(/^\/+/, "")}`;
 
       const res = await fetch(targetUrl, {
+        cache: "no-store",
         ...options,
         headers,
         credentials: "include",
@@ -1331,6 +1349,7 @@ export async function apiFetch<T = unknown>(
       const targetUrl = `${CATEGORY_BASE_URL.replace(/\/+$/, "")}/${cleanPath.replace(/^\/+/, "")}`;
 
       const res = await fetch(targetUrl, {
+        cache: "no-store",
         ...options,
         headers,
         credentials: "include",
@@ -1436,6 +1455,7 @@ export async function apiFetch<T = unknown>(
       const targetUrl = `${PRODUCT_BASE_URL.replace(/\/+$/, "")}/${cleanPath.replace(/^\/+/, "")}`;
 
       const res = await fetch(targetUrl, {
+        cache: "no-store",
         ...options,
         headers,
         credentials: "include",
@@ -1555,6 +1575,7 @@ export async function apiFetch<T = unknown>(
       const targetUrl = `${SERVICE_BASE_URL.replace(/\/+$/, "")}/${cleanPath.replace(/^\/+/, "")}`;
 
       const res = await fetch(targetUrl, {
+        cache: "no-store",
         ...options,
         headers,
         credentials: "include",
@@ -1704,6 +1725,7 @@ export async function apiFetch<T = unknown>(
       const targetUrl = `${FINANCE_BASE_URL.replace(/\/+$/, "")}/${subWithoutFinance.replace(/^\/+/, "")}${queryString ? `?${queryString}` : ""}`;
 
       const res = await fetch(targetUrl, {
+        cache: "no-store",
         ...options,
         headers,
         credentials: "include",
@@ -1829,6 +1851,7 @@ export async function apiFetch<T = unknown>(
       const targetUrl = `${ORDER_BARANG_BASE_URL.replace(/\/+$/, "")}/${subWithoutOrder.replace(/^\/+/, "")}${queryString ? `?${queryString}` : ""}`;
 
       const res = await fetch(targetUrl, {
+        cache: "no-store",
         ...options,
         headers,
         credentials: "include",
@@ -1910,7 +1933,7 @@ export async function apiFetch<T = unknown>(
         pathname.startsWith("/order-jasa/orders") ||
         pathname.startsWith("/api/v1/order-jasa/orders")
       ) {
-        if (!["ADMIN_OPERATIONS", "SUPER_ADMIN", "ADMIN"].includes(activeRole)) {
+        if (!["ADMIN_OPERATIONS", "SUPER_ADMIN", "ADMIN", "WORKER", "WORKER_TECHNICIAN", "TECHNICIAN", "PROVIDER", "SERVICE_PROVIDER"].includes(activeRole)) {
           activeRole = "CUSTOMER";
         }
       } else if (activeRole === "SERVICE_PROVIDER" || activeRole === "PROVIDER") {
@@ -1978,6 +2001,7 @@ export async function apiFetch<T = unknown>(
       const targetUrl = `${ORDER_JASA_BASE_URL.replace(/\/+$/, "")}/${subWithoutOrder.replace(/^\/+/, "")}${queryString ? `?${queryString}` : ""}`;
 
       const res = await fetch(targetUrl, {
+        cache: "no-store",
         ...options,
         headers,
         credentials: "include",
@@ -2028,6 +2052,163 @@ export async function apiFetch<T = unknown>(
         return apiFetch<T>(endpoint, { ...options, _isRetry: true } as any);
       }
       console.warn("Order Jasa Service network failure:", err);
+      throw err;
+    }
+  }
+
+  // =========================================================================
+  // REAL BACKEND INTEGRATION: Modul 07 After-Sales & Feedback Service (Port 8008)
+  // =========================================================================
+  if (isAfterSalesRoute(pathname)) {
+    try {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+      };
+
+      const gatewayKey = process.env.NEXT_PUBLIC_AFTER_SALES_GATEWAY_KEY || "servio_local_gateway_key_2026";
+      headers["X-Gateway-Key"] = gatewayKey;
+
+      const activeRoleCookie = getCookie("servio_active_role");
+      let activeRole = resolveActorRole(activeRoleCookie || "CUSTOMER");
+
+      // Context-aware role adjustment:
+      if (pathname.includes("/after-sales/business")) {
+        const currentUrlPath = typeof window !== "undefined" ? window.location.pathname : "";
+        if (
+          activeRole === "SERVICE_PROVIDER" ||
+          activeRole === "PROVIDER" ||
+          currentUrlPath.startsWith("/provider")
+        ) {
+          activeRole = "PROVIDER";
+        } else {
+          activeRole = "MERCHANT";
+        }
+      } else if (pathname.includes("/after-sales/admin")) {
+        activeRole = "ADMIN_OPERATIONS";
+      } else if (
+        pathname.startsWith("/after-sales/warranties") ||
+        pathname.startsWith("/after-sales/cases") ||
+        pathname.startsWith("/after-sales/reviews")
+      ) {
+        activeRole = "CUSTOMER";
+      }
+
+      const roleLookup =
+        activeRole === "PROVIDER"
+          ? "SERVICE_PROVIDER"
+          : activeRole === "MERCHANT"
+          ? "MERCHANT"
+          : activeRole === "ADMIN_OPERATIONS"
+          ? "ADMIN_OPERATIONS"
+          : "CUSTOMER";
+
+      const currentUser = MOCK_USERS_BY_ROLE[roleLookup] || MOCK_USERS_BY_ROLE["CUSTOMER"];
+      if (currentUser?.id) {
+        headers["X-Actor-User-Id"] = currentUser.id;
+        headers["X-Actor-Role"] = activeRole;
+        if (currentUser.activeRole?.assignmentId) {
+          headers["X-Actor-Role-Assignment-Id"] = currentUser.activeRole.assignmentId;
+        }
+        if (currentUser.organizationId) {
+          headers["X-Actor-Org-Id"] = currentUser.organizationId;
+        } else if (activeRole === "MERCHANT") {
+          headers["X-Actor-Org-Id"] = "org-merch-jaya-motor";
+        } else if (activeRole === "PROVIDER") {
+          headers["X-Actor-Org-Id"] = "org-serv-sejuk-jaya";
+        }
+        if (activeRole === "MERCHANT") {
+          headers["X-Actor-Org-Type"] = "MERCHANT";
+        } else if (activeRole === "PROVIDER") {
+          headers["X-Actor-Org-Type"] = "PROVIDER";
+        }
+        headers["X-Actor-Org-Active"] = "true";
+        headers["X-Actor-Membership-Active"] = "true";
+        headers["X-Actor-Authz-Version"] = "1";
+      }
+
+      if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+        if (!headers["Idempotency-Key"]) {
+          headers["Idempotency-Key"] = `idemp-as-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        }
+      }
+
+      if (options.headers) {
+        if (options.headers instanceof Headers) {
+          options.headers.forEach((val, key) => {
+            headers[key] = val;
+          });
+        } else if (Array.isArray(options.headers)) {
+          options.headers.forEach(([k, v]) => {
+            headers[k] = v;
+          });
+        } else {
+          Object.assign(headers, options.headers);
+        }
+      }
+
+      if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
+        headers["Content-Type"] = "application/json";
+      }
+
+      const cleanPath = endpoint.startsWith("/api/v1") ? endpoint.slice(7) : endpoint;
+      const targetUrl =
+        typeof window !== "undefined"
+          ? `/api/v1${cleanPath.startsWith("/") ? cleanPath : `/${cleanPath}`}`
+          : `${AFTER_SALES_BASE_URL.replace(/\/+$/, "")}/${cleanPath.replace(/^\/+/, "")}`;
+
+      const res = await fetch(targetUrl, {
+        cache: "no-store",
+        ...options,
+        headers,
+        credentials: "include",
+      });
+
+      const contentType = res.headers.get("content-type") || "";
+      let json: any = null;
+      if (contentType.includes("application/json")) {
+        json = await res.json();
+      } else {
+        const text = await res.text();
+        try {
+          json = JSON.parse(text);
+        } catch {
+          json = { message: text };
+        }
+      }
+
+      if (!res.ok) {
+        const errorMsg =
+          json?.error?.message ||
+          json?.message ||
+          (typeof json?.error === "string" ? json.error : null) ||
+          `Request ke After-Sales Service gagal dengan status ${res.status}.`;
+        console.warn(`[After-Sales Service Error ${res.status}] ${targetUrl}:`, json || errorMsg);
+        const err: any = new Error(errorMsg);
+        err.status = res.status;
+        err.code = json?.code || json?.error?.code;
+        err.errors = json?.error?.field_errors || json?.errors;
+        throw err;
+      }
+
+      return {
+        success: json?.success ?? true,
+        message: json?.message,
+        data: json?.data !== undefined ? json.data : json,
+        count: json?.count,
+        meta: json?.meta,
+        pagination: json?.pagination,
+        ...json,
+      };
+    } catch (err) {
+      if ((err as any)?.status) {
+        throw err;
+      }
+      if (!(options as any)?._isRetry && typeof window !== "undefined") {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        return apiFetch<T>(endpoint, { ...options, _isRetry: true } as any);
+      }
+      console.warn("After-Sales Service network failure:", err);
       throw err;
     }
   }
@@ -2186,8 +2367,8 @@ export async function apiFetch<T = unknown>(
     if (method === "POST") {
       const newService = {
         id: "srv-" + Date.now(),
-        providerId: bodyData.providerId || "usr-prov-001",
-        providerName: bodyData.providerName || "PT Servio Mandiri Teknik",
+        providerId: bodyData.providerId || "0740d857-b665-4191-aaf5-d7dd3611dc1d",
+        providerName: bodyData.providerName || "sukses gembira",
         categoryId: bodyData.categoryId,
         categoryName: bodyData.categoryName,
         subcategoryId: bodyData.subcategoryId,
@@ -2701,7 +2882,8 @@ export async function apiFetch<T = unknown>(
     return {
       data: {
         id: "org-01",
-        name: "PT Servio Mandiri Teknik",
+        name: "sukses gembira",
+        display_name: "sukses gembira",
         type: "SERVICE_PROVIDER",
         status: "VERIFIED",
       } as any,
@@ -4118,11 +4300,11 @@ export interface ApiProviderMasterService {
   status: "ACTIVE" | "INACTIVE" | "DRAFT";
   lock_version?: number;
   availability?: "AVAILABLE" | "UNAVAILABLE";
-  warrantyConfig?: {
-    warrantyEnabled: boolean;
-    durationDays: number;
-  };
+  warrantyConfig?: any;
+  warranty_config?: any;
+  warrantyEnabled?: boolean;
   warrantyDays?: number;
+  warrantyName?: string;
   rating?: number;
   reviewCount?: number;
   thumbnailUrl?: string | null;
@@ -4170,6 +4352,9 @@ export const providerServiceApi = {
           categoryId: item.service_definition?.category_id ?? item.definition?.category_id ?? item.categoryId,
           subcategoryId: item.service_definition?.subcategory_id ?? item.definition?.subcategory_id ?? item.subcategoryId,
           subcategoryName: item.service_definition?.name ?? item.definition?.name ?? item.subcategoryName,
+          warrantyConfig: item.warranty_config || item.warrantyConfig,
+          warranty_config: item.warranty_config || item.warrantyConfig,
+          warrantyDays: item.warranty_config?.duration_days || item.warranty_config?.durationDays || item.warrantyConfig?.durationDays || item.warrantyDays || 0,
         };
       }) as ApiProviderMasterService[],
     };
@@ -4194,6 +4379,9 @@ export const providerServiceApi = {
         surveyAvailability: item.survey?.availability ?? item.survey_availability ?? item.surveyAvailability ?? "AVAILABLE",
         surveyRequirement: item.survey?.requirement ?? item.survey_requirement ?? "OPTIONAL",
         pricingModel: item.pricing?.model ?? item.price_model ?? "RANGE",
+        warrantyConfig: item.warranty_config || item.warrantyConfig,
+        warranty_config: item.warranty_config || item.warrantyConfig,
+        warrantyDays: item.warranty_config?.duration_days || item.warranty_config?.durationDays || item.warrantyConfig?.durationDays || item.warrantyDays || 0,
       } as ApiProviderMasterService,
     };
   },
@@ -4268,6 +4456,7 @@ export const providerServiceApi = {
       },
       coverage_city_codes: data.coverage_city_codes || data.coverageCities || ["JKT-BARAT"],
       capability_ids: data.capability_ids || data.capabilities || [],
+      warranty_config: (data as any).warranty_config || (data as any).warrantyConfig || undefined,
     };
 
     return apiFetch<{ message: string; data: ApiProviderMasterService }>("/provider/services", {
@@ -4305,6 +4494,9 @@ export const providerServiceApi = {
       };
     }
     if (data.duration) payload.duration = data.duration;
+    if (data.warranty_config !== undefined || data.warrantyConfig !== undefined) {
+      payload.warranty_config = data.warranty_config !== undefined ? data.warranty_config : data.warrantyConfig;
+    }
 
     return apiFetch<{ message: string; data: ApiProviderMasterService }>(`/provider/services/${id}`, {
       method: "PATCH",
@@ -4426,11 +4618,11 @@ export interface ApiCatalogService {
   serviceModes?: string[];
   status: string;
   availability?: "AVAILABLE" | "UNAVAILABLE";
-  warrantyConfig?: {
-    warrantyEnabled: boolean;
-    durationDays: number;
-  };
+  warrantyConfig?: any;
+  warranty_config?: any;
+  warrantyEnabled?: boolean;
   warrantyDays?: number;
+  warrantyName?: string;
   duration?: {
     min: number;
     max: number;
@@ -4502,7 +4694,30 @@ export const publicCatalogApi = {
       status: item.status || "ACTIVE",
       rating: item.rating ?? 0,
       reviewCount: item.reviewCount ?? 0,
-      warrantyDays: item.warrantyDays ?? 0,
+      ...(() => {
+        const rawWCfg = item.warranty_config || item.warrantyConfig;
+        let parsedWCfg = rawWCfg;
+        if (typeof rawWCfg === "string" && rawWCfg.trim().startsWith("{")) {
+          try {
+            parsedWCfg = JSON.parse(rawWCfg);
+          } catch {
+            parsedWCfg = null;
+          }
+        }
+        const wDays = Number(parsedWCfg?.duration_days ?? parsedWCfg?.durationDays ?? item.warrantyDays ?? 0);
+        const wEnabled = Boolean(
+          parsedWCfg?.warrantyEnabled ??
+          parsedWCfg?.warranty_enabled ??
+          ((parsedWCfg?.presetId || parsedWCfg?.preset_id || parsedWCfg?.warranty_option_id || wDays > 0) && wDays > 0)
+        );
+        return {
+          warrantyConfig: parsedWCfg,
+          warranty_config: parsedWCfg,
+          warrantyDays: wDays,
+          warrantyEnabled: wEnabled,
+          warrantyName: parsedWCfg?.presetName || parsedWCfg?.name,
+        };
+      })(),
     }));
 
     return {
@@ -7180,6 +7395,8 @@ export function mapBackendProductToApi(item: any): ApiProduct {
     },
     relatedProducts: Array.isArray(item.related_products) ? item.related_products.map(mapBackendProductToApi) : [],
     sameStoreProducts: Array.isArray(item.same_store_products) ? item.same_store_products.map(mapBackendProductToApi) : [],
+    warrantyPolicy: item.warranty_policy || item.warrantyPolicy || null,
+    warranty_policy: item.warranty_policy || item.warrantyPolicy || null,
     createdAt: item.created_at,
     updatedAt: item.updated_at,
   } as any;
@@ -7435,6 +7652,7 @@ export const productsApi = {
       brand: data.brandName || null,
       category_id: data.categoryId || null,
       subcategory_id: data.subcategoryId || null,
+      warranty_policy: data.warrantyPolicy ?? null,
       variants: backendVariants.length > 0 ? backendVariants : undefined,
     };
 
@@ -7471,6 +7689,7 @@ export const productsApi = {
     if (data.brandName !== undefined) payload.brand = data.brandName;
     if (data.categoryId !== undefined) payload.category_id = data.categoryId;
     if (data.subcategoryId !== undefined) payload.subcategory_id = data.subcategoryId;
+    if (data.warrantyPolicy !== undefined) payload.warranty_policy = data.warrantyPolicy;
 
     const res = await apiFetch<any>(`/merchant/products/${id}`, {
       method: "PATCH",
@@ -8795,9 +9014,18 @@ export const financeApi = {
       const qs = q.toString();
       return apiFetch<any>(`/finance/ops/payment-allocations${qs ? `?${qs}` : ""}`);
     },
-    async refunds(params?: { status?: string; customer_id?: string; per_page?: number; page?: number }) {
+    async refunds(params?: {
+      status?: string;
+      customer_id?: string;
+      channel?: string;
+      q?: string;
+      per_page?: number;
+      page?: number;
+    }) {
       const q = new URLSearchParams();
       if (params?.status && params.status !== "ALL") q.append("status", params.status);
+      if (params?.channel && params.channel !== "ALL") q.append("channel", params.channel);
+      if (params?.q) q.append("q", params.q);
       if (params?.customer_id) q.append("customer_id", params.customer_id);
       if (params?.per_page) q.append("per_page", String(params.per_page));
       if (params?.page) q.append("page", String(params.page));
@@ -8808,7 +9036,22 @@ export const financeApi = {
         last_page: number;
         total: number;
         per_page: number;
+        summary?: {
+          total_count: number;
+          pending_processing_count: number;
+          succeeded_count: number;
+          failed_count: number;
+          reversed_count: number;
+          total_credited_net_idr: number;
+          total_credited_gross_idr: number;
+          count_all: number;
+          count_barang_05a: number;
+          count_jasa_05b: number;
+        };
       }>(`/finance/ops/refunds${qs ? `?${qs}` : ""}`);
+    },
+    async refundDetail(id: string) {
+      return apiFetch<any>(`/finance/ops/refunds/${id}`);
     },
     async withdrawals(params?: { status?: string; per_page?: number; page?: number }) {
       const q = new URLSearchParams();

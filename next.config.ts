@@ -103,6 +103,10 @@ const nextConfig: NextConfig = {
         destination: "http://127.0.0.1:8001/sanctum/:path*",
       },
       {
+        source: "/storage/customer_media/:path*",
+        destination: "http://127.0.0.1:8007/storage/customer_media/:path*",
+      },
+      {
         source: "/storage/:path*",
         destination: "http://127.0.0.1:8001/storage/:path*",
       },
@@ -114,6 +118,16 @@ const nextConfig: NextConfig = {
       {
         source: "/api/v1/order-barang",
         destination: "http://127.0.0.1:8005/api/v1/order-barang",
+      },
+
+      // After-Sales & Feedback Service (Modul 07 - Port 8008)
+      {
+        source: "/api/v1/after-sales/:path*",
+        destination: "http://127.0.0.1:8008/api/v1/after-sales/:path*",
+      },
+      {
+        source: "/api/v1/after-sales",
+        destination: "http://127.0.0.1:8008/api/v1/after-sales",
       },
 
       // Category Service (Modul 02 - Port 8002)
@@ -317,6 +331,16 @@ const nextConfig: NextConfig = {
       {
         source: "/api/v1/order-barang",
         destination: "http://127.0.0.1:8005/api/v1/order-barang",
+      },
+
+      // After-Sales & Feedback Service (Modul 07 - Port 8008)
+      {
+        source: "/api/v1/after-sales/:path*",
+        destination: "http://127.0.0.1:8008/api/v1/after-sales/:path*",
+      },
+      {
+        source: "/api/v1/after-sales",
+        destination: "http://127.0.0.1:8008/api/v1/after-sales",
       },
       // Order Jasa Service (Modul 05B - Port 8007)
       {

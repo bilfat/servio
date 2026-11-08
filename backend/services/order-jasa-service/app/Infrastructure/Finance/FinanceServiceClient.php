@@ -40,7 +40,8 @@ class FinanceServiceClient implements FinanceServiceClientInterface
         string $purpose,
         int $amountIdr,
         string $customerId,
-        int $attemptNo = 1
+        int $attemptNo = 1,
+        string $method = 'QRIS'
     ): array {
         $purposeNormalized = strtoupper($purpose);
         $attemptSuffix = ($purposeNormalized === 'SERVICE_EXECUTION' && $attemptNo > 1) ? "-att{$attemptNo}" : "";
@@ -114,7 +115,7 @@ class FinanceServiceClient implements FinanceServiceClientInterface
             ])
             ->timeout($this->timeoutMs / 1000)
             ->post("{$this->baseUrl}/internal/v1/finance/checkouts/{$checkoutGroupId}/payment-intents", [
-                'method' => 'MOCK_QRIS',
+                'method' => in_array($method, ['QRIS', 'VA', 'MOCK_QRIS', 'MOCK_VA', 'MOCK_VA_BCA', 'MOCK_VA_BRI', 'MOCK_VA_BNI', 'MOCK_VA_MANDIRI', 'MOCK_VA_PERMATA'], true) ? $method : 'QRIS',
                 'quote_payload_hash' => $payloadHash,
                 'order_quote_revision' => 1,
             ]);

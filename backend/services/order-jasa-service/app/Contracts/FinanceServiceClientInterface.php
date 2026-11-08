@@ -27,7 +27,8 @@ interface FinanceServiceClientInterface
         string $purpose,
         int $amountIdr,
         string $customerId,
-        int $attemptNo = 1
+        int $attemptNo = 1,
+        string $method = 'QRIS'
     ): array;
 
     /**

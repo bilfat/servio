@@ -36,6 +36,8 @@ Route::prefix('v1/order-jasa')->group(function () {
         Route::get('/orders', [ProviderOrderController::class, 'index']);
         Route::get('/technician-recap', [ProviderOrderController::class, 'technicianRecap']);
         Route::get('/orders/{id}', [ProviderOrderController::class, 'show']);
+        Route::post('/orders/{id}/accept', [ProviderOrderController::class, 'accept'])->middleware('order_jasa.idempotency');
+        Route::post('/orders/{id}/reject', [ProviderOrderController::class, 'reject'])->middleware('order_jasa.idempotency');
         Route::post('/orders/{id}/assign', [ProviderOrderController::class, 'assignWorker'])->middleware('order_jasa.idempotency');
     });
 

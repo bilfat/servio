@@ -31,6 +31,7 @@ import { useCart } from "@/features/cart/useCart";
 import { triggerFlyToCart } from "@/components/feedback/FlyToCart";
 import { formatRupiah } from "@/components/data-display/PriceBreakdown";
 import { useActiveLocation } from "@/context/LocationContext";
+import { afterSalesApi, ReviewEntry, CatalogRatingSummaryItem, BusinessReputation } from "@/lib/afterSalesApi";
 
 export default function ProductDetailPage() {
   const params = useParams();
@@ -49,6 +50,36 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Live After-Sales Verified Reviews (PUB03) & Separate Merchant Reputation (PUB05)
+  const [productReviews, setProductReviews] = useState<ReviewEntry[]>([]);
+  const [reviewSummary, setReviewSummary] = useState<CatalogRatingSummaryItem | null>(null);
+  const [merchantReputation, setMerchantReputation] = useState<BusinessReputation | null>(null);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!productId) return;
+    setReviewsLoading(true);
+    afterSalesApi.public
+      .getProductReviews(productId)
+      .then((res) => {
+        if (res.data) setProductReviews(res.data);
+        if (res.meta?.summary) setReviewSummary(res.meta.summary);
+      })
+      .catch(() => {})
+      .finally(() => setReviewsLoading(false));
+  }, [productId]);
+
+  useEffect(() => {
+    const orgId = product?.merchantOrganizationId || product?.merchant?.id;
+    if (!orgId) return;
+    afterSalesApi.public
+      .getBusinessReputation("MERCHANT", orgId)
+      .then((res) => {
+        if (res.data) setMerchantReputation(res.data);
+      })
+      .catch(() => {});
+  }, [product?.merchantOrganizationId, product?.merchant?.id]);
 
   // Shopee-style Mobile Variant Bottom Sheet Drawer state
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
@@ -783,9 +814,17 @@ export default function ProductDetailPage() {
                     </div>
                     <div className="truncate text-xs">
                       <span className="text-[10px] text-slate-400 block leading-tight font-medium">Penjual Resmi:</span>
-                      <span className="font-bold text-slate-900 group-hover:text-[#0F4C81] truncate block transition">
-                        {merchantStoreName}
-                      </span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-slate-900 group-hover:text-[#0F4C81] truncate block transition">
+                          {merchantStoreName}
+                        </span>
+                        <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-bold">
+                          <Star size={11} weight="fill" className="text-amber-400" />
+                          {merchantReputation && merchantReputation.total_reviews > 0
+                            ? `${Number(merchantReputation.average_rating).toFixed(1)} (${merchantReputation.total_reviews} Penilaian Toko)`
+                            : "Belum Ada Penilaian Toko"}
+                        </span>
+                      </div>
                     </div>
                   </Link>
 
@@ -990,49 +1029,276 @@ export default function ProductDetailPage() {
             </div>
           )}
 
-          {/* Warranty Policy (Phase 07 Preview) */}
+          {/* Section: Garansi Toko (Modul 07 Phase Integration) */}
           <div className="pt-4 border-t border-slate-100">
-            <div className="flex items-center justify-between mb-2.5">
-              <div className="flex items-center gap-2">
-                <ShieldCheck size={16} className="text-emerald-700" weight="bold" />
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 font-heading">
-                  Kebijakan Garansi &amp; Jaminan Purnajual
-                </h3>
-              </div>
-              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-sky-50 text-[#0F4C81] border border-sky-200">
-                DATA SIMULASI
-              </span>
-            </div>
-            {(product as any).warrantyPolicy?.durationMonths ? (
-              <div className="p-3.5 bg-emerald-50/70 border border-emerald-200/80 rounded-xl space-y-1.5 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-emerald-950 font-heading">
-                    Masa Garansi: {(product as any).warrantyPolicy.durationMonths} Bulan
-                  </span>
-                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
-                    {(product as any).warrantyPolicy.type === "MANUFACTURER"
-                      ? "Garansi Resmi Pabrikan"
-                      : (product as any).warrantyPolicy.type === "STORE_ONLY"
-                        ? "Garansi Toko Mitra"
-                        : "Garansi Toko & Pabrik"}
-                  </span>
+            {(() => {
+              let pol = (product as any).warrantyPolicy || (product as any).warranty_policy;
+              if (typeof pol === "string" && pol.trim().startsWith("{")) {
+                try {
+                  pol = JSON.parse(pol);
+                } catch {}
+              }
+              const days = pol?.durationDays || pol?.duration_days || (pol?.durationMonths ? pol.durationMonths * 30 : null);
+              const hasWar = Boolean(pol && days && days > 0);
+              const warName = pol?.name || "Garansi Toko Resmi";
+
+              if (hasWar) {
+                return (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck size={18} className="text-emerald-700" weight="fill" />
+                        <h3 className="text-sm font-bold text-slate-900 font-heading">
+                          Tersedia Garansi Toko
+                        </h3>
+                      </div>
+                      <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-2xs">
+                        GARANSI RESMI AKTIF ({days} HARI)
+                      </span>
+                    </div>
+
+                    <div className="p-4 bg-emerald-50/70 border border-emerald-200/90 rounded-2xl space-y-2.5 text-xs shadow-2xs">
+                      <div className="flex items-center justify-between pb-2 border-b border-emerald-200/60 flex-wrap gap-2">
+                        <div>
+                          <span className="text-[10px] font-bold text-emerald-900 uppercase block">Nama Pilihan Garansi</span>
+                          <span className="font-extrabold text-emerald-950 text-sm">{warName}</span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[10px] font-bold text-emerald-900 uppercase block">Durasi Masa Berlaku</span>
+                          <span className="font-bold text-emerald-800 text-xs px-2.5 py-0.5 rounded-md bg-white border border-emerald-200">
+                            {days} Hari Kalender
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5 pt-1">
+                        <p className="text-emerald-950 leading-relaxed">
+                          <strong className="text-emerald-900 font-bold">Cakupan Garansi:</strong>{" "}
+                          {pol.coverage || "Perbaikan atau penanganan purna jual jika suku cadang mengalami cacat manufaktur atau malafungsi operasional."}
+                        </p>
+                        <p className="text-emerald-900/90 leading-relaxed">
+                          <strong className="text-emerald-900 font-bold">Pengecualian Garansi:</strong>{" "}
+                          {(pol.exclusions && String(pol.exclusions).trim() !== "" && pol.exclusions !== "null") ? pol.exclusions : "Tidak ada pengecualian khusus."}
+                        </p>
+                        <p className="text-emerald-800/80 leading-relaxed text-[11px] pt-1 border-t border-emerald-200/50">
+                          <strong className="text-emerald-900 font-semibold">Syarat &amp; Ketentuan Klaim:</strong>{" "}
+                          {pol.terms || "Klaim dapat diajukan pelanggan melalui pusat purnajual selama masa garansi aktif dengan melampirkan bukti kendala produk."}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck size={18} className="text-slate-400" weight="bold" />
+                    <h3 className="text-sm font-bold text-slate-800 font-heading">
+                      Garansi Toko
+                    </h3>
+                  </div>
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl text-xs space-y-1.5">
+                    <p className="font-bold text-slate-800">
+                      Tidak ada garansi tambahan dari toko untuk produk ini.
+                    </p>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">
+                      Produk ini tidak menyediakan jaminan garansi purnajual jangka panjang dari toko mitra. Meskipun demikian, hak Anda sebagai konsumen tetap dilindungi sepenuhnya oleh <strong>kebijakan retur dan jaminan penerimaan barang SERVIO</strong> jika pesanan yang tiba dalam kondisi rusak fisik, cacat manufaktur awal, atau tidak sesuai pesanan saat serah terima.
+                    </p>
+                  </div>
                 </div>
-                <p className="text-[11px] text-emerald-900 leading-relaxed">
-                  <strong>Cakupan:</strong> {(product as any).warrantyPolicy.coverage || "Kerusakan manufaktur dan malafungsi kelistrikan."}
-                </p>
-                <p className="text-[11px] text-emerald-800/80 leading-relaxed">
-                  <strong>Pengecualian:</strong> {(product as any).warrantyPolicy.exclusions || "Kerusakan fisik akibat jatuh, kesalahan instalasi non-resmi, atau modifikasi liar."}
-                </p>
+              );
+            })()}
+          </div>
+        </div>
+
+        {/* Customer Reviews & Ratings Card (PUB03) */}
+        <div className="bg-white rounded-3xl border border-slate-200/90 p-5 sm:p-7 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+            <div>
+              <div className="flex items-center gap-2">
+                <Star size={18} weight="fill" className="text-amber-400" />
+                <h2 className="text-base font-bold text-slate-900 font-heading">
+                  Ulasan &amp; Penilaian Kualitas Produk
+                </h2>
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                  {reviewSummary?.total_reviews ?? productReviews.length} Ulasan
+                </span>
               </div>
-            ) : (
-              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1">
-                <p className="font-bold text-slate-800">Suku Cadang Standar (Non-Garansi Toko)</p>
-                <p className="text-[11px] text-slate-500 leading-relaxed">
-                  Produk ini tidak menyediakan garansi purnajual jangka panjang dari toko. Namun pembeli tetap dilindungi <strong>kebijakan retur barang SERVIO</strong> jika barang tiba dalam kondisi rusak, cacat manufaktur, atau salah kirim.
-                </p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Menampilkan nama pelanggan publik, tanggal order, tanggal penilaian, rating kualitas produk, dan tanggapan resmi toko.
+              </p>
+            </div>
+            {(reviewSummary?.total_reviews ?? productReviews.length) > 0 && (
+              <div className="flex items-center gap-3 bg-amber-50/70 px-3.5 py-2 rounded-2xl border border-amber-200">
+                <div className="text-center">
+                  <span className="text-xl font-extrabold text-slate-900">
+                    {(
+                      reviewSummary?.average_rating ??
+                      productReviews.reduce((acc, r) => acc + r.rating, 0) / productReviews.length
+                    ).toFixed(1)}
+                  </span>
+                  <span className="text-[11px] text-slate-500 font-semibold"> / 5.0</span>
+                </div>
+                <div className="flex items-center gap-0.5">
+                  {[1, 2, 3, 4, 5].map((s) => (
+                    <Star
+                      key={s}
+                      size={14}
+                      weight="fill"
+                      className={
+                        s <=
+                        Math.round(
+                          reviewSummary?.average_rating ??
+                            productReviews.reduce((acc, r) => acc + r.rating, 0) /
+                              productReviews.length
+                        )
+                          ? "text-amber-400"
+                          : "text-slate-300"
+                      }
+                    />
+                  ))}
+                </div>
               </div>
             )}
           </div>
+
+          {/* Distribution 5..1 Stars (PUB03) */}
+          {(reviewSummary?.total_reviews ?? productReviews.length) > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-xs">
+              {[5, 4, 3, 2, 1].map((star) => {
+                const total = reviewSummary?.total_reviews ?? productReviews.length;
+                const count =
+                  reviewSummary?.distribution?.[String(star)] ??
+                  productReviews.filter((r) => Math.round(r.rating) === star).length;
+                const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                return (
+                  <div key={star} className="flex items-center gap-2 bg-white px-3 py-2 rounded-xl border border-slate-200/70">
+                    <span className="font-bold text-slate-700 flex items-center gap-0.5 shrink-0">
+                      {star} <Star size={12} weight="fill" className="text-amber-400" />
+                    </span>
+                    <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-amber-400 rounded-full"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-500 shrink-0">{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {reviewsLoading ? (
+            <div className="p-8 text-center text-xs text-slate-400">
+              Memuat ulasan pembeli...
+            </div>
+          ) : productReviews.length === 0 ? (
+            <div className="p-8 text-center bg-slate-50/70 rounded-2xl border border-slate-200/80 text-xs text-slate-500 space-y-1">
+              <p className="font-semibold text-slate-700">Belum ada ulasan untuk produk ini</p>
+              <p className="text-[11px] text-slate-400">Jadilah pembeli pertama yang memberikan penilaian setelah pesanan Anda selesai!</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {productReviews.map((rev) => {
+                const publicName =
+                  rev.customer_display_name ||
+                  (rev.submission?.customer_id
+                    ? `Pelanggan #${rev.submission.customer_id.substring(0, 6)}`
+                    : "Pembeli Terverifikasi");
+                const reviewDateStr = new Date(
+                  rev.submitted_at || rev.created_at
+                ).toLocaleDateString("id-ID", {
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                });
+                const orderDateStr = rev.ordered_at
+                  ? new Date(rev.ordered_at).toLocaleDateString("id-ID", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                    })
+                  : null;
+                const commentText = rev.review_text ?? rev.comment;
+                const replyText = rev.reply?.reply_text ?? rev.reply?.text;
+
+                return (
+                  <div key={rev.id} className="p-4 rounded-2xl bg-slate-50/60 border border-slate-200/80 space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-blue-100 text-[#0F4C81] flex items-center justify-center font-bold text-xs shrink-0">
+                          {publicName.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <span className="font-bold text-xs text-slate-900 block">
+                            {publicName}
+                          </span>
+                          <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 mt-0.5">
+                            {orderDateStr && (
+                              <span>
+                                Tanggal Order: <strong className="text-slate-700">{orderDateStr}</strong>
+                              </span>
+                            )}
+                            {orderDateStr && <span className="text-slate-300">•</span>}
+                            <span>
+                              Tanggal Ulasan: <strong className="text-slate-700">{reviewDateStr}</strong>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <Star
+                            key={i}
+                            size={14}
+                            weight="fill"
+                            className={i < (rev.rating || 5) ? "text-amber-400" : "text-slate-200"}
+                          />
+                        ))}
+                        <span className="text-xs font-bold text-slate-800 ml-1">{rev.rating || 5}.0</span>
+                      </div>
+                    </div>
+
+                    {commentText ? (
+                      <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-line">
+                        {commentText}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-400 italic">
+                        Pembeli memberikan rating bintang tanpa komentar tertulis.
+                      </p>
+                    )}
+
+                    {/* Merchant Reply if exists */}
+                    {replyText && (
+                      <div className="p-3 bg-white rounded-xl border border-slate-200 text-xs space-y-1 mt-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-[#0F4C81]">
+                            Balasan Resmi Toko:
+                          </span>
+                          {rev.reply?.created_at && (
+                            <span className="text-[10px] text-slate-400">
+                              {new Date(rev.reply.updated_at || rev.reply.created_at).toLocaleDateString("id-ID", {
+                                day: "2-digit",
+                                month: "short",
+                                year: "numeric",
+                              })}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-slate-600 text-[11px] leading-relaxed">
+                          {replyText}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* 4. Related Products & Other Merchant Recommendations */}

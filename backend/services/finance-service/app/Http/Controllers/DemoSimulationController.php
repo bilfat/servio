@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Domain\Finance\Integration\OutboxDispatcherService;
 use App\Domain\Finance\Payments\PaymentVerificationService;
 use App\Domain\Finance\Withdrawals\WithdrawalService;
 use App\Http\Requests\SimulatePaymentRequest;
@@ -17,6 +18,7 @@ class DemoSimulationController extends Controller
     public function __construct(
         private readonly PaymentVerificationService $paymentVerificationService,
         private readonly WithdrawalService $withdrawalService,
+        private readonly OutboxDispatcherService $outboxDispatcherService,
     ) {}
 
     public function simulatePayment(SimulatePaymentRequest $request, string $paymentId): JsonResponse
@@ -31,6 +33,13 @@ class DemoSimulationController extends Controller
             reportedAmountIdr: isset($data['reported_amount_idr']) && $data['reported_amount_idr'] !== null ? (int) $data['reported_amount_idr'] : null,
             actorUserId: $actor?->actorId ?? 'DEMO_OPERATOR'
         );
+
+        // Immediately dispatch pending outbox events to downstream microservices (05B Order Jasa / 05A Order Barang)
+        try {
+            $this->outboxDispatcherService->dispatchPendingEvents();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("[DemoSimulationController] Dispatch outbox failed: " . $e->getMessage());
+        }
 
         return ApiResponse::success([
             'payment_id' => $payment->id,

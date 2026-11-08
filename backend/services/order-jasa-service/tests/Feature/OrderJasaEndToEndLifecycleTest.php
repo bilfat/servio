@@ -213,7 +213,18 @@ class OrderJasaEndToEndLifecycleTest extends TestCase
         $consentRes->assertStatus(200);
 
         $order->refresh();
-        // Immediately transitions to EXECUTION_IN_PROGRESS!
+        // V3 Rule: Consent approval sets status to PRICE_APPROVED (Harga Telah Disetujui)
+        $this->assertEquals('PRICE_APPROVED', $order->status);
+
+        // 7b. Worker explicitly clicks "Lanjutkan Pengerjaan" (START_EXECUTION)
+        $startExecHeaders = $this->workerHeaders($workerId);
+        $startExecHeaders['Idempotency-Key'] = 'idemp-start-exec-001';
+        $startExecRes = $this->postJson("/api/v1/order-jasa/worker/tasks/{$taskId}/visit", [
+            'action' => 'START_EXECUTION',
+        ], $startExecHeaders);
+        $startExecRes->assertStatus(200);
+
+        $order->refresh();
         $this->assertEquals('EXECUTION_IN_PROGRESS', $order->status);
 
         $execution = ServiceExecution::where('order_id', $orderId)->first();
@@ -284,6 +295,9 @@ class OrderJasaEndToEndLifecycleTest extends TestCase
         $closeHeaders = $this->workerHeaders($workerId);
         $closeHeaders['Idempotency-Key'] = 'idemp-close-visit-001';
         $this->postJson("/api/v1/order-jasa/worker/tasks/{$taskId}/visit/close", ['reason' => 'SERVIS_SELESAI_NORMAL'], $closeHeaders)->assertStatus(200);
+
+        $order->refresh();
+        $this->assertEquals('VISIT_CLOSED', $order->status);
 
         // 11. Customer Completes Order
         $compHeaders = $this->customerHeaders($customerId);
@@ -395,6 +409,17 @@ class OrderJasaEndToEndLifecycleTest extends TestCase
         $consentRes->assertStatus(200);
 
         $order = ServiceOrder::find($orderId);
+        $this->assertEquals('PRICE_APPROVED', $order->status);
+
+        // Worker explicitly clicks "Lanjutkan Pengerjaan"
+        $startExecHeaders = $this->workerHeaders($workerId);
+        $startExecHeaders['Idempotency-Key'] = 'idemp-start-exec-02';
+        $startExecRes = $this->postJson("/api/v1/order-jasa/worker/tasks/{$taskId}/visit", [
+            'action' => 'START_EXECUTION',
+        ], $startExecHeaders);
+        $startExecRes->assertStatus(200);
+
+        $order->refresh();
         $this->assertEquals('EXECUTION_IN_PROGRESS', $order->status);
 
         $consent = CustomerConsent::where('order_id', $orderId)->first();

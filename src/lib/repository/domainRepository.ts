@@ -8815,7 +8815,7 @@ export class CentralDomainStore {
       recipientId: worker.id,
       title: "Penugasan Garansi Baru",
       message: `Tugas garansi baru #${claim.claimNumber} pada ${data.scheduledDate} ${data.scheduledStartTime}.`,
-      link: "/worker/warranty",
+      link: "/worker/jobs",
     });
 
     this.sendNotification({
@@ -8930,7 +8930,7 @@ export class CentralDomainStore {
       recipientId: oldAssignment.workerId,
       title: "Jadwal Tugas Garansi Diperbarui",
       message: `Jadwal tugas #${claim.claimNumber} digeser ke ${newSchedule.scheduledDate} ${newSchedule.scheduledStartTime}.`,
-      link: "/worker/warranty",
+      link: "/worker/jobs",
     });
 
     this.sendNotification({
@@ -9321,7 +9321,7 @@ export class CentralDomainStore {
           recipientId: assignment.workerId,
           title: "Hasil Keputusan: Di Luar Garansi",
           message: `Klaim #${claim.claimNumber} tidak ditanggung. Anda dapat mengajukan rekomendasi pekerjaan berbayar ke Provider.`,
-          link: "/worker/warranty",
+          link: "/worker/jobs",
         });
       }
     }
@@ -9376,7 +9376,7 @@ export class CentralDomainStore {
         recipientId: assignment.workerId,
         title: "Klarifikasi Diagnosis Garansi",
         message: `Provider meminta informasi tambahan untuk klaim #${claim.claimNumber}: ${notes}`,
-        link: "/worker/warranty",
+        link: "/worker/jobs",
       });
     }
 
@@ -9503,7 +9503,7 @@ export class CentralDomainStore {
         recipientId: req.workerId,
         title: "Rekomendasi Berbayar Ditolak",
         message: `Provider tidak menyetujui rekomendasi pekerjaan berbayar untuk klaim #${claim?.claimNumber}.`,
-        link: "/worker/warranty",
+        link: "/worker/jobs",
       });
     } else {
       req.status = "INFO_REQUIRED";
@@ -9524,7 +9524,7 @@ export class CentralDomainStore {
         recipientId: req.workerId,
         title: "Informasi Tambahan Diperlukan",
         message: `Provider meminta penjelasan teknis tambahan terkait rekomendasi pekerjaan berbayar klaim #${claim?.claimNumber}.`,
-        link: "/worker/warranty",
+        link: "/worker/jobs",
       });
     }
 
@@ -9734,7 +9734,7 @@ export class CentralDomainStore {
           recipientId: req.workerId,
           title: "Pekerjaan Tidak Diotorisasi",
           message: `Pelanggan menolak pekerjaan berbayar untuk klaim #${claim?.claimNumber}. Pekerjaan tidak dapat dilanjutkan.`,
-          link: "/worker/warranty",
+          link: "/worker/jobs",
         });
       }
 
@@ -10043,7 +10043,7 @@ export class CentralDomainStore {
           recipientId: assignment.workerId,
           title: "Bukti Perbaikan Perlu Revisi",
           message: `Provider meminta kelengkapan bukti tambahan untuk klaim #${claim.claimNumber}.`,
-          link: "/worker/warranty",
+          link: "/worker/jobs",
         });
       }
 

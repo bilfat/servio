@@ -18,7 +18,7 @@ class HandleOrderJasaIdempotency
 {
     private const MIN_KEY_LENGTH = 16;
     private const MAX_KEY_LENGTH = 128;
-    private const MAX_PAYLOAD_BYTES = 262144; // 256 KB
+    private const MAX_PAYLOAD_BYTES = 16777216; // 16 MB (Support high-resolution diagnosis & execution evidence photos)
     private const STALE_LOCK_SECONDS = 120;
 
     public function handle(Request $request, Closure $next, string $operation = 'mutation'): Response
@@ -61,7 +61,7 @@ class HandleOrderJasaIdempotency
         if ($payloadSizeBytes > self::MAX_PAYLOAD_BYTES) {
             return ApiResponse::error(
                 'ORDER_JASA_PAYLOAD_TOO_LARGE',
-                'Ukuran payload melebihi batas maksimum idempotensi (256 KB).',
+                'Ukuran payload melebihi batas maksimum idempotensi (16 MB).',
                 413
             );
         }

@@ -38,6 +38,10 @@ export function mapBackendStatusToUi(backendStatus: string, cancelReason?: strin
       return { status: "IN_PROGRESS", subStatus: "DIAGNOSING" };
     case "DIAGNOSIS_SUBMITTED":
       return { status: "IN_PROGRESS", subStatus: "WAITING_CUSTOMER_CONSENT" };
+    case "PRICE_APPROVED":
+    case "CONSENT_APPROVED":
+    case "DIAGNOSIS_APPROVED":
+      return { status: "IN_PROGRESS", subStatus: "PRICE_APPROVED" };
     case "EXECUTION_IN_PROGRESS":
       return { status: "IN_PROGRESS", subStatus: "EXECUTING" };
     case "WORKER_FINISHED":
@@ -47,19 +51,25 @@ export function mapBackendStatusToUi(backendStatus: string, cancelReason?: strin
     case "PAYMENT_OVERDUE":
       return { status: "PENDING_PAYMENT", subStatus: "PAYMENT_OVERDUE" };
     case "EXECUTION_PAID":
-    case "AWAITING_CUSTOMER_CONFIRMATION":
     case "PAID_WAITING_COMPLETION":
+      return { status: "IN_PROGRESS", subStatus: "WAITING_WORKER_CLOSE_VISIT" };
+    case "VISIT_CLOSED":
+      return { status: "IN_PROGRESS", subStatus: "VISIT_CLOSED" };
+    case "AWAITING_CUSTOMER_CONFIRMATION":
       return { status: "IN_PROGRESS", subStatus: "AWAITING_CUSTOMER_CONFIRMATION" };
     case "COMPLETED":
       return { status: "COMPLETED", subStatus: "COMPLETED_NORMAL" };
     case "CANCELLED":
+      if (cancelReason === "PROVIDER_REJECTED" || cancelReason === "PROVIDER_UNABLE") {
+        return { status: "CANCELLED", subStatus: "CANCELLED_PROVIDER_REJECTED" };
+      }
       if (cancelReason === "CUSTOMER_CANCEL_PRE_OTW") {
         return { status: "CANCELLED", subStatus: "CANCELLED_BEFORE_OTW" };
       }
       if (cancelReason === "DIAGNOSIS_PAYMENT_EXPIRED") {
         return { status: "CANCELLED", subStatus: "CANCELLED_DIAGNOSIS_UNPAID" };
       }
-      if (cancelReason === "CUSTOMER_DECLINED_REPAIR") {
+      if (cancelReason === "CUSTOMER_DECLINED_REPAIR" || cancelReason === "CUSTOMER_REJECTED_DIAGNOSIS") {
         return { status: "CANCELLED", subStatus: "CANCELLED_PRICE_REJECTED" };
       }
       if (cancelReason === "SPAREPART_UNAVAILABLE") {
@@ -104,18 +114,58 @@ export function mapBackendOrderToServiceOrder(
     resolvedTitle = candidates.find((c) => !isInvalidTitle(c)) || "Cuci dan Servis AC Split Bergaransi Mandiri Teknik";
   }
 
+  const rawWCfg =
+    rawService.warranty_config ||
+    rawService.warrantyConfig ||
+    (backendOrder as any).warranty_config;
+  let resolvedWarrantyDays = 0;
+  if (rawWCfg) {
+    if (typeof rawWCfg === "string") {
+      try {
+        const parsed = JSON.parse(rawWCfg);
+        resolvedWarrantyDays =
+          parsed.duration_days ??
+          parsed.durationDays ??
+          (parsed.warrantyEnabled !== false ? 20 : 0);
+      } catch {}
+    } else if (typeof rawWCfg === "object") {
+      resolvedWarrantyDays =
+        rawWCfg.duration_days ??
+        rawWCfg.durationDays ??
+        (rawWCfg.warrantyEnabled !== false ? 20 : 0);
+    }
+  } else if (
+    backendOrder.service_offering_id === "6129bf1a-ee2b-4c63-92c0-d32f9df2bfcd" ||
+    (rawService.title && rawService.title.toLowerCase().includes("ac"))
+  ) {
+    resolvedWarrantyDays = 20;
+  }
+
+  const resolvedSubcategory =
+    rawService.subcategory_name ||
+    rawService.subcategoryName ||
+    rawService.subcategory?.name ||
+    rawService.definition_name ||
+    "AC & Pendingin Udara";
+
+  const resolvedCategory =
+    rawService.category_name ||
+    rawService.categoryName ||
+    rawService.category?.name ||
+    "Repair & Technical";
+
   const serviceSnapshot: ServiceOfferingSnapshot = {
     id: backendOrder.service_offering_id || rawService.id || "srv-ac-split",
     title: resolvedTitle,
-    categoryName: rawService.categoryName || "Pendingin Ruangan (HVAC)",
-    subcategoryName: "AC Split",
+    categoryName: resolvedCategory,
+    subcategoryName: resolvedSubcategory,
     thumbnailUrl:
       rawService.thumbnailUrl ||
       "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=500&auto=format&fit=crop&q=80",
     priceModel: (rawService.priceModel as any) || "AFTER_SURVEY",
     diagnosisFee: backendOrder.diagnosis_fee_idr ?? 50000,
     serviceMode: "HOME_SERVICE",
-    warrantyDurationDays: 30,
+    warrantyDurationDays: resolvedWarrantyDays,
   };
 
   const rawAddr = backendOrder.address_snapshot || {};
@@ -150,6 +200,11 @@ export function mapBackendOrderToServiceOrder(
 
   // Worker assignment
   let assignment: WorkerAssignment | undefined = undefined;
+  const isPendingWorkerResponse =
+    subStatus === "ASSIGNED_PENDING" ||
+    backendOrder.status === "ASSIGNED_WAITING_WORKER" ||
+    backendOrder.status === "DISPATCHED_WAITING_ACCEPTANCE";
+
   if (backendOrder.assigned_worker) {
     const w = backendOrder.assigned_worker;
     const resolvedPhoto =
@@ -166,7 +221,7 @@ export function mapBackendOrderToServiceOrder(
       workerRating: undefined,
       assignedAt: backendOrder.created_at,
       responseDeadline: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-      status: "ACCEPTED",
+      status: isPendingWorkerResponse ? "ASSIGNED" : "ACCEPTED",
     };
   } else if ((backendOrder as any).active_assignment) {
     const act = (backendOrder as any).active_assignment;
@@ -184,7 +239,7 @@ export function mapBackendOrderToServiceOrder(
       workerRating: undefined,
       assignedAt: act.assigned_at || backendOrder.created_at,
       responseDeadline: act.response_due_at || new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-      status: act.status || "ASSIGNED",
+      status: act.status || (isPendingWorkerResponse ? "ASSIGNED" : "ACCEPTED"),
     };
   }
 
@@ -207,27 +262,37 @@ export function mapBackendOrderToServiceOrder(
 
   const isExecPaid =
     backendOrder.status === "COMPLETED" ||
+    backendOrder.status === "EXECUTION_PAID" ||
+    backendOrder.status === "PAID_WAITING_COMPLETION" ||
+    backendOrder.status === "VISIT_CLOSED" ||
+    backendOrder.status === "AWAITING_CUSTOMER_CONFIRMATION" ||
     (execObligation && (execObligation.state === "PAID" || (execObligation as any).paid_at));
 
   const hasCompletedExecution =
     backendOrder.status === "COMPLETED" ||
     backendOrder.status === "EXECUTION_PAID" ||
+    backendOrder.status === "PAID_WAITING_COMPLETION" ||
+    backendOrder.status === "VISIT_CLOSED" ||
     backendOrder.status === "AWAITING_CUSTOMER_CONFIRMATION" ||
+    backendOrder.status === "WORKER_FINISHED" ||
+    backendOrder.status === "EXECUTION_FINISHED" ||
+    backendOrder.status === "PAYMENT_PENDING" ||
+    backendOrder.status === "PAYMENT_OVERDUE" ||
     !!execObligation;
 
   const execFeeSnapshot = (execObligation as any)?.fee_snapshot;
   const rawBackendDiag = (backendOrder as any)?.diagnosis;
   const laborSubtotal =
-    execFeeSnapshot?.labor_subtotal_idr ??
     rawBackendDiag?.work_subtotal_idr ??
+    execFeeSnapshot?.labor_subtotal_idr ??
     (execObligation ? Math.min(execObligation.principal_idr, 175000) : (hasCompletedExecution ? 175000 : 0));
   const partsSubtotal =
-    execFeeSnapshot?.provider_part_subtotal_idr ??
     rawBackendDiag?.provider_part_subtotal_idr ??
+    execFeeSnapshot?.provider_part_subtotal_idr ??
     (execObligation ? Math.max(0, (execFeeSnapshot?.execution_subtotal_idr ?? 200000) - laborSubtotal) : (hasCompletedExecution ? 25000 : 0));
   const executionSubtotal =
-    execFeeSnapshot?.execution_subtotal_idr ??
-    (laborSubtotal + partsSubtotal > 0 ? laborSubtotal + partsSubtotal : (execObligation?.principal_idr || (hasCompletedExecution ? 200000 : 0)));
+    rawBackendDiag?.grand_total_idr ??
+    (laborSubtotal + partsSubtotal > 0 ? laborSubtotal + partsSubtotal : (execFeeSnapshot?.execution_subtotal_idr ?? (execObligation?.principal_idr || (hasCompletedExecution ? 200000 : 0))));
   const customerPlatformFee =
     execFeeSnapshot?.customer_platform_fee_idr ??
     (execObligation && execObligation.principal_idr > executionSubtotal ? execObligation.principal_idr - executionSubtotal : 5000);
@@ -263,7 +328,7 @@ export function mapBackendOrderToServiceOrder(
       expiresAt: diagAttempt?.expires_at || new Date(Date.now() + 6 * 3600 * 1000).toISOString(),
       paidAt: isDiagPaid ? (diagObligation?.paid_at || backendOrder.created_at) : undefined,
     } as any,
-    executionPayment: (execObligation || hasCompletedExecution)
+    executionPayment: (execObligation || hasCompletedExecution || !!rawBackendDiag)
       ? ({
           invoiceNo: execAttempt?.finance_invoice_ref || (execAttempt as any)?.finance_payment_id || `INV-EXEC-${backendOrder.order_no}`,
           invoiceNumber: execAttempt?.finance_invoice_ref || (execAttempt as any)?.finance_payment_id || `INV-EXEC-${backendOrder.order_no}`,
@@ -304,14 +369,17 @@ export function mapBackendOrderToServiceOrder(
         : new Date(Date.now() + 120 * 3600 * 1000).toISOString(),
     },
     refundSummary:
-      backendOrder.status === "CANCELLED" && backendOrder.cancel_reason_code === "CUSTOMER_CANCEL_PRE_OTW"
+      backendOrder.status === "CANCELLED" || (backendOrder as any).provider_decision_status === "REJECTED"
         ? {
             refundId: `REF-${backendOrder.id.substring(0, 8)}`,
             amount: backendOrder.diagnosis_fee_idr || 50000,
             status: "SUCCEEDED",
-            reason: "Pembatalan pesanan sebelum teknisi menuju lokasi",
-            requestedAt: backendOrder.cancelled_at || new Date().toISOString(),
-            processedAt: backendOrder.cancelled_at || new Date().toISOString(),
+            reason:
+              (backendOrder as any).provider_rejection_reason ||
+              (backendOrder as any).cancellation_reason ||
+              "Pengembalian dana survei 100% S-Pay (Section 50)",
+            requestedAt: backendOrder.cancelled_at || (backendOrder as any).provider_decision_at || new Date().toISOString(),
+            processedAt: backendOrder.cancelled_at || (backendOrder as any).provider_decision_at || new Date().toISOString(),
           }
         : undefined,
   };
@@ -429,6 +497,27 @@ export function mapBackendOrderToServiceOrder(
     const sparepartTotal = Number(rawDiag.provider_part_subtotal_idr) || rawSpareparts.reduce((acc, curr) => acc + curr.subtotal, 0);
     const grandTotal = Number(rawDiag.grand_total_idr) || (workTotal + sparepartTotal);
 
+    const rawConsent = (backendOrder as any).consent;
+    let consent: any = undefined;
+    if (rawConsent && rawConsent.decision === "APPROVED") {
+      consent = {
+        type: rawConsent.method === "WORKER_RECORDED_IN_PERSON" ? "IN_PERSON_RECORDED" : "REMOTE_APPROVED",
+        timestamp: rawConsent.submitted_at || backendOrder.updated_at || backendOrder.created_at,
+        notes: rawConsent.method === "WORKER_RECORDED_IN_PERSON" ? "Persetujuan langsung di lokasi" : "Persetujuan via aplikasi",
+      };
+    } else if (
+      rawDiag.status === "APPROVED" ||
+      backendOrder.status === "EXECUTION_IN_PROGRESS" ||
+      backendOrder.status === "WORKER_FINISHED" ||
+      backendOrder.status === "COMPLETED"
+    ) {
+      consent = {
+        type: "IN_PERSON_RECORDED",
+        timestamp: backendOrder.updated_at || backendOrder.created_at,
+        notes: "Persetujuan biaya perbaikan",
+      };
+    }
+
     diagnosis = {
       id: rawDiag.id || `diag-${backendOrder.id}`,
       workerId: backendOrder.assigned_worker?.worker_id || assignment?.workerId || "",
@@ -448,12 +537,8 @@ export function mapBackendOrderToServiceOrder(
       spareparts: rawSpareparts,
       version: rawDiag.version_no || 1,
       status: (rawDiag.status as any) || "APPROVED",
-      damagePhotos: rawDiag.diagnosis_photos || rawDiag.damagePhotos || [],
-      consent: {
-        type: "REMOTE_APPROVED",
-        timestamp: backendOrder.created_at,
-        notes: "Persetujuan biaya perbaikan",
-      },
+      damagePhotos: rawDiag.diagnosis_photos || rawDiag.damagePhotos || rawDiag.diagnosis_photo_refs || [],
+      consent,
     };
   }
 
@@ -470,8 +555,8 @@ export function mapBackendOrderToServiceOrder(
       finishedAt: rawExec.finished_at || backendOrder.completed_at || undefined,
       beforePhotos: beforeEvidences.map((e: any) => e.url || e.media_reference),
       afterPhotos: afterEvidences.map((e: any) => e.url || e.media_reference),
-      workSummary: rawExec.execution_notes || rawExec.workSummary || "Pekerjaan servis telah selesai.",
-      testResults: rawExec.test_results || rawExec.testResults || "Fungsi alat beroperasi normal.",
+      workSummary: rawExec.summary || rawExec.execution_notes || rawExec.workSummary || "Pekerjaan servis telah selesai.",
+      testResults: rawExec.test_result || rawExec.test_results || rawExec.testResults || "Fungsi alat beroperasi normal.",
       usedSpareparts: rawExec.used_spareparts || rawExec.actual_part_usage_json || [],
     };
   }
@@ -483,13 +568,47 @@ export function mapBackendOrderToServiceOrder(
     customerName: addressSnapshot.recipientName,
     customerPhone: addressSnapshot.phone,
     providerId: backendOrder.provider_org_id,
-    providerName: (rawService as any).providerName || "PT Servio Mandiri Teknik",
+    providerName:
+      (backendOrder as any).provider_name && (backendOrder as any).provider_name !== "PT Servio Mandiri Teknik"
+        ? (backendOrder as any).provider_name
+        : (rawService as any).provider_name && (rawService as any).provider_name !== "PT Servio Mandiri Teknik"
+        ? (rawService as any).provider_name
+        : (rawService as any).store_name && (rawService as any).store_name !== "PT Servio Mandiri Teknik"
+        ? (rawService as any).store_name
+        : "sukses gembira",
     serviceSnapshot,
     addressSnapshot,
     complaint: {
       description: backendOrder.complaint_text || "Layanan servis",
-      symptoms: backendOrder.symptoms || (backendOrder as any).symptoms_json || ["Kurang dingin"],
-      photos: (backendOrder as any).customer_media_refs || [],
+      symptoms: (() => {
+        const rawSym = backendOrder.symptoms || (backendOrder as any).symptoms_json;
+        if (Array.isArray(rawSym)) return rawSym;
+        if (typeof rawSym === "string") {
+          try {
+            const parsed = JSON.parse(rawSym);
+            if (Array.isArray(parsed)) return parsed;
+          } catch {}
+          return [rawSym];
+        }
+        return ["Kurang dingin"];
+      })(),
+      photos: (() => {
+        const rawPhotos =
+          (backendOrder as any).customer_media_refs ||
+          (backendOrder as any).complaintPhotos ||
+          (backendOrder as any).complaint?.photos ||
+          [];
+        if (Array.isArray(rawPhotos)) return rawPhotos.filter(Boolean);
+        if (typeof rawPhotos === "string" && rawPhotos.trim().length > 0) {
+          try {
+            const parsed = JSON.parse(rawPhotos);
+            if (Array.isArray(parsed)) return parsed.filter(Boolean);
+          } catch {
+            return [rawPhotos];
+          }
+        }
+        return [];
+      })(),
     },
     schedule: {
       date: scheduleDate,
@@ -497,6 +616,25 @@ export function mapBackendOrderToServiceOrder(
     },
     status,
     subStatus,
+    providerDecisionStatus: ((backendOrder as any).provider_decision_status as any) || "PENDING",
+    providerDecisionAt: (backendOrder as any).provider_decision_at || null,
+    providerRejectionReason: (backendOrder as any).provider_rejection_reason || null,
+    cancellation:
+      backendOrder.status === "CANCELLED"
+        ? {
+            cancelledAt: (backendOrder as any).cancelled_at || backendOrder.updated_at,
+            cancelledByRole: (((backendOrder as any).provider_decision_status === "REJECTED" ? "PROVIDER" : "CUSTOMER") as any),
+            cancelledByName: (backendOrder as any).provider_decision_status === "REJECTED" ? "Mitra Penyedia Jasa" : addressSnapshot.recipientName,
+            reasonCode: (((backendOrder as any).cancel_reason_code || "PROVIDER_UNABLE") as any),
+            reasonDetail:
+              (backendOrder as any).provider_rejection_reason ||
+              (backendOrder as any).cancellation_reason ||
+              (backendOrder as any).cancel_reason ||
+              "Pesanan dibatalkan / ditolak.",
+            diagnosisEligibleForHold: false,
+            refundEligible: true,
+          }
+        : undefined,
     assignment,
     diagnosis,
     execution,
@@ -510,22 +648,32 @@ export function mapBackendOrderToServiceOrder(
 
 export function mapBackendWorkerTaskToServiceOrder(task: BackendWorkerTask): ServiceOrder {
   const rawOrder = task.order || ({} as any);
-  const baseOrder = mapBackendOrderToServiceOrder({
-    id: rawOrder.id || task.assignment_id,
-    order_no: rawOrder.order_no || `TASK-${task.assignment_id.slice(-6)}`,
-    customer_id: rawOrder.customer_id || "cust-default",
-    provider_org_id: task.provider_org_id || "org-default",
-    service_offering_id: rawOrder.service_offering_id || "srv-default",
-    service_snapshot: rawOrder.service_snapshot,
-    recipient_snapshot: rawOrder.recipient_snapshot,
-    address_snapshot: rawOrder.address_snapshot,
-    complaint_text: rawOrder.complaint_text || "Keluhan teknis",
-    symptoms: rawOrder.symptoms,
-    status: rawOrder.status || (task.status === "ASSIGNED" ? "DISPATCHED_WAITING_ACCEPTANCE" : "WORKER_ACCEPTED"),
-    phase: rawOrder.phase || "VISIT_PENDING",
-    created_at: task.assigned_at || new Date().toISOString(),
-    updated_at: task.accepted_at || task.assigned_at || new Date().toISOString(),
-  } as any);
+  const baseOrder = mapBackendOrderToServiceOrder(
+    {
+      id: rawOrder.id || task.assignment_id,
+      order_no: rawOrder.order_no || `TASK-${task.assignment_id.slice(-6)}`,
+      customer_id: rawOrder.customer_id || "cust-default",
+      provider_org_id: task.provider_org_id || "org-default",
+      service_offering_id: rawOrder.service_offering_id || "srv-default",
+      service_snapshot: rawOrder.service_snapshot,
+      recipient_snapshot: rawOrder.recipient_snapshot,
+      address_snapshot: rawOrder.address_snapshot,
+      complaint_text: rawOrder.complaint_text || "Keluhan teknis",
+      symptoms: rawOrder.symptoms,
+      customer_media_refs: rawOrder.customer_media_refs || [],
+      diagnosis_fee_idr: rawOrder.diagnosis_fee_idr,
+      diagnosis_fee_exemption_type: rawOrder.diagnosis_fee_exemption_type,
+      status: rawOrder.status || (task.status === "ASSIGNED" ? "DISPATCHED_WAITING_ACCEPTANCE" : "WORKER_ACCEPTED"),
+      phase: rawOrder.phase || "VISIT_PENDING",
+      cancel_reason_code: rawOrder.cancel_reason_code,
+      created_at: task.assigned_at || new Date().toISOString(),
+      updated_at: task.accepted_at || task.assigned_at || new Date().toISOString(),
+      diagnosis: rawOrder.diagnosis,
+      consent: rawOrder.consent,
+      execution: rawOrder.execution,
+    } as any,
+    rawOrder.payment_obligations
+  );
 
   baseOrder.assignment = {
     assignmentId: task.assignment_id,
@@ -536,7 +684,7 @@ export function mapBackendWorkerTaskToServiceOrder(task: BackendWorkerTask): Ser
     workerRating: undefined,
     assignedAt: task.assigned_at,
     responseDeadline: task.response_due_at || new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-    status: task.status === "ASSIGNED" ? "PENDING" : (task.status as any),
+    status: (task.status as any) || "ASSIGNED",
   };
 
   if (task.schedule?.start_at) {
@@ -549,12 +697,19 @@ export function mapBackendWorkerTaskToServiceOrder(task: BackendWorkerTask): Ser
       otwAt: task.visit.otw_at,
       arrivedAt: task.visit.arrived_at,
     };
-    if (task.visit.status === "OTW") {
-      baseOrder.status = "IN_PROGRESS";
-      baseOrder.subStatus = "WORKER_OTW";
-    } else if (task.visit.status === "ARRIVED") {
-      baseOrder.status = "IN_PROGRESS";
-      baseOrder.subStatus = "WORKER_ARRIVED";
+    // Only infer subStatus from visit if order is still in scheduled/pre-diagnosis phase
+    if (
+      baseOrder.status === "SCHEDULED" ||
+      baseOrder.subStatus === "WORKER_ACCEPTED" ||
+      baseOrder.subStatus === "ASSIGNED_PENDING"
+    ) {
+      if (task.visit.status === "OTW" || task.visit.status === "ON_THE_WAY") {
+        baseOrder.status = "IN_PROGRESS";
+        baseOrder.subStatus = "WORKER_OTW";
+      } else if (task.visit.status === "ARRIVED") {
+        baseOrder.status = "IN_PROGRESS";
+        baseOrder.subStatus = "WORKER_ARRIVED";
+      }
     }
   }
 

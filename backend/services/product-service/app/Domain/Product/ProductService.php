@@ -356,11 +356,14 @@ class ProductService
                 'district' => $publicProfile['district'] ?? null,
                 'postal_code' => $publicProfile['postal_code'] ?? null,
                 'street_address' => $publicProfile['street_address'] ?? null,
+                'latitude' => isset($publicProfile['latitude']) ? (float) $publicProfile['latitude'] : null,
+                'longitude' => isset($publicProfile['longitude']) ? (float) $publicProfile['longitude'] : null,
             ],
             'category_id' => $prod->category_id,
             'category_name' => $catName,
             'subcategory_id' => $prod->subcategory_id,
             'subcategory_name' => $subName,
+            'warranty_policy' => $prod->warranty_policy,
         ];
     }
 
@@ -488,6 +491,7 @@ class ProductService
             ])->values()->all(),
             'variants' => $variants,
             'merchant' => $card['merchant'],
+            'warranty_policy' => $prod->warranty_policy,
             'related_products' => $relatedProducts,
             'same_store_products' => $sameStoreProducts,
         ];
@@ -633,6 +637,7 @@ class ProductService
                 'total_stock' => $totalStock,
                 'lock_version' => $p->lock_version,
                 'primary_image_url' => $primary?->getUrl(),
+                'warranty_policy' => $p->warranty_policy,
                 'created_at' => $p->created_at->toIso8601String(),
                 'updated_at' => $p->updated_at->toIso8601String(),
             ];
@@ -756,6 +761,7 @@ class ProductService
             'primary_image_url' => $primaryMedia['url'] ?? null,
             'variants' => $variants,
             'media' => $allMedia,
+            'warranty_policy' => $prod->warranty_policy,
             'activation_requirements' => $this->evaluateActivationRequirements($prod),
             'created_at' => $prod->created_at->toIso8601String(),
             'updated_at' => $prod->updated_at->toIso8601String(),
@@ -825,6 +831,7 @@ class ProductService
                 'subcategory_id' => $subcategoryId,
                 'status' => 'DRAFT',
                 'lock_version' => 1,
+                'warranty_policy' => $data['warranty_policy'] ?? null,
             ]);
 
             // Save assignment history if category is present
@@ -996,6 +1003,11 @@ class ProductService
             if (isset($data['brand'])) {
                 $product->brand_name = trim($data['brand']);
                 $product->brand_normalized = Product::normalizeString($data['brand']);
+            }
+            if (array_key_exists('warranty_policy', $data)) {
+                $product->warranty_policy = $data['warranty_policy'];
+            } elseif (array_key_exists('warrantyPolicy', $data)) {
+                $product->warranty_policy = $data['warrantyPolicy'];
             }
 
             if ($categoryChanging) {
@@ -1981,6 +1993,7 @@ class ProductService
                 'subcategory_name' => $tax['subcategories'][$p->subcategory_id] ?? null,
                 'lock_version' => $p->lock_version,
                 'primary_image_url' => $primary?->getUrl(),
+                'warranty_policy' => $p->warranty_policy,
                 'created_at' => $p->created_at->toIso8601String(),
                 'updated_at' => $p->updated_at->toIso8601String(),
             ];

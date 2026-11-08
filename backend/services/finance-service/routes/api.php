@@ -105,6 +105,7 @@ Route::prefix('v1/finance')->group(function () {
         Route::get('/payments', [OpsFinanceController::class, 'payments']);
         Route::get('/payment-allocations', [OpsFinanceController::class, 'paymentAllocations']);
         Route::get('/refunds', [OpsFinanceController::class, 'refunds']);
+        Route::get('/refunds/{id}', [OpsFinanceController::class, 'showRefund']);
         Route::get('/withdrawals', [OpsFinanceController::class, 'withdrawals']);
         Route::get('/reconciliation', [OpsFinanceController::class, 'reconciliation']);
         Route::get('/audit-logs', [OpsFinanceController::class, 'auditLogs']);

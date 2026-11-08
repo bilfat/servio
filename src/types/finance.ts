@@ -328,11 +328,28 @@ export interface BackendRefundTransaction {
   requested_amount_idr: number;
   funded_amount_idr: number;
   credited_amount_idr: number;
-  status: "PENDING" | "PROCESSING" | "SUCCEEDED" | "FAILED";
+  status: "PENDING" | "PROCESSING" | "SUCCEEDED" | "FAILED" | "REVERSED";
   source_funding_reference?: string;
   funded_at?: string | null;
   credited_at?: string | null;
   failure_code?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  merchant_order_id?: string | null;
+  merchant_org_id?: string | null;
+  customer_id?: string | null;
+  checkout_group_id?: string | null;
+  product_subtotal_idr?: number;
+  shipping_customer_idr?: number;
+  app_fee_allocated_idr?: number;
+  source_kind?: "BARANG_05A" | "JASA_05B";
+  is_after_sales?: boolean;
+  case_id?: string | null;
+  payment_allocation?: any;
+  customer_s_pay_account?: any;
+  customerSPayAccount?: any;
+  movements?: any[];
+  audit_logs?: any[];
 }
 
 export interface BackendWithdrawalRequest {

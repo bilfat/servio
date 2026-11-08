@@ -103,7 +103,7 @@ class DeliveryQuoteServiceTest extends TestCase
         $this->assertEquals(8000, $quote1['shipping_fee_idr']);
     }
 
-    public function test_rejects_out_of_city_when_region_code_mismatches(): void
+    public function test_rejects_delivery_out_of_range(): void
     {
         $setting = MerchantDeliverySetting::create([
             'id' => (string) Str::ulid(),
@@ -119,13 +119,14 @@ class DeliveryQuoteServiceTest extends TestCase
         ]);
 
         $this->expectException(DeliveryException::class);
-        $this->expectExceptionMessage('Alamat tujuan berada di luar kota/kabupaten toko.');
+        $this->expectExceptionMessage('melebihi jangkauan maksimum toko');
 
+        // Location far away (> 25 km, e.g. Bogor ~45 km)
         $this->quoteService->calculateShipping(
             $setting,
-            -6.2050000,
-            106.8180000,
-            'KOTA_SURABAYA' // Different city
+            -6.5971,
+            106.8060,
+            'KOTA_BOGOR'
         );
     }
 

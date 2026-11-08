@@ -17,9 +17,10 @@ export const CUSTOMER_TABS: { id: CustomerTabType; label: string; description: s
 
 export const WORKER_TABS: { id: WorkerTabType; label: string; description: string }[] = [
   { id: "TUGAS_MASUK", label: "Tugas Masuk", description: "Penugasan baru yang membutuhkan konfirmasi Anda (30 Menit)" },
-  { id: "TERJADWAL", label: "Terjadwal", description: "Tugas yang telah Anda terima dan siap diberangkatkan" },
-  { id: "BERLANGSUNG", label: "Berlangsung", description: "Dalam perjalanan, pemeriksaan lapangan, atau pengerjaan aktif" },
-  { id: "SELESAI", label: "Selesai", description: "Pekerjaan tuntas, menunggu pembayaran, atau kunjungan diakhiri" },
+  { id: "HARI_INI", label: "Hari Ini", description: "Pekerjaan diterima dengan jadwal kunjungan hari ini" },
+  { id: "TERJADWAL", label: "Terjadwal", description: "Pekerjaan diterima untuk tanggal mendatang" },
+  { id: "BERLANGSUNG", label: "Berlangsung", description: "Dalam perjalanan (OTW), pemeriksaan lapangan, atau pengerjaan aktif" },
+  { id: "SELESAI", label: "Selesai", description: "Pekerjaan fisik selesai, menunggu pembayaran, atau kunjungan diakhiri" },
   { id: "RIWAYAT", label: "Riwayat", description: "Riwayat tugas yang ditolak, kedaluwarsa, atau dibatalkan" },
 ];
 
@@ -42,7 +43,7 @@ export const ADMIN_SERVICE_STATUS_FILTERS = [
 
 export function resolveCustomerTab(order: ServiceOrder): CustomerTabType {
   // Rule: Satu Order hanya masuk satu tab utama Customer pada satu waktu.
-  if (order.status === "CANCELLED") {
+  if (order.status === "CANCELLED" || order.providerDecisionStatus === "REJECTED") {
     return "BATAL";
   }
 
@@ -60,103 +61,119 @@ export function resolveCustomerTab(order: ServiceOrder): CustomerTabType {
     return "BELUM_BAYAR";
   }
 
-  // 2. Check if work finished and execution payment is PENDING or OVERDUE (Belum Bayar)
+  // 2. Check if execution payment is PENDING or OVERDUE (Belum Bayar)
   if (
-    order.subStatus === "WORK_FINISHED" ||
-    order.subStatus === "EXECUTION_PENDING" ||
-    order.subStatus === "PAYMENT_OVERDUE" ||
-    (order.paymentSummary?.executionPayment &&
-      (order.paymentSummary.executionPayment.status === "PENDING" ||
-        order.paymentSummary.executionPayment.status === "OVERDUE" ||
-        order.paymentSummary.executionPayment.status === "EXPIRED"))
+    (order.subStatus === "EXECUTION_PENDING" ||
+      order.subStatus === "PAYMENT_OVERDUE" ||
+      (order.paymentSummary?.executionPayment &&
+        (order.paymentSummary.executionPayment.status === "PENDING" ||
+          order.paymentSummary.executionPayment.status === "OVERDUE" ||
+          order.paymentSummary.executionPayment.status === "EXPIRED"))) &&
+    (order.paymentSummary?.executionPayment?.amount ?? 0) > 0 &&
+    order.paymentSummary?.executionPayment?.status !== "PAID"
   ) {
-    // If execution payment is PAID, move to BERLANGSUNG (Awaiting confirmation)
-    if (order.paymentSummary?.executionPayment?.status === "PAID" || order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION") {
-      return "BERLANGSUNG";
-    }
     return "BELUM_BAYAR";
   }
 
   // 3. Scheduled tab: booking eligible, waiting assignment, or assigned/accepted before OTW
   if (
-    order.status === "SCHEDULED" ||
-    order.subStatus === "UNASSIGNED" ||
-    order.subStatus === "ASSIGNED_PENDING" ||
-    order.subStatus === "WORKER_ACCEPTED" ||
-    order.subStatus === "RESCHEDULE_PROPOSED"
+    (order.status === "SCHEDULED" ||
+      order.subStatus === "UNASSIGNED" ||
+      order.subStatus === "ASSIGNED_PENDING" ||
+      order.subStatus === "WORKER_ACCEPTED" ||
+      order.subStatus === "RESCHEDULE_PROPOSED") &&
+    order.subStatus !== "PRICE_APPROVED" &&
+    order.subStatus !== "WORK_FINISHED" &&
+    order.subStatus !== "WAITING_WORKER_CLOSE_VISIT" &&
+    order.subStatus !== "VISIT_CLOSED"
   ) {
     return "MENUNGGU_JADWAL";
   }
 
-  // 4. Ongoing flow: OTW through execution & confirmation
+  // 4. Ongoing flow: OTW through execution, price approved, work finished, visit closed & confirmation
   return "BERLANGSUNG";
 }
 
 export function resolveWorkerTab(order: ServiceOrder): WorkerTabType {
   const assignmentStatus = order.assignment?.status;
 
-  // Check if order cancelled AFTER valid diagnosis completed
-  const hasDiagnosisFulfilled =
-    order.diagnosis !== undefined ||
-    order.subStatus === "CANCELLED_PRICE_REJECTED" ||
-    order.subStatus === "CANCELLED_SPAREPART_UNAVAILABLE";
-
-  // If order cancelled post-diagnosis, worker COMPLETED the inspection task -> goes to SELESAI
-  if (order.status === "CANCELLED" && hasDiagnosisFulfilled) {
-    return "SELESAI";
-  }
-
-  // 1. History: rejected, expired, or order cancelled
+  // 1. History: rejected, expired, superseded, or cancelled orders
   if (
     assignmentStatus === "REJECTED" ||
     assignmentStatus === "EXPIRED" ||
+    (assignmentStatus as string) === "SUPERSEDED" ||
     order.status === "CANCELLED"
   ) {
     return "RIWAYAT";
   }
 
   // 2. Incoming tasks: assigned, awaiting worker response
-  if (assignmentStatus === "ASSIGNED" || order.subStatus === "ASSIGNED_PENDING") {
+  if (assignmentStatus === "ASSIGNED" || order.subStatus === "ASSIGNED_PENDING" || (assignmentStatus as string) === "PENDING") {
     return "TUGAS_MASUK";
   }
 
-  // 3. Scheduled: accepted, not yet in transit (OTW)
-  if (
-    (assignmentStatus === "ACCEPTED" || order.subStatus === "WORKER_ACCEPTED") &&
-    order.status !== "IN_PROGRESS" &&
-    order.subStatus !== "WORKER_OTW" &&
-    order.subStatus !== "WORKER_ARRIVED" &&
-    order.subStatus !== "DIAGNOSING" &&
-    order.subStatus !== "WAITING_CUSTOMER_CONSENT" &&
-    order.subStatus !== "IN_PERSON_CONSENT_RECORDED" &&
-    order.subStatus !== "EXECUTING" &&
-    order.subStatus !== "WORK_FINISHED" &&
-    order.subStatus !== "EXECUTION_PENDING" &&
-    order.subStatus !== "PAYMENT_OVERDUE" &&
-    order.subStatus !== "AWAITING_CUSTOMER_CONFIRMATION" &&
-    order.status !== "COMPLETED"
-  ) {
-    return "TERJADWAL";
-  }
-
-  // 4. Selesai: work finished, execution payment pending/paid, or completed
+  // 3. Selesai: work finished, execution payment pending/paid, visit closed, or completed
   if (
     order.subStatus === "WORK_FINISHED" ||
     order.subStatus === "EXECUTION_PENDING" ||
     order.subStatus === "PAYMENT_OVERDUE" ||
+    order.subStatus === "WAITING_WORKER_CLOSE_VISIT" ||
+    order.subStatus === "VISIT_CLOSED" ||
     order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION" ||
-    order.status === "COMPLETED"
+    order.status === "COMPLETED" ||
+    Boolean(order.execution?.finishedAt) ||
+    order.visit?.status === "CLOSED"
   ) {
     return "SELESAI";
   }
 
-  // 5. Berlangsung: active field visit (OTW, arrived, diagnosis, consent, execution)
+  // 4. Berlangsung: active field visit (OTW, arrived, diagnosis, consent, price approved, execution)
+  const isOngoing =
+    order.subStatus === "WORKER_OTW" ||
+    order.subStatus === "WORKER_ARRIVED" ||
+    order.subStatus === "DIAGNOSING" ||
+    order.subStatus === "WAITING_CUSTOMER_CONSENT" ||
+    order.subStatus === "IN_PERSON_CONSENT_RECORDED" ||
+    order.subStatus === "PRICE_APPROVED" ||
+    order.subStatus === "EXECUTING" ||
+    order.status === "IN_PROGRESS" ||
+    order.visit?.status === "OTW" ||
+    order.visit?.status === "ON_THE_WAY" ||
+    order.visit?.status === "ARRIVED" ||
+    order.visit?.status === "DIAGNOSING" ||
+    order.visit?.status === "EXECUTING";
+
+  if (isOngoing) {
+    return "BERLANGSUNG";
+  }
+
+  // 5. Accepted, scheduled pre-OTW: split into HARI_INI vs TERJADWAL based on Asia/Jakarta date
+  if (
+    assignmentStatus === "ACCEPTED" ||
+    order.subStatus === "WORKER_ACCEPTED" ||
+    order.status === "SCHEDULED"
+  ) {
+    const todayJakarta = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Jakarta",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+
+    const scheduledDate = order.schedule?.date || (order as any).scheduledDate || "";
+    if (scheduledDate && scheduledDate > todayJakarta) {
+      return "TERJADWAL";
+    }
+    // If today or past scheduled date, goes to HARI_INI
+    return "HARI_INI";
+  }
+
   return "BERLANGSUNG";
 }
 
 export function resolveProviderTab(order: ServiceOrder): ProviderTabType {
   // 1. Cancelled orders
-  if (order.status === "CANCELLED") {
+  if (order.status === "CANCELLED" || order.providerDecisionStatus === "REJECTED") {
     return "BATAL";
   }
 
@@ -175,17 +192,21 @@ export function resolveProviderTab(order: ServiceOrder): ProviderTabType {
     order.subStatus === "DIAGNOSING" ||
     order.subStatus === "WAITING_CUSTOMER_CONSENT" ||
     order.subStatus === "IN_PERSON_CONSENT_RECORDED" ||
+    order.subStatus === "PRICE_APPROVED" ||
     order.subStatus === "EXECUTING" ||
     order.subStatus === "WORK_FINISHED" ||
     order.subStatus === "EXECUTION_PENDING" ||
     order.subStatus === "PAYMENT_OVERDUE" ||
+    order.subStatus === "WAITING_WORKER_CLOSE_VISIT" ||
+    order.subStatus === "VISIT_CLOSED" ||
     order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION"
   ) {
     return "BERLANGSUNG";
   }
 
-  // 4. Assignment pending / rejected / expired (Penugasan)
+  // 4. Provider has accepted the order, now awaiting technician assignment
   if (
+    order.providerDecisionStatus === "ACCEPTED" ||
     order.assignment?.status === "ASSIGNED" ||
     order.assignment?.status === "REJECTED" ||
     order.assignment?.status === "EXPIRED" ||
@@ -194,16 +215,8 @@ export function resolveProviderTab(order: ServiceOrder): ProviderTabType {
     return "PENUGASAN";
   }
 
-  // 5. Booking Masuk: Diagnosis paid/free, unassigned (ready for worker assignment)
-  if (
-    !order.assignment ||
-    order.subStatus === "UNASSIGNED" ||
-    order.subStatus === "DIAGNOSIS_PENDING"
-  ) {
-    return "BOOKING_MASUK";
-  }
-
-  return "BERLANGSUNG";
+  // 5. Booking Masuk: Incoming reservations waiting for provider acceptance/rejection
+  return "BOOKING_MASUK";
 }
 
 export function getSubStatusBadgeInfo(subStatus: ServiceOrderSubStatus): {
@@ -284,6 +297,12 @@ export function getSubStatusBadgeInfo(subStatus: ServiceOrderSubStatus): {
         variant: "success",
         description: "Persetujuan lisan pelanggan di lokasi telah dicatat resmi oleh teknisi.",
       };
+    case "PRICE_APPROVED":
+      return {
+        label: "Harga Telah Disetujui",
+        variant: "success",
+        description: "Rincian biaya disetujui. Teknisi siap melanjutkan perbaikan fisik.",
+      };
     case "EXECUTING":
       return {
         label: "Sedang Dikerjakan",
@@ -295,6 +314,18 @@ export function getSubStatusBadgeInfo(subStatus: ServiceOrderSubStatus): {
         label: "Pekerjaan Selesai — Menunggu Pembayaran",
         variant: "success",
         description: "Teknisi telah mengunggah bukti hasil kerja. Menunggu pelunasan pembayaran.",
+      };
+    case "WAITING_WORKER_CLOSE_VISIT":
+      return {
+        label: "Pembayaran Terverifikasi — Menunggu Tutup Kunjungan",
+        variant: "info",
+        description: "Pembayaran pengerjaan lunas. Teknisi akan mengakhiri kunjungan di lokasi.",
+      };
+    case "VISIT_CLOSED":
+      return {
+        label: "Kunjungan Selesai — Menunggu Konfirmasi Pelanggan",
+        variant: "primary",
+        description: "Teknisi telah mengakhiri kunjungan operasional. Pelanggan dapat menyelesaikan pesanan.",
       };
     case "AWAITING_CUSTOMER_CONFIRMATION":
       return {
@@ -313,6 +344,12 @@ export function getSubStatusBadgeInfo(subStatus: ServiceOrderSubStatus): {
         label: "Selesai Otomatis (72 Jam)",
         variant: "success",
         description: "Pesanan diselesaikan otomatis oleh sistem setelah 72 jam tuntas dan lunas.",
+      };
+    case "CANCELLED_PROVIDER_REJECTED":
+      return {
+        label: "Ditolak Mitra Toko",
+        variant: "danger",
+        description: "Mitra penyedia jasa berhalangan menerima pesanan. Biaya survei otomatis dikembalikan 100% ke akun S-Pay pelanggan.",
       };
     case "CANCELLED_BEFORE_OTW":
       return {

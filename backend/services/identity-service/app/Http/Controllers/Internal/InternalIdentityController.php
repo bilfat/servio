@@ -218,6 +218,8 @@ class InternalIdentityController extends Controller
         $district = is_array($addr) ? ($addr['district_name'] ?? $addr['district'] ?? null) : null;
         $postalCode = is_array($addr) ? ($addr['postal_code'] ?? $addr['postalCode'] ?? null) : null;
         $streetAddress = is_array($addr) ? ($addr['street_address'] ?? $addr['address'] ?? null) : (is_string($addr) ? $addr : null);
+        $lat = is_array($addr) ? ($addr['latitude'] ?? $addr['lat'] ?? null) : null;
+        $lng = is_array($addr) ? ($addr['longitude'] ?? $addr['lng'] ?? null) : null;
 
         $data = [
             'organization_id' => (string) $org->id,
@@ -229,6 +231,8 @@ class InternalIdentityController extends Controller
             'district' => $district,
             'postal_code' => $postalCode,
             'street_address' => $streetAddress,
+            'latitude' => $lat !== null ? (float) $lat : null,
+            'longitude' => $lng !== null ? (float) $lng : null,
             'address' => $addr,
             'logo_url' => null,
             'public_description' => null,

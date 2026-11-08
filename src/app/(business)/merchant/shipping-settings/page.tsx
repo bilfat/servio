@@ -157,6 +157,10 @@ export default function MerchantShippingSettingsPage() {
       errors.push("Radius maksimum pengiriman harus lebih besar dari 0 km.");
     }
 
+    if (formData.maxRadiusKm > 80) {
+      errors.push("Batas radius pengiriman platform maksimum adalah 80 km.");
+    }
+
     if (formData.rateTiers.length === 0) {
       errors.push("Wajib memiliki minimal 1 rentang tarif bertingkat.");
     }
@@ -322,7 +326,7 @@ export default function MerchantShippingSettingsPage() {
             Pengaturan Pengiriman Lokal
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Atur radius jangkauan layanan toko dan tarif bertingkat untuk pembeli dalam satu kota administratif. Jarak dihitung secara geodesik (garis lurus/Haversine).
+            Atur radius jangkauan pengiriman toko dan tarif bertingkat. Radius ini menentukan batas jangkauan visibilitas produk Anda di katalog publik (lintas wilayah hingga batas platform 80 km). Jarak dihitung secara geometris (garis lurus / Haversine).
           </p>
         </div>
 
@@ -462,14 +466,15 @@ export default function MerchantShippingSettingsPage() {
                   <input
                     type="number"
                     min={1}
-                    max={50}
+                    max={80}
                     placeholder="25"
                     value={formData.maxRadiusKm === 0 ? "" : formData.maxRadiusKm}
                     onChange={(e) => {
                       const raw = e.target.value.replace(/^0+([1-9])/, "$1");
+                      const val = raw === "" ? 0 : parseFloat(raw) || 0;
                       setFormData((prev) => ({
                         ...prev,
-                        maxRadiusKm: raw === "" ? 0 : parseFloat(raw) || 0,
+                        maxRadiusKm: val > 80 ? 80 : val,
                       }));
                     }}
                     className="w-full bg-transparent text-xs font-bold text-slate-900 outline-none"

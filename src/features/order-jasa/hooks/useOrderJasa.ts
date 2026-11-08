@@ -152,6 +152,9 @@ export function useOrderJasa() {
               o.diagnosis?.costBreakdown?.spareparts?.length === next[idx]?.diagnosis?.costBreakdown?.spareparts?.length &&
               o.paymentSummary?.diagnosisPayment?.status === next[idx]?.paymentSummary?.diagnosisPayment?.status &&
               o.paymentSummary?.executionPayment?.status === next[idx]?.paymentSummary?.executionPayment?.status &&
+              o.providerName === next[idx]?.providerName &&
+              o.serviceSnapshot?.warrantyDurationDays === next[idx]?.serviceSnapshot?.warrantyDurationDays &&
+              o.serviceSnapshot?.subcategoryName === next[idx]?.serviceSnapshot?.subcategoryName &&
               o.updatedAt === next[idx]?.updatedAt
           )
         ) {
@@ -274,6 +277,7 @@ export function useOrderJasa() {
   const workerOrdersByTab = useMemo<Record<WorkerTabType, ServiceOrder[]>>(() => {
     const groups: Record<WorkerTabType, ServiceOrder[]> = {
       TUGAS_MASUK: [],
+      HARI_INI: [],
       TERJADWAL: [],
       BERLANGSUNG: [],
       SELESAI: [],
@@ -289,6 +293,7 @@ export function useOrderJasa() {
   const workerTabCounts = useMemo<Record<WorkerTabType, number>>(() => {
     return {
       TUGAS_MASUK: workerOrdersByTab.TUGAS_MASUK.length,
+      HARI_INI: workerOrdersByTab.HARI_INI.length,
       TERJADWAL: workerOrdersByTab.TERJADWAL.length,
       BERLANGSUNG: workerOrdersByTab.BERLANGSUNG.length,
       SELESAI: workerOrdersByTab.SELESAI.length,
@@ -334,11 +339,63 @@ export function useOrderJasa() {
   }, []);
 
   const cancelBooking = useCallback(async (orderId: string, reason: string) => {
-    await httpOrderJasaRepository.cancelBooking(orderId, reason);
-    await syncBackendOrders();
+    setOrders((prev) => {
+      const next = prev.map((o) =>
+        o.id === orderId || o.orderNumber === orderId
+          ? { ...o, status: "CANCELLED" as const, cancelReason: reason }
+          : o
+      );
+      saveOrdersToCache(next);
+      return next;
+    });
     notifyOrderJasaUpdated(orderId);
+    await httpOrderJasaRepository.cancelBooking(orderId, reason);
+    void syncBackendOrders(true);
     return true;
   }, [syncBackendOrders]);
+
+  const acceptOrder = useCallback(
+    async (orderId: string) => {
+      setOrders((prev) => {
+        const next = prev.map((o) =>
+          o.id === orderId || o.orderNumber === orderId
+            ? { ...o, providerDecisionStatus: "ACCEPTED" as const, subStatus: "UNASSIGNED" as const }
+            : o
+        );
+        saveOrdersToCache(next);
+        return next;
+      });
+      notifyOrderJasaUpdated(orderId);
+      await httpOrderJasaRepository.acceptOrder(orderId);
+      void syncBackendOrders(true);
+      return true;
+    },
+    [syncBackendOrders]
+  );
+
+  const rejectOrder = useCallback(
+    async (orderId: string, reason: string) => {
+      setOrders((prev) => {
+        const next = prev.map((o) =>
+          o.id === orderId || o.orderNumber === orderId
+            ? {
+                ...o,
+                providerDecisionStatus: "REJECTED" as const,
+                status: "CANCELLED" as const,
+                subStatus: "CANCELLED_PROVIDER_REJECTED" as const,
+              }
+            : o
+        );
+        saveOrdersToCache(next);
+        return next;
+      });
+      notifyOrderJasaUpdated(orderId);
+      await httpOrderJasaRepository.rejectOrder(orderId, reason);
+      void syncBackendOrders(true);
+      return true;
+    },
+    [syncBackendOrders]
+  );
 
   const assignWorker = useCallback(
     async (orderId: string, workerId: string, workerName: string, workerPhone: string) => {
@@ -373,8 +430,8 @@ export function useOrderJasa() {
 
       // 2. Persist to real backend
       await httpOrderJasaRepository.assignWorker(orderId, workerId, workerName, workerPhone);
-      // 3. Sync fresh backend data
-      await syncBackendOrders(true);
+      // 3. Sync fresh backend data in background
+      void syncBackendOrders(true);
       notifyOrderJasaUpdated(orderId);
       return true;
     },
@@ -382,38 +439,142 @@ export function useOrderJasa() {
   );
 
   const acceptAssignment = useCallback(async (assignmentOrOrderId: string) => {
-    await httpOrderJasaRepository.acceptAssignment(assignmentOrOrderId);
-    await syncBackendOrders();
+    setOrders((prev) => {
+      const next = prev.map((o) =>
+        o.id === assignmentOrOrderId ||
+        o.orderNumber === assignmentOrOrderId ||
+        o.assignment?.assignmentId === assignmentOrOrderId
+          ? {
+              ...o,
+              subStatus: "WORKER_ACCEPTED" as const,
+              assignment: o.assignment ? { ...o.assignment, status: "ACCEPTED" as const } : o.assignment,
+            }
+          : o
+      );
+      saveOrdersToCache(next);
+      return next;
+    });
     notifyOrderJasaUpdated(assignmentOrOrderId);
+    await httpOrderJasaRepository.acceptAssignment(assignmentOrOrderId);
+    void syncBackendOrders(true);
     return true;
   }, [syncBackendOrders]);
 
   const rejectAssignment = useCallback(async (assignmentOrOrderId: string, reason: string) => {
-    await httpOrderJasaRepository.rejectAssignment(assignmentOrOrderId, reason);
-    await syncBackendOrders();
+    setOrders((prev) => {
+      const next = prev.map((o) =>
+        o.id === assignmentOrOrderId ||
+        o.orderNumber === assignmentOrOrderId ||
+        o.assignment?.assignmentId === assignmentOrOrderId
+          ? {
+              ...o,
+              subStatus: "UNASSIGNED" as const,
+              assignment: undefined,
+            }
+          : o
+      );
+      saveOrdersToCache(next);
+      return next;
+    });
     notifyOrderJasaUpdated(assignmentOrOrderId);
+    await httpOrderJasaRepository.rejectAssignment(assignmentOrOrderId, reason);
+    void syncBackendOrders(true);
     return true;
   }, [syncBackendOrders]);
 
   const startTrip = useCallback(async (assignmentOrOrderId: string) => {
-    await httpOrderJasaRepository.startTrip(assignmentOrOrderId);
-    await syncBackendOrders();
+    setOrders((prev) => {
+      const next = prev.map((o) =>
+        o.id === assignmentOrOrderId ||
+        o.orderNumber === assignmentOrOrderId ||
+        o.assignment?.assignmentId === assignmentOrOrderId
+          ? ({
+              ...o,
+              status: "IN_PROGRESS" as const,
+              subStatus: "WORKER_OTW" as const,
+              visit: {
+                ...o.visit,
+                status: "ON_THE_WAY" as const,
+                otwAt: new Date().toISOString(),
+              },
+            } as ServiceOrder)
+          : o
+      );
+      saveOrdersToCache(next);
+      return next;
+    });
     notifyOrderJasaUpdated(assignmentOrOrderId);
+    await httpOrderJasaRepository.startTrip(assignmentOrOrderId);
+    void syncBackendOrders(true);
     return true;
   }, [syncBackendOrders]);
 
   const arriveAtLocation = useCallback(async (assignmentOrOrderId: string) => {
-    await httpOrderJasaRepository.arriveAtLocation(assignmentOrOrderId);
-    await syncBackendOrders();
+    setOrders((prev) => {
+      const next = prev.map((o) =>
+        o.id === assignmentOrOrderId ||
+        o.orderNumber === assignmentOrOrderId ||
+        o.assignment?.assignmentId === assignmentOrOrderId
+          ? ({
+              ...o,
+              status: "IN_PROGRESS" as const,
+              subStatus: "WORKER_ARRIVED" as const,
+              visit: {
+                ...o.visit,
+                status: "ARRIVED" as const,
+                arrivedAt: new Date().toISOString(),
+              },
+            } as ServiceOrder)
+          : o
+      );
+      saveOrdersToCache(next);
+      return next;
+    });
     notifyOrderJasaUpdated(assignmentOrOrderId);
+    await httpOrderJasaRepository.arriveAtLocation(assignmentOrOrderId);
+    void syncBackendOrders(true);
     return true;
   }, [syncBackendOrders]);
 
   const submitDiagnosis = useCallback(
     async (assignmentOrOrderId: string, diagnosisInput: Partial<Diagnosis>) => {
-      await httpOrderJasaRepository.submitDiagnosis(assignmentOrOrderId, diagnosisInput);
-      await syncBackendOrders();
+      setOrders((prev) => {
+        const next = prev.map((o) =>
+          o.id === assignmentOrOrderId ||
+          o.orderNumber === assignmentOrOrderId ||
+          o.assignment?.assignmentId === assignmentOrOrderId
+            ? ({
+                ...o,
+                subStatus: "WAITING_CUSTOMER_CONSENT" as const,
+                diagnosis: {
+                  ...o.diagnosis,
+                  id: o.diagnosis?.id || `diag-${o.id}`,
+                  workerId: o.assignment?.workerId || "worker-1",
+                  workerName: o.assignment?.workerName || "Teknisi",
+                  diagnosisTime: new Date().toISOString(),
+                  findings: diagnosisInput.findings || "Pemeriksaan teknis selesai",
+                  damagePhotos: diagnosisInput.damagePhotos || [],
+                  recommendedActions: diagnosisInput.recommendedActions || "",
+                  costBreakdown: diagnosisInput.costBreakdown || o.diagnosis?.costBreakdown || {
+                    laborCost: 120000,
+                    partsCost: 300000,
+                    grandTotal: 420000,
+                    workItems: [],
+                    spareparts: [],
+                  },
+                  spareparts: diagnosisInput.spareparts || [],
+                  version: (o.diagnosis?.version || 0) + 1,
+                  status: "SUBMITTED" as const,
+                },
+              } as ServiceOrder)
+            : o
+        );
+        saveOrdersToCache(next);
+        return next;
+      });
       notifyOrderJasaUpdated(assignmentOrOrderId);
+      await httpOrderJasaRepository.submitDiagnosis(assignmentOrOrderId, diagnosisInput);
+      void syncBackendOrders(true);
       return true;
     },
     [syncBackendOrders]
@@ -421,9 +582,34 @@ export function useOrderJasa() {
 
   const recordInPersonConsent = useCallback(
     async (orderId: string, notes?: string) => {
-      await httpOrderJasaRepository.recordInPersonConsent(orderId, notes);
-      await syncBackendOrders();
+      setOrders((prev) => {
+        const next = prev.map((o) =>
+          o.id === orderId || o.orderNumber === orderId
+            ? ({
+                ...o,
+                subStatus: "PRICE_APPROVED" as const,
+                diagnosis: o.diagnosis
+                  ? {
+                      ...o.diagnosis,
+                      status: "APPROVED" as const,
+                      consent: {
+                        type: "IN_PERSON_RECORDED" as const,
+                        recordedByWorkerName: o.assignment?.workerName || "Teknisi",
+                        workerDeclaration: true,
+                        timestamp: new Date().toISOString(),
+                        notes,
+                      },
+                    }
+                  : undefined,
+              } as ServiceOrder)
+            : o
+        );
+        saveOrdersToCache(next);
+        return next;
+      });
       notifyOrderJasaUpdated(orderId);
+      await httpOrderJasaRepository.recordInPersonConsent(orderId, notes);
+      void syncBackendOrders(true);
       return true;
     },
     [syncBackendOrders]
@@ -431,18 +617,70 @@ export function useOrderJasa() {
 
   const respondRemoteConsent = useCallback(
     async (orderId: string, approve: boolean, notes?: string) => {
-      await httpOrderJasaRepository.respondRemoteConsent(orderId, approve, notes);
-      await syncBackendOrders();
+      setOrders((prev) => {
+        const next = prev.map((o) =>
+          o.id === orderId || o.orderNumber === orderId
+            ? ({
+                ...o,
+                subStatus: approve ? ("PRICE_APPROVED" as const) : ("CANCELLED_PRICE_REJECTED" as const),
+                diagnosis: o.diagnosis
+                  ? {
+                      ...o.diagnosis,
+                      status: approve ? ("APPROVED" as const) : ("REJECTED" as const),
+                      consent: {
+                        type: approve ? ("REMOTE_APPROVED" as const) : ("REMOTE_REJECTED" as const),
+                        timestamp: new Date().toISOString(),
+                        notes,
+                      },
+                    }
+                  : undefined,
+              } as ServiceOrder)
+            : o
+        );
+        saveOrdersToCache(next);
+        return next;
+      });
       notifyOrderJasaUpdated(orderId);
+      await httpOrderJasaRepository.respondRemoteConsent(orderId, approve, notes);
+      void syncBackendOrders(true);
       return true;
     },
     [syncBackendOrders]
   );
 
   const startExecution = useCallback(async (assignmentOrOrderId: string) => {
-    await httpOrderJasaRepository.startExecution(assignmentOrOrderId);
-    await syncBackendOrders();
+    setOrders((prev) => {
+      const next = prev.map((o) =>
+        o.id === assignmentOrOrderId ||
+        o.orderNumber === assignmentOrOrderId ||
+        o.assignment?.assignmentId === assignmentOrOrderId
+          ? ({
+              ...o,
+              status: "IN_PROGRESS" as const,
+              subStatus: "EXECUTING" as const,
+              visit: {
+                ...o.visit,
+                status: "EXECUTING" as const,
+              },
+              execution: {
+                ...o.execution,
+                startedAt: new Date().toISOString(),
+                beforePhotos: [],
+                afterPhotos: [],
+                workSummary: "",
+                testResults: "",
+                usedSpareparts: [],
+                visitStatus: "IN_PROGRESS" as const,
+              },
+            } as ServiceOrder)
+          : o
+      );
+      saveOrdersToCache(next);
+      return next;
+    });
     notifyOrderJasaUpdated(assignmentOrOrderId);
+    await httpOrderJasaRepository.startExecution(assignmentOrOrderId);
+    void syncBackendOrders(true);
     return true;
   }, [syncBackendOrders]);
 
@@ -458,25 +696,71 @@ export function useOrderJasa() {
         notes?: string;
       }
     ) => {
-      await httpOrderJasaRepository.finishExecution(assignmentOrOrderId, executionData);
-      await syncBackendOrders();
+      setOrders((prev) => {
+        const next = prev.map((o) =>
+          o.id === assignmentOrOrderId ||
+          o.orderNumber === assignmentOrOrderId ||
+          o.assignment?.assignmentId === assignmentOrOrderId
+            ? ({
+                ...o,
+                status: "PENDING_PAYMENT" as const,
+                subStatus: "EXECUTION_PENDING" as const,
+                execution: {
+                  ...o.execution,
+                  beforePhotos: executionData.beforePhotos,
+                  afterPhotos: executionData.afterPhotos,
+                  workSummary: executionData.workSummary,
+                  testResults: executionData.testResults,
+                  usedSpareparts: executionData.usedSpareparts || [],
+                  notes: executionData.notes,
+                  visitStatus: "AWAITING_PAYMENT" as const,
+                  finishedAt: new Date().toISOString(),
+                },
+              } as ServiceOrder)
+            : o
+        );
+        saveOrdersToCache(next);
+        return next;
+      });
       notifyOrderJasaUpdated(assignmentOrOrderId);
+      await httpOrderJasaRepository.finishExecution(assignmentOrOrderId, executionData);
+      void syncBackendOrders(true);
       return true;
     },
     [syncBackendOrders]
   );
 
   const endVisit = useCallback(async (assignmentOrOrderId: string) => {
-    await httpOrderJasaRepository.endVisit(assignmentOrOrderId);
-    await syncBackendOrders();
+    setOrders((prev) => {
+      const next = prev.map((o) =>
+        o.id === assignmentOrOrderId ||
+        o.orderNumber === assignmentOrOrderId ||
+        o.assignment?.assignmentId === assignmentOrOrderId
+          ? ({
+              ...o,
+              status: "IN_PROGRESS" as const,
+              subStatus: "VISIT_CLOSED" as const,
+              visit: {
+                ...o.visit,
+                status: "CLOSED" as const,
+                closedAt: new Date().toISOString(),
+              },
+            } as ServiceOrder)
+          : o
+      );
+      saveOrdersToCache(next);
+      return next;
+    });
     notifyOrderJasaUpdated(assignmentOrOrderId);
+    await httpOrderJasaRepository.endVisit(assignmentOrOrderId);
+    void syncBackendOrders(true);
     return true;
   }, [syncBackendOrders]);
 
   const reportPaymentIssue = useCallback(
     async (assignmentOrOrderId: string, issue: string) => {
       await httpOrderJasaRepository.reportPaymentIssue(assignmentOrOrderId, issue);
-      await syncBackendOrders();
+      void syncBackendOrders(true);
       notifyOrderJasaUpdated(assignmentOrOrderId);
       return true;
     },
@@ -486,7 +770,7 @@ export function useOrderJasa() {
   const retryPayment = useCallback(
     async (orderId: string) => {
       const res = await orderJasaApi.retryPayment(orderId);
-      await syncBackendOrders();
+      void syncBackendOrders(true);
       notifyOrderJasaUpdated(orderId);
       return res.data;
     },
@@ -500,19 +784,91 @@ export function useOrderJasa() {
       orderIdHint?: string,
       amountHint?: number
     ) => {
-      await httpOrderJasaRepository.simulateFinancePayment(invoiceNoOrPaymentId, outcome, orderIdHint, amountHint);
-      await syncBackendOrders();
-      notifyOrderJasaUpdated(orderIdHint || invoiceNoOrPaymentId);
-      return true;
+      // Optimistic payment update
+      setOrders((prev) => {
+        const next = prev.map((o) => {
+          const isMatch =
+            (orderIdHint && (o.id === orderIdHint || o.orderNumber === orderIdHint)) ||
+            o.id === invoiceNoOrPaymentId ||
+            o.paymentSummary?.diagnosisPayment?.invoiceNo === invoiceNoOrPaymentId ||
+            o.paymentSummary?.diagnosisPayment?.paymentId === invoiceNoOrPaymentId ||
+            o.paymentSummary?.executionPayment?.invoiceNo === invoiceNoOrPaymentId ||
+            o.paymentSummary?.executionPayment?.paymentId === invoiceNoOrPaymentId;
+
+          if (isMatch) {
+            const isExec =
+              invoiceNoOrPaymentId.includes("EXEC") ||
+              o.paymentSummary?.executionPayment?.invoiceNo === invoiceNoOrPaymentId ||
+              o.paymentSummary?.executionPayment?.paymentId === invoiceNoOrPaymentId ||
+              ["EXECUTING", "EXECUTION_PENDING", "WORK_FINISHED", "PAYMENT_OVERDUE"].includes(o.subStatus);
+
+            if (isExec && o.paymentSummary?.executionPayment) {
+              return {
+                ...o,
+                status: "IN_PROGRESS" as const,
+                subStatus: "WAITING_WORKER_CLOSE_VISIT" as const,
+                paymentSummary: {
+                  ...o.paymentSummary,
+                  executionPayment: {
+                    ...o.paymentSummary.executionPayment,
+                    status: "PAID" as const,
+                    paidAt: new Date().toISOString(),
+                  },
+                },
+              };
+            } else if (o.paymentSummary?.diagnosisPayment) {
+              return {
+                ...o,
+                paymentSummary: {
+                  ...o.paymentSummary,
+                  diagnosisPayment: {
+                    ...o.paymentSummary.diagnosisPayment,
+                    status: "PAID" as const,
+                    paidAt: new Date().toISOString(),
+                  },
+                },
+              };
+            }
+          }
+          return o;
+        });
+        saveOrdersToCache(next);
+        return next;
+      });
+      if (orderIdHint) notifyOrderJasaUpdated(orderIdHint);
+
+      const ok = await httpOrderJasaRepository.simulateFinancePayment(
+        invoiceNoOrPaymentId,
+        outcome,
+        orderIdHint,
+        amountHint
+      );
+      void syncBackendOrders(true, true);
+      if (orderIdHint) notifyOrderJasaUpdated(orderIdHint);
+      return ok;
     },
     [syncBackendOrders]
   );
 
   const confirmCustomerCompleted = useCallback(
     async (orderId: string) => {
-      await httpOrderJasaRepository.confirmCustomerCompleted(orderId);
-      await syncBackendOrders();
+      setOrders((prev) => {
+        const next = prev.map((o) =>
+          o.id === orderId || o.orderNumber === orderId
+            ? {
+                ...o,
+                status: "COMPLETED" as const,
+                subStatus: "COMPLETED_NORMAL" as const,
+                completedAt: new Date().toISOString(),
+              }
+            : o
+        );
+        saveOrdersToCache(next);
+        return next;
+      });
       notifyOrderJasaUpdated(orderId);
+      await httpOrderJasaRepository.confirmCustomerCompleted(orderId);
+      void syncBackendOrders(true);
       return true;
     },
     [syncBackendOrders]
@@ -521,7 +877,7 @@ export function useOrderJasa() {
   const simulateReleaseFunds120h = useCallback(
     async (orderId: string) => {
       await httpOrderJasaRepository.simulateReleaseFunds120h(orderId);
-      await syncBackendOrders();
+      void syncBackendOrders(true);
       notifyOrderJasaUpdated(orderId);
       return true;
     },
@@ -535,7 +891,7 @@ export function useOrderJasa() {
         scheduledDate,
         scheduledTimeSlot
       );
-      await syncBackendOrders();
+      void syncBackendOrders(true);
       notifyOrderJasaUpdated(res.id);
       return res;
     },
@@ -544,7 +900,7 @@ export function useOrderJasa() {
 
   const resetFixtures = useCallback(async () => {
     // Pure real backend sync
-    await syncBackendOrders();
+    await syncBackendOrders(false, true);
     notifyOrderJasaUpdated();
   }, [syncBackendOrders]);
 
@@ -595,6 +951,8 @@ export function useOrderJasa() {
     fetchOrderById,
     createBooking,
     cancelBooking,
+    acceptOrder,
+    rejectOrder,
     assignWorker,
     acceptAssignment,
     rejectAssignment,

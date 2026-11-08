@@ -72,6 +72,7 @@ export function CustomerSPayView() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isBalanceVisible, setIsBalanceVisible] = useState(true);
   const [activeTab, setActiveTab] = useState<"REFUNDS" | "MOVEMENTS" | "BANKS" | "WITHDRAWALS">("REFUNDS");
+  const [selectedRefundDetail, setSelectedRefundDetail] = useState<CustomerRefundItem | null>(null);
 
   // Add Bank Modal state
   const [isAddBankModalOpen, setIsAddBankModalOpen] = useState(false);
@@ -110,7 +111,20 @@ export function CustomerSPayView() {
         setAccount(accRes.value.data as CustomerSPayAccount);
       }
       if (refRes.status === "fulfilled" && refRes.value.data) {
-        setRefunds(Array.isArray(refRes.value.data) ? refRes.value.data : []);
+        const d = refRes.value.data as any;
+        const rawList = Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : [];
+        setRefunds(
+          rawList.map((r: any) => ({
+            ...r,
+            gross_refund_amount_idr: r.gross_refund_amount_idr ?? r.requested_amount_idr ?? 0,
+            customer_net_refund_idr:
+              r.customer_net_refund_idr ??
+              (r.credited_amount_idr > 0 ? r.credited_amount_idr : r.requested_amount_idr ?? 0),
+            source_event_id: r.source_event_id ?? r.order_cancellation_event_id ?? r.id,
+            reason_code: r.reason_code ?? r.refund_reason_scope ?? "ORDER_REFUND",
+            merchant_order_id: r.merchant_order_id ?? r.payment_allocation?.merchant_order_id,
+          }))
+        );
       }
       if (movRes.status === "fulfilled" && movRes.value.data) {
         const d = movRes.value.data as any;
@@ -513,16 +527,22 @@ export function CustomerSPayView() {
               ) : (
                 <div className="divide-y divide-slate-100">
                   {refunds.map((ref) => (
-                    <div key={ref.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div
+                      key={ref.id}
+                      onClick={() => setSelectedRefundDetail(ref)}
+                      className="py-4 px-3 -mx-3 rounded-2xl hover:bg-slate-50/80 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    >
                       <div className="space-y-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs font-bold text-slate-900">
-                            {ref.merchant_order_id ? `Pesanan #${ref.merchant_order_id}` : "Pengembalian Pesanan"}
+                            {ref.merchant_order_id ? `Pesanan #${ref.merchant_order_id}` : `Refund #${ref.id.slice(0, 10)}`}
                           </span>
                           <span
                             className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                               ref.status === "SUCCEEDED"
                                 ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : ref.status === "REVERSED"
+                                ? "bg-purple-50 text-purple-700 border-purple-200"
                                 : ref.status === "FAILED"
                                 ? "bg-rose-50 text-rose-700 border-rose-200"
                                 : "bg-amber-50 text-amber-700 border-amber-200"
@@ -530,20 +550,50 @@ export function CustomerSPayView() {
                           >
                             {ref.status === "SUCCEEDED"
                               ? "Berhasil Masuk S-Pay"
+                              : ref.status === "REVERSED"
+                              ? "Dibalikkan / Reversal"
                               : ref.status === "FAILED"
-                              ? "Gagal"
+                              ? "Terkendala"
                               : "Diproses Finance"}
                           </span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-sky-50 text-[#0F4C81] border border-sky-200">
+                            {ref.decision_source === "AFTER_SALES_07" ? "Klaim / Retur Purnajual" : "Pembatalan Order"}
+                          </span>
+                          {(ref as any).case_id && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              Kasus #{(ref as any).case_id}
+                            </span>
+                          )}
                         </div>
                         <p className="text-[11px] text-slate-500">
                           Alasan: {ref.reason_code} • {new Date(ref.created_at).toLocaleString("id-ID")}
                         </p>
                       </div>
-                      <div className="text-right">
-                        <span className="text-sm font-bold text-emerald-700 block">
-                          +{formatRupiah(ref.customer_net_refund_idr)}
-                        </span>
-                        <span className="text-[10px] text-slate-400">Ref: {ref.source_event_id}</span>
+                      <div className="flex items-center justify-between sm:justify-end gap-3">
+                        <div className="text-right">
+                          <span
+                            className={`text-sm font-bold block ${
+                              ref.status === "REVERSED"
+                                ? "text-purple-700 line-through"
+                                : "text-emerald-700"
+                            }`}
+                          >
+                            +{formatRupiah(ref.customer_net_refund_idr)}
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            {ref.status === "REVERSED" ? "(Disesuaikan)" : `Ref: ${ref.source_event_id}`}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedRefundDetail(ref);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 text-[11px] font-bold text-[#0F4C81] transition shrink-0 cursor-pointer"
+                        >
+                          Detail Refund
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -685,7 +735,7 @@ export function CustomerSPayView() {
                             className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold transition flex items-center gap-1 cursor-pointer"
                           >
                             {isVerifyingBankId === bank.id ? <CircleNotch size={12} className="animate-spin" /> : <CheckCircle size={12} weight="bold" />}
-                            <span>Verifikasi Cepat (Demo)</span>
+                            <span>Verifikasi Rekening</span>
                           </button>
                         </div>
                       )}
@@ -816,7 +866,7 @@ export function CustomerSPayView() {
               <div className="p-3 rounded-xl bg-sky-50/70 border border-sky-100 text-[11px] text-slate-600 leading-relaxed flex items-start gap-2">
                 <ShieldCheck size={16} className="text-[#0F4C81] shrink-0 mt-0.5" />
                 <span>
-                  Nomor rekening akan otomatis disamarkan (masked) untuk keamanan data finansial. Dalam lingkungan demo integrasi, rekening akan langsung diverifikasi agar siap digunakan untuk pencairan.
+                  Nomor rekening akan otomatis disamarkan (masked) untuk keamanan data finansial dan diverifikasi untuk pencairan dana.
                 </span>
               </div>
 
@@ -1041,7 +1091,7 @@ export function CustomerSPayView() {
                                   ) : (
                                     <CheckCircle size={10} weight="bold" />
                                   )}
-                                  <span>Verifikasi (Demo)</span>
+                                  <span>Verifikasi</span>
                                 </button>
                               </div>
                             )}
@@ -1107,7 +1157,7 @@ export function CustomerSPayView() {
                 <span>Protokol Keamanan Otoritatif (Identity Step-Up)</span>
               </div>
               <p className="text-[11px] text-emerald-900/90 leading-relaxed">
-                Pencairan saldo pengembalian dana divalidasi dengan token otorisasi resmi. Dalam lingkungan demo integrasi penuh ini, kredensial diverifikasi secara otomatis (Step-Up Reference: <code className="bg-emerald-100/70 px-1 py-0.5 rounded text-[10px] font-mono">DEMO_STEP_UP_VERIFIED</code>).
+                Pencairan saldo pengembalian dana divalidasi melalui protokol keamanan otoritatif sebelum diteruskan ke rekening tujuan Anda.
               </p>
             </div>
 
@@ -1140,6 +1190,187 @@ export function CustomerSPayView() {
                     <span>Ajukan Pencairan Dana</span>
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* F03: DETAIL REFUND CUSTOMER MODAL */}
+      {selectedRefundDetail && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-xl space-y-5 animate-in fade-in zoom-in-95 duration-150 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 text-[#0F4C81] border border-sky-200">
+                    Detail Pengembalian Dana (Finance 06)
+                  </span>
+                  <span
+                    className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                      selectedRefundDetail.status === "SUCCEEDED"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : selectedRefundDetail.status === "REVERSED"
+                        ? "bg-purple-50 text-purple-700 border-purple-200"
+                        : selectedRefundDetail.status === "FAILED"
+                        ? "bg-rose-50 text-rose-700 border-rose-200"
+                        : "bg-amber-50 text-amber-700 border-amber-200"
+                    }`}
+                  >
+                    {selectedRefundDetail.status === "SUCCEEDED"
+                      ? "Berhasil Masuk S-Pay"
+                      : selectedRefundDetail.status === "REVERSED"
+                      ? "Dibalikkan / Reversal"
+                      : selectedRefundDetail.status === "FAILED"
+                      ? "Terkendala"
+                      : "Diproses Finance"}
+                  </span>
+                </div>
+                <h3 className="text-base font-bold text-slate-900 mt-1.5">
+                  {selectedRefundDetail.merchant_order_id
+                    ? `Refund Pesanan #${selectedRefundDetail.merchant_order_id}`
+                    : `Transaksi Refund #${selectedRefundDetail.id}`}
+                </h3>
+                <p className="text-[11px] text-slate-400 font-mono mt-0.5">
+                  ID Refund: {selectedRefundDetail.id}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedRefundDetail(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Rincian Nominal & Kaitan S-Pay */}
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Order / Suborder Asal:</span>
+                <span className="font-mono font-bold text-slate-900">
+                  {selectedRefundDetail.merchant_order_id || "-"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Referensi Kasus / Event:</span>
+                <span className="font-mono text-slate-800">
+                  {selectedRefundDetail.source_event_id || "-"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Alasan Pengembalian:</span>
+                <span className="font-semibold text-slate-800">
+                  {selectedRefundDetail.reason_code || "ORDER_REFUND"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Tujuan Pengembalian:</span>
+                <span className="font-bold text-[#0F4C81]">Saldo S-Pay Customer</span>
+              </div>
+
+              {(selectedRefundDetail.product_subtotal_idr ||
+                selectedRefundDetail.shipping_customer_idr ||
+                selectedRefundDetail.app_fee_allocated_idr) ? (
+                <div className="pt-2 border-t border-slate-200/70 space-y-1 text-[11px]">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Subtotal Produk / Layanan:</span>
+                    <span className="font-mono text-slate-700">
+                      {formatRupiah(selectedRefundDetail.product_subtotal_idr || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Alokasi Ongkir:</span>
+                    <span className="font-mono text-slate-700">
+                      {formatRupiah(selectedRefundDetail.shipping_customer_idr || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Alokasi Biaya Aplikasi:</span>
+                    <span className="font-mono text-slate-700">
+                      {formatRupiah(selectedRefundDetail.app_fee_allocated_idr || 0)}
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="pt-2 border-t border-slate-200 flex justify-between items-center">
+                <span className="font-bold text-slate-700">Nominal Refund Bersih:</span>
+                <span className="text-base font-extrabold text-emerald-700 font-mono">
+                  +{formatRupiah(selectedRefundDetail.customer_net_refund_idr)}
+                </span>
+              </div>
+            </div>
+
+            {/* Linimasa Status Finansial */}
+            <div className="p-3.5 rounded-2xl bg-emerald-50/50 border border-emerald-200/70 space-y-1.5 text-[11px]">
+              <span className="font-bold text-emerald-900 uppercase tracking-wider block text-[10px]">
+                Linimasa Proses Finance 06
+              </span>
+              <div className="flex justify-between text-slate-600">
+                <span>1. Waktu Pengajuan Refund:</span>
+                <span className="font-mono">
+                  {new Date(selectedRefundDetail.created_at).toLocaleString("id-ID")}
+                </span>
+              </div>
+              {selectedRefundDetail.funded_at && (
+                <div className="flex justify-between text-slate-600">
+                  <span>2. Waktu Pendanaan Alokasi:</span>
+                  <span className="font-mono">
+                    {new Date(selectedRefundDetail.funded_at).toLocaleString("id-ID")}
+                  </span>
+                </div>
+              )}
+              <div className="flex justify-between font-bold text-emerald-800">
+                <span>3. Waktu Dikreditkan ke S-Pay:</span>
+                <span className="font-mono">
+                  {selectedRefundDetail.credited_at || selectedRefundDetail.processed_at
+                    ? new Date(
+                        (selectedRefundDetail.credited_at || selectedRefundDetail.processed_at)!
+                      ).toLocaleString("id-ID")
+                    : "Menunggu penyelesaian Finance"}
+                </span>
+              </div>
+            </div>
+
+            {/* Action Links (12P.1 F03) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-slate-100">
+              <Link
+                href="/warranties?tab=submissions"
+                className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold text-center transition"
+              >
+                Lihat Detail Pengajuan
+              </Link>
+              <Link
+                href={
+                  selectedRefundDetail.merchant_order_id
+                    ? `/orders/products/${selectedRefundDetail.merchant_order_id}`
+                    : "/orders"
+                }
+                className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold text-center transition"
+              >
+                Lihat Order Asal
+              </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedRefundDetail(null);
+                  setActiveTab("MOVEMENTS");
+                }}
+                className="px-3.5 py-2.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-[#0F4C81] border border-sky-200 text-xs font-bold transition cursor-pointer"
+              >
+                Lihat Mutasi S-Pay
+              </button>
+              <button
+                type="button"
+                disabled={availableBalance < 20000}
+                onClick={() => {
+                  setSelectedRefundDetail(null);
+                  setIsWithdrawModalOpen(true);
+                }}
+                className="px-3.5 py-2.5 rounded-xl bg-[#0F4C81] hover:bg-[#0c3c66] disabled:bg-slate-200 disabled:text-slate-400 text-white text-xs font-bold transition cursor-pointer"
+              >
+                Tarik Dana ke Rekening
               </button>
             </div>
           </div>

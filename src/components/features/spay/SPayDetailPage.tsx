@@ -62,25 +62,6 @@ export function SPayDetailPage({
 
   return (
     <div className="space-y-8 pb-20 font-body">
-      {/* 1. TOP BANNER: FRONTEND ONLY DISCLAIMER */}
-      <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-900 text-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 shadow-xs">
-        <div className="flex items-center gap-2">
-          <Sparkle size={16} weight="fill" className="text-amber-600 shrink-0" />
-          <span className="font-semibold">
-            FRONTEND-ONLY SIMULATION — Tidak ada dana riil yang dipindahkan. Terisolasi dari backend Finance &amp; Gateway.
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={resetSimulationState}
-          className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] transition shadow-xs self-start sm:self-auto"
-          title="Reset saldo dan riwayat mutasi ke kondisi awal"
-        >
-          <ArrowsClockwise size={13} weight="bold" />
-          <span>Reset Demo</span>
-        </button>
-      </div>
-
       {/* 2. HEADER: BREADCRUMB, LOGO RESMI, & ORG CONTEXT */}
       <div className="bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-8 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-3">

@@ -272,8 +272,8 @@ export function WorkerSparepartStation({ job, onToast }: WorkerSparepartStationP
     );
     onToast(
       isApproved
-        ? "[DEV SIMULASI] Status diperbarui: Pelanggan menyetujui rekomendasi suku cadang!"
-        : "[DEV SIMULASI] Status diperbarui: Pelanggan menolak rekomendasi suku cadang."
+        ? "Status diperbarui: Pelanggan menyetujui rekomendasi suku cadang!"
+        : "Status diperbarui: Pelanggan menolak rekomendasi suku cadang."
     );
   };
 

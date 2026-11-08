@@ -38,7 +38,7 @@ return [
     'identity' => [
         'base_url' => env('IDENTITY_INTERNAL_BASE_URL', 'http://localhost:8001'),
         'internal_key' => env('SERVICE_INTERNAL_SERVICE_KEY', 'servio_local_internal_service_key_2026'),
-        'timeout_ms' => (float) env('SERVICE_IDENTITY_TIMEOUT_MS', 1500),
+        'timeout_ms' => (float) env('SERVICE_IDENTITY_TIMEOUT_MS', 5000),
     ],
 
     'category' => [

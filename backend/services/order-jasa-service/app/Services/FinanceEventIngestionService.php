@@ -363,7 +363,6 @@ class FinanceEventIngestionService
                         'EXECUTION_FINISHED',
                         'DIAGNOSIS_APPROVED',
                         'WORKER_FINISHED',
-                        'VISIT_CLOSED',
                         'PAYMENT_OVERDUE',
                         'PAYMENT_PENDING',
                     ];

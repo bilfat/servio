@@ -42,9 +42,11 @@ import {
 } from "@phosphor-icons/react";
 import { useAfterSales } from "@/features/afterSales/useAfterSales";
 import { WarrantyClaimModal } from "@/components/features/afterSales/WarrantyClaimModal";
+import { OrderReviewModal } from "@/components/features/afterSales/OrderReviewModal";
 import { useOrderJasa } from "@/features/order-jasa/hooks/useOrderJasa";
 import { ServiceOrderDetailLayout } from "@/features/order-jasa/components/common/ServiceOrderDetailLayout";
 import { getStoredWorkerPhoto } from "@/features/worker/workerPhotoHelper";
+import { afterSalesApi, ReviewSubmission } from "@/lib/afterSalesApi";
 
 export default function CustomerServiceOrderDetailPage() {
   const params = useParams();
@@ -153,9 +155,8 @@ function LegacyCustomerServiceOrderDetail({ rawParamId }: { rawParamId: string }
   const [disputeCategory, setDisputeCategory] = useState("POOR_QUALITY");
   const [disputeDescription, setDisputeDescription] = useState("");
 
-  const [providerRatingInput, setProviderRatingInput] = useState(5);
-  const [workerRatingInput, setWorkerRatingInput] = useState(5);
-  const [reviewTextInput, setReviewTextInput] = useState("");
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [existingReviewSubmission, setExistingReviewSubmission] = useState<ReviewSubmission | null>(null);
   const [reviewSubmittedNotice, setReviewSubmittedNotice] = useState(false);
 
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
@@ -304,13 +305,6 @@ function LegacyCustomerServiceOrderDetail({ rawParamId }: { rawParamId: string }
     setTimeout(() => setActionSuccessMsg(null), 5000);
   };
 
-  const handleSubmitReviewAction = () => {
-    customerSubmitReview(providerRatingInput, workerRatingInput, reviewTextInput);
-    setReviewSubmittedNotice(true);
-    setActionSuccessMsg("Terima kasih atas ulasan dan penilaian Anda!");
-    setTimeout(() => setActionSuccessMsg(null), 4000);
-  };
-
   const handleRebook = () => {
     const newBooking = customerRebookOrder();
     if (newBooking) {
@@ -323,14 +317,6 @@ function LegacyCustomerServiceOrderDetail({ rawParamId }: { rawParamId: string }
 
   return (
     <div className="space-y-6 pb-28">
-      {/* Dev / Demo Scenario Selector Banner */}
-      <div className="-mx-4 sm:-mx-6 lg:-mx-8 -mt-6 mb-4">
-        <CustomerDemoScenarioSelector
-          currentOrderId={order.id}
-          onSelectScenario={(id) => switchScenario(id)}
-        />
-      </div>
-
       {/* Action Success Toast Banner */}
       {actionSuccessMsg && (
         <div className="p-4 rounded-2xl bg-emerald-600 text-white font-semibold text-xs flex items-center justify-between shadow-servio-md animate-in fade-in slide-in-from-top-2 duration-200">
@@ -577,27 +563,79 @@ function LegacyCustomerServiceOrderDetail({ rawParamId }: { rawParamId: string }
 
         {/* State E: COMPLETED */}
         {order.status === "COMPLETED" && (
-          <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-emerald-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 font-bold text-sm text-emerald-900">
-                <ShieldCheck size={20} weight="fill" className="text-emerald-600 shrink-0" />
-                <span>Pesanan Selesai — Masa Garansi Servio Shield Aktif</span>
+          <div className="space-y-3">
+            <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-emerald-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 font-bold text-sm text-emerald-900">
+                  <ShieldCheck size={20} weight="fill" className="text-emerald-600 shrink-0" />
+                  <span>Pesanan Selesai — Masa Garansi Servio Shield Aktif</span>
+                </div>
+                <p className="text-xs text-emerald-800 leading-relaxed">
+                  Layanan telah tuntas. Uang pembayaran telah dilepaskan kepada mitra. Perlindungan garansi selama {order.warrantyPeriodDays || 30} hari aktif otomatis.
+                </p>
               </div>
-              <p className="text-xs text-emerald-800 leading-relaxed">
-                Layanan telah tuntas. Uang pembayaran telah dilepaskan kepada mitra. Perlindungan garansi selama {order.warrantyPeriodDays || 30} hari aktif otomatis.
-              </p>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0 w-full sm:w-auto">
+                <Link
+                  href={`/reviews/${rawParamId}?type=SERVICE`}
+                  className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold transition flex items-center gap-1.5"
+                >
+                  <Star size={14} weight="fill" className="text-amber-500" />
+                  <span>Beri Ulasan Layanan</span>
+                </Link>
+
+                <button
+                  type="button"
+                  onClick={() => setIsClaimModalOpen(true)}
+                  className="px-3.5 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <ShieldCheck size={14} weight="bold" />
+                  <span>Klaim Garansi Jasa</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRebook}
+                  className="px-3.5 py-2 rounded-xl bg-primary text-white hover:bg-primary-dark text-xs font-bold transition flex items-center gap-1.5 shadow-servio-xs cursor-pointer"
+                >
+                  <ArrowsClockwise size={14} weight="bold" />
+                  <span>Pesan Lagi</span>
+                </button>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
-              <button
-                type="button"
-                onClick={handleRebook}
-                className="px-4 py-2 rounded-xl bg-primary text-white hover:bg-primary-dark text-xs font-bold transition flex items-center gap-1.5 shadow-servio-xs"
-              >
-                <ArrowsClockwise size={14} weight="bold" />
-                <span>Pesan Layanan Lagi</span>
-              </button>
-            </div>
+            {/* Active Case Banner for Service if exists */}
+            {associatedServiceCase && (
+              <div className="p-4 rounded-2xl bg-indigo-50 border border-indigo-200 text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200">
+                    Kasus Garansi Layanan Aktif
+                  </span>
+                  <span className="font-mono font-bold text-indigo-900 text-xs">
+                    #{associatedServiceCase.caseNumber}
+                  </span>
+                </div>
+                <p className="text-slate-700">
+                  Status: <strong>{associatedServiceCase.mainStatus}</strong> ({associatedServiceCase.customerRequestedSolution || "REWORK"})
+                </p>
+                {associatedServiceCase.warrantyJob && (
+                  <div className="p-2.5 bg-white rounded-xl border border-indigo-100 text-[11px] text-indigo-950 space-y-0.5">
+                    <p className="font-bold text-indigo-900">
+                      Pekerjaan Garansi Rp0: {associatedServiceCase.warrantyJob.workerName}
+                    </p>
+                    <p className="text-slate-600">Jadwal: {associatedServiceCase.warrantyJob.scheduledDate}</p>
+                  </div>
+                )}
+                <div className="pt-1">
+                  <Link
+                    href={`/resolutions/${associatedServiceCase.id}`}
+                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-center block transition shadow-xs"
+                  >
+                    Buka Detail Kasus Resolusi &rarr;
+                  </Link>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1395,76 +1433,36 @@ function LegacyCustomerServiceOrderDetail({ rawParamId }: { rawParamId: string }
             </div>
           ) : null}
 
-          {/* Review Form */}
-          {!order.customerReviewSubmitted && !reviewSubmittedNotice ? (
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
-              <h4 className="font-bold text-xs text-neutral-dark">
-                Beri Penilaian untuk Mitra & Teknisi
-              </h4>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                <div>
-                  <label className="text-neutral-slate block mb-1">
-                    Rating Penyedia ({order.providerName}):
-                  </label>
-                  <div className="flex items-center gap-1 text-amber-500">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <button
-                        key={star}
-                        type="button"
-                        onClick={() => setProviderRatingInput(star)}
-                        className="p-1 hover:scale-110 transition"
-                      >
-                        <Star size={20} weight={star <= providerRatingInput ? "fill" : "regular"} />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-neutral-slate block mb-1">
-                    Rating Teknisi ({order.assignedWorker?.name || "Teknisi"}):
-                  </label>
-                  <div className="flex items-center gap-1 text-amber-500">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <button
-                        key={star}
-                        type="button"
-                        onClick={() => setWorkerRatingInput(star)}
-                        className="p-1 hover:scale-110 transition"
-                      >
-                        <Star size={20} weight={star <= workerRatingInput ? "fill" : "regular"} />
-                      </button>
-                    ))}
-                  </div>
-                </div>
+          {/* Review Popup Shortcut (C09 -> C06/C07) */}
+          <div className="p-4 rounded-2xl bg-amber-50/50 border border-amber-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1.5 font-bold text-slate-900">
+                <Star size={15} weight="fill" className="text-amber-500" />
+                <span>
+                  {order.customerReviewSubmitted || reviewSubmittedNotice || existingReviewSubmission
+                    ? "Penilaian Layanan Jasa & Penyedia Sudah Dikirim"
+                    : "Beri Penilaian Kualitas Jasa & Penyedia Layanan"}
+                </span>
               </div>
-
-              <div>
-                <label className="text-neutral-slate text-xs block mb-1">Tulis Ulasan Layanan:</label>
-                <textarea
-                  rows={2}
-                  value={reviewTextInput}
-                  onChange={(e) => setReviewTextInput(e.target.value)}
-                  placeholder="Ceritakan pengalaman servis Anda..."
-                  className="w-full p-2.5 text-xs rounded-xl bg-white border border-slate-200 text-neutral-dark focus:outline-none focus:ring-1 focus:ring-primary"
-                />
-              </div>
-
-              <button
-                type="button"
-                onClick={handleSubmitReviewAction}
-                className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-primary-dark transition shadow-servio-xs"
-              >
-                Kirim Penilaian
-              </button>
+              <p className="text-[11px] text-slate-600">
+                {order.customerReviewSubmitted || reviewSubmittedNotice || existingReviewSubmission
+                  ? "Terima kasih! Anda dapat melihat kembali rincian ulasan dan balasan resmi penyedia jasa."
+                  : "Bagikan penilaian untuk Kualitas Layanan Jasa (SERVICE) dan Reputasi Penyedia Jasa (PROVIDER)."}
+              </p>
             </div>
-          ) : (
-            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 text-xs text-neutral-slate flex items-center gap-2">
-              <CheckCircle size={16} className="text-emerald-600" weight="fill" />
-              <span>Anda telah mengirimkan ulasan bintang 5 untuk pesanan ini. Terima kasih!</span>
-            </div>
-          )}
+            <button
+              type="button"
+              onClick={() => setIsReviewModalOpen(true)}
+              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 shrink-0 cursor-pointer"
+            >
+              <Star size={14} weight="fill" />
+              <span>
+                {order.customerReviewSubmitted || reviewSubmittedNotice || existingReviewSubmission
+                  ? "Lihat Penilaian"
+                  : "Beri Ulasan"}
+              </span>
+            </button>
+          </div>
 
           {/* Rebooking Action (Section 43) */}
           <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
@@ -1611,20 +1609,6 @@ function LegacyCustomerServiceOrderDetail({ rawParamId }: { rawParamId: string }
                   />
                 </label>
               ))}
-            </div>
-
-            {/* Test Simulation Checkbox (Scenario SC-C19 Demo) */}
-            <div className="p-2.5 rounded-xl bg-slate-100 border border-slate-200 text-xs flex items-center gap-2 text-neutral-dark">
-              <input
-                type="checkbox"
-                id="sim_fail"
-                checked={simulateFailure}
-                onChange={(e) => setSimulateFailure(e.target.checked)}
-                className="accent-rose-600 rounded"
-              />
-              <label htmlFor="sim_fail" className="cursor-pointer text-[11px]">
-                Simulasikan Pembayaran Gagal (Scenario SC-C19)
-              </label>
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">
@@ -1889,6 +1873,39 @@ function LegacyCustomerServiceOrderDetail({ rawParamId }: { rawParamId: string }
           }}
         />
       )}
+
+      {/* Phase 07 Review Popup Modal (C06 / C07) */}
+      <OrderReviewModal
+        isOpen={isReviewModalOpen}
+        onClose={() => setIsReviewModalOpen(false)}
+        target={{
+          sourceKind: "SERVICE",
+          orderId: String(order.id || rawParamId),
+          subOrderId: order.orderNumber || String(rawParamId),
+          orderNumber: order.orderNumber || String(rawParamId),
+          orderedAt: order.createdAt,
+          completedAt: order.updatedAt || order.createdAt,
+          businessOrgId: order.providerId || "usr-prov-001",
+          businessName: order.providerName || "Penyedia Jasa Mitra",
+          items: [
+            {
+              orderItemId: String(order.id || rawParamId),
+              targetId: order.serviceId || "srv-ac-cuci",
+              title: order.serviceTitle || "Layanan Servis",
+              quantity: 1,
+              price: order.pricing?.serviceFee || 0,
+            },
+          ],
+          existingSubmission: existingReviewSubmission,
+        }}
+        onSubmitted={(sub) => {
+          setExistingReviewSubmission(sub);
+          setReviewSubmittedNotice(true);
+          customerSubmitReview(5, 5, "Penilaian dikirim melalui modul purnajual");
+          setActionSuccessMsg("Terima kasih atas ulasan dan penilaian Anda!");
+          setTimeout(() => setActionSuccessMsg(null), 4000);
+        }}
+      />
     </div>
   );
 }

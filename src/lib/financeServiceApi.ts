@@ -72,14 +72,29 @@ export interface FinanceReceipt {
 
 export interface CustomerRefundItem {
   id: string;
-  payment_id: string;
+  payment_id?: string;
+  payment_intent_id?: string;
+  payment_allocation_id?: string;
+  customer_spay_account_id?: string;
   merchant_order_id?: string;
-  source_event_id: string;
-  decision_source: string;
-  reason_code: string;
+  merchant_org_id?: string;
+  checkout_group_id?: string;
+  source_event_id?: string;
+  order_cancellation_event_id?: string;
+  decision_source?: string;
+  reason_code?: string;
+  refund_reason_scope?: string;
+  requested_amount_idr?: number;
+  funded_amount_idr?: number;
+  credited_amount_idr?: number;
   gross_refund_amount_idr: number;
   customer_net_refund_idr: number;
-  status: "PENDING" | "PROCESSING" | "SUCCEEDED" | "FAILED";
+  product_subtotal_idr?: number;
+  shipping_customer_idr?: number;
+  app_fee_allocated_idr?: number;
+  status: "PENDING" | "PROCESSING" | "SUCCEEDED" | "FAILED" | "REVERSED";
+  funded_at?: string;
+  credited_at?: string;
   processed_at?: string;
   failure_reason?: string;
   created_at: string;

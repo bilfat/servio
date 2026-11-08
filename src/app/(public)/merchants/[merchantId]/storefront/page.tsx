@@ -27,6 +27,12 @@ import { shopsApi, taxonomyApi } from "@/lib/servioApi";
 import type { ApiProduct, ApiShopProfile } from "@/types/domain";
 import { getProductMediaUrl } from "@/types/domain";
 import { useLocation } from "@/context/LocationContext";
+import {
+  afterSalesApi,
+  BusinessReputation,
+  CatalogRatingSummaryItem,
+  ReviewEntry,
+} from "@/lib/afterSalesApi";
 
 export default function MerchantStorefrontPage() {
   const params = useParams();
@@ -44,6 +50,41 @@ export default function MerchantStorefrontPage() {
   const [sortBy, setSortBy] = useState<"featured" | "price_asc" | "price_desc">("featured");
   const [copiedLink, setCopiedLink] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
+  const [merchantReputation, setMerchantReputation] = useState<BusinessReputation | null>(null);
+  const [productRatings, setProductRatings] = useState<Record<string, CatalogRatingSummaryItem>>({});
+  const [storefrontTab, setStorefrontTab] = useState<"PRODUCTS" | "REVIEWS">("PRODUCTS");
+  const [businessReviews, setBusinessReviews] = useState<ReviewEntry[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!merchantId) return;
+    afterSalesApi.publicCatalog
+      .getBusinessReputation("MERCHANT", merchantId)
+      .then((res) => {
+        if (res.data) setMerchantReputation(res.data);
+      })
+      .catch(() => {});
+
+    setReviewsLoading(true);
+    afterSalesApi.publicCatalog
+      .getBusinessReviews("MERCHANT", merchantId, { per_page: 50 })
+      .then((res) => {
+        if (res.data) setBusinessReviews(res.data);
+      })
+      .catch(() => {})
+      .finally(() => setReviewsLoading(false));
+  }, [merchantId]);
+
+  useEffect(() => {
+    const ids = products.map((p) => p.productId).filter(Boolean);
+    if (ids.length === 0) return;
+    afterSalesApi.publicCatalog
+      .getBatchRatingsSummary("PRODUCT", ids)
+      .then((res) => {
+        if (res.data) setProductRatings(res.data);
+      })
+      .catch(() => {});
+  }, [products]);
 
   const loadStorefront = useCallback(async () => {
     if (!merchantId) return;
@@ -286,14 +327,27 @@ export default function MerchantStorefrontPage() {
 
             {/* Metrics & Action Buttons */}
             <div className="flex items-center gap-3 shrink-0">
-              {/* Rating Metric */}
-              <div className="bg-white/10 backdrop-blur-md border border-white/15 px-3.5 py-2 rounded-2xl text-center shrink-0">
+              {/* Rating Metric (PUB05: Real Merchant Reputation from Backend 07) */}
+              <button
+                type="button"
+                onClick={() => setStorefrontTab("REVIEWS")}
+                className="bg-white/10 hover:bg-white/20 transition backdrop-blur-md border border-white/15 px-3.5 py-2 rounded-2xl text-center shrink-0 cursor-pointer"
+                title="Lihat reputasi dan ulasan pelayanan toko"
+              >
                 <div className="text-sm font-black text-white font-heading flex items-center justify-center gap-1">
                   <Star size={15} weight="fill" className="text-amber-400" />
-                  <span>4.9</span>
+                  <span>
+                    {merchantReputation && merchantReputation.total_reviews > 0
+                      ? Number(merchantReputation.average_rating).toFixed(1)
+                      : "Belum Ada"}
+                  </span>
                 </div>
-                <div className="text-[10px] text-slate-300 mt-0.5">(120+ Ulasan)</div>
-              </div>
+                <div className="text-[10px] text-slate-300 mt-0.5">
+                  {merchantReputation && merchantReputation.total_reviews > 0
+                    ? `(${merchantReputation.total_reviews} Penilaian Toko)`
+                    : "(0 Penilaian Toko)"}
+                </div>
+              </button>
 
               {/* Assurance Metric */}
               <div className="hidden sm:block bg-white/10 backdrop-blur-md border border-white/15 px-3.5 py-2 rounded-2xl text-center shrink-0">
@@ -478,7 +532,56 @@ export default function MerchantStorefrontPage() {
 
         {/* RIGHT COLUMN: Search Toolbar & Scrollable Product Grid */}
         <div className="flex-1 h-full flex flex-col min-w-0 overflow-hidden">
-          {/* Search Toolbar (Fixed at Top of Products Column) */}
+          {/* Main Storefront Tabs: Katalog Produk vs Ulasan Pelayanan Toko */}
+          <div className="flex items-center gap-2 mb-3 bg-white p-1.5 rounded-xl border border-slate-200/80 shrink-0">
+            <button
+              type="button"
+              onClick={() => setStorefrontTab("PRODUCTS")}
+              className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                storefrontTab === "PRODUCTS"
+                  ? "bg-[#0F4C81] text-white shadow-xs"
+                  : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              <Package size={15} weight="bold" />
+              <span>Katalog Produk</span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] ${
+                  storefrontTab === "PRODUCTS" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                }`}
+              >
+                {products.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStorefrontTab("REVIEWS")}
+              className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
+                storefrontTab === "REVIEWS"
+                  ? "bg-[#0F4C81] text-white shadow-xs"
+                  : "text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              <Star
+                size={15}
+                weight="fill"
+                className={storefrontTab === "REVIEWS" ? "text-amber-300" : "text-amber-500"}
+              />
+              <span>Reputasi &amp; Ulasan Toko</span>
+              <span
+                className={`px-2 py-0.5 rounded-full text-[10px] ${
+                  storefrontTab === "REVIEWS" ? "bg-white/20 text-white" : "bg-amber-100 text-amber-800 font-bold"
+                }`}
+              >
+                {merchantReputation?.total_reviews ?? businessReviews.length}
+              </span>
+            </button>
+          </div>
+
+          {storefrontTab === "PRODUCTS" ? (
+            <>
+              {/* Search Toolbar (Fixed at Top of Products Column) */}
           <div className="bg-white rounded-xl p-3 border border-slate-200/80 shadow-2xs mb-3 shrink-0 space-y-2">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <div className="flex-1 relative">
@@ -674,6 +777,189 @@ export default function MerchantStorefrontPage() {
               </div>
             </div>
           </div>
+            </>
+          ) : (
+            /* REVIEWS TAB CONTENT */
+            <div className="flex-1 overflow-y-auto pr-1 pb-6 min-h-0 space-y-4 custom-scrollbar">
+              {/* Reputasi Toko Summary Card */}
+              <div className="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-2xs space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 font-heading flex items-center gap-2">
+                      <Star size={18} weight="fill" className="text-amber-400" />
+                      <span>Reputasi Pelayanan Toko</span>
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Dihitung secara terverifikasi dari seluruh ulasan transaksi selesai pada toko ini.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-3 bg-amber-50/80 px-4 py-2.5 rounded-2xl border border-amber-200">
+                    <div className="text-center">
+                      <span className="text-2xl font-black text-slate-900">
+                        {merchantReputation && merchantReputation.total_reviews > 0
+                          ? Number(merchantReputation.average_rating).toFixed(1)
+                          : "0.0"}
+                      </span>
+                      <span className="text-xs text-slate-500 font-semibold"> / 5.0</span>
+                    </div>
+                    <div className="text-xs text-slate-600">
+                      <div className="flex items-center gap-0.5">
+                        {[1, 2, 3, 4, 5].map((s) => (
+                          <Star
+                            key={s}
+                            size={14}
+                            weight="fill"
+                            className={
+                              s <= Math.round(merchantReputation?.average_rating ?? 0)
+                                ? "text-amber-400"
+                                : "text-slate-200"
+                            }
+                          />
+                        ))}
+                      </div>
+                      <span className="text-[11px] font-bold text-amber-800 mt-0.5 block">
+                        {merchantReputation?.total_reviews ?? 0} Total Penilaian Toko
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 5..1 Stars Distribution */}
+                <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 text-xs">
+                  {[5, 4, 3, 2, 1].map((star) => {
+                    const total = merchantReputation?.total_reviews ?? 0;
+                    const count = merchantReputation?.distribution?.[String(star)] ?? 0;
+                    const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                    return (
+                      <div
+                        key={star}
+                        className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-100"
+                      >
+                        <span className="font-bold text-slate-700 flex items-center gap-0.5 shrink-0">
+                          {star} <Star size={12} weight="fill" className="text-amber-400" />
+                        </span>
+                        <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                          <div className="h-full bg-amber-400 rounded-full" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-500 shrink-0">{count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Reviews List */}
+              {reviewsLoading ? (
+                <div className="bg-white rounded-2xl p-8 border border-slate-200/80 text-center text-xs text-slate-400">
+                  Memuat ulasan pelayanan toko...
+                </div>
+              ) : businessReviews.length === 0 ? (
+                <div className="bg-white rounded-2xl p-8 border border-slate-200/80 text-center space-y-1.5 text-xs text-slate-500">
+                  <p className="font-bold text-slate-800">Belum ada ulasan untuk toko ini</p>
+                  <p className="text-[11px] text-slate-400">
+                    Ulasan dari pembeli akan otomatis ditampilkan di sini setelah pesanan barang diselesaikan.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {businessReviews.map((rev) => {
+                    const publicName =
+                      rev.customer_display_name ||
+                      (rev.submission?.customer_id
+                        ? `Pelanggan #${rev.submission.customer_id.substring(0, 6)}`
+                        : "Pembeli Terverifikasi");
+                    const reviewDate = new Date(rev.submitted_at || rev.created_at).toLocaleDateString("id-ID", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    });
+                    const orderDate = rev.ordered_at
+                      ? new Date(rev.ordered_at).toLocaleDateString("id-ID", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })
+                      : null;
+                    const commentText = rev.text || rev.review_text || rev.comment;
+                    const replyText = rev.reply?.text || rev.reply?.reply_text;
+
+                    return (
+                      <div
+                        key={rev.id}
+                        className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/80 shadow-2xs space-y-3"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-[#0F4C81]/10 text-[#0F4C81] flex items-center justify-center font-bold text-xs shrink-0">
+                              {publicName.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <span className="font-bold text-xs text-slate-900 block">{publicName}</span>
+                              <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500 mt-0.5">
+                                {orderDate && (
+                                  <span>
+                                    Tanggal Order: <strong className="text-slate-700">{orderDate}</strong>
+                                  </span>
+                                )}
+                                {orderDate && <span className="text-slate-300">•</span>}
+                                <span>
+                                  Tanggal Ulasan: <strong className="text-slate-700">{reviewDate}</strong>
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 shrink-0">
+                            {Array.from({ length: 5 }).map((_, i) => (
+                              <Star
+                                key={i}
+                                size={13}
+                                weight="fill"
+                                className={i < (rev.rating || 5) ? "text-amber-400" : "text-slate-200"}
+                              />
+                            ))}
+                            <span className="text-xs font-bold text-slate-800 ml-1">{rev.rating || 5}.0</span>
+                          </div>
+                        </div>
+
+                        {commentText ? (
+                          <p className="text-xs text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-100 leading-relaxed">
+                            &ldquo;{commentText}&rdquo;
+                          </p>
+                        ) : (
+                          <p className="text-xs text-slate-400 italic">
+                            Pembeli memberikan rating bintang tanpa komentar tertulis.
+                          </p>
+                        )}
+
+                        {replyText && (
+                          <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200/80 space-y-1">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="font-bold text-[#0F4C81] flex items-center gap-1.5">
+                                <Storefront size={14} weight="fill" />
+                                Balasan Resmi {shop.name}
+                              </span>
+                              {rev.reply?.created_at && (
+                                <span className="text-[#0F4C81]/80 text-[10px]">
+                                  {new Date(rev.reply.created_at).toLocaleDateString("id-ID", {
+                                    day: "numeric",
+                                    month: "short",
+                                    year: "numeric",
+                                  })}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-800 leading-relaxed">{replyText}</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

@@ -28,7 +28,15 @@ class WorkerTaskController
         $actor = $request->attributes->get('actor');
 
         $query = WorkerAssignmentAttempt::query()
-            ->with(['order.visit', 'booking'])
+            ->with([
+                'order.visit',
+                'order.consents',
+                'order.execution.evidences',
+                'order.diagnosisVersions.workItems',
+                'order.diagnosisVersions.partItems',
+                'order.paymentObligations.attempts',
+                'booking',
+            ])
             ->where('worker_id', $actor->id)
             ->orderBy('assigned_at', 'desc');
 
@@ -69,7 +77,15 @@ class WorkerTaskController
         $actor = $request->attributes->get('actor');
 
         // Scoped query: Worker can ONLY view assignments assigned to themselves
-        $query = WorkerAssignmentAttempt::with(['order.visit', 'booking'])
+        $query = WorkerAssignmentAttempt::with([
+            'order.visit',
+            'order.consents',
+            'order.execution.evidences',
+            'order.diagnosisVersions.workItems',
+            'order.diagnosisVersions.partItems',
+            'order.paymentObligations.attempts',
+            'booking',
+        ])
             ->where(function ($q) use ($assignmentId) {
                 $q->where('id', $assignmentId)
                   ->orWhere('order_id', $assignmentId);
@@ -137,7 +153,7 @@ class WorkerTaskController
         $actor = $request->attributes->get('actor');
 
         $validated = $request->validate([
-            'action' => 'required|string|in:OTW,ARRIVED,START_DIAGNOSIS',
+            'action' => 'required|string|in:OTW,ARRIVED,START_DIAGNOSIS,START_EXECUTION',
         ]);
 
         $request->attributes->set('idempotency_has_side_effect', true);
@@ -166,12 +182,19 @@ class WorkerTaskController
             'findings' => 'required|string',
             'initial_condition' => 'nullable|string',
             'suspected_cause' => 'nullable|string',
+            'root_cause' => 'nullable|string',
             'recommended_actions' => 'nullable|string',
+            'action_plan' => 'nullable|string',
             'safety_notes' => 'nullable|string',
             'work_items' => 'nullable|array',
             'part_items' => 'nullable|array',
             'diagnosis_photo_refs' => 'nullable|array',
+            'diagnosis_photos' => 'nullable|array',
         ]);
+
+        $validated['suspected_cause'] = $validated['suspected_cause'] ?? $validated['root_cause'] ?? null;
+        $validated['recommended_actions'] = $validated['recommended_actions'] ?? $validated['action_plan'] ?? null;
+        $validated['diagnosis_photo_refs'] = $validated['diagnosis_photo_refs'] ?? $validated['diagnosis_photos'] ?? [];
 
         $request->attributes->set('idempotency_has_side_effect', true);
 

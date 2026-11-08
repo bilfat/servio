@@ -137,10 +137,6 @@ export function SPayWithdrawModal({
         {/* Top Header */}
         <div className="p-5 sm:p-6 bg-gradient-to-r from-[#0F4C81] to-[#0B3860] text-white flex items-center justify-between">
           <div>
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-400/20 text-amber-200 border border-amber-300/30 mb-1">
-              <Sparkle size={13} weight="fill" />
-              <span>Simulasi Frontend Demo</span>
-            </div>
             <h2 className="text-xl font-bold font-display">Tarik Dana S-Pay</h2>
           </div>
 
@@ -157,17 +153,6 @@ export function SPayWithdrawModal({
         {/* STEP 1: FORM PENGISIAN */}
         {step === "FORM" && (
           <form onSubmit={handleStartSimulation} className="p-5 sm:p-6 space-y-5">
-            {/* Disclaimer Banner */}
-            <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200/80 text-amber-900 text-xs flex items-start gap-2.5">
-              <Info size={18} weight="bold" className="shrink-0 text-amber-600 mt-0.5" />
-              <div>
-                <p className="font-bold">Mode Simulasi Finansial Terbatas</p>
-                <p className="text-amber-800 leading-relaxed text-[11px] mt-0.5">
-                  Semua proses dilakukan di frontend. <strong>Tidak ada API request nyata ataupun pemindahan uang riil.</strong> S-Pay terisolasi dari rekening bank sebenarnya.
-                </p>
-              </div>
-            </div>
-
             {/* Saldo Reference */}
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between">
               <span className="text-xs text-slate-500 font-medium">Saldo Dapat Dicairkan:</span>

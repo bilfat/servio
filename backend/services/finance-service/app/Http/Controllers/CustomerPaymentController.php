@@ -103,15 +103,58 @@ class CustomerPaymentController extends Controller
             return ApiResponse::error('UNAUTHENTICATED', 'Pengguna belum terautentikasi.', 401);
         }
 
-        $query = RefundTransaction::whereHas('paymentAllocation', function ($q) use ($customerId) {
-            $q->where('customer_id', $customerId);
-        })->latest();
+        $query = RefundTransaction::with(['paymentAllocation.checkout', 'customerSPayAccount'])
+            ->where(function ($q) use ($customerId) {
+                $q->whereHas('paymentAllocation', function ($allocQ) use ($customerId) {
+                    $allocQ->where('customer_id', $customerId);
+                })->orWhereHas('customerSPayAccount', function ($spayQ) use ($customerId) {
+                    $spayQ->where('owner_external_id', $customerId);
+                });
+            })->latest();
 
         if ($status = $request->query('status')) {
             $query->where('status', $status);
         }
 
         $refunds = $query->paginate((int) $request->query('per_page', 15));
+        $refunds->getCollection()->transform(function (RefundTransaction $r) {
+            $alloc = $r->paymentAllocation;
+            $arr = $r->toArray();
+            $orderId = $alloc?->merchant_order_id ?? '';
+
+            $isJasa = str_contains($orderId, '-diagnosis') ||
+                      str_contains($orderId, '-service_execution') ||
+                      str_starts_with($orderId, 'SRV-') ||
+                      str_contains($orderId, '-jasa');
+
+            $isAfterSales = ($r->refund_reason_scope === 'AFTER_SALES_07' ||
+                str_starts_with((string) $r->order_cancellation_event_id, 'AS-REF-') ||
+                str_starts_with((string) $r->source_funding_reference, 'case-') ||
+                str_starts_with((string) $r->order_cancellation_event_id, 'case'));
+
+            $caseId = null;
+            if ($isAfterSales) {
+                $caseId = $r->source_funding_reference ??
+                    str_replace('AS-REF-', '', (string) $r->order_cancellation_event_id);
+            }
+
+            $arr['payment_id'] = $r->payment_intent_id;
+            $arr['merchant_order_id'] = $orderId ?: null;
+            $arr['merchant_org_id'] = $alloc?->merchant_org_id;
+            $arr['checkout_group_id'] = $alloc?->checkout?->checkout_group_id;
+            $arr['source_event_id'] = $r->order_cancellation_event_id ?? $r->id;
+            $arr['decision_source'] = $isAfterSales ? 'AFTER_SALES_07' : 'ORDER_05A';
+            $arr['source_kind'] = $isJasa ? 'JASA_05B' : 'BARANG_05A';
+            $arr['case_id'] = $caseId;
+            $arr['reason_code'] = $r->refund_reason_scope ?? 'ORDER_REFUND';
+            $arr['gross_refund_amount_idr'] = $r->requested_amount_idr;
+            $arr['customer_net_refund_idr'] = $r->credited_amount_idr > 0 ? $r->credited_amount_idr : $r->requested_amount_idr;
+            $arr['product_subtotal_idr'] = $alloc?->product_subtotal_idr ?? 0;
+            $arr['shipping_customer_idr'] = $alloc?->shipping_customer_idr ?? 0;
+            $arr['app_fee_allocated_idr'] = $alloc?->app_fee_allocated_idr ?? 0;
+            $arr['processed_at'] = $r->credited_at?->toIso8601String() ?? $r->funded_at?->toIso8601String();
+            return $arr;
+        });
 
         return ApiResponse::success($refunds);
     }

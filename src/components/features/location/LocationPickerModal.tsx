@@ -1,22 +1,23 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   MapPin,
-  NavigationArrow,
-  CheckCircle,
-  CircleNotch,
   HouseLine,
   Buildings,
-  X,
-  MagnifyingGlass,
-  WarningCircle,
+  NavigationArrow,
+  CheckCircle,
   Truck,
+  CircleNotch,
+  Plus,
   ArrowRight,
+  X,
 } from "@phosphor-icons/react";
-import { useActiveLocation, POPULAR_CITIES } from "@/context/LocationContext";
+import { useActiveLocation } from "@/context/LocationContext";
 import { useActiveRole } from "@/context/RoleContext";
 import { Modal } from "@/components/ui/Modal";
+import { profileApi } from "@/lib/servioApi";
+import { AddressCascadingForm, AddressData } from "@/components/identity/AddressCascadingForm";
 
 export function LocationPickerModal() {
   const {
@@ -26,23 +27,38 @@ export function LocationPickerModal() {
     isLocationModalOpen,
     closeLocationModal,
     detectGps,
-    setManualCity,
+    setActiveLocation,
     selectSavedAddress,
+    refreshAddresses,
   } = useActiveLocation();
 
   const { user, activeRole, isAuthenticated, isPublicGuest } = useActiveRole();
   const isCustomer = (activeRole === "CUSTOMER" || user?.activeRole === "CUSTOMER") && isAuthenticated && !isPublicGuest;
-  const [cityFilter, setCityFilter] = useState("");
 
-  const filteredCities = POPULAR_CITIES.filter((c) =>
-    c.city.toLowerCase().includes(cityFilter.toLowerCase()) ||
-    c.province.toLowerCase().includes(cityFilter.toLowerCase())
-  );
+  // New Address Form State using Kemendagri / Identity cascading location data
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [isSavingAddress, setIsSavingAddress] = useState(false);
+  const [formLabel, setFormLabel] = useState("Rumah");
+  const [formRecipient, setFormRecipient] = useState(user?.name || "");
+  const [formPhone, setFormPhone] = useState(user?.phone || "");
+  const [addrCascading, setAddrCascading] = useState<AddressData>({
+    province: "DKI JAKARTA",
+    city: "KOTA JAKARTA SELATAN",
+    district: "",
+    village: "",
+    postal_code: "",
+    street_address: "",
+  });
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const handleSelectCity = (city: string, province: string) => {
-    setManualCity(city, province);
-    closeLocationModal();
-  };
+  useEffect(() => {
+    if (user?.name && !formRecipient) {
+      setFormRecipient(user.name);
+    }
+    if (user?.phone && !formPhone) {
+      setFormPhone(user.phone);
+    }
+  }, [user]);
 
   const handleDetectGps = async () => {
     const res = await detectGps();
@@ -51,23 +67,93 @@ export function LocationPickerModal() {
     }
   };
 
+  const handleSaveNewAddress = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const prov = addrCascading.province_name || addrCascading.province || "";
+    const city = addrCascading.city_name || addrCascading.city || "";
+    const district = addrCascading.district_name || addrCascading.district || "";
+    const village = addrCascading.village_name || addrCascading.village || "";
+    const postalCode = addrCascading.postal_code || "";
+    const street = addrCascading.street_address || addrCascading.address || "";
+    const rtRw = addrCascading.rt_rw || "";
+    const landmark = addrCascading.landmark || "";
+
+    if (!city.trim() || !street.trim()) {
+      setFormError("Kota/kabupaten dan detail alamat lengkap wajib diisi.");
+      return;
+    }
+
+    setFormError(null);
+    setIsSavingAddress(true);
+
+    try {
+      const label = formLabel.trim() || "Alamat Baru";
+      const fullStreet = [
+        street.trim(),
+        rtRw ? `RT/RW ${rtRw}` : null,
+        landmark ? `(Patokan: ${landmark})` : null,
+      ]
+        .filter(Boolean)
+        .join(", ");
+
+      if (isCustomer) {
+        await profileApi.createAddress({
+          label,
+          recipientName: formRecipient.trim() || undefined,
+          phone: formPhone.trim() || undefined,
+          addressLine: fullStreet,
+          province: prov || undefined,
+          city: city.trim(),
+          district: district.trim() || undefined,
+          village: village.trim() || undefined,
+          postalCode: postalCode.trim() || undefined,
+          latitude: addrCascading.latitude,
+          longitude: addrCascading.longitude,
+        });
+        await refreshAddresses();
+      }
+
+      setActiveLocation({
+        displayName: `${city.trim()} (${district.trim() || village.trim() || label})`,
+        city: city.trim(),
+        district: district.trim(),
+        province: prov,
+        postalCode: postalCode.trim() || undefined,
+        street: fullStreet,
+        latitude: addrCascading.latitude,
+        longitude: addrCascading.longitude,
+        isGps: false,
+        source: isCustomer ? "CUSTOMER_ADDRESS" : "MANUAL_SELECT",
+        addressLabel: label,
+      });
+
+      setShowAddForm(false);
+      closeLocationModal();
+    } catch (err: any) {
+      setFormError(err?.message || "Gagal menyimpan alamat.");
+    } finally {
+      setIsSavingAddress(false);
+    }
+  };
+
   return (
     <Modal
       isOpen={isLocationModalOpen}
       onClose={closeLocationModal}
-      title="Pilih Titik Lokasi Pengiriman"
-      maxWidth="2xl"
+      title="Pilih Titik Lokasi Layanan"
+      maxWidth={showAddForm ? "3xl" : "2xl"}
     >
       <div className="space-y-6 font-body text-slate-900">
-        {/* Intro Alert: Explaining In-City Local Delivery Concept */}
+        {/* Intro Alert: Explaining Distance-Based Service Jangkauan */}
         <div className="flex items-start gap-3 p-3.5 bg-sky-50/80 border border-sky-200/90 rounded-2xl text-xs text-sky-950">
           <Truck size={20} className="text-[#0F4C81] shrink-0 mt-0.5" weight="duotone" />
           <div className="leading-relaxed">
             <span className="font-bold text-[#0F4C81] block">
-              Pengiriman Suku Cadang &amp; Material Servis Sekota:
+              Jangkauan Layanan &amp; Pengiriman Berdasarkan Jarak:
             </span>
             <span>
-              Suku cadang dan material teknis SERVIO dikirim langsung oleh mitra toko terdekat menggunakan kurir lokal instan/sameday. Pengiriman ke luar kota tidak dapat diproses demi menjaga keamanan barang dan kecepatan penanganan teknisi.
+              Katalog produk dan jasa menyesuaikan lokasi Anda secara real-time. Toko atau penyedia jasa di luar radius jangkauan maksimal (maksimum platform 80 km) otomatis disaring untuk menjamin kecepatan dan keandalan layanan.
             </span>
           </div>
         </div>
@@ -82,7 +168,7 @@ export function LocationPickerModal() {
               <div>
                 <h4 className="text-xs font-bold text-slate-900">Deteksi Otomatis Lokasi Saya (GPS)</h4>
                 <p className="text-[11px] text-slate-500">
-                  Gunakan GPS perangkat untuk mencocokkan toko sekota Anda secara presisi
+                  Gunakan koordinat GPS perangkat Anda untuk mencocokkan jangkauan toko &amp; teknisi secara presisi
                 </p>
               </div>
             </div>
@@ -100,7 +186,7 @@ export function LocationPickerModal() {
                 </>
               ) : (
                 <>
-                  <span>Aktifkan GPS</span>
+                  <span>Gunakan GPS</span>
                   <ArrowRight size={13} weight="bold" />
                 </>
               )}
@@ -114,7 +200,7 @@ export function LocationPickerModal() {
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                 <HouseLine size={16} className="text-[#0F4C81]" weight="bold" />
-                <span>Buku Alamat Pengerjaan Saya</span>
+                <span>Buku Alamat Saya</span>
               </h4>
               <span className="text-[10px] text-slate-400">Tersimpan di Profil Pelanggan</span>
             </div>
@@ -169,55 +255,149 @@ export function LocationPickerModal() {
           </div>
         )}
 
-        {/* 3. Manual City Selection Grid */}
+        {/* 3. Tambah Alamat Baru (Pengganti Filter Kota Manual) */}
         <div className="space-y-3 pt-1 border-t border-slate-100">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center justify-between">
             <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
               <Buildings size={16} className="text-[#0F4C81]" weight="bold" />
-              <span>Atau Pilih Kota Manual</span>
+              <span>Tambah Alamat Baru</span>
             </h4>
-
-            {/* Mini Search Input */}
-            <div className="relative min-w-[200px]">
-              <MagnifyingGlass size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={cityFilter}
-                onChange={(e) => setCityFilter(e.target.value)}
-                placeholder="Cari nama kota..."
-                className="w-full pl-8 pr-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#0F4C81]"
-              />
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="text-xs font-bold text-[#0F4C81] hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              {showAddForm ? (
+                <>
+                  <X size={12} weight="bold" />
+                  <span>Tutup Form</span>
+                </>
+              ) : (
+                <>
+                  <Plus size={12} weight="bold" />
+                  <span>Isi Alamat Baru</span>
+                </>
+              )}
+            </button>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-56 overflow-y-auto pr-1">
-            {filteredCities.map((item) => {
-              const isSelected =
-                location.city.toLowerCase().includes(item.city.toLowerCase()) ||
-                item.city.toLowerCase().includes(location.city.toLowerCase());
+          {showAddForm ? (
+            <form onSubmit={handleSaveNewAddress} className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3.5 animate-in fade-in">
+              {formError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium">
+                  {formError}
+                </div>
+              )}
 
-              return (
-                <button
-                  key={item.city}
-                  type="button"
-                  onClick={() => handleSelectCity(item.city, item.province)}
-                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                    isSelected
-                      ? "bg-[#0F4C81] text-white border-[#0F4C81] shadow-xs font-bold ring-2 ring-[#0F4C81]/30"
-                      : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50 hover:border-slate-300"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs truncate">{item.city}</span>
-                    {isSelected && <CheckCircle size={13} weight="fill" className="text-sky-300 shrink-0" />}
+              {/* Recipient & Label Information */}
+              <div className="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-2xs space-y-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                      Label Alamat <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formLabel}
+                      onChange={(e) => setFormLabel(e.target.value)}
+                      placeholder="Rumah, Kantor, dll"
+                      className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-medium focus:ring-1 focus:ring-[#0F4C81] outline-none"
+                    />
+                    <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                      {["Rumah", "Kantor", "Apartemen"].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setFormLabel(preset)}
+                          className={`text-[10px] px-2 py-0.5 rounded-md border font-medium transition cursor-pointer ${
+                            formLabel === preset
+                              ? "bg-sky-100 border-[#0F4C81] text-[#0F4C81] font-bold"
+                              : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                          }`}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                  <span className={`text-[10px] mt-0.5 truncate ${isSelected ? "text-sky-100" : "text-slate-400"}`}>
-                    {item.province}
-                  </span>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                      Nama Penerima
+                    </label>
+                    <input
+                      type="text"
+                      value={formRecipient}
+                      onChange={(e) => setFormRecipient(e.target.value)}
+                      placeholder="Nama Penerima"
+                      className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-medium focus:ring-1 focus:ring-[#0F4C81] outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                      No. Telepon
+                    </label>
+                    <input
+                      type="text"
+                      value={formPhone}
+                      onChange={(e) => setFormPhone(e.target.value)}
+                      placeholder="0812xxxxxxxx"
+                      className="w-full px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-medium focus:ring-1 focus:ring-[#0F4C81] outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Dynamic Cascading Location Form (Emsifa Kemendagri API) */}
+              <AddressCascadingForm
+                value={addrCascading}
+                onChange={(data) => {
+                  setAddrCascading(data);
+                  if (formError) setFormError(null);
+                }}
+                title="Wilayah & Alamat Lengkap"
+                subtitle="Pilih provinsi, kota/kabupaten, kecamatan, dan kelurahan resmi."
+                required={true}
+                showRtRw={true}
+                showLandmark={true}
+                showGoogleMap={false}
+                layout="stacked"
+                idPrefix="navbar-picker"
+              />
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200/80">
+                <button
+                  type="button"
+                  onClick={() => setShowAddForm(false)}
+                  className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                >
+                  Batal
                 </button>
-              );
-            })}
-          </div>
+                <button
+                  type="submit"
+                  disabled={isSavingAddress}
+                  className="px-4 py-2 rounded-xl bg-[#0F4C81] hover:bg-[#0A365C] text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                >
+                  {isSavingAddress ? (
+                    <>
+                      <CircleNotch size={13} className="animate-spin" />
+                      <span>Menyimpan...</span>
+                    </>
+                  ) : (
+                    <span>Simpan &amp; Jadikan Alamat Aktif</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowAddForm(true)}
+              className="w-full p-3 rounded-2xl border border-dashed border-slate-300 hover:border-[#0F4C81] bg-slate-50/50 hover:bg-sky-50/30 text-slate-600 hover:text-[#0F4C81] text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <Plus size={15} weight="bold" />
+              <span>Masukkan Alamat Baru (Tersimpan ke Buku Alamat)</span>
+            </button>
+          )}
         </div>
 
         {/* Current Active Location Display */}
