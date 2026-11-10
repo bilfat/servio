@@ -17,7 +17,7 @@ class CreateCategoryRequest extends FormRequest
             'master_id' => ['required', 'string', 'uuid', 'exists:category_masters,id'],
             'name' => ['required', 'string', 'max:160'],
             'description' => ['nullable', 'string', 'max:2000'],
-            'icon_name' => ['nullable', 'string', 'max:64'],
+            'icon_name' => ['nullable', 'string', 'max:255'],
         ];
     }
 

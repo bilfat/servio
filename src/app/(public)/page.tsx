@@ -41,6 +41,7 @@ import { AnimatedServiceJourney } from "@/components/features/home/AnimatedServi
 import { CustomerFeaturesBento } from "@/components/features/home/CustomerFeaturesBento";
 import { AiDiagnosticSandbox } from "@/components/features/home/AiDiagnosticSandbox";
 import { CustomerHomeView } from "@/components/features/home/CustomerHomeView";
+import { CategoryIconRenderer } from "@/components/common/CategoryIconRenderer";
 
 interface HomeCategoryNode {
   id: string;
@@ -215,30 +216,21 @@ export default function HomePage() {
   }, [featuredServices]);
 
   const activeServiceDomains = useMemo(() => {
-    return liveServiceCategories.map((c) => {
-      const IconComponent = CATEGORY_ICON_MAP[c.icon_name || ""] || Wrench;
-      return {
-        id: c.id,
-        label: c.name,
-        href: `/services?categories=${c.id}`,
-        icon: IconComponent,
-      };
-    });
+    return liveServiceCategories.map((c) => ({
+      id: c.id,
+      label: c.name,
+      href: `/services?categories=${c.id}`,
+      iconName: c.icon_name,
+    }));
   }, [liveServiceCategories]);
 
   const activeProductDomains = useMemo(() => {
-    return liveProductCategories.map((c) => {
-      const lowerName = String(c.name || "").toLowerCase();
-      const matchedRule = PRODUCT_CATEGORY_ICON_RULES.find((r) => lowerName.includes(r.keyword));
-      const IconComponent =
-        CATEGORY_ICON_MAP[c.icon_name || ""] || matchedRule?.icon || Package;
-      return {
-        id: c.id,
-        label: c.name,
-        href: `/products?categories=${c.id}`,
-        icon: IconComponent,
-      };
-    });
+    return liveProductCategories.map((c) => ({
+      id: c.id,
+      label: c.name,
+      href: `/products?categories=${c.id}`,
+      iconName: c.icon_name,
+    }));
   }, [liveProductCategories]);
 
   if (isOperational) {
@@ -576,16 +568,20 @@ export default function HomePage() {
             </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              {displayedCategories.map((domain) => {
-                const Icon = domain.icon;
+              {displayedCategories.map((domain: any) => {
                 return (
                   <Link
                     key={domain.id}
                     href={domain.href}
                     className="bg-slate-50/60 hover:bg-white p-3 rounded-2xl flex flex-col items-center text-center cursor-pointer group border border-slate-200/80 hover:border-primary/40 hover:shadow-xs hover:-translate-y-0.5 transition-all duration-200"
                   >
-                    <div className="w-10 h-10 rounded-xl bg-sky/70 text-primary group-hover:bg-primary group-hover:text-white transition-colors flex items-center justify-center mb-2">
-                      <Icon size={22} weight="duotone" />
+                    <div className="w-10 h-10 rounded-xl bg-sky/70 text-primary group-hover:bg-primary group-hover:text-white transition-colors flex items-center justify-center mb-2 overflow-hidden">
+                      <CategoryIconRenderer
+                        iconName={domain.iconName}
+                        categoryName={domain.label}
+                        size={22}
+                        weight="duotone"
+                      />
                     </div>
                     <h3 className="font-display font-bold text-xs text-neutral-dark group-hover:text-primary transition-colors line-clamp-1">
                       {domain.label}

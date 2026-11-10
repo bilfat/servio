@@ -209,6 +209,18 @@ class HttpResolutionCoordinator implements ResolutionCoordinatorInterface
         $internalKey = config('after_sales.services.order_jasa.internal_key', 'servio_local_internal_service_key_2026');
 
         try {
+            $acceptEvent = $case->events()->where('event_type', 'DECISION_ACCEPT_INITIAL')->latest()->first();
+            $reasonText = (string) ($acceptEvent?->reason ?? '');
+
+            $workerName = 'Ahmad Fauzi (Teknisi Senior)';
+            $scheduledDate = 'Besok, 13:00 - 15:00 WIB';
+            $jobNotes = null;
+            if (preg_match('/dijadwalkan pada (.*?)\s*\((.*?)\)(?:\.\s*Catatan:\s*(.*))?/i', $reasonText, $matches)) {
+                if (!empty($matches[1])) $scheduledDate = trim($matches[1]);
+                if (!empty($matches[2])) $workerName = trim($matches[2]);
+                if (!empty($matches[3]) && $matches[3] !== '-') $jobNotes = trim($matches[3]);
+            }
+
             $response = Http::withHeaders([
                 'X-Internal-Service-Key' => $internalKey,
                 'X-Source-Service' => 'after-sales-service',
@@ -220,6 +232,9 @@ class HttpResolutionCoordinator implements ResolutionCoordinatorInterface
                 'customer_id' => $case->customer_id,
                 'scope_description' => $case->description,
                 'worker_id' => 'acfdfc27-9ba5-472f-bec1-3c372f47fff6',
+                'worker_name' => $workerName,
+                'scheduled_date' => $scheduledDate,
+                'notes' => $jobNotes,
             ]);
 
             if ($response->successful()) {
@@ -335,6 +350,17 @@ class HttpResolutionCoordinator implements ResolutionCoordinatorInterface
         $resourceId = $extRef->external_id;
 
         try {
+            // If evidence is provided by customer or merchant confirmation, advance fulfillment in 05A
+            if (!empty($evidenceRef)) {
+                Http::withHeaders([
+                    'X-Internal-Service-Key' => $internalKey,
+                    'X-Source-Service' => 'after-sales-service',
+                    'Accept' => 'application/json',
+                ])->timeout(4)->post("{$baseUrl}/internal/v1/order-barang/replacements/{$resourceId}/deliver", [
+                    'proof_of_delivery' => $evidenceRef,
+                ]);
+            }
+
             $response = Http::withHeaders([
                 'X-Internal-Service-Key' => $internalKey,
                 'X-Source-Service' => 'after-sales-service',

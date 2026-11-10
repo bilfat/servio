@@ -113,10 +113,21 @@ class InternalOrderJasaController
             'customer_id' => 'required|string',
             'scope_description' => 'required|string',
             'worker_id' => 'nullable|string',
+            'worker_name' => 'nullable|string',
+            'scheduled_date' => 'nullable|string',
+            'notes' => 'nullable|string',
         ]);
+
+        $workerName = $validated['worker_name'] ?? 'Ahmad Fauzi (Teknisi Senior)';
+        $scheduledDate = $validated['scheduled_date'] ?? 'Besok, 13:00 - 15:00 WIB';
 
         $existing = \App\Models\ServiceWarrantyJob::where('case_id', $validated['case_id'])->first();
         if ($existing) {
+            $existing->update([
+                'worker_name' => $workerName,
+                'scheduled_date' => $scheduledDate,
+                'notes' => $validated['notes'] ?? $existing->notes,
+            ]);
             return ApiResponse::success($existing, 200);
         }
 
@@ -131,6 +142,9 @@ class InternalOrderJasaController
                 'price_idr' => 0,
                 'status' => 'ASSIGNED',
                 'worker_id' => $validated['worker_id'] ?? 'acfdfc27-9ba5-472f-bec1-3c372f47fff6',
+                'worker_name' => $workerName,
+                'scheduled_date' => $scheduledDate,
+                'notes' => $validated['notes'] ?? null,
             ]);
 
             return ApiResponse::success($job, 201);

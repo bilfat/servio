@@ -19,10 +19,10 @@ import {
   Check,
   Wrench,
   ArrowsDownUp,
-  Sparkle,
   CalendarCheck,
   HouseLine,
 } from "@phosphor-icons/react";
+import { CategoryIconRenderer } from "@/components/common/CategoryIconRenderer";
 import { publicCatalogApi, taxonomyApi, OFFICIAL_CITIES } from "@/lib/servioApi";
 import { formatRupiah } from "@/components/data-display/PriceBreakdown";
 import { useActiveLocation } from "@/context/LocationContext";
@@ -553,7 +553,6 @@ export default function ProviderStorefrontPage() {
 
               {storeCategories.map((cat) => {
                 const isActive = activeCategoryTab === cat.id;
-                const IconComp = CATEGORY_ICON_MAP[cat.icon_name || ""] || Tag;
                 return (
                   <button
                     key={cat.id}
@@ -566,7 +565,15 @@ export default function ProviderStorefrontPage() {
                     }`}
                   >
                     <div className="flex items-center gap-2 truncate">
-                      <IconComp size={15} weight="bold" className={isActive ? "text-white" : "text-[#0F4C81]"} />
+                      <div className="w-4 h-4 flex items-center justify-center shrink-0 overflow-hidden">
+                        <CategoryIconRenderer
+                          iconName={cat.icon_name}
+                          categoryName={cat.name}
+                          size={15}
+                          weight="bold"
+                          className={isActive ? "text-white" : "text-[#0F4C81]"}
+                        />
+                      </div>
                       <span className="truncate">{cat.name}</span>
                     </div>
                     <span
@@ -951,7 +958,7 @@ export default function ProviderStorefrontPage() {
 
                 <div className="bg-white rounded-xl p-3 border border-slate-200/80 shadow-2xs flex items-start gap-2.5">
                   <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                    <Sparkle size={18} weight="duotone" />
+                    <ShieldCheck size={18} weight="duotone" />
                   </div>
                   <div>
                     <h4 className="text-xs font-bold text-slate-900 font-display">Proteksi Uang Aman</h4>

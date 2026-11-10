@@ -20,7 +20,6 @@ import {
   CaretRight,
   CheckCircle,
   XCircle,
-  Sparkle,
   Wrench,
   HouseLine,
   Broom,
@@ -32,6 +31,7 @@ import {
   Tag,
   ArrowsClockwise,
 } from "@phosphor-icons/react";
+import { CategoryIconRenderer } from "@/components/common/CategoryIconRenderer";
 import {
   taxonomyApi,
   ApiCategoryMaster,
@@ -54,7 +54,6 @@ const CATEGORY_ICON_MAP: Record<string, React.ElementType> = {
   Car,
   Lightning,
   ShieldCheck,
-  Sparkle,
   Folder,
   Package,
 };
@@ -713,12 +712,17 @@ export default function CeoTaxonomyGovernancePage() {
                           >
                             <td className="py-3.5 px-4">
                               <div className="flex items-center gap-3">
-                                <span className={`p-2 rounded-xl border shrink-0 ${
+                                <span className={`p-2 rounded-xl border shrink-0 flex items-center justify-center ${
                                   isInactive
                                     ? "bg-slate-100 text-slate-500 border-slate-200"
                                     : "bg-sky-50 text-[#0F4C81] border-sky-200"
                                 }`}>
-                                  <IconComponent size={18} weight="duotone" />
+                                  <CategoryIconRenderer
+                                    iconName={cat.icon_name}
+                                    categoryName={cat.name}
+                                    size={18}
+                                    weight="duotone"
+                                  />
                                 </span>
                                 <div>
                                   <div className="flex items-center gap-2">
@@ -805,10 +809,15 @@ export default function CeoTaxonomyGovernancePage() {
                       {/* Header Kategori Induk */}
                       <div className="bg-slate-50/80 px-5 py-3.5 border-b border-slate-200/80 flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-3">
-                          <span className={`p-2.5 rounded-xl border shadow-2xs shrink-0 ${
+                          <span className={`p-2.5 rounded-xl border shadow-2xs shrink-0 flex items-center justify-center ${
                             isCatInactive ? "bg-slate-100 text-slate-500 border-slate-200" : "bg-white text-[#0F4C81] border-slate-200/90"
                           }`}>
-                            <IconComponent size={20} weight="duotone" />
+                            <CategoryIconRenderer
+                              iconName={cat.icon_name}
+                              categoryName={cat.name}
+                              size={20}
+                              weight="duotone"
+                            />
                           </span>
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">

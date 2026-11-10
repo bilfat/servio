@@ -873,6 +873,24 @@ export const afterSalesApi = {
       });
     },
 
+    async shipReplacement(
+      caseId: string,
+      payload: {
+        shipping_method?: "GOSEND" | "KURIR_TOKO";
+        courier_name: string;
+        driver_name?: string;
+        driver_phone?: string;
+        tracking_number?: string;
+        tracking_url?: string;
+        notes?: string;
+      }
+    ) {
+      return apiFetch<AfterSalesCase>(`/after-sales/business/cases/${caseId}/replacement-shipment`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    },
+
     async completeCase(caseId: string, evidenceRef: string) {
       return apiFetch<AfterSalesCase>(`/after-sales/business/cases/${caseId}/complete`, {
         method: "POST",

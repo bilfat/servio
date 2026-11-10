@@ -48,8 +48,9 @@ export interface WarrantyJobProgress {
   workerName?: string;
   workerPhone?: string;
   scheduledDate?: string;
-  operationalStatus: "ASSIGNED" | "OTW" | "IN_PROGRESS" | "DONE";
+  operationalStatus: "ASSIGNED" | "ACCEPTED" | "OTW" | "IN_PROGRESS" | "DONE";
   notes?: string;
+  completionEvidence?: string;
   paidWorkQuote?: {
     amount: number;
     description: string;
@@ -59,8 +60,13 @@ export interface WarrantyJobProgress {
 
 export interface ReplacementProgress {
   replacementItemName: string;
+  shippingMethod?: "GOSEND" | "KURIR_TOKO";
   courierName: string;
+  driverName?: string;
+  driverPhone?: string;
   trackingNumber?: string;
+  trackingUrl?: string;
+  notes?: string;
   shippingStatus: "PREPARING" | "SHIPPED" | "DELIVERED";
   estimatedArrival?: string;
   shippedAt?: string;
@@ -176,6 +182,7 @@ export interface AfterSalesCase {
   warrantyJob?: WarrantyJobProgress;
   replacementShipment?: ReplacementProgress;
   returnShipping?: ReturnShippingDetail;
+  requiresReturn?: boolean;
   shippingExpenses?: ShippingExpenseDetail[];
   refundDetail?: RefundBreakdown;
   refundTrack?: RefundBreakdown;
@@ -203,6 +210,38 @@ export interface WarrantyPreset {
   usageCount: number;
   createdAt: string;
   updatedAt?: string;
+}
+
+export interface ParsedEvidence {
+  photoUrl: string | null;
+  noteText: string;
+}
+
+export function parseEvidence(raw?: string | null): ParsedEvidence {
+  if (!raw) return { photoUrl: null, noteText: "" };
+  const trimmed = raw.trim();
+  if (trimmed.includes(" | ")) {
+    const parts = trimmed.split(" | ");
+    const candidatePhoto = parts[0].trim();
+    if (
+      candidatePhoto.startsWith("http://") ||
+      candidatePhoto.startsWith("https://") ||
+      candidatePhoto.startsWith("data:image/")
+    ) {
+      return {
+        photoUrl: candidatePhoto,
+        noteText: parts.slice(1).join(" | ").trim(),
+      };
+    }
+  }
+  if (
+    trimmed.startsWith("http://") ||
+    trimmed.startsWith("https://") ||
+    trimmed.startsWith("data:image/")
+  ) {
+    return { photoUrl: trimmed, noteText: "" };
+  }
+  return { photoUrl: null, noteText: trimmed };
 }
 
 export interface CustomerWarrantyEntitlement {

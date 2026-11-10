@@ -16,6 +16,7 @@ import {
   ArrowRight,
   Info,
   CalendarCheck,
+  MapPin,
   CaretLeft,
   CaretRight,
 } from "@phosphor-icons/react";
@@ -465,14 +466,15 @@ function buildAdaptiveTimelineSteps(caseData: AfterSalesCase): TimelineStep[] {
     ];
   }
 
-  // 4. REWORK Flow (Pengerjaan Ulang Jasa)
+  // 4. REWORK Flow (Pengerjaan Ulang Jasa Digital Penuh)
   if (resolvedSolution === "REPAIR" || (resolvedSolution as any) === "REWORK") {
     const job = caseData.warrantyJob;
-    const isJobScheduled = Boolean(job?.scheduledDate || job?.workerName);
-    const isExecuting =
-      job?.operationalStatus === "IN_PROGRESS" || job?.operationalStatus === "OTW";
-    const isFinished =
-      job?.operationalStatus === "DONE" || isCompleted;
+    const opStatus = job?.operationalStatus || (isCompleted ? "DONE" : isInResolution ? "ASSIGNED" : "NEW");
+    const isJobAssigned = isInResolution || isCompleted || Boolean(job?.scheduledDate || job?.workerName);
+    const isJobAccepted = isCompleted || opStatus === "ACCEPTED" || opStatus === "OTW" || opStatus === "IN_PROGRESS" || opStatus === "DONE";
+    const isOtw = isCompleted || opStatus === "OTW" || opStatus === "IN_PROGRESS" || opStatus === "DONE";
+    const isWorking = isCompleted || opStatus === "IN_PROGRESS" || opStatus === "DONE";
+    const isDone = isCompleted || opStatus === "DONE";
 
     return [
       {
@@ -485,63 +487,156 @@ function buildAdaptiveTimelineSteps(caseData: AfterSalesCase): TimelineStep[] {
         icon: ShieldCheck,
       },
       {
-        id: "step-reviewed",
-        label: isUnderReview ? "Sedang Ditinjau" : "Ditinjau",
-        status:
-          isUnderReview || isActionRequired
-            ? "CURRENT"
-            : isInResolution || isCompleted
-            ? "COMPLETED"
-            : "UPCOMING",
+        id: "step-assigned",
+        label: "Ditugaskan",
+        status: isJobAssigned ? "COMPLETED" : isUnderReview ? "CURRENT" : "UPCOMING",
         timestamp: caseData.respondedAt,
         actor: caseData.organizationName,
-        description: "Provider memeriksa riwayat servis dan keluhan garansi.",
-        icon: Clock,
-      },
-      {
-        id: "step-approved",
-        label: "Dijadwalkan",
-        status: isJobScheduled || isExecuting || isFinished ? "COMPLETED" : isInResolution ? "CURRENT" : "UPCOMING",
-        timestamp: job?.scheduledDate,
-        actor: caseData.organizationName,
         description: job?.workerName
-          ? `Teknisi ${job.workerName} ditugaskan pada ${job.scheduledDate || "jadwal disepakati"}.`
-          : "Provider menyetujui servis ulang tanpa biaya tambahan (Rp0).",
+          ? `Teknisi ${job.workerName} ditugaskan untuk kunjungan ${job.scheduledDate || "sesuai jadwal"}.`
+          : "Provider menyetujui servis ulang garansi Rp0 dan menugaskan teknisi resmi.",
         icon: CalendarCheck,
       },
       {
-        id: "step-execution",
-        label: "Pengerjaan",
-        status: isFinished ? "COMPLETED" : isExecuting ? "CURRENT" : "UPCOMING",
+        id: "step-accepted",
+        label: "Teknisi Terima",
+        status: isJobAccepted ? "COMPLETED" : opStatus === "ASSIGNED" ? "CURRENT" : "UPCOMING",
         timestamp: undefined,
         actor: job?.workerName || "Teknisi",
-        description: isExecuting
-          ? "Teknisi sedang melaksanakan pengerjaan ulang garansi di lokasi."
-          : isFinished
-          ? "Pengerjaan fisik telah selesai dan unit telah diuji kembali."
-          : "Menunggu kedatangan teknisi.",
+        description: isJobAccepted
+          ? `Teknisi ${job?.workerName || "Resmi"} telah menerima tugas dan siap berangkat.`
+          : `Menunggu konfirmasi penerimaan tugas dari teknisi di aplikasi.`,
+        icon: Check,
+      },
+      {
+        id: "step-otw",
+        label: "Teknisi OTW",
+        status: isOtw ? (opStatus === "OTW" ? "CURRENT" : "COMPLETED") : opStatus === "ACCEPTED" ? "CURRENT" : "UPCOMING",
+        timestamp: undefined,
+        actor: job?.workerName || "Teknisi",
+        description: opStatus === "OTW"
+          ? `Teknisi sedang dalam perjalanan menuju lokasi Anda.`
+          : isOtw
+          ? `Teknisi telah sampai di lokasi perbaikan.`
+          : `Teknisi bersiap menuju lokasi pelanggan.`,
+        icon: Truck,
+      },
+      {
+        id: "step-execution",
+        label: "Pengerjaan Rp0",
+        status: isDone ? "COMPLETED" : opStatus === "IN_PROGRESS" ? "CURRENT" : "UPCOMING",
+        timestamp: undefined,
+        actor: job?.workerName || "Teknisi",
+        description: opStatus === "IN_PROGRESS"
+          ? `Teknisi tiba di lokasi dan langsung melaksanakan perbaikan garansi bebas biaya.`
+          : isDone
+          ? `Pengerjaan fisik perbaikan selesai dan telah diuji tuntas.`
+          : `Pengerjaan servis ulang garansi bebas biaya (tanpa diagnosa berbayar).`,
         icon: Wrench,
       },
       {
         id: "step-completed",
         label: "Selesai",
-        status: isCompleted ? "COMPLETED" : isFinished ? "CURRENT" : "UPCOMING",
-        timestamp: isCompleted ? caseData.respondedAt : undefined,
+        status: isCompleted ? "COMPLETED" : isDone ? "CURRENT" : "UPCOMING",
+        timestamp: isCompleted ? (caseData.respondedAt || caseData.submittedAt) : undefined,
         actor: "Pelanggan & Provider",
         description: isCompleted
-          ? "Garansi servis selesai diverifikasi. Hak konsumen terpenuhi penuh."
-          : "Menunggu verifikasi pengerjaan selesai dari pelanggan.",
+          ? `Perbaikan garansi tuntas dan terverifikasi dengan bukti autentik hasil pengerjaan.`
+          : `Menunggu konfirmasi akhir penyelesaian garansi.`,
         icon: ShieldCheck,
       },
     ];
   }
 
-  // 5. REPLACEMENT Flow (Penggantian Barang)
+  // 5. REPLACEMENT Flow (Penggantian Barang / Retur Fisik)
   const rep = caseData.replacementShipment;
-  const isPacked = rep?.shippingStatus === "PREPARING" || rep?.shippingStatus === "SHIPPED" || rep?.shippingStatus === "DELIVERED" || isCompleted;
-  const isShipped = rep?.shippingStatus === "SHIPPED" || rep?.shippingStatus === "DELIVERED" || isCompleted;
   const isDelivered = rep?.shippingStatus === "DELIVERED" || isCompleted;
+  const isShipped = rep?.shippingStatus === "SHIPPED" || isDelivered;
+  const isPacked = rep?.shippingStatus === "PREPARING" || isShipped;
 
+  // Jika membutuhkan Retur Fisik ke Toko lebih dulu (Alur 6 Langkah Retur & Penggantian Unit)
+  if (caseData.requiresReturn || caseData.returnShipping?.requiresPhysicalReturn || caseData.returnShipping) {
+    const ret = caseData.returnShipping;
+    const isAddressIssued = caseData.mainStatus !== "SUBMITTED";
+    const isReturnShipped = Boolean(ret?.trackingNumber);
+    const isQcPassed = Boolean(ret?.inspectedByMerchant);
+    const isNewUnitShipped = rep?.shippingStatus === "SHIPPED" || isDelivered;
+
+    return [
+      {
+        id: "step-submitted",
+        label: "Diajukan",
+        status: "COMPLETED",
+        timestamp: caseData.submittedAt,
+        actor: "Pelanggan",
+        description: `Klaim retur dan penggantian unit diajukan oleh pembeli.`,
+        icon: ShieldCheck,
+      },
+      {
+        id: "step-address",
+        label: "Alamat Terbit",
+        status: isAddressIssued ? "COMPLETED" : "CURRENT",
+        timestamp: caseData.respondedAt,
+        actor: caseData.organizationName,
+        description: isAddressIssued
+          ? `Alamat gudang toko retur telah diterbitkan untuk pengiriman balik barang.`
+          : `Menunggu penerbitan instruksi dan alamat gudang retur dari penjual.`,
+        icon: MapPin,
+      },
+      {
+        id: "step-return-shipped",
+        label: "Kirim Retur",
+        status: isReturnShipped ? "COMPLETED" : isAddressIssued ? "CURRENT" : "UPCOMING",
+        timestamp: ret?.shippedAt,
+        actor: "Pelanggan",
+        description: isReturnShipped
+          ? `Barang retur telah dikirim pembeli (Resi: ${ret?.trackingNumber || "-"}).`
+          : `Pembeli menyiapkan dan mengirimkan barang rusak ke alamat retur toko.`,
+        icon: Truck,
+      },
+      {
+        id: "step-qc",
+        label: "Toko QC",
+        status: isQcPassed ? "COMPLETED" : isReturnShipped ? "CURRENT" : "UPCOMING",
+        timestamp: ret?.receivedAt,
+        actor: caseData.organizationName,
+        description: isQcPassed
+          ? `Barang retur telah diterima di gudang toko dan lulus inspeksi fisik.`
+          : isReturnShipped
+          ? `Barang retur dalam perjalanan atau antrian inspeksi QC toko.`
+          : `Menunggu barang retur sampai di toko untuk pemeriksaan QC.`,
+        icon: Check,
+      },
+      {
+        id: "step-replacement-shipped",
+        label: "Kirim Unit Baru",
+        status: isDelivered ? "COMPLETED" : isNewUnitShipped ? "CURRENT" : isQcPassed ? "CURRENT" : "UPCOMING",
+        timestamp: rep?.shippedAt,
+        actor: rep?.courierName || caseData.organizationName,
+        description: isNewUnitShipped
+          ? (rep?.trackingUrl
+              ? `Unit pengganti baru sedang diantar via ${rep?.courierName || "GoSend Instant"} (Ongkir Rp0). Pelanggan dapat memantau live tracking Gojek.`
+              : `Unit baru dikirim via ${rep?.courierName || "Kurir Toko"} (Ongkir Rp0).`)
+          : isQcPassed
+          ? `Inspeksi QC lolos. Toko sedang menyiapkan unit baru untuk segera dikirimkan.`
+          : `Pengiriman unit baru dilakukan setelah barang retur lolos inspeksi QC.`,
+        icon: Truck,
+      },
+      {
+        id: "step-completed",
+        label: "Selesai",
+        status: isCompleted ? "COMPLETED" : isDelivered ? "CURRENT" : "UPCOMING",
+        timestamp: isCompleted ? (caseData.respondedAt || rep?.deliveredAt) : undefined,
+        actor: "Pelanggan & Toko",
+        description: isCompleted
+          ? `Unit baru telah diterima dengan baik oleh pelanggan. Kasus retur selesai.`
+          : `Menunggu penerimaan fisik dan konfirmasi unit pengganti dari pelanggan.`,
+        icon: ShieldCheck,
+      },
+    ];
+  }
+
+  // Jika penggantian unit tanpa retur fisik (misal rusak total saat tiba)
   return [
     {
       id: "step-submitted",
@@ -563,7 +658,7 @@ function buildAdaptiveTimelineSteps(caseData: AfterSalesCase): TimelineStep[] {
           : "UPCOMING",
       timestamp: caseData.respondedAt,
       actor: caseData.organizationName,
-      description: "Merchant memeriksa kecocokan unit dan bukti kendala.",
+      description: "Merchant memeriksa kelayakan klaim dan bukti kendala.",
       icon: Clock,
     },
     {
@@ -576,28 +671,28 @@ function buildAdaptiveTimelineSteps(caseData: AfterSalesCase): TimelineStep[] {
       icon: Check,
     },
     {
-      id: "step-packed",
-      label: "Dikemas",
-      status: isShipped ? "COMPLETED" : isPacked ? "CURRENT" : "UPCOMING",
-      timestamp: undefined,
-      actor: caseData.organizationName,
-      description: "Unit pengganti baru sedang disiapkan dan dikemas rapi.",
-      icon: Package,
-    },
-    {
       id: "step-shipped",
-      label: "Dikirim",
-      status: isDelivered ? "COMPLETED" : isShipped ? "CURRENT" : "UPCOMING",
+      label: "Kirim Unit Baru",
+      status: isDelivered ? "COMPLETED" : isShipped ? "CURRENT" : isPacked ? "CURRENT" : "UPCOMING",
       timestamp: rep?.shippedAt,
-      actor: rep?.courierName || "Kurir Pengiriman",
-      description: rep?.trackingNumber
-        ? `Barang dikirim dengan ${rep.courierName || "Ekspedisi"} (Resi: ${rep.trackingNumber}).`
-        : "Barang sedang dalam perjalanan ke alamat Anda.",
+      actor: rep?.courierName || "Kurir Toko",
+      description: (() => {
+        if (!rep) return "Unit baru sedang disiapkan dan dikirim ke alamat Anda.";
+        const isGoSend = rep.shippingMethod === "GOSEND" || rep.courierName?.toLowerCase().includes("gosend");
+        if (isGoSend) {
+          const driver = rep.driverName || "Driver GoSend";
+          const phone = rep.driverPhone || "0812-9876-5432";
+          return `Barang baru dikirim via GoSend Instant (${driver} - ${phone}) bebas ongkir.`;
+        }
+        const sender = rep.driverName || "Kurir Toko";
+        const phone = rep.driverPhone || "0813-9876-5432";
+        return `Barang baru diantar langsung oleh Kurir Toko (${sender} - ${phone}) bebas ongkir.`;
+      })(),
       icon: Truck,
     },
     {
       id: "step-completed",
-      label: "Diterima",
+      label: "Selesai",
       status: isCompleted ? "COMPLETED" : isDelivered ? "CURRENT" : "UPCOMING",
       timestamp: rep?.deliveredAt,
       actor: "Pelanggan",

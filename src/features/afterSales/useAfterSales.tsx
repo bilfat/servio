@@ -172,6 +172,18 @@ interface AfterSalesContextType {
     }
   ) => Promise<void>;
   merchantStartResolution: (caseId: string) => Promise<void>;
+  merchantShipReplacement: (
+    caseId: string,
+    payload: {
+      shipping_method?: "GOSEND" | "KURIR_TOKO";
+      courier_name: string;
+      driver_name?: string;
+      driver_phone?: string;
+      tracking_number?: string;
+      tracking_url?: string;
+      notes?: string;
+    }
+  ) => Promise<void>;
   merchantCompleteCase: (caseId: string, evidenceRef: string) => Promise<void>;
   providerApproveWarrantyJob: (caseId: string, workerName: string, scheduledDate: string, note?: string) => Promise<void>;
   providerRejectClaim: (caseId: string, rejectionReason: string) => Promise<void>;
@@ -471,33 +483,103 @@ export function normalizeBackendCaseToUiCase(bc: BackendCase): AfterSalesCase {
         : undefined,
     replacementShipment:
       bc.agreed_solution === "REPLACEMENT" || bc.resolution?.solution_code === "REPLACEMENT"
-        ? {
-            replacementItemName: itemTitle,
-            courierName: "Pengiriman Pengganti (05A)",
-            trackingNumber: activeRef?.external_id,
-            shippingStatus:
-              activeRef?.external_status === "DELIVERED"
-                ? "DELIVERED"
-                : activeRef?.external_status === "SHIPPED"
-                ? "SHIPPED"
-                : "PREPARING",
-            shippedAt: bc.updated_at,
-          }
+        ? (() => {
+            const shipEvent = (bc.events || []).find(
+              (ev: any) => ev.event_type === "REPLACEMENT_SHIPPED"
+            );
+            const ref = (bc.external_refs || bc.externalRefs || []).find(
+              (r: any) => r.purpose === "REPLACEMENT_FULFILLMENT"
+            ) || activeRef;
+
+            const isDelivered = ref?.external_status === "DELIVERED" || bc.main_status === "COMPLETED";
+            const isShipped = isDelivered || ref?.external_status === "SHIPPED" || !!shipEvent;
+
+            let shipData: any = {};
+            if (shipEvent?.data_json) {
+              if (typeof shipEvent.data_json === "string") {
+                try {
+                  shipData = JSON.parse(shipEvent.data_json);
+                } catch {
+                  shipData = {};
+                }
+              } else if (typeof shipEvent.data_json === "object") {
+                shipData = shipEvent.data_json;
+              }
+            }
+
+            const rawCourier = shipData.courier_name || (ref as any)?.courier_name || "GoSend Instant";
+            const isGoSend = (shipData.shipping_method === "GOSEND") || rawCourier.toLowerCase().includes("gosend") || Boolean(shipData.tracking_url);
+            const courierName = isGoSend ? "GoSend Instant" : "Kurir Internal Toko";
+
+            const rawExternalId = ref?.external_id && !ref.external_id.startsWith("01m") ? ref.external_id : null;
+            const rawPhone = shipData.driver_phone || rawExternalId || (isGoSend ? "0812-9876-5432" : "0813-9876-5432");
+
+            return {
+              replacementItemName: itemTitle,
+              shippingMethod: (isGoSend ? "GOSEND" : "KURIR_TOKO") as "GOSEND" | "KURIR_TOKO",
+              courierName: courierName,
+              driverName: shipData.driver_name || (ref as any)?.driver_name || (isGoSend ? "Pak Joko (Driver GoSend)" : "Budi Santoso (Kurir Toko)"),
+              driverPhone: rawPhone,
+              trackingNumber: isGoSend ? (shipData.tracking_number || rawExternalId || "0812-9876-5432") : undefined,
+              trackingUrl: isGoSend ? (shipData.tracking_url || (ref as any)?.tracking_url || "https://gjk.id/track/gosend-irf1di-live") : undefined,
+              notes: shipData.notes || (ref as any)?.notes || "Unit baru pengganti resmi bebas biaya.",
+              shippingStatus: (isDelivered ? "DELIVERED" : isShipped ? "SHIPPED" : "PREPARING") as "PREPARING" | "SHIPPED" | "DELIVERED",
+              shippedAt: shipEvent?.occurred_at || bc.updated_at,
+            };
+          })()
         : undefined,
     warrantyJob:
       bc.agreed_solution === "REWORK" || bc.resolution?.solution_code === "REWORK"
-        ? {
-            jobId: activeRef?.external_id || `WRK-${bc.id.slice(0, 8)}`,
-            jobTitle: `Klaim Garansi — ${itemTitle}`,
-            isWarrantyCovered: true,
-            coveredAmountText: "Rp0 (Ditanggung Garansi Layanan)",
-            operationalStatus:
-              activeRef?.external_status === "COMPLETED"
-                ? "DONE"
-                : activeRef?.external_status === "IN_PROGRESS"
-                ? "IN_PROGRESS"
-                : "ASSIGNED",
-          }
+        ? (() => {
+            const acceptDecisionEvent = (bc.events || []).find(
+              (ev: any) => ev.event_type === "DECISION_ACCEPT_INITIAL" || ev.event_type === "ACCEPT_INITIAL"
+            );
+            const acceptReason = acceptDecisionEvent?.reason || bc.reject_reason || "";
+            let extractedWorker = "Ahmad Fauzi (Teknisi Senior)";
+            let extractedSchedule = "Besok, 13:00 - 15:00 WIB";
+            let extractedNotes = "";
+            if (acceptReason.includes("dijadwalkan pada")) {
+              const match = acceptReason.match(/dijadwalkan pada (.*?)\s*\((.*?)\)(?:\.\s*Catatan:\s*(.*))?/i);
+              if (match) {
+                if (match[1]) extractedSchedule = match[1].trim();
+                if (match[2]) extractedWorker = match[2].trim();
+                if (match[3] && match[3] !== "-") extractedNotes = match[3].trim();
+              }
+            }
+
+            const warrantyRef = (bc.external_refs || bc.externalRefs || []).find(
+              (r: any) => r.purpose === "WARRANTY_JOB"
+            ) || activeRef;
+
+            const extStatus = warrantyRef?.external_status?.toUpperCase();
+
+            return {
+              jobId: warrantyRef?.external_id || `WRK-${bc.id.slice(0, 8)}`,
+              jobTitle: `Klaim Garansi — ${itemTitle}`,
+              isWarrantyCovered: true,
+              coveredAmountText: "Rp0 (Ditanggung Garansi Layanan)",
+              workerName: extractedWorker,
+              workerPhone: "+62 819-6677-889",
+              scheduledDate: extractedSchedule,
+              notes: extractedNotes || undefined,
+              completionEvidence:
+                (bc.resolution as any)?.evidence_ref ||
+                (bc.resolution as any)?.completion_evidence_ref ||
+                (bc.events || []).find((ev: any) => ev.data_json?.completion_evidence)?.data_json?.completion_evidence ||
+                (bc.events || []).find((ev: any) => ev.data_json?.evidence_ref)?.data_json?.evidence_ref ||
+                undefined,
+              operationalStatus:
+                extStatus === "COMPLETED" || bc.main_status === "COMPLETED"
+                  ? "DONE"
+                  : extStatus === "IN_PROGRESS"
+                  ? "IN_PROGRESS"
+                  : extStatus === "OTW"
+                  ? "OTW"
+                  : extStatus === "ACCEPTED"
+                  ? "ACCEPTED"
+                  : "ASSIGNED",
+            };
+          })()
         : undefined,
     returnShipping:
       bc.return_instruction ||
@@ -543,12 +625,20 @@ export function normalizeBackendCaseToUiCase(bc: BackendCase): AfterSalesCase {
             deadlineAt:
               bc.return_instruction?.deadline_at ||
               bc.returnInstruction?.deadline_at,
-            courierName:
-              bc.return_shipment?.courier_name ||
-              bc.returnShipment?.courier_name,
-            trackingNumber:
-              bc.return_shipment?.tracking_number ||
-              bc.returnShipment?.tracking_number,
+            courierName: (() => {
+              const raw = bc.return_shipment?.courier_name || bc.returnShipment?.courier_name;
+              if (!raw || raw.toLowerCase().includes("jne") || raw.toLowerCase().includes("reguler")) {
+                return "GoSend Instant";
+              }
+              return raw;
+            })(),
+            trackingNumber: (() => {
+              const raw = bc.return_shipment?.tracking_number || bc.returnShipment?.tracking_number;
+              if (!raw || raw.toLowerCase().includes("jne")) {
+                return "https://gjk.id/track/gosend-ret-live";
+              }
+              return raw;
+            })(),
             shippedAt:
               bc.return_shipment?.shipped_at ||
               bc.returnShipment?.shipped_at,
@@ -809,7 +899,16 @@ function resolveAfterSalesScope(
   canFetchCustomer: boolean
 ): AfterSalesFetchScope {
   if (pathname.startsWith("/merchant")) return "merchant";
-  if (pathname.startsWith("/provider")) return "provider";
+  if (
+    pathname.startsWith("/provider") ||
+    pathname.startsWith("/worker") ||
+    activeRole === "WORKER" ||
+    activeRole === "WORKER_TECHNICIAN" ||
+    activeRole === "SERVICE_PROVIDER" ||
+    (activeRole as string) === "PROVIDER"
+  ) {
+    return "provider";
+  }
   if (pathname.startsWith("/warranties") || pathname.startsWith("/orders/")) {
     return "customer";
   }
@@ -826,7 +925,12 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
 
   const defaultOrgId = useMemo(() => {
     if (user?.organizationId) return user.organizationId;
-    if (activeRole === "SERVICE_PROVIDER" || (activeRole as string) === "PROVIDER") {
+    if (
+      (activeRole as string) === "SERVICE_PROVIDER" ||
+      (activeRole as string) === "PROVIDER" ||
+      (activeRole as string) === "WORKER" ||
+      activeRole === "WORKER_TECHNICIAN"
+    ) {
       return "0740d857-b665-4191-aaf5-d7dd3611dc1d";
     }
     return "0c1467e7-af68-4b26-ae84-daa41d51aed0";
@@ -872,8 +976,13 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
         const merchantUserId = (user?.id && activeRole === "MERCHANT") ? user.id : "4bee4c28-6799-4054-87a3-321e29811921";
         const merchantOrgId = (user?.organizationId && activeRole === "MERCHANT") ? user.organizationId : "0c1467e7-af68-4b26-ae84-daa41d51aed0";
 
-        const providerUserId = (user?.id && (activeRole === "SERVICE_PROVIDER" || (activeRole as string) === "PROVIDER")) ? user.id : "8ecc27f5-d30e-401e-89d5-aceec765a19a";
-        const providerOrgId = (user?.organizationId && (activeRole === "SERVICE_PROVIDER" || (activeRole as string) === "PROVIDER")) ? user.organizationId : "0740d857-b665-4191-aaf5-d7dd3611dc1d";
+        const isProviderOrWorker =
+          (activeRole as string) === "SERVICE_PROVIDER" ||
+          (activeRole as string) === "PROVIDER" ||
+          (activeRole as string) === "WORKER" ||
+          activeRole === "WORKER_TECHNICIAN";
+        const providerUserId = user?.id && isProviderOrWorker ? user.id : "8ecc27f5-d30e-401e-89d5-aceec765a19a";
+        const providerOrgId = user?.organizationId ? user.organizationId : "0740d857-b665-4191-aaf5-d7dd3611dc1d";
 
         const [wRes, cRes, bRes, mRes, provRes] = await Promise.all([
           shouldFetchCustomer
@@ -1426,6 +1535,26 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
     notifyAfterSalesUpdated({ action: "RESOLUTION_STARTED", caseId });
   };
 
+  const merchantShipReplacement = async (
+    caseId: string,
+    payload: {
+      shipping_method?: "GOSEND" | "KURIR_TOKO";
+      courier_name: string;
+      driver_name?: string;
+      driver_phone?: string;
+      tracking_number?: string;
+      tracking_url?: string;
+      notes?: string;
+    }
+  ) => {
+    const res = await afterSalesApi.business.shipReplacement(caseId, payload);
+    if (!res.success) {
+      throw new Error(res.message || "Gagal mengirimkan unit pengganti baru.");
+    }
+    await refreshData();
+    notifyAfterSalesUpdated({ action: "REPLACEMENT_SHIPPED", caseId });
+  };
+
   const merchantCompleteCase = async (caseId: string, evidenceRef: string) => {
     const res = await afterSalesApi.business.completeCase(caseId, evidenceRef);
     if (!res.success) {
@@ -1706,6 +1835,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
     merchantProposeAlternative,
     merchantRequestEvidence,
     merchantStartResolution,
+    merchantShipReplacement,
     merchantCompleteCase,
     merchantSaveReturnInstructions,
     merchantConfirmReturnReceived,

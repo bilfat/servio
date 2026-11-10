@@ -23,6 +23,7 @@ import {
   Tag,
   Bank,
   Copy,
+  MapPin,
 } from "@phosphor-icons/react";
 import { AfterSalesCase } from "@/types/afterSales";
 import { useAfterSales } from "@/features/afterSales/useAfterSales";
@@ -795,20 +796,41 @@ export function AfterSalesCaseDetail({
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs bg-blue-50/50 p-4 rounded-2xl border border-blue-100">
                 <div>
                   <span className="text-slate-400 block text-[11px]">Unit Pengganti:</span>
                   <span className="font-bold text-slate-800">{caseData.replacementShipment.replacementItemName}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">Kurir & No. Resi:</span>
-                  <span className="font-bold text-slate-800 font-mono">
-                    {caseData.replacementShipment.courierName} • {caseData.replacementShipment.trackingNumber || "Menunggu Resi"}
+                  <span className="text-slate-400 block text-[11px]">Metode &amp; Kurir:</span>
+                  <strong className="text-slate-800">
+                    {caseData.replacementShipment.shippingMethod === "KURIR_TOKO" ? "Kurir Internal Toko" : "GoSend Instant"}
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[11px]">Pengirim / Driver:</span>
+                  <strong className="text-slate-800">
+                    {caseData.replacementShipment.driverName || (caseData.replacementShipment.shippingMethod === "KURIR_TOKO" ? "Kurir Toko" : "Driver GoSend")}
+                  </strong>
+                  <span className="text-slate-500 font-mono text-[10px] block">
+                    {caseData.replacementShipment.driverPhone || "0812-9876-5432"}
                   </span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[11px]">Estimasi Tiba:</span>
-                  <span className="font-bold text-blue-700">{caseData.replacementShipment.estimatedArrival || "-"}</span>
+                  <span className="text-slate-400 block text-[11px]">Pelacakan:</span>
+                  {caseData.replacementShipment.trackingUrl && (caseData.replacementShipment.shippingMethod === "GOSEND" || caseData.replacementShipment.courierName?.toLowerCase().includes("gosend")) ? (
+                    <a
+                      href={caseData.replacementShipment.trackingUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 px-2 py-0.5 rounded-lg transition"
+                    >
+                      <MapPin size={12} weight="bold" />
+                      <span>Live Tracking Gojek</span>
+                    </a>
+                  ) : (
+                    <span className="text-slate-600 text-[11px]">Diantar Kurir Toko</span>
+                  )}
                 </div>
               </div>
               <p className="text-[11px] text-slate-500 italic">

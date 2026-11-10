@@ -16,7 +16,7 @@ class UpdateCategoryRequest extends FormRequest
         return [
             'name' => ['sometimes', 'required', 'string', 'max:160'],
             'description' => ['nullable', 'string', 'max:2000'],
-            'icon_name' => ['nullable', 'string', 'max:64'],
+            'icon_name' => ['nullable', 'string', 'max:255'],
             'master_id' => ['prohibited'],
             'parent_id' => ['prohibited'],
         ];

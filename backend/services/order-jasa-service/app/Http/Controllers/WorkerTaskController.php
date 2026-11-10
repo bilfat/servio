@@ -302,6 +302,60 @@ class WorkerTaskController
     }
 
     /**
+     * Worker accept warranty rework job assignment
+     */
+    public function acceptWarrantyJob(Request $request, string $id): JsonResponse
+    {
+        $job = \App\Models\ServiceWarrantyJob::where('id', $id)
+            ->orWhere('case_id', $id)
+            ->firstOrFail();
+
+        $job->update([
+            'status' => 'ACCEPTED',
+        ]);
+
+        $this->notifyAfterSalesWarrantyStatus($job);
+
+        return ApiResponse::success($job, 200, 'Tugas perbaikan garansi berhasil diterima.');
+    }
+
+    /**
+     * Worker start trip / OTW to customer location for warranty rework
+     */
+    public function otwWarrantyJob(Request $request, string $id): JsonResponse
+    {
+        $job = \App\Models\ServiceWarrantyJob::where('id', $id)
+            ->orWhere('case_id', $id)
+            ->firstOrFail();
+
+        $job->update([
+            'status' => 'OTW',
+        ]);
+
+        $this->notifyAfterSalesWarrantyStatus($job);
+
+        return ApiResponse::success($job, 200, 'Teknisi berangkat menuju lokasi pelanggan (OTW).');
+    }
+
+    /**
+     * Worker arrived & start rework execution (Rp0)
+     */
+    public function startWorkWarrantyJob(Request $request, string $id): JsonResponse
+    {
+        $job = \App\Models\ServiceWarrantyJob::where('id', $id)
+            ->orWhere('case_id', $id)
+            ->firstOrFail();
+
+        $job->update([
+            'status' => 'IN_PROGRESS',
+        ]);
+
+        $this->notifyAfterSalesWarrantyStatus($job);
+
+        return ApiResponse::success($job, 200, 'Teknisi tiba di lokasi dan memulai pengerjaan ulang garansi.');
+    }
+
+    /**
      * Complete warranty rework job with notes and evidence
      */
     public function completeWarrantyJob(Request $request, string $id): JsonResponse
@@ -320,7 +374,10 @@ class WorkerTaskController
             ->orWhere('case_id', $id)
             ->firstOrFail();
 
-        $evidenceNote = $validated['completion_evidence'] . (!empty($validated['notes']) ? ' | ' . $validated['notes'] : '');
+        $evidenceNote = $validated['completion_evidence'];
+        if (!empty($validated['notes']) && !str_contains($evidenceNote, $validated['notes'])) {
+            $evidenceNote .= ' | ' . $validated['notes'];
+        }
 
         $job->update([
             'status' => 'COMPLETED',
@@ -328,6 +385,36 @@ class WorkerTaskController
             'completed_at' => now(),
         ]);
 
+        $this->notifyAfterSalesWarrantyStatus($job);
+
         return ApiResponse::success($job, 200, 'Pekerjaan garansi berhasil diselesaikan.');
+    }
+
+    /**
+     * Notify After-Sales Service 08 of warranty job status update
+     */
+    private function notifyAfterSalesWarrantyStatus(\App\Models\ServiceWarrantyJob $job): void
+    {
+        try {
+            $asUrl = config('services.after_sales.base_url', 'http://127.0.0.1:8008');
+            \Illuminate\Support\Facades\Http::withHeaders([
+                'X-Internal-Service-Key' => 'servio_local_internal_service_key_2026',
+                'X-Source-Service' => 'order-jasa-service',
+                'X-Service-Token' => 'servio_s2s_order_jasa_secret_2026',
+                'Accept' => 'application/json',
+            ])->timeout(3)->post("{$asUrl}/internal/v1/after-sales/cases/{$job->case_id}/external-update", [
+                'target_service' => '05B',
+                'external_id' => $job->id,
+                'external_status' => $job->status,
+                'purpose' => 'WARRANTY_JOB',
+                'data' => [
+                    'completion_evidence' => $job->completion_evidence,
+                    'worker_name' => $job->worker_name,
+                    'scheduled_date' => $job->scheduled_date,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("Failed to notify after-sales for warranty job {$job->id}: " . $e->getMessage());
+        }
     }
 }

@@ -178,7 +178,7 @@ class InternalAfterSalesController
         $serviceAllowedStatuses = [
             '06' => ['PENDING', 'SUCCEEDED', 'FAILED', 'CANCELLED'],
             '05A' => ['PREPARING', 'SHIPPED', 'DELIVERED', 'CANCELLED'],
-            '05B' => ['ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'],
+            '05B' => ['ASSIGNED', 'ACCEPTED', 'OTW', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'],
             '09' => ['ESCALATED', 'RESOLVED', 'CLOSED', 'CANCELLED'],
         ];
 
@@ -264,6 +264,23 @@ class InternalAfterSalesController
             'last_event_id' => $validated['last_event_id'] ?? $ref->last_event_id,
         ]);
 
+        if ($newStatus === 'COMPLETED') {
+            $evidence = $validated['data']['completion_evidence'] ?? null;
+            if ($evidence) {
+                if ($case->resolution) {
+                    $case->resolution->update([
+                        'status' => 'VERIFIED_DONE',
+                        'evidence_ref' => $evidence,
+                    ]);
+                } elseif ($ref->resolution) {
+                    $ref->resolution->update([
+                        'status' => 'VERIFIED_DONE',
+                        'evidence_ref' => $evidence,
+                    ]);
+                }
+            }
+        }
+
         $lastSeq = (int) $case->events()->max('sequence');
         CaseEvent::create([
             'case_id' => $case->id,
@@ -279,6 +296,7 @@ class InternalAfterSalesController
                 'target_service' => $targetService,
                 'new_status' => $newStatus,
                 'event_id' => $validated['last_event_id'] ?? null,
+                'completion_evidence' => $validated['data']['completion_evidence'] ?? null,
             ],
             'occurred_at' => now(),
         ]);

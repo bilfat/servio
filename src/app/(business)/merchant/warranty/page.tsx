@@ -26,6 +26,7 @@ import {
   Bank,
   SlidersHorizontal,
   Truck,
+  MapPin,
 } from "@phosphor-icons/react";
 import { useAfterSales } from "@/features/afterSales/useAfterSales";
 import { useActiveRole } from "@/context/RoleContext";
@@ -73,6 +74,7 @@ function MerchantAfterSalesContent() {
     merchantProposeAlternative,
     merchantRequestEvidence,
     merchantStartResolution,
+    merchantShipReplacement,
     merchantCompleteCase,
     merchantSaveReturnInstructions,
     merchantConfirmReturnReceived,
@@ -88,13 +90,17 @@ function MerchantAfterSalesContent() {
       (c.organizationId === activeOrgId || c.organizationType === "MERCHANT")
   );
 
-  const isCaseRefund = (c: AfterSalesCase) =>
-    c.customerRequestedSolution === "REFUND" ||
-    c.chosenSolution === "REFUND" ||
-    c.approvedSolution === "REFUND" ||
-    (c as any).agreedSolution === "REFUND" ||
-    (c as any).initial_solution === "REFUND" ||
-    (c as any).initialSolution === "REFUND";
+  const isCaseRefund = (c: AfterSalesCase) => {
+    if (c.approvedSolution) return c.approvedSolution === "REFUND";
+    if (c.chosenSolution) return c.chosenSolution === "REFUND";
+    if ((c as any).agreedSolution) return (c as any).agreedSolution === "REFUND";
+    if ((c as any).agreed_solution) return (c as any).agreed_solution === "REFUND";
+    return (
+      c.customerRequestedSolution === "REFUND" ||
+      (c as any).initial_solution === "REFUND" ||
+      (c as any).initialSolution === "REFUND"
+    );
+  };
 
   const merchantRefunds = merchantAllCases.filter(isCaseRefund);
   const merchantReturns = merchantAllCases.filter((c) => !isCaseRefund(c));
@@ -186,6 +192,38 @@ function MerchantAfterSalesContent() {
   const [inspectSerialMatched, setInspectSerialMatched] = useState(true);
   const [inspectionNotes, setInspectionNotes] = useState("");
   const [inspectionResultPass, setInspectionResultPass] = useState(true);
+
+  // Ship Replacement Modal State
+  const [shippingReplacementCase, setShippingReplacementCase] = useState<AfterSalesCase | null>(null);
+  const [shippingMethod, setShippingMethod] = useState<"GOSEND" | "KURIR_TOKO">("GOSEND");
+  const [gojekTrackingUrl, setGojekTrackingUrl] = useState("https://gjk.id/track/srv-rep-live");
+  const [driverName, setDriverName] = useState("Budi Santoso (Kurir Internal)");
+  const [driverPhone, setDriverPhone] = useState("+62 812-3456-7890");
+  const [shippingNotes, setShippingNotes] = useState("Unit baru pengganti resmi, segel utuh.");
+
+  const handleShipReplacementSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!shippingReplacementCase) return;
+    try {
+      const courierName = shippingMethod === "GOSEND" ? "GoSend Instant" : "Kurir Toko";
+      const trackingUrl = shippingMethod === "GOSEND" ? gojekTrackingUrl.trim() : undefined;
+
+      await merchantShipReplacement(shippingReplacementCase.id, {
+        shipping_method: shippingMethod,
+        courier_name: courierName,
+        driver_name: driverName.trim(),
+        driver_phone: driverPhone.trim(),
+        tracking_number: driverPhone.trim(),
+        tracking_url: trackingUrl,
+        notes: shippingNotes.trim(),
+      });
+
+      setToastMsg(`Unit pengganti baru berhasil dikirim via ${courierName} (Ongkir Rp0).`);
+      setShippingReplacementCase(null);
+    } catch (err: any) {
+      setToastMsg(`Gagal mengirimkan unit pengganti: ${err.message}`);
+    }
+  };
 
   const handleInspectionSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -559,10 +597,10 @@ function MerchantAfterSalesContent() {
                 Alur Retur &amp; Penggantian Barang Fisik:
               </span>
               <span className="text-blue-700 font-mono">
-                {isCompleted ? "Unit Pengganti Selesai" : isRejected ? "Ditolak" : "Berjalan"}
+                {isCompleted ? "Unit Pengganti Selesai" : isRejected ? "Ditolak" : c.replacementShipment?.shippingStatus === "SHIPPED" ? "Unit Sedang Dikirim" : "Berjalan"}
               </span>
             </div>
-            <div className="grid grid-cols-5 gap-1 text-center text-[9px] font-bold">
+            <div className="grid grid-cols-6 gap-1 text-center text-[8.5px] font-bold">
               <div className="space-y-0.5">
                 <div className="h-1.5 rounded-full bg-emerald-500" />
                 <span className="text-emerald-800">1. Diajukan</span>
@@ -576,12 +614,16 @@ function MerchantAfterSalesContent() {
                 <span className={c.returnShipping?.trackingNumber ? "text-emerald-800" : "text-slate-400"}>3. Pembeli Kirim</span>
               </div>
               <div className="space-y-0.5">
-                <div className={`h-1.5 rounded-full ${c.returnShipping?.inspectedByMerchant ? "bg-emerald-500" : c.mainStatus === "IN_RESOLUTION" ? "bg-blue-600 animate-pulse" : "bg-slate-200"}`} />
+                <div className={`h-1.5 rounded-full ${c.returnShipping?.inspectedByMerchant ? "bg-emerald-500" : c.mainStatus === "AWAITING_RETURN" ? "bg-blue-600 animate-pulse" : "bg-slate-200"}`} />
                 <span className={c.returnShipping?.inspectedByMerchant ? "text-emerald-800" : "text-slate-400"}>4. Toko QC</span>
               </div>
               <div className="space-y-0.5">
+                <div className={`h-1.5 rounded-full ${isCompleted ? "bg-emerald-500" : c.replacementShipment?.shippingStatus === "SHIPPED" ? "bg-blue-600 animate-pulse" : c.mainStatus === "IN_RESOLUTION" ? "bg-amber-500" : "bg-slate-200"}`} />
+                <span className={isCompleted || c.replacementShipment?.shippingStatus === "SHIPPED" ? "text-emerald-800" : c.mainStatus === "IN_RESOLUTION" ? "text-amber-800" : "text-slate-400"}>5. Kirim Unit Baru</span>
+              </div>
+              <div className="space-y-0.5">
                 <div className={`h-1.5 rounded-full ${isCompleted ? "bg-emerald-500" : isRejected ? "bg-rose-500" : "bg-slate-200"}`} />
-                <span className={isCompleted ? "text-emerald-800" : isRejected ? "text-rose-700" : "text-slate-400"}>{isRejected ? "Ditolak" : "5. Selesai"}</span>
+                <span className={isCompleted ? "text-emerald-800" : isRejected ? "text-rose-700" : "text-slate-400"}>{isRejected ? "Ditolak" : "6. Selesai"}</span>
               </div>
             </div>
           </div>
@@ -589,7 +631,7 @@ function MerchantAfterSalesContent() {
 
         {/* SECTION 4: INFORMASI LOGISTIK RETUR FISIK (Bila Retur Barang) */}
         {!isRefund && (
-          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-1.5">
+          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-2">
             <span className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5">
               <Truck size={14} weight="bold" className="text-blue-600" />
               Status Logistik &amp; Kurir Retur:
@@ -614,12 +656,55 @@ function MerchantAfterSalesContent() {
                 </strong>
               </p>
               <p>
-                Unit Pengganti Toko:{" "}
-                <strong className="font-mono text-emerald-700">
-                  {c.replacementShipment?.trackingNumber || (isCompleted ? "Unit Pengganti Terkirim" : "Diproses setelah QC")}
+                Status Unit Baru:{" "}
+                <strong className={isCompleted ? "text-emerald-700 font-mono" : c.replacementShipment?.shippingStatus === "SHIPPED" ? "text-blue-700 font-mono" : "text-slate-600"}>
+                  {c.replacementShipment?.shippingStatus === "SHIPPED"
+                    ? `Sedang Dikirim (${c.replacementShipment.courierName || "GoSend"})`
+                    : isCompleted
+                    ? "Unit Pengganti Selesai"
+                    : "Diproses setelah QC"}
                 </strong>
               </p>
             </div>
+
+            {c.replacementShipment && (
+              <div className="pt-2 border-t border-slate-200/80 space-y-1.5 text-[11px]">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-blue-900">Kurir Pengganti:</span>
+                    <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md font-semibold">
+                      {c.replacementShipment.shippingMethod === "KURIR_TOKO" || c.replacementShipment.courierName === "Kurir Toko"
+                        ? "Kurir Internal Toko"
+                        : "GoSend Instant"}{" "}
+                      (Ongkir Rp0)
+                    </span>
+                  </div>
+
+                  {c.replacementShipment.trackingUrl && (c.replacementShipment.shippingMethod === "GOSEND" || c.replacementShipment.courierName?.toLowerCase().includes("gosend")) && (
+                    <a
+                      href={c.replacementShipment.trackingUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 font-bold rounded-lg transition"
+                    >
+                      <MapPin size={12} weight="bold" />
+                      <span>Buka Live Tracking Gojek</span>
+                    </a>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3 text-slate-600 text-[11px]">
+                  <span>
+                    <strong>Pengirim:</strong> {c.replacementShipment.driverName || (c.replacementShipment.shippingMethod === "KURIR_TOKO" ? "Kurir Toko" : "Driver GoSend")}
+                  </span>
+                  {c.replacementShipment.driverPhone && (
+                    <span>
+                      <strong>Telp:</strong> <span className="font-mono">{c.replacementShipment.driverPhone}</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -755,26 +840,71 @@ function MerchantAfterSalesContent() {
 
             {c.mainStatus === "IN_RESOLUTION" && c.chosenSolution !== "REPAIR" && (
               <>
-                <button
-                  type="button"
-                  onClick={() => handleStartResolution(c)}
-                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Play size={13} weight="fill" />
-                  <span>Mulai Penyelesaian</span>
-                </button>
+                {/* JIKA REPLACEMENT (GANTI UNIT BARU) */}
+                {c.chosenSolution === "REPLACEMENT" && (!c.replacementShipment || c.replacementShipment.shippingStatus === "PREPARING") && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShippingReplacementCase(c);
+                      setShippingMethod("GOSEND");
+                      setGojekTrackingUrl("https://gjk.id/track/srv-rep-" + c.caseNumber.toLowerCase());
+                      setDriverName("Pak Joko (Driver GoSend)");
+                      setDriverPhone("0812-3456-7890");
+                      setShippingNotes(`Penggantian unit baru resmi garansi untuk pesanan #${c.sourceOrderNumber}`);
+                    }}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Truck size={14} weight="bold" />
+                    <span>Kirim Unit Pengganti (Rp0)</span>
+                  </button>
+                )}
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCompletingCase(c);
-                    setCompletionEvidenceRef("");
-                  }}
-                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
-                >
-                  <CheckCircle size={14} weight="bold" />
-                  <span>Selesaikan Kasus</span>
-                </button>
+                {c.chosenSolution === "REPLACEMENT" && c.replacementShipment?.shippingStatus === "SHIPPED" && (
+                  <>
+                    <span className="px-3 py-1.5 bg-blue-50 text-blue-800 rounded-xl border border-blue-200 text-[11px] font-bold flex items-center gap-1.5">
+                      <Truck size={14} className="text-blue-600" />
+                      <span>Unit Sedang Dikirim ({c.replacementShipment.courierName})</span>
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await merchantCompleteCase(c.id, "MERCHANT_CONFIRMED_DELIVERED");
+                        setToastMsg(`Penggantian unit baru untuk #${c.caseNumber} telah diselesaikan.`);
+                      }}
+                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <CheckCircle size={14} weight="bold" />
+                      <span>Konfirmasi Unit Sampai</span>
+                    </button>
+                  </>
+                )}
+
+                {/* JIKA REFUND */}
+                {c.chosenSolution === "REFUND" && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleStartResolution(c)}
+                      className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Play size={13} weight="fill" />
+                      <span>Proses Refund S-Pay</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCompletingCase(c);
+                        setCompletionEvidenceRef("");
+                      }}
+                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <CheckCircle size={14} weight="bold" />
+                      <span>Selesaikan Refund</span>
+                    </button>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -2227,20 +2357,95 @@ function MerchantAfterSalesContent() {
 
               {/* Return shipping info if present */}
               {viewingDetailCase.returnShipping && (
-                <div className="p-3 bg-emerald-50/50 rounded-2xl border border-emerald-200/60 text-xs">
-                  <span className="text-emerald-800 font-bold uppercase tracking-wider text-[10px] block">Ekspedisi Retur:</span>
+                <div className="p-3 bg-emerald-50/50 rounded-2xl border border-emerald-200/60 text-xs space-y-1">
+                  <span className="text-emerald-800 font-bold uppercase tracking-wider text-[10px] block">Pengiriman Barang Retur Pembeli:</span>
                   <div className="flex flex-wrap items-center justify-between gap-2 mt-1">
                     <p className="font-semibold text-slate-800">
-                      Kurir: {viewingDetailCase.returnShipping.courierName || "Ekspedisi Terdaftar"}
+                      Kurir: {viewingDetailCase.returnShipping.courierName || "GoSend Instant / Kurir Toko"}
                     </p>
-                    <p className="font-mono font-bold text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-200">
-                      Resi: {viewingDetailCase.returnShipping.trackingNumber}
-                    </p>
+                    {viewingDetailCase.returnShipping.trackingNumber?.startsWith("http") ? (
+                      <a
+                        href={viewingDetailCase.returnShipping.trackingNumber}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 px-2 py-0.5 rounded-lg"
+                      >
+                        <MapPin size={12} weight="bold" />
+                        <span>Buka Live Tracking Gojek</span>
+                      </a>
+                    ) : (
+                      <p className="font-mono font-bold text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-200">
+                        Info/Resi: {viewingDetailCase.returnShipping.trackingNumber || "—"}
+                      </p>
+                    )}
                   </div>
                   <p className="text-[11px] text-slate-600 mt-1">
                     Status Diterima Toko:{" "}
                     <strong>{viewingDetailCase.returnShipping.receivedByMerchant ? "SUDAH DITERIMA & LOLOS INSPEKSI" : "SEDANG DIKIRIM OLEH PEMBELI"}</strong>
                   </p>
+                </div>
+              )}
+
+              {/* Replacement shipping info if present */}
+              {viewingDetailCase.replacementShipment && (
+                <div className="p-3 bg-blue-50/50 rounded-2xl border border-blue-200/60 text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-blue-800 font-bold uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                      <Truck size={14} className="text-blue-600" />
+                      <span>Pengiriman Unit Pengganti Baru (Rp0):</span>
+                    </span>
+                    <span className="font-bold text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                      {viewingDetailCase.replacementShipment.shippingStatus === "DELIVERED" ? "SUDAH DITERIMA" : "SEDANG DIKIRIM"}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="text-slate-400 text-[10px] block font-semibold">Metode &amp; Kurir:</span>
+                      <strong className="text-slate-800">
+                        {viewingDetailCase.replacementShipment.shippingMethod === "KURIR_TOKO" || viewingDetailCase.replacementShipment.courierName === "Kurir Toko"
+                          ? "Kurir Internal Toko"
+                          : "GoSend Instant"}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span className="text-slate-400 text-[10px] block font-semibold">Nama Pengirim / Driver:</span>
+                      <strong className="text-slate-800">
+                        {viewingDetailCase.replacementShipment.driverName || (viewingDetailCase.replacementShipment.shippingMethod === "KURIR_TOKO" ? "Kurir Toko" : "Driver GoSend")}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span className="text-slate-400 text-[10px] block font-semibold">Nomor Telepon:</span>
+                      <span className="font-mono text-slate-800 font-bold">
+                        {viewingDetailCase.replacementShipment.driverPhone || "0812-3456-7890"}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-slate-400 text-[10px] block font-semibold">Pelacakan / Status:</span>
+                      {viewingDetailCase.replacementShipment.trackingUrl && (viewingDetailCase.replacementShipment.shippingMethod === "GOSEND" || viewingDetailCase.replacementShipment.courierName?.toLowerCase().includes("gosend")) ? (
+                        <a
+                          href={viewingDetailCase.replacementShipment.trackingUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 px-2 py-0.5 rounded-lg transition"
+                        >
+                          <MapPin size={12} weight="bold" />
+                          <span>Buka Live Tracking Gojek</span>
+                        </a>
+                      ) : (
+                        <span className="text-slate-600 text-[11px]">Diantar Kurir Toko</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {viewingDetailCase.replacementShipment.notes && (
+                    <p className="text-[11px] text-slate-600 italic pt-1 border-t border-blue-200/50">
+                      Catatan: {viewingDetailCase.replacementShipment.notes}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -2445,6 +2650,188 @@ function MerchantAfterSalesContent() {
                     }`}
                   >
                     {inspectionResultPass ? "Simpan & Loloskan Barang" : "Tolak Hasil Inspeksi"}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal: Kirim Unit Pengganti Baru (Rp0 Garansi Toko) */}
+      <AnimatePresence>
+        {shippingReplacementCase && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-xl border border-slate-200"
+            >
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                  <Truck size={18} className="text-blue-600" weight="bold" />
+                  <span>Kirim Unit Pengganti Baru: #{shippingReplacementCase.caseNumber}</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShippingReplacementCase(null)}
+                  className="text-slate-400 hover:text-slate-700 cursor-pointer"
+                >
+                  <X size={16} weight="bold" />
+                </button>
+              </div>
+
+              <div className="p-3 bg-blue-50 rounded-2xl border border-blue-100 text-xs space-y-1">
+                <p className="font-bold text-blue-900">Ketentuan Garansi Toko:</p>
+                <p className="text-blue-800 text-[11px] leading-relaxed">
+                  Pengiriman unit baru 100% <strong>Bebas Ongkir (Rp0)</strong> bagi pembeli. Anda dapat menggunakan armada instan dalam kota via GoSend (dengan link Live Tracking Gojek) atau Kurir Internal Toko.
+                </p>
+              </div>
+
+              <form onSubmit={handleShipReplacementSubmit} className="space-y-4 text-xs">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1.5">Metode Pengiriman:</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShippingMethod("GOSEND")}
+                      className={`p-3 rounded-2xl border text-left flex flex-col gap-1 cursor-pointer transition ${
+                        shippingMethod === "GOSEND"
+                          ? "border-emerald-500 bg-emerald-50/50 ring-2 ring-emerald-500/20"
+                          : "border-slate-200 bg-slate-50 hover:bg-slate-100"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-900 text-xs">GoSend Instant</span>
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">Live Link</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500">Live link tracking Gojek agar pembeli memantau kurir secara real-time</p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setShippingMethod("KURIR_TOKO")}
+                      className={`p-3 rounded-2xl border text-left flex flex-col gap-1 cursor-pointer transition ${
+                        shippingMethod === "KURIR_TOKO"
+                          ? "border-blue-500 bg-blue-50/50 ring-2 ring-blue-500/20"
+                          : "border-slate-200 bg-slate-50 hover:bg-slate-100"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-900 text-xs">Kurir Toko</span>
+                        <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">Internal</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500">Diantar armada / staf kurir toko dengan kontak WhatsApp</p>
+                    </button>
+                  </div>
+                </div>
+
+                {shippingMethod === "GOSEND" ? (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">
+                        1. Link Live Tracking Gojek (GoSend):
+                      </label>
+                      <input
+                        type="url"
+                        required
+                        value={gojekTrackingUrl}
+                        onChange={(e) => setGojekTrackingUrl(e.target.value)}
+                        placeholder="https://gjk.id/track/..."
+                        className="w-full p-2.5 border border-slate-200 rounded-xl font-mono text-xs"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Pelanggan dapat langsung membuka tautan ini untuk melacak kurir Gojek secara real-time.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">2. Nama Driver Gojek:</label>
+                        <input
+                          type="text"
+                          required
+                          value={driverName}
+                          onChange={(e) => setDriverName(e.target.value)}
+                          placeholder="Contoh: Pak Joko (Driver GoSend)"
+                          className="w-full p-2.5 border border-slate-200 rounded-xl text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">3. Nomor Telepon Driver:</label>
+                        <input
+                          type="text"
+                          required
+                          value={driverPhone}
+                          onChange={(e) => setDriverPhone(e.target.value)}
+                          placeholder="0812-3456-7890"
+                          className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">1. Nama Pengirim / Kurir Toko:</label>
+                        <input
+                          type="text"
+                          required
+                          value={driverName}
+                          onChange={(e) => setDriverName(e.target.value)}
+                          placeholder="Contoh: Budi Santoso (Kurir Toko)"
+                          className="w-full p-2.5 border border-slate-200 rounded-xl text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="font-bold text-slate-700 block mb-1">2. Nomor Telepon Kurir Toko:</label>
+                        <input
+                          type="text"
+                          required
+                          value={driverPhone}
+                          onChange={(e) => setDriverPhone(e.target.value)}
+                          placeholder="0813-9876-5432"
+                          className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-mono"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Pengiriman oleh staf/armada internal toko. Pembeli dapat langsung menghubungi kurir via telepon/WhatsApp.
+                    </p>
+                  </div>
+                )}
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Catatan Pengiriman:</label>
+                  <textarea
+                    rows={2}
+                    value={shippingNotes}
+                    onChange={(e) => setShippingNotes(e.target.value)}
+                    placeholder="Contoh: Unit baru tersegel resmi, mohon dicek bersama driver saat serah terima."
+                    className="w-full p-2.5 border border-slate-200 rounded-xl text-xs"
+                  />
+                </div>
+
+                <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
+                  <span className="text-slate-600 font-semibold">Biaya Kirim Pembeli:</span>
+                  <span className="text-emerald-700 font-extrabold text-sm">Rp0 (Garansi Toko)</span>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShippingReplacementCase(null)}
+                    className="px-4 py-2 font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm cursor-pointer"
+                  >
+                    Kirim Unit Sekarang
                   </button>
                 </div>
               </form>

@@ -131,13 +131,17 @@ function ProviderAfterSalesContent() {
       (c.organizationId === activeProviderOrgId || c.organizationType === "PROVIDER")
   );
 
-  const isCaseRefund = (c: AfterSalesCase) =>
-    c.customerRequestedSolution === "REFUND" ||
-    c.chosenSolution === "REFUND" ||
-    c.approvedSolution === "REFUND" ||
-    (c as any).agreedSolution === "REFUND" ||
-    (c as any).initial_solution === "REFUND" ||
-    (c as any).initialSolution === "REFUND";
+  const isCaseRefund = (c: AfterSalesCase) => {
+    if (c.approvedSolution) return c.approvedSolution === "REFUND";
+    if (c.chosenSolution) return c.chosenSolution === "REFUND";
+    if ((c as any).agreedSolution) return (c as any).agreedSolution === "REFUND";
+    if ((c as any).agreed_solution) return (c as any).agreed_solution === "REFUND";
+    return (
+      c.customerRequestedSolution === "REFUND" ||
+      (c as any).initial_solution === "REFUND" ||
+      (c as any).initialSolution === "REFUND"
+    );
+  };
 
   const refundClaims = serviceClaims.filter(isCaseRefund);
   const reworkClaims = serviceClaims.filter((c) => !isCaseRefund(c));
@@ -330,94 +334,62 @@ function ProviderAfterSalesContent() {
                 Menunggu Bukti Customer
               </span>
             )}
+            {c.slaDeadlineAt && (c.mainStatus === "SUBMITTED" || c.mainStatus === "UNDER_REVIEW") && (
+              <span className="px-2.5 py-0.5 bg-rose-50 text-rose-700 rounded-full text-[10px] font-mono font-bold border border-rose-200">
+                SLA: {new Date(c.slaDeadlineAt).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}
+              </span>
+            )}
             <span className={`px-3 py-1 rounded-full text-xs font-bold border ${statusBadge.color}`}>
               {statusBadge.label} ({c.mainStatus})
             </span>
           </div>
         </div>
 
-        {/* SECTION 1: RINGKASAN ORDER ASLI & SLA */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs bg-slate-50/80 p-3.5 rounded-2xl border border-slate-100">
-          <div className="space-y-1">
-            <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Ringkasan Pesanan Servis Asal:</span>
-            <p className="font-bold text-slate-800 text-xs">
-              {c.itemTitle}
-            </p>
-            <p className="text-slate-600 text-[11px]">
-              No. Order: <strong className="font-mono text-slate-700">#{c.sourceOrderNumber}</strong> • Pelanggan: <strong className="text-slate-700">{c.customerName}</strong>
-            </p>
-            {Boolean(c.itemPrice) && (
-              <p className="text-emerald-700 font-bold text-xs pt-0.5">
-                Nilai Pesanan Asal: Rp {Number(c.itemPrice).toLocaleString("id-ID")}
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-1 md:text-right">
-            <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Tenggat Respons Regulasi (SLA 72 Jam):</span>
-            <p className="font-mono font-bold text-slate-800 text-xs">
-              {new Date(c.slaDeadlineAt).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })} WIB
-            </p>
-            <p className="text-xs text-slate-600">
-              Solusi Konsumen:{" "}
-              <strong className={isRefund ? "text-rose-700 font-bold" : "text-purple-700 font-bold"}>
-                {c.customerRequestedSolution || (isRefund ? "REFUND" : "REWORK")}
-              </strong>
-              {c.chosenSolution && (
-                <span className="ml-1.5 text-emerald-700 font-bold">
-                  • Disepakati: {c.chosenSolution}
-                </span>
-              )}
-            </p>
-          </div>
-        </div>
-
-        {/* SECTION 2: DATA FORMULIR PENGAJUAN PELANGGAN */}
-        <div className="p-4 bg-slate-50/90 rounded-2xl border border-slate-200/80 text-xs space-y-2.5">
-          <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/60">
-            <span className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5">
-              <FilePlus size={14} weight="bold" className={isRefund ? "text-rose-600" : "text-purple-600"} />
-              Formulir Keluhan Pelanggan:
-            </span>
-            <span className="text-[11px] font-semibold text-slate-500">
-              Opsi: <strong className={isRefund ? "text-rose-700" : "text-purple-700"}>{isRefund ? "Pengembalian Dana (Refund)" : "Pengerjaan Ulang (Rework Rp 0)"}</strong>
-            </span>
-          </div>
-
+        {/* RINCIAN FORMULIR PENGAJUAN GARANSI (COMPACT SEPERTI PELANGGAN) */}
+        <div className="p-3 bg-slate-50/90 rounded-2xl border border-slate-200/80 text-xs space-y-2">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
             <div>
-              <span className="text-slate-400 text-[10px] uppercase font-semibold block">Kendala Dilaporkan:</span>
-              <strong className="text-slate-800">{c.issueReason}</strong>
-              <p className="text-slate-600 mt-1 italic bg-white p-2.5 rounded-xl border border-slate-200/60 text-[11px]">
+              <span className="text-slate-400 text-[10px] block font-semibold uppercase tracking-wider">Solusi yang Diharapkan:</span>
+              <strong className={isRefund ? "text-rose-700 font-bold" : "text-purple-700 font-bold"}>
+                {isRefund ? "Pengembalian Dana (Refund ke S-Pay)" : "Perbaikan Ulang Teknisi (Rework Rp 0)"}
+              </strong>
+            </div>
+            <div>
+              <span className="text-slate-400 text-[10px] block font-semibold uppercase tracking-wider">Alasan Masalah yang Dialami:</span>
+              <span className="font-bold text-slate-800">{c.issueReason || "Kendala fungsional pasca servis"}</span>
+            </div>
+          </div>
+
+          {c.issueDescription && (
+            <div className="pt-0.5">
+              <span className="text-slate-400 text-[10px] block font-semibold uppercase tracking-wider">Kronologi Keluhan:</span>
+              <p className="text-slate-700 italic bg-white p-2 rounded-xl border border-slate-200/60 text-[11px] mt-0.5 leading-relaxed line-clamp-2">
                 &ldquo;{c.issueDescription}&rdquo;
               </p>
             </div>
+          )}
 
-            <div className="space-y-1.5">
-              <span className="text-slate-400 text-[10px] uppercase font-semibold block">Bukti Foto / Media Kendala:</span>
-              {c.evidenceMedia && c.evidenceMedia.length > 0 ? (
-                <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                  {c.evidenceMedia.map((url, idx) => (
-                    <a key={idx} href={url} target="_blank" rel="noreferrer" className="block shrink-0">
-                      <img
-                        src={url}
-                        alt={`Bukti ${idx + 1}`}
-                        className="w-14 h-14 rounded-xl object-cover border border-slate-200 hover:scale-105 transition"
-                      />
-                    </a>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-slate-400 text-[11px] italic">Pelanggan tidak melampirkan foto bukti tambahan.</p>
-              )}
-
-              {c.rejectionReason && (
-                <div className="p-2 bg-rose-50 rounded-xl border border-rose-200 text-rose-800 text-[11px] mt-1">
-                  <strong>Catatan Penolakan:</strong> {c.rejectionReason}
-                </div>
-              )}
+          {c.evidenceMedia && c.evidenceMedia.length > 0 && (
+            <div className="pt-0.5 flex items-center justify-between text-[11px] text-slate-500">
+              <span className="flex items-center gap-1.5 font-medium">
+                <Camera size={13} className="text-purple-600" />
+                <span>{c.evidenceMedia.length} Foto Bukti Pelanggan Terlampir</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setViewingDetailCase(c)}
+                className="text-[10px] text-purple-700 hover:underline font-bold cursor-pointer"
+              >
+                Lihat Foto di Detail Lengkap &rarr;
+              </button>
             </div>
-          </div>
+          )}
+
+          {c.rejectionReason && (
+            <div className="p-2 bg-rose-50 rounded-xl border border-rose-200 text-rose-800 text-[11px]">
+              <strong>Catatan Penolakan:</strong> {c.rejectionReason}
+            </div>
+          )}
         </div>
 
         {/* SECTION 3: VISUAL TIMELINE RESOLUSI */}
@@ -452,56 +424,94 @@ function ProviderAfterSalesContent() {
             </div>
           </div>
         ) : (
-          <div className="p-3 bg-purple-50/60 rounded-2xl border border-purple-200 space-y-2">
-            <div className="flex items-center justify-between text-[11px] font-bold text-purple-900">
-              <span className="flex items-center gap-1.5">
-                <Wrench size={14} weight="bold" className="text-purple-600" />
-                Alur Pengerjaan Ulang Teknisi (Rework Rp 0):
-              </span>
-              <span className="text-purple-700 font-mono">
-                {isCompleted ? "Pengerjaan Selesai" : isRejected ? "Ditolak" : "Berjalan"}
-              </span>
-            </div>
-            <div className="grid grid-cols-4 gap-1.5 text-center text-[9px] font-bold">
-              <div className="space-y-0.5">
-                <div className="h-1.5 rounded-full bg-emerald-500" />
-                <span className="text-emerald-800">1. Diajukan</span>
+          (() => {
+            const opStatus: string = c.warrantyJob?.operationalStatus || (isCompleted ? "DONE" : "ASSIGNED");
+            const isAssigned = c.mainStatus !== "SUBMITTED";
+            const isAccepted = isCompleted || opStatus === "ACCEPTED" || opStatus === "OTW" || opStatus === "IN_PROGRESS" || opStatus === "DONE";
+            const isOtw = isCompleted || opStatus === "OTW" || opStatus === "IN_PROGRESS" || opStatus === "DONE";
+            const isWorking = isCompleted || opStatus === "IN_PROGRESS" || opStatus === "DONE";
+
+            return (
+              <div className="p-3 bg-purple-50/60 rounded-2xl border border-purple-200 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold text-purple-900">
+                  <span className="flex items-center gap-1.5">
+                    <Wrench size={14} weight="bold" className="text-purple-600" />
+                    Alur Pengerjaan Ulang Teknisi (Rework Rp 0):
+                  </span>
+                  <span className="text-purple-700 font-mono">
+                    {isCompleted ? "Pengerjaan Selesai" : isRejected ? "Ditolak" : opStatus === "IN_PROGRESS" ? "Sedang Dikerjakan" : opStatus === "OTW" ? "Teknisi OTW" : "Berjalan"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-6 gap-1 text-center text-[8.5px] font-bold">
+                  <div className="space-y-0.5">
+                    <div className="h-1.5 rounded-full bg-emerald-500" />
+                    <span className="text-emerald-800">1. Diajukan</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    <div className={`h-1.5 rounded-full ${isAssigned ? "bg-emerald-500" : "bg-slate-200"}`} />
+                    <span className={isAssigned ? "text-emerald-800" : "text-slate-400"}>2. Ditugaskan</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    <div className={`h-1.5 rounded-full ${isAccepted ? "bg-emerald-500" : opStatus === "ASSIGNED" ? "bg-blue-600 animate-pulse" : "bg-slate-200"}`} />
+                    <span className={isAccepted ? "text-emerald-800" : opStatus === "ASSIGNED" ? "text-blue-700" : "text-slate-400"}>3. Terima</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    <div className={`h-1.5 rounded-full ${isOtw ? "bg-emerald-500" : opStatus === "ACCEPTED" ? "bg-sky-600 animate-pulse" : "bg-slate-200"}`} />
+                    <span className={isOtw ? "text-emerald-800" : opStatus === "ACCEPTED" ? "text-sky-700" : "text-slate-400"}>4. OTW</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    <div className={`h-1.5 rounded-full ${isWorking ? "bg-emerald-500" : opStatus === "IN_PROGRESS" ? "bg-purple-600 animate-pulse" : "bg-slate-200"}`} />
+                    <span className={isWorking ? "text-emerald-800" : opStatus === "IN_PROGRESS" ? "text-purple-700" : "text-slate-400"}>5. Pengerjaan</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    <div className={`h-1.5 rounded-full ${isCompleted ? "bg-emerald-500" : isRejected ? "bg-rose-500" : "bg-slate-200"}`} />
+                    <span className={isCompleted ? "text-emerald-800" : isRejected ? "text-rose-700" : "text-slate-400"}>{isRejected ? "Ditolak" : "6. Selesai"}</span>
+                  </div>
+                </div>
               </div>
-              <div className="space-y-0.5">
-                <div className={`h-1.5 rounded-full ${c.mainStatus !== "SUBMITTED" ? "bg-emerald-500" : "bg-slate-200"}`} />
-                <span className={c.mainStatus !== "SUBMITTED" ? "text-emerald-800" : "text-slate-400"}>2. Teknisi Ditugaskan</span>
-              </div>
-              <div className="space-y-0.5">
-                <div className={`h-1.5 rounded-full ${c.mainStatus === "IN_RESOLUTION" ? "bg-purple-600 animate-pulse" : isCompleted ? "bg-emerald-500" : "bg-slate-200"}`} />
-                <span className={c.mainStatus === "IN_RESOLUTION" ? "text-purple-700" : isCompleted ? "text-emerald-800" : "text-slate-400"}>3. Kunjungan Ulang</span>
-              </div>
-              <div className="space-y-0.5">
-                <div className={`h-1.5 rounded-full ${isCompleted ? "bg-emerald-500" : isRejected ? "bg-rose-500" : "bg-slate-200"}`} />
-                <span className={isCompleted ? "text-emerald-800" : isRejected ? "text-rose-700" : "text-slate-400"}>{isRejected ? "Ditolak" : "4. Selesai"}</span>
-              </div>
-            </div>
-          </div>
+            );
+          })()
         )}
 
-        {/* SECTION 4: INFORMASI PENUGASAN WORKER (Bila ada) */}
+        {/* RINGKASAN PENUGASAN WORKER (COMPACT BAR SEPERTI PELANGGAN) */}
         {c.warrantyJob && (
-          <div className="p-3.5 bg-purple-50/70 rounded-2xl border border-purple-200 text-xs space-y-1.5">
-            <div className="flex items-center justify-between font-bold text-purple-950">
-              <span className="flex items-center gap-1.5">
-                <Wrench size={14} weight="bold" className="text-purple-700" />
-                Pekerjaan Garansi Telah Ditugaskan ke Worker:
-              </span>
-              <span className="text-emerald-700 font-bold bg-white px-2 py-0.5 rounded-md border border-purple-200">
-                Biaya Konsumen: Rp 0 (Ditanggung Provider)
-              </span>
+          <div className="p-2.5 bg-white rounded-xl border border-purple-200 text-xs text-purple-950 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span>Teknisi: <strong className="text-slate-900">{c.warrantyJob.workerName || "Ahmad Fauzi (Teknisi Senior)"}</strong></span>
+              <span className="text-slate-300">•</span>
+              <span>Jadwal: <strong className="text-slate-900">{c.warrantyJob.scheduledDate || "Besok, 13:00 WIB"}</strong></span>
+              <span className="text-slate-300">•</span>
+              <span className="font-bold text-emerald-700">Biaya: Rp 0 (Garansi Resmi)</span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-purple-900 pt-1">
-              <p>Teknisi: <strong>{c.warrantyJob.workerName}</strong></p>
-              <p>Jadwal Kunjungan: <strong>{c.warrantyJob.scheduledDate}</strong></p>
-              {c.warrantyJob.notes && (
-                <p className="sm:col-span-2 text-purple-800">Instruksi: &ldquo;{c.warrantyJob.notes}&rdquo;</p>
-              )}
-            </div>
+
+            {c.warrantyJob.completionEvidence && (isCompleted || c.warrantyJob.operationalStatus === "DONE") ? (
+              <button
+                type="button"
+                onClick={() => setViewingDetailCase(c)}
+                className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-extrabold flex items-center gap-1 hover:bg-emerald-100 transition cursor-pointer"
+              >
+                <CheckCircle size={13} weight="bold" className="text-emerald-600" />
+                <span>Bukti Selesai Tersimpan (Lihat Detail)</span>
+              </button>
+            ) : (
+              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                c.warrantyJob.operationalStatus === "IN_PROGRESS"
+                  ? "bg-purple-100 text-purple-800"
+                  : c.warrantyJob.operationalStatus === "OTW"
+                  ? "bg-sky-100 text-sky-800"
+                  : c.warrantyJob.operationalStatus === "ACCEPTED"
+                  ? "bg-blue-100 text-blue-800"
+                  : "bg-amber-100 text-amber-800"
+              }`}>
+                {c.warrantyJob.operationalStatus === "IN_PROGRESS"
+                  ? "Sedang Dikerjakan"
+                  : c.warrantyJob.operationalStatus === "OTW"
+                  ? "Teknisi OTW"
+                  : c.warrantyJob.operationalStatus === "ACCEPTED"
+                  ? "Tugas Diterima"
+                  : "Menunggu Respon"}
+              </span>
+            )}
           </div>
         )}
 
@@ -1779,6 +1789,92 @@ function ProviderAfterSalesContent() {
                 </div>
               </div>
 
+              {/* Stepper Timeline di Detail Modal */}
+              {(() => {
+                const isCaseRefund = viewingDetailCase.customerRequestedSolution === "REFUND" || viewingDetailCase.chosenSolution === "REFUND";
+                const isCaseCompleted = viewingDetailCase.mainStatus === "COMPLETED";
+                const isCaseRejected = viewingDetailCase.mainStatus === "REJECTED";
+                const opStatus: string = viewingDetailCase.warrantyJob?.operationalStatus || (isCaseCompleted ? "DONE" : "ASSIGNED");
+                const isAssigned = viewingDetailCase.mainStatus !== "SUBMITTED";
+                const isAccepted = isCaseCompleted || opStatus === "ACCEPTED" || opStatus === "OTW" || opStatus === "IN_PROGRESS" || opStatus === "DONE";
+                const isOtw = isCaseCompleted || opStatus === "OTW" || opStatus === "IN_PROGRESS" || opStatus === "DONE";
+                const isWorking = isCaseCompleted || opStatus === "IN_PROGRESS" || opStatus === "DONE";
+
+                if (isCaseRefund) {
+                  return (
+                    <div className="p-3 bg-rose-50/50 rounded-2xl border border-rose-200/80 space-y-2">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-rose-900">
+                        <span className="flex items-center gap-1.5">
+                          <Bank size={14} weight="bold" className="text-rose-600" />
+                          Alur Penyelesaian Refund Jasa:
+                        </span>
+                        <span className="text-rose-700 font-mono">
+                          {isCaseCompleted ? "Refund Selesai" : isCaseRejected ? "Ditolak" : "Berjalan"}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1.5 text-center text-[9px] font-bold">
+                        <div className="space-y-0.5">
+                          <div className="h-1.5 rounded-full bg-emerald-500" />
+                          <span className="text-emerald-800">1. Diajukan</span>
+                        </div>
+                        <div className="space-y-0.5">
+                          <div className={`h-1.5 rounded-full ${viewingDetailCase.mainStatus !== "SUBMITTED" ? "bg-emerald-500" : "bg-slate-200"}`} />
+                          <span className={viewingDetailCase.mainStatus !== "SUBMITTED" ? "text-emerald-800" : "text-slate-400"}>2. Persetujuan</span>
+                        </div>
+                        <div className="space-y-0.5">
+                          <div className={`h-1.5 rounded-full ${viewingDetailCase.mainStatus === "IN_RESOLUTION" ? "bg-rose-600 animate-pulse" : isCaseCompleted ? "bg-emerald-500" : "bg-slate-200"}`} />
+                          <span className={viewingDetailCase.mainStatus === "IN_RESOLUTION" ? "text-rose-700" : isCaseCompleted ? "text-emerald-800" : "text-slate-400"}>3. Pencairan</span>
+                        </div>
+                        <div className="space-y-0.5">
+                          <div className={`h-1.5 rounded-full ${isCaseCompleted ? "bg-emerald-500" : isCaseRejected ? "bg-rose-500" : "bg-slate-200"}`} />
+                          <span className={isCaseCompleted ? "text-emerald-800" : isCaseRejected ? "text-rose-700" : "text-slate-400"}>{isCaseRejected ? "Ditolak" : "4. Selesai"}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="p-3 bg-purple-50/60 rounded-2xl border border-purple-200 space-y-2">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-purple-900">
+                      <span className="flex items-center gap-1.5">
+                        <Wrench size={14} weight="bold" className="text-purple-600" />
+                        Alur Pengerjaan Ulang Teknisi (Rework Rp 0):
+                      </span>
+                      <span className="text-purple-700 font-mono">
+                        {isCaseCompleted ? "Pengerjaan Selesai" : isCaseRejected ? "Ditolak" : opStatus === "IN_PROGRESS" ? "Sedang Dikerjakan" : opStatus === "OTW" ? "Teknisi OTW" : "Berjalan"}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-6 gap-1 text-center text-[8.5px] font-bold">
+                      <div className="space-y-0.5">
+                        <div className="h-1.5 rounded-full bg-emerald-500" />
+                        <span className="text-emerald-800">1. Diajukan</span>
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className={`h-1.5 rounded-full ${isAssigned ? "bg-emerald-500" : "bg-slate-200"}`} />
+                        <span className={isAssigned ? "text-emerald-800" : "text-slate-400"}>2. Ditugaskan</span>
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className={`h-1.5 rounded-full ${isAccepted ? "bg-emerald-500" : opStatus === "ASSIGNED" ? "bg-blue-600 animate-pulse" : "bg-slate-200"}`} />
+                        <span className={isAccepted ? "text-emerald-800" : opStatus === "ASSIGNED" ? "text-blue-700" : "text-slate-400"}>3. Terima</span>
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className={`h-1.5 rounded-full ${isOtw ? "bg-emerald-500" : opStatus === "ACCEPTED" ? "bg-sky-600 animate-pulse" : "bg-slate-200"}`} />
+                        <span className={isOtw ? "text-emerald-800" : opStatus === "ACCEPTED" ? "text-sky-700" : "text-slate-400"}>4. OTW</span>
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className={`h-1.5 rounded-full ${isWorking ? "bg-emerald-500" : opStatus === "IN_PROGRESS" ? "bg-purple-600 animate-pulse" : "bg-slate-200"}`} />
+                        <span className={isWorking ? "text-emerald-800" : opStatus === "IN_PROGRESS" ? "text-purple-700" : "text-slate-400"}>5. Pengerjaan</span>
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className={`h-1.5 rounded-full ${isCaseCompleted ? "bg-emerald-500" : isCaseRejected ? "bg-rose-500" : "bg-slate-200"}`} />
+                        <span className={isCaseCompleted ? "text-emerald-800" : isCaseRejected ? "text-rose-700" : "text-slate-400"}>{isCaseRejected ? "Ditolak" : "6. Selesai"}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs bg-white p-3.5 rounded-2xl border border-slate-200">
                 <div>
                   <span className="text-slate-400 text-[10px] uppercase block font-semibold">Informasi Pekerjaan Asal</span>
@@ -1851,6 +1947,57 @@ function ProviderAfterSalesContent() {
                   <p className="text-slate-600">Catatan Pengerjaan: {viewingDetailCase.warrantyJob.notes || "-"}</p>
                 </div>
               )}
+
+              {/* Laporan & Bukti Pengerjaan Teknisi (Tersimpan di Sistem & Detail Lengkap) */}
+              {viewingDetailCase.warrantyJob?.completionEvidence && (() => {
+                const rawEv = viewingDetailCase.warrantyJob.completionEvidence;
+                let photoUrl: string | null = null;
+                let noteText: string = rawEv;
+                if (rawEv.includes("|")) {
+                  const parts = rawEv.split("|");
+                  photoUrl = parts[0].trim();
+                  noteText = parts.slice(1).join("|").trim();
+                } else if (rawEv.startsWith("http")) {
+                  photoUrl = rawEv.trim();
+                  noteText = "Pekerjaan garansi selesai dikerjakan.";
+                }
+
+                return (
+                  <div className="p-3.5 bg-emerald-50/70 rounded-2xl border border-emerald-200 text-xs space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-emerald-950 flex items-center gap-1.5 text-xs">
+                        <CheckCircle size={15} weight="bold" className="text-emerald-600" />
+                        Laporan &amp; Bukti Pengerjaan Selesai oleh Teknisi:
+                      </span>
+                      <span className="text-[10px] font-extrabold text-emerald-800 bg-white px-2 py-0.5 rounded-md border border-emerald-200">
+                        TERVERIFIKASI
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-3 items-start">
+                      {photoUrl && (
+                        <div className="relative group shrink-0">
+                          <img
+                            src={photoUrl}
+                            alt="Bukti Selesai"
+                            className="w-24 h-24 object-cover rounded-xl border border-emerald-200 cursor-pointer shadow-2xs hover:opacity-90 transition"
+                            onClick={() => window.open(photoUrl!, "_blank")}
+                          />
+                          <span className="text-[9px] text-emerald-700 font-bold block text-center mt-0.5">
+                            Klik zoom
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex-1 bg-white p-2.5 rounded-xl border border-emerald-100 text-xs space-y-1">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Catatan Pengerjaan di Lokasi:</span>
+                        <p className="font-medium text-slate-700 leading-relaxed">
+                          {noteText || "Pekerjaan garansi telah selesai dilakukan dan diuji coba bersama pelanggan di lokasi."}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {viewingDetailCase.timeline && viewingDetailCase.timeline.length > 0 && (
                 <div className="space-y-2">

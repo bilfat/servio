@@ -29,7 +29,13 @@ if (-not $mysqlConn) {
     if (Test-Path $mysqldPath) {
         Write-Host "Starting MySQL Database (port 3306) in background..." -ForegroundColor Yellow
         Start-Process -FilePath $mysqldPath -ArgumentList "--defaults-file=bin\my.ini --standalone" -WorkingDirectory "C:\xampp\mysql" -WindowStyle Hidden
-        Start-Sleep -Seconds 2
+        
+        # Wait up to 10 seconds for MySQL to be ready
+        $mWait = 0
+        while (-not (Get-NetTCPConnection -LocalPort 3306 -State Listen -ErrorAction SilentlyContinue) -and ($mWait -lt 20)) {
+            Start-Sleep -Milliseconds 500
+            $mWait++
+        }
     }
 }
 
@@ -107,38 +113,82 @@ $reverbProc = Start-Process -FilePath "php" `
 
 Write-Host ("Started Laravel Reverb WebSocket (Port 8089) [PID: " + $reverbProc.Id + "]")
 
-Write-Host "`nWaiting 3 seconds for all microservices to initialize..." -ForegroundColor Yellow
-Start-Sleep -Seconds 3
+Write-Host "`nWaiting for all microservices and Reverb to initialize..." -ForegroundColor Yellow
+
+# Dynamic polling: wait up to 12 seconds for all ports to listen, checking every 400ms
+$expectedPorts = ($services | ForEach-Object { $_.Port }) + 8089
+$sw = [System.Diagnostics.Stopwatch]::StartNew()
+$maxWaitSec = 12
+
+while ($sw.Elapsed.TotalSeconds -lt $maxWaitSec) {
+    $allReady = $true
+    foreach ($p in $expectedPorts) {
+        $c = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue
+        if (-not $c) {
+            $allReady = $false
+            break
+        }
+    }
+    if ($allReady) {
+        break
+    }
+    Start-Sleep -Milliseconds 400
+}
 
 Write-Host "`n========================================================"
 Write-Host "                SERVIO BACKEND HEALTH CHECK             "
 Write-Host "========================================================"
 $allListening = $true
 
+# 1. MySQL Database Check
+$mysqlConn = Get-NetTCPConnection -LocalPort 3306 -State Listen -ErrorAction SilentlyContinue
+if ($mysqlConn) {
+    $mPid = ($mysqlConn | Select-Object -ExpandProperty OwningProcess -Unique)[0]
+    Write-Host (" [ONLINE]  " + "MySQL Database (MariaDB / XAMPP)".PadRight(35) + " Port: 3306   (PID: $mPid)") -ForegroundColor Green
+} else {
+    $allListening = $false
+    Write-Host (" [OFFLINE] " + "MySQL Database (MariaDB / XAMPP)".PadRight(35) + " Port: 3306 FAILED") -ForegroundColor Red
+}
+
+# 2. 9 Microservices Check
 foreach ($svc in $services) {
     $port = $svc.Port
     $conns = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
     if ($conns) {
         $procId = ($conns | Select-Object -ExpandProperty OwningProcess -Unique)[0]
-        Write-Host " [ONLINE] $($svc.Name) -> http://127.0.0.1:$port (PID: $procId)" -ForegroundColor Green
+        Write-Host (" [ONLINE]  " + $svc.Name.PadRight(35) + " Port: " + $port.ToString().PadRight(6) + " (PID: $procId)") -ForegroundColor Green
     } else {
         $allListening = $false
-        Write-Host " [OFFLINE] $($svc.Name) -> Port $port FAILED" -ForegroundColor Red
+        Write-Host (" [OFFLINE] " + $svc.Name.PadRight(35) + " Port: " + $port.ToString().PadRight(6)) -ForegroundColor Red
+        $errFile = Join-Path $logsDir ("service-" + $port + "-err.log")
+        if (Test-Path $errFile) {
+            $errContent = (Get-Content $errFile -Raw)
+            if ($errContent -and $errContent.Trim()) {
+                Write-Host "   Detail: $errContent" -ForegroundColor DarkGray
+            }
+        }
     }
 }
 
+# 3. Laravel Reverb WebSocket Check
 $reverbConn = Get-NetTCPConnection -LocalPort 8089 -State Listen -ErrorAction SilentlyContinue
 if ($reverbConn) {
     $rPid = ($reverbConn | Select-Object -ExpandProperty OwningProcess -Unique)[0]
-    Write-Host " [ONLINE] Laravel Reverb WebSocket Server -> ws://127.0.0.1:8089 (PID: $rPid)" -ForegroundColor Green
+    Write-Host (" [ONLINE]  " + "Laravel Reverb WebSocket Server".PadRight(35) + " Port: 8089   (PID: $rPid)") -ForegroundColor Green
 } else {
     $allListening = $false
-    Write-Host " [OFFLINE] Laravel Reverb WebSocket -> Port 8089 FAILED" -ForegroundColor Red
+    Write-Host (" [OFFLINE] " + "Laravel Reverb WebSocket Server".PadRight(35) + " Port: 8089 FAILED") -ForegroundColor Red
+    if (Test-Path $reverbStderr) {
+        $rErr = (Get-Content $reverbStderr -Raw)
+        if ($rErr -and $rErr.Trim()) {
+            Write-Host "   Detail: $rErr" -ForegroundColor DarkGray
+        }
+    }
 }
 
 Write-Host "========================================================"
 if ($allListening) {
-    Write-Host "SUCCESS: Semua 9 Microservice + WebSocket Reverb aktif di latar belakang!`n" -ForegroundColor Green
+    Write-Host "SUCCESS: MySQL + 9 Microservice + WebSocket Reverb aktif di latar belakang!`n" -ForegroundColor Green
 } else {
     Write-Host "Periksa log di folder scratch\logs\ untuk detail error.`n" -ForegroundColor Yellow
 }

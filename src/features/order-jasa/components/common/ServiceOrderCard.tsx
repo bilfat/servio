@@ -56,6 +56,8 @@ interface ServiceOrderCardProps {
   onViewDetail?: (order: ServiceOrder) => void;
   onAcceptOrder?: (order: ServiceOrder) => void;
   onRejectOrder?: (order: ServiceOrder) => void;
+  hasWarrantyClaim?: boolean;
+  warrantyCaseNumber?: string;
 }
 
 export function ServiceOrderCard({
@@ -66,6 +68,8 @@ export function ServiceOrderCard({
   onViewDetail,
   onAcceptOrder,
   onRejectOrder,
+  hasWarrantyClaim,
+  warrantyCaseNumber,
 }: ServiceOrderCardProps) {
   const isRejectedByProvider =
     order.providerDecisionStatus === "REJECTED" ||
@@ -200,6 +204,13 @@ export function ServiceOrderCard({
           <span className="font-mono text-xs font-bold text-slate-900 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200/80">
             #{order.orderNumber}
           </span>
+          {((order as any).badge === "GARANSI" || hasWarrantyClaim || (order as any).isWarranty) && (
+            <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-md flex items-center gap-1 shadow-3xs">
+              <ShieldCheck size={13} weight="fill" className="text-emerald-700" />
+              <span>GARANSI</span>
+              {warrantyCaseNumber && <span className="font-mono text-[9px] opacity-80">#{warrantyCaseNumber}</span>}
+            </span>
+          )}
           <span className="text-[10px] font-bold uppercase tracking-wider text-[#0F4C81] bg-sky-50 px-2 py-0.5 rounded-md border border-sky-100">
             {order.serviceSnapshot.subcategoryName || order.serviceSnapshot.categoryName}
           </span>

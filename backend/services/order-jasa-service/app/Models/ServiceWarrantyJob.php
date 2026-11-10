@@ -26,6 +26,9 @@ class ServiceWarrantyJob extends Model
         'price_idr',
         'status',
         'worker_id',
+        'worker_name',
+        'scheduled_date',
+        'notes',
         'completion_evidence',
         'completed_at',
     ];

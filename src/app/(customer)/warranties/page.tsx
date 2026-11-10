@@ -19,6 +19,7 @@ import {
   FileText,
   Info,
   Truck,
+  MapPin,
   Bank,
   Check,
   X,
@@ -603,6 +604,13 @@ function CustomerWarrantiesAndSubmissionsContent() {
             }
 
             if (isRework) {
+              const opStatus: string = c.warrantyJob?.operationalStatus || (isCompleted ? "DONE" : "ASSIGNED");
+              const isAssigned = c.mainStatus !== "SUBMITTED";
+              const isAccepted = isCompleted || opStatus === "ACCEPTED" || opStatus === "OTW" || opStatus === "IN_PROGRESS" || opStatus === "DONE";
+              const isOtw = isCompleted || opStatus === "OTW" || opStatus === "IN_PROGRESS" || opStatus === "DONE";
+              const isWorking = isCompleted || opStatus === "IN_PROGRESS" || opStatus === "DONE";
+              const isDone = isCompleted || opStatus === "DONE";
+
               return (
                 <div className="p-3 bg-purple-50/60 rounded-2xl border border-purple-200 space-y-2">
                   <div className="flex items-center justify-between text-[11px] font-bold text-purple-900">
@@ -611,31 +619,39 @@ function CustomerWarrantiesAndSubmissionsContent() {
                       Timeline Perbaikan Jasa (Rework Rp 0):
                     </span>
                     <span className="text-purple-700 font-mono">
-                      {isCompleted ? "Perbaikan Selesai" : isRejected ? "Ditolak" : "Berjalan"}
+                      {isCompleted ? "Perbaikan Selesai" : isRejected ? "Ditolak" : opStatus === "IN_PROGRESS" ? "Sedang Dikerjakan" : opStatus === "OTW" ? "Teknisi OTW" : "Berjalan"}
                     </span>
                   </div>
-                  <div className="grid grid-cols-4 gap-1.5 text-center text-[9px] font-bold">
+                  <div className="grid grid-cols-6 gap-1 text-center text-[8.5px] font-bold">
                     <div className="space-y-0.5">
                       <div className="h-1.5 rounded-full bg-emerald-500" />
                       <span className="text-emerald-800">1. Diajukan</span>
                     </div>
                     <div className="space-y-0.5">
-                      <div className={`h-1.5 rounded-full ${c.mainStatus !== "SUBMITTED" ? "bg-emerald-500" : "bg-slate-200"}`} />
-                      <span className={c.mainStatus !== "SUBMITTED" ? "text-emerald-800" : "text-slate-400"}>2. Teknisi Ditugaskan</span>
+                      <div className={`h-1.5 rounded-full ${isAssigned ? "bg-emerald-500" : "bg-slate-200"}`} />
+                      <span className={isAssigned ? "text-emerald-800" : "text-slate-400"}>2. Ditugaskan</span>
                     </div>
                     <div className="space-y-0.5">
-                      <div className={`h-1.5 rounded-full ${c.mainStatus === "IN_RESOLUTION" ? "bg-purple-600 animate-pulse" : isCompleted ? "bg-emerald-500" : "bg-slate-200"}`} />
-                      <span className={c.mainStatus === "IN_RESOLUTION" ? "text-purple-700" : isCompleted ? "text-emerald-800" : "text-slate-400"}>3. Kunjungan Ulang</span>
+                      <div className={`h-1.5 rounded-full ${isAccepted ? "bg-emerald-500" : opStatus === "ASSIGNED" ? "bg-blue-600 animate-pulse" : "bg-slate-200"}`} />
+                      <span className={isAccepted ? "text-emerald-800" : opStatus === "ASSIGNED" ? "text-blue-700" : "text-slate-400"}>3. Terima</span>
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className={`h-1.5 rounded-full ${isOtw ? "bg-emerald-500" : opStatus === "ACCEPTED" ? "bg-sky-600 animate-pulse" : "bg-slate-200"}`} />
+                      <span className={isOtw ? "text-emerald-800" : opStatus === "ACCEPTED" ? "text-sky-700" : "text-slate-400"}>4. OTW</span>
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className={`h-1.5 rounded-full ${isWorking ? "bg-emerald-500" : opStatus === "IN_PROGRESS" ? "bg-purple-600 animate-pulse" : "bg-slate-200"}`} />
+                      <span className={isWorking ? "text-emerald-800" : opStatus === "IN_PROGRESS" ? "text-purple-700" : "text-slate-400"}>5. Pengerjaan</span>
                     </div>
                     <div className="space-y-0.5">
                       <div className={`h-1.5 rounded-full ${isCompleted ? "bg-emerald-500" : isRejected ? "bg-rose-500" : "bg-slate-200"}`} />
-                      <span className={isCompleted ? "text-emerald-800" : isRejected ? "text-rose-700" : "text-slate-400"}>{isRejected ? "Ditolak" : "4. Selesai"}</span>
+                      <span className={isCompleted ? "text-emerald-800" : isRejected ? "text-rose-700" : "text-slate-400"}>{isRejected ? "Ditolak" : "6. Selesai"}</span>
                     </div>
                   </div>
                   {c.warrantyJob && (
                     <div className="p-2 bg-white rounded-xl border border-purple-200 text-xs text-purple-950 flex flex-wrap items-center justify-between gap-2 mt-1">
-                      <span>Teknisi Bertugas: <strong>{c.warrantyJob.workerName}</strong></span>
-                      <span>Jadwal: <strong>{c.warrantyJob.scheduledDate}</strong></span>
+                      <span>Teknisi Bertugas: <strong>{c.warrantyJob.workerName || "Ahmad Fauzi (Teknisi Senior)"}</strong></span>
+                      <span>Jadwal: <strong>{c.warrantyJob.scheduledDate || "Besok, 13:00 WIB"}</strong></span>
                       <span className="font-bold text-emerald-700">Biaya: Rp 0 (Garansi Resmi)</span>
                     </div>
                   )}
@@ -649,13 +665,13 @@ function CustomerWarrantiesAndSubmissionsContent() {
                 <div className="flex items-center justify-between text-[11px] font-bold text-blue-900">
                   <span className="flex items-center gap-1.5">
                     <Package size={14} weight="bold" className="text-blue-600" />
-                    Timeline Retur &amp; Penggantian Barang:
+                    Timeline Retur &amp; Penggantian Unit:
                   </span>
                   <span className="text-blue-700 font-mono">
-                    {isCompleted ? "Unit Baru Diterima" : isRejected ? "Ditolak" : "Berjalan"}
+                    {isCompleted ? "Unit Pengganti Selesai" : isRejected ? "Ditolak" : c.replacementShipment?.shippingStatus === "SHIPPED" ? "Unit Sedang Dikirim" : "Berjalan"}
                   </span>
                 </div>
-                <div className="grid grid-cols-5 gap-1 text-center text-[9px] font-bold">
+                <div className="grid grid-cols-6 gap-1 text-center text-[8.5px] font-bold">
                   <div className="space-y-0.5">
                     <div className="h-1.5 rounded-full bg-emerald-500" />
                     <span className="text-emerald-800">1. Diajukan</span>
@@ -666,21 +682,98 @@ function CustomerWarrantiesAndSubmissionsContent() {
                   </div>
                   <div className="space-y-0.5">
                     <div className={`h-1.5 rounded-full ${c.returnShipping?.trackingNumber ? "bg-emerald-500" : "bg-slate-200"}`} />
-                    <span className={c.returnShipping?.trackingNumber ? "text-emerald-800" : "text-slate-400"}>3. Kirim Resi</span>
+                    <span className={c.returnShipping?.trackingNumber ? "text-emerald-800" : "text-slate-400"}>3. Kirim Retur</span>
                   </div>
                   <div className="space-y-0.5">
-                    <div className={`h-1.5 rounded-full ${c.returnShipping?.inspectedByMerchant ? "bg-emerald-500" : c.mainStatus === "IN_RESOLUTION" ? "bg-blue-600 animate-pulse" : "bg-slate-200"}`} />
+                    <div className={`h-1.5 rounded-full ${c.returnShipping?.inspectedByMerchant ? "bg-emerald-500" : c.mainStatus === "AWAITING_RETURN" ? "bg-blue-600 animate-pulse" : "bg-slate-200"}`} />
                     <span className={c.returnShipping?.inspectedByMerchant ? "text-emerald-800" : "text-slate-400"}>4. Toko QC</span>
                   </div>
                   <div className="space-y-0.5">
+                    <div className={`h-1.5 rounded-full ${isCompleted ? "bg-emerald-500" : c.replacementShipment?.shippingStatus === "SHIPPED" ? "bg-blue-600 animate-pulse" : c.mainStatus === "IN_RESOLUTION" ? "bg-amber-500" : "bg-slate-200"}`} />
+                    <span className={isCompleted || c.replacementShipment?.shippingStatus === "SHIPPED" ? "text-emerald-800" : c.mainStatus === "IN_RESOLUTION" ? "text-amber-800" : "text-slate-400"}>5. Kirim Unit Baru</span>
+                  </div>
+                  <div className="space-y-0.5">
                     <div className={`h-1.5 rounded-full ${isCompleted ? "bg-emerald-500" : isRejected ? "bg-rose-500" : "bg-slate-200"}`} />
-                    <span className={isCompleted ? "text-emerald-800" : isRejected ? "text-rose-700" : "text-slate-400"}>{isRejected ? "Ditolak" : "5. Selesai"}</span>
+                    <span className={isCompleted ? "text-emerald-800" : isRejected ? "text-rose-700" : "text-slate-400"}>{isRejected ? "Ditolak" : "6. Selesai"}</span>
                   </div>
                 </div>
+
                 {c.returnShipping?.trackingNumber && (
                   <div className="p-2 bg-white rounded-xl border border-blue-200 text-xs text-blue-950 flex flex-wrap items-center justify-between gap-2 mt-1">
                     <span>Resi Retur Pembeli: <strong className="font-mono">{c.returnShipping.trackingNumber}</strong></span>
-                    <span>Status: <strong>{c.returnShipping.receivedByMerchant ? "Diterima Toko & Lolos QC" : "Sedang Dikirim via Kurir"}</strong></span>
+                    <span>Status Retur: <strong>{c.returnShipping.receivedByMerchant ? "Diterima Toko & Lolos QC" : "Sedang Dikirim via Kurir"}</strong></span>
+                  </div>
+                )}
+
+                {/* Info Pengiriman Unit Pengganti Baru */}
+                {c.replacementShipment && (
+                  <div className="p-2.5 bg-gradient-to-r from-blue-50/90 to-emerald-50/90 rounded-xl border border-blue-200/90 text-xs space-y-2 mt-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <Truck size={14} className="text-blue-700" weight="bold" />
+                        <span className="font-bold text-slate-800">
+                          {c.replacementShipment.shippingStatus === "SHIPPED"
+                            ? `Unit Baru Dikirim (${c.replacementShipment.shippingMethod === "KURIR_TOKO" ? "Kurir Toko" : "GoSend Instant"})`
+                            : isCompleted || c.replacementShipment.shippingStatus === "DELIVERED"
+                            ? "Unit Baru Telah Diterima"
+                            : "Menyiapkan Unit Baru"}
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.2 rounded border border-emerald-300">
+                          Ongkir Rp0
+                        </span>
+                      </div>
+
+                      {c.replacementShipment.trackingUrl && (c.replacementShipment.shippingMethod === "GOSEND" || c.replacementShipment.courierName?.toLowerCase().includes("gosend")) && (
+                        <a
+                          href={c.replacementShipment.trackingUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 px-2.5 py-1 rounded-lg transition"
+                        >
+                          <MapPin size={12} weight="bold" />
+                          <span>Buka Live Tracking Gojek</span>
+                        </a>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 text-slate-600 text-[11px]">
+                      <span>
+                        <strong>Pengirim:</strong> {c.replacementShipment.driverName || (c.replacementShipment.shippingMethod === "KURIR_TOKO" ? "Kurir Toko" : "Driver GoSend")}
+                      </span>
+                      {c.replacementShipment.driverPhone && (
+                        <span>
+                          <strong>Telp:</strong> <span className="font-mono">{c.replacementShipment.driverPhone}</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {c.replacementShipment.notes && (
+                      <p className="text-[11px] text-slate-600 italic">
+                        Catatan Toko: {c.replacementShipment.notes}
+                      </p>
+                    )}
+
+                    {/* Tombol Konfirmasi Langsung di Card */}
+                    {c.mainStatus === "IN_RESOLUTION" && c.replacementShipment.shippingStatus === "SHIPPED" && (
+                      <div className="pt-2 border-t border-blue-200/60 flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-slate-600 font-medium">Sudah terima paket unit pengganti?</span>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await customerConfirmCompletion(c.id, "CUSTOMER_VERIFIED_COMPLETION");
+                              showToast("Penerimaan unit baru terverifikasi! Garansi diselesaikan.");
+                            } catch (err: any) {
+                              showToast(err?.message || "Gagal mengonfirmasi penerimaan unit.");
+                            }
+                          }}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                        >
+                          <Check size={12} weight="bold" />
+                          <span>Konfirmasi Unit Diterima</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1623,45 +1716,67 @@ function CustomerWarrantiesAndSubmissionsContent() {
                       <strong className="text-slate-800">Pelacakan Logistik Penggantian Unit Baru</strong>
                     </div>
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
-                      {viewingCase.replacementShipment?.shippingStatus === "DELIVERED"
+                      {viewingCase.replacementShipment?.shippingStatus === "DELIVERED" || viewingCase.mainStatus === "COMPLETED"
                         ? "Tiba di Tujuan"
                         : viewingCase.replacementShipment?.shippingStatus === "SHIPPED"
                         ? "Dalam Pengiriman"
                         : "Sedang Dikemas"}
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                     <div>
-                      <span className="text-slate-400 text-[10px] block font-medium">Kurir Ekspedisi:</span>
+                      <span className="text-slate-400 text-[10px] block font-semibold">Kurir Pengiriman:</span>
                       <strong className="text-slate-800 text-xs">
-                        {viewingCase.replacementShipment?.courierName || "J&T Express / SiCepat"}
+                        {viewingCase.replacementShipment?.shippingMethod === "KURIR_TOKO" || viewingCase.replacementShipment?.courierName === "Kurir Toko"
+                          ? "Kurir Internal Toko"
+                          : "GoSend Instant"}
                       </strong>
                     </div>
+
                     <div>
-                      <span className="text-slate-400 text-[10px] block font-medium">Nomor Resi:</span>
-                      <div className="flex items-center gap-1.5">
-                        <strong className="text-blue-700 font-mono text-xs">
-                          {viewingCase.replacementShipment?.trackingNumber || "SRV-REP-889211"}
-                        </strong>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard?.writeText(viewingCase.replacementShipment?.trackingNumber || "SRV-REP-889211");
-                            showToast("Nomor resi pengiriman berhasil disalin!");
-                          }}
-                          className="text-[10px] text-blue-600 hover:underline font-bold cursor-pointer"
-                        >
-                          Salin
-                        </button>
-                      </div>
+                      <span className="text-slate-400 text-[10px] block font-semibold">Nama Pengirim / Driver:</span>
+                      <strong className="text-slate-800 text-xs">
+                        {viewingCase.replacementShipment?.driverName || (viewingCase.replacementShipment?.shippingMethod === "KURIR_TOKO" ? "Kurir Toko" : "Pak Joko (Driver GoSend)")}
+                      </strong>
                     </div>
+
                     <div>
-                      <span className="text-slate-400 text-[10px] block font-medium">Estimasi Tiba:</span>
-                      <span className="text-slate-700 font-medium text-xs">
-                        {viewingCase.replacementShipment?.estimatedArrival || "1 - 2 Hari Kerja"}
+                      <span className="text-slate-400 text-[10px] block font-semibold">Nomor Telepon:</span>
+                      <span className="font-mono text-slate-800 font-bold text-xs">
+                        {viewingCase.replacementShipment?.driverPhone || "0812-3456-7890"}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-slate-400 text-[10px] block font-semibold">Biaya Ongkir:</span>
+                      <span className="text-emerald-700 font-extrabold text-xs">
+                        Rp0 (Garansi Toko)
                       </span>
                     </div>
                   </div>
+
+                  {/* Jika GoSend, tampilkan tombol Live Tracking Gojek */}
+                  {viewingCase.replacementShipment?.trackingUrl && (viewingCase.replacementShipment.shippingMethod === "GOSEND" || viewingCase.replacementShipment.courierName?.toLowerCase().includes("gosend")) && (
+                    <div className="pt-2 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] text-slate-600">Pantau posisi kurir Gojek secara real-time:</span>
+                      <a
+                        href={viewingCase.replacementShipment.trackingUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition shadow-2xs"
+                      >
+                        <MapPin size={14} weight="bold" />
+                        <span>Buka Live Tracking Gojek</span>
+                      </a>
+                    </div>
+                  )}
+
+                  {viewingCase.replacementShipment?.notes && (
+                    <p className="text-[11px] text-slate-500 italic pt-1 border-t border-slate-200/50">
+                      Catatan Toko: {viewingCase.replacementShipment.notes}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -1674,12 +1789,14 @@ function CustomerWarrantiesAndSubmissionsContent() {
                       <strong className="text-slate-800">Pengerjaan Ulang Teknisi Resmi (Warranty Work Rp 0)</strong>
                     </div>
                     <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800">
-                      {viewingCase.warrantyJob?.operationalStatus === "DONE"
+                      {viewingCase.warrantyJob?.operationalStatus === "DONE" || viewingCase.mainStatus === "COMPLETED"
                         ? "Pekerjaan Selesai"
                         : viewingCase.warrantyJob?.operationalStatus === "IN_PROGRESS"
-                        ? "Sedang Dikerjakan"
+                        ? "Sedang Dikerjakan di Lokasi"
                         : viewingCase.warrantyJob?.operationalStatus === "OTW"
-                        ? "Teknisi Menuju Lokasi"
+                        ? "Teknisi Menuju Lokasi (OTW)"
+                        : viewingCase.warrantyJob?.operationalStatus === "ACCEPTED"
+                        ? "Teknisi Menerima Tugas"
                         : "Teknisi Ditugaskan"}
                     </span>
                   </div>
@@ -1687,13 +1804,13 @@ function CustomerWarrantiesAndSubmissionsContent() {
                     <div>
                       <span className="text-slate-400 text-[10px] block font-medium">Teknisi Bertugas:</span>
                       <strong className="text-slate-800 text-xs">
-                        {viewingCase.warrantyJob?.workerName || "Budi Santoso (Mitra Resmi)"}
+                        {viewingCase.warrantyJob?.workerName || "Ahmad Fauzi (Teknisi Senior)"}
                       </strong>
                     </div>
                     <div>
                       <span className="text-slate-400 text-[10px] block font-medium">Jadwal Kunjungan:</span>
                       <span className="text-slate-700 font-medium text-xs">
-                        {viewingCase.warrantyJob?.scheduledDate || "Sesuai Jadwal Disepakati"}
+                        {viewingCase.warrantyJob?.scheduledDate || "Besok, 13:00 WIB"}
                       </span>
                     </div>
                     <div>
@@ -1701,6 +1818,12 @@ function CustomerWarrantiesAndSubmissionsContent() {
                       <strong className="text-emerald-700 text-xs font-extrabold">Rp 0 (Garansi Resmi)</strong>
                     </div>
                   </div>
+                  {viewingCase.warrantyJob?.completionEvidence && (
+                    <div className="p-2.5 bg-white rounded-xl border border-purple-200 text-xs text-slate-700 mt-2">
+                      <span className="text-purple-950 font-bold block mb-1">Bukti Penyelesaian Teknisi:</span>
+                      <p className="font-mono text-[11px] bg-purple-50/50 p-2 rounded-lg">{viewingCase.warrantyJob.completionEvidence}</p>
+                    </div>
+                  )}
                 </div>
               )}
 

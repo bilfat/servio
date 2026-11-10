@@ -2265,7 +2265,10 @@ export async function apiFetch<T = unknown>(
         if (
           activeRole === "SERVICE_PROVIDER" ||
           activeRole === "PROVIDER" ||
-          currentUrlPath.startsWith("/provider")
+          activeRole === "WORKER" ||
+          activeRole === "WORKER_TECHNICIAN" ||
+          currentUrlPath.startsWith("/provider") ||
+          currentUrlPath.startsWith("/worker")
         ) {
           activeRole = "PROVIDER";
         } else {

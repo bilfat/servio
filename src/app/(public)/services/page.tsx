@@ -17,7 +17,6 @@ import {
   GearSix,
   TreeEvergreen,
   Car,
-  Sparkle,
   ArrowRight,
   MapPin,
   CheckCircle,
@@ -32,6 +31,7 @@ import {
   Tag,
   Star,
   ShieldCheck,
+  Sparkle,
 } from "@phosphor-icons/react";
 import {
   taxonomyApi,
@@ -40,6 +40,7 @@ import {
   getCityNameByCode,
 } from "@/lib/servioApi";
 import { afterSalesApi, CatalogRatingSummaryItem } from "@/lib/afterSalesApi";
+import { CategoryIconRenderer } from "@/components/common/CategoryIconRenderer";
 
 type ServiceSortOption = "RELEVANT" | "PRICE_LOW" | "PRICE_HIGH";
 
@@ -694,13 +695,12 @@ function ServicesCatalogContent() {
               {selectedCategories.map((catId) => {
                 const cat = categories.find((c) => c.id === catId || c.name.toLowerCase() === catId.toLowerCase());
                 const catLabel = cat?.name || KNOWN_JASA_CATEGORIES[catId] || catId;
-                const IconComponent = getJasaCategoryIcon(cat?.name || KNOWN_JASA_CATEGORIES[catId], cat?.icon_name);
                 return (
                   <span
                     key={`cat-${catId}`}
                     className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0F4C81] text-white font-semibold text-xs shadow-xs"
                   >
-                    <IconComponent size={12} weight="bold" className="text-sky-200" />
+                    <CategoryIconRenderer iconName={cat?.icon_name} categoryName={catLabel} size={14} weight="bold" className="text-sky-200" />
                     <span className="text-sky-200 text-[10px] uppercase font-bold">Kategori:</span>
                     <span>{catLabel}</span>
                     <button
@@ -1023,7 +1023,6 @@ function ServicesCatalogContent() {
                   </div>
                 ) : (
                   categories.map((cat) => {
-                    const IconComponent = getJasaCategoryIcon(cat.name, cat.icon_name);
                     const isChecked = tempCategories.includes(cat.id);
                     const isPreviewed = (activePreviewCatId || categories[0]?.id) === cat.id;
 
@@ -1059,7 +1058,15 @@ function ServicesCatalogContent() {
 
                           {/* Format: icon | nama kategori */}
                           <div className="flex items-center gap-1.5 truncate">
-                            <IconComponent size={16} weight={isChecked ? "fill" : "regular"} className="shrink-0 text-[#0F4C81]" />
+                            <div className="w-4 h-4 flex items-center justify-center shrink-0 overflow-hidden">
+                              <CategoryIconRenderer
+                                iconName={cat.icon_name}
+                                categoryName={cat.name}
+                                size={16}
+                                weight={isChecked ? "fill" : "regular"}
+                                className="text-[#0F4C81]"
+                              />
+                            </div>
                             <span className="text-slate-300 font-light mx-0.5 select-none">|</span>
                             <span className="truncate">{cat.name}</span>
                           </div>

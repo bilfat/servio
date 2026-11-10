@@ -67,6 +67,7 @@ Route::prefix('v1/after-sales')->group(function () {
         Route::post('/cases/{id}/return-receipt', [BusinessCaseController::class, 'confirmReturnReceipt']);
         Route::post('/cases/{id}/return-inspection', [BusinessCaseController::class, 'submitReturnInspection']);
         Route::post('/cases/{id}/resolution-action', [BusinessCaseController::class, 'startResolution']);
+        Route::post('/cases/{id}/replacement-shipment', [BusinessCaseController::class, 'shipReplacement']);
         Route::post('/cases/{id}/complete', [BusinessCaseController::class, 'completeCase']);
 
         // Review Inbox & Official Replies

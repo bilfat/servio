@@ -52,6 +52,9 @@ Route::prefix('v1/order-jasa')->group(function () {
         Route::post('/tasks/{assignment_id}/visit/close', [WorkerTaskController::class, 'closeVisit'])->middleware('order_jasa.idempotency');
         Route::post('/tasks/{assignment_id}/issues', [WorkerTaskController::class, 'raiseIssue'])->middleware('order_jasa.idempotency');
         Route::get('/warranty-jobs', [WorkerTaskController::class, 'warrantyJobs']);
+        Route::post('/warranty-jobs/{id}/accept', [WorkerTaskController::class, 'acceptWarrantyJob']);
+        Route::post('/warranty-jobs/{id}/otw', [WorkerTaskController::class, 'otwWarrantyJob']);
+        Route::post('/warranty-jobs/{id}/start-work', [WorkerTaskController::class, 'startWorkWarrantyJob']);
         Route::post('/warranty-jobs/{id}/complete', [WorkerTaskController::class, 'completeWarrantyJob'])->middleware('order_jasa.idempotency');
     });
 

@@ -8,12 +8,13 @@ import { taxonomyApi } from "@/lib/servioApi";
 import { CATEGORY_ICON_MAP } from "@/config/navigation";
 import {
   Wrench,
-  Sparkle,
   ArrowRight,
   CaretRight,
   ShieldCheck,
   CircleNotch,
+  Sparkle,
 } from "@phosphor-icons/react";
+import { CategoryIconRenderer } from "@/components/common/CategoryIconRenderer";
 
 interface SubcategoryItem {
   id: string;
@@ -168,7 +169,6 @@ export default function CategoriesPage() {
       {!isLoading && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {categories.map((cat, index) => {
-            const Icon = CATEGORY_ICON_MAP[cat.icon_name || ""] || Wrench;
             return (
               <motion.div
                 key={cat.id}
@@ -180,8 +180,13 @@ export default function CategoriesPage() {
                 <div>
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3.5">
-                      <div className="p-3.5 rounded-2xl bg-sky text-primary border border-sky-200">
-                        <Icon size={28} weight="duotone" />
+                      <div className="w-14 h-14 rounded-2xl bg-sky text-primary border border-sky-200 flex items-center justify-center shrink-0 overflow-hidden">
+                        <CategoryIconRenderer
+                          iconName={cat.icon_name}
+                          categoryName={cat.name}
+                          size={28}
+                          weight="duotone"
+                        />
                       </div>
                       <div>
                         {cat.badge && (

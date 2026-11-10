@@ -19,6 +19,7 @@ import { afterSalesApi, OrderWarrantyEntitlement, CatalogRatingSummaryItem } fro
 import { ServiceCard, ServiceCardData } from "@/components/features/services/ServiceCard";
 import { SPayBalanceCard } from "@/components/features/spay/SPayBalanceCard";
 import { CATEGORY_ICON_MAP } from "@/config/navigation";
+import { CategoryIconRenderer } from "@/components/common/CategoryIconRenderer";
 import {
   MagnifyingGlass,
   MapPin,
@@ -303,40 +304,35 @@ export function CustomerHomeView() {
 
   const activeServiceDomains = useMemo(() => {
     if (liveServiceCategories.length > 0) {
-      return liveServiceCategories.map((c) => {
-        const Icon = resolveCategoryIcon(c.icon_name, c.name);
-        return {
-          id: c.id,
-          label: c.name,
-          href: `/services?categories=${encodeURIComponent(c.id)}`,
-          icon: Icon,
-          badgeText: "Cari Servis",
-        };
-      });
+      return liveServiceCategories.map((c) => ({
+        id: c.id,
+        label: c.name,
+        href: `/services?categories=${encodeURIComponent(c.id)}`,
+        iconName: c.icon_name,
+        badgeText: "Cari Servis",
+      }));
     }
-    return DEFAULT_SERVICE_DOMAINS.map((domain) => {
-      const Icon = resolveCategoryIcon(domain.icon_name, domain.label);
-      return { ...domain, icon: Icon, badgeText: "Cari Servis" };
-    });
+    return DEFAULT_SERVICE_DOMAINS.map((domain) => ({
+      ...domain,
+      iconName: domain.icon_name,
+      badgeText: "Cari Servis",
+    }));
   }, [liveServiceCategories]);
 
   const activeProductDomains = useMemo(() => {
     if (liveProductCategories.length > 0) {
-      return liveProductCategories.map((c) => {
-        const Icon = resolveCategoryIcon(c.icon_name, c.name);
-        return {
-          id: c.id,
-          label: c.name,
-          href: `/products?categoryId=${encodeURIComponent(c.id)}`,
-          icon: Icon,
-          badgeText: "Cari Sparepart",
-        };
-      });
+      return liveProductCategories.map((c) => ({
+        id: c.id,
+        label: c.name,
+        href: `/products?categoryId=${encodeURIComponent(c.id)}`,
+        iconName: c.icon_name,
+        badgeText: "Cari Sparepart",
+      }));
     }
     return DEFAULT_SERVICE_DOMAINS.map((domain) => ({
       ...domain,
       href: `/products?domain=${domain.id}`,
-      icon: resolveCategoryIcon(domain.icon_name, domain.label),
+      iconName: domain.icon_name,
       badgeText: "Cari Sparepart",
     }));
   }, [liveProductCategories]);
@@ -812,16 +808,20 @@ export function CustomerHomeView() {
 
           {/* Quick Domain Category Pills */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            {displayedCategories.map((domain) => {
-              const Icon = domain.icon;
+            {displayedCategories.map((domain: any) => {
               return (
                 <Link
                   key={domain.id}
                   href={domain.href}
                   className="bg-slate-50/60 hover:bg-white p-3 rounded-2xl flex flex-col items-center text-center cursor-pointer group border border-slate-200/80 hover:border-primary/40 hover:shadow-xs transition-all duration-200"
                 >
-                  <div className="w-10 h-10 rounded-xl bg-sky/70 text-primary group-hover:bg-primary group-hover:text-white transition-colors flex items-center justify-center mb-1.5">
-                    <Icon size={20} weight="duotone" />
+                  <div className="w-10 h-10 rounded-xl bg-sky/70 text-primary group-hover:bg-primary group-hover:text-white transition-colors flex items-center justify-center mb-1.5 overflow-hidden">
+                    <CategoryIconRenderer
+                      iconName={domain.iconName}
+                      categoryName={domain.label}
+                      size={22}
+                      weight="duotone"
+                    />
                   </div>
                   <h3 className="font-display font-bold text-xs text-neutral-dark group-hover:text-primary transition-colors line-clamp-1">
                     {domain.label}

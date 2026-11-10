@@ -28,7 +28,6 @@ import {
   Package,
   Storefront,
   Lock,
-  Sparkle,
   Folder,
   TreeStructure,
   Plus,
@@ -53,6 +52,11 @@ import {
   ApiCategorySuggestion,
   ApiCategoryAuditLog,
 } from "@/lib/servioApi";
+import {
+  CategoryIconRenderer,
+  CategoryIconPicker,
+  isCustomImageIcon,
+} from "@/components/common/CategoryIconPicker";
 import type { ApiBrand } from "@/types/domain";
 
 // Mapping Icon Phosphor ke Komponen React
@@ -78,7 +82,6 @@ export const CATEGORY_ICON_MAP: Record<string, React.ElementType> = {
   Package,
   Storefront,
   Lock,
-  Sparkle,
   Folder,
 };
 
@@ -103,7 +106,6 @@ export const AVAILABLE_SERVICE_ICONS = [
   { name: "Truck", label: "Logistik & Pindahan", icon: Truck },
   { name: "Lock", label: "Ahli Kunci & Brankas", icon: Lock },
   { name: "FirstAid", label: "Sanitasi Medis & Fogging", icon: FirstAid },
-  { name: "Sparkle", label: "Layanan Spesialis", icon: Sparkle },
   { name: "Folder", label: "Umum & Lainnya", icon: Folder },
 ];
 
@@ -172,9 +174,10 @@ export default function AdminTaxonomyPage() {
   const [newJasaSubCatId, setNewJasaSubCatId] = useState("");
   const [newJasaSubName, setNewJasaSubName] = useState("");
 
-  // Modal: Tambah Kategori Barang (Nama saja)
+  // Modal: Tambah Kategori Barang (Nama + Ikon/Foto)
   const [isAddProdukCategoryOpen, setIsAddProdukCategoryOpen] = useState(false);
   const [newProdukCatName, setNewProdukCatName] = useState("");
+  const [newProdukCatIcon, setNewProdukCatIcon] = useState("Package");
 
   // Modal: Tambah Sub Kategori Barang (Pilih Kategori Induk Barang + Nama)
   const [isAddProdukSubOpen, setIsAddProdukSubOpen] = useState(false);
@@ -587,6 +590,7 @@ export default function AdminTaxonomyPage() {
       const res = await taxonomyApi.createCategory({
         master_id: produkMasterId,
         name: newProdukCatName.trim(),
+        icon_name: newProdukCatIcon || "Package",
       });
       const createdCatId = res.data?.id;
       if (linkedRequestId && createdCatId) {
@@ -663,7 +667,7 @@ export default function AdminTaxonomyPage() {
         editingCategory.id,
         {
           name: editCatName.trim(),
-          icon_name: editingCategory.master_code === "JASA" ? editCatIcon : undefined,
+          icon_name: editCatIcon,
         },
         editingCategory.lock_version
       );
@@ -1319,7 +1323,7 @@ export default function AdminTaxonomyPage() {
                   <thead className="bg-slate-50 border-b border-slate-200/80 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
                     <tr>
                       <th className="py-3.5 px-4">Nama Kategori</th>
-                      {mainTab === "JASA" && <th className="py-3.5 px-4 text-center">Ikon</th>}
+                      <th className="py-3.5 px-4 text-center">Ikon</th>
                       <th className="py-3.5 px-4">Kode Taksonomi</th>
                       <th className="py-3.5 px-4 text-center">Sub Kategori Terdaftar</th>
                       <th className="py-3.5 px-4 text-center">Status</th>
@@ -1367,12 +1371,17 @@ export default function AdminTaxonomyPage() {
                           >
                             <td className="py-3.5 px-4">
                               <div className="flex items-center gap-2.5">
-                                <span className={`p-2 rounded-xl border shrink-0 ${
+                                <span className={`p-2 rounded-xl border shrink-0 flex items-center justify-center ${
                                   isInactive
                                     ? "bg-slate-100 text-slate-500 border-slate-200"
                                     : "bg-sky-50 text-[#0F4C81] border-sky-200"
                                 }`}>
-                                  <IconComponent size={18} weight="duotone" />
+                                  <CategoryIconRenderer
+                                    iconName={cat.icon_name}
+                                    categoryName={cat.name}
+                                    size={18}
+                                    weight="duotone"
+                                  />
                                 </span>
                                 <div>
                                   <span className={`font-bold text-sm ${isInactive ? "text-slate-700" : "text-slate-900"}`}>
@@ -1386,14 +1395,14 @@ export default function AdminTaxonomyPage() {
                                 </div>
                               </div>
                             </td>
-                            {mainTab === "JASA" && (
-                              <td className="py-3.5 px-4 text-center">
-                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-mono text-[11px]">
-                                  <IconComponent size={14} />
-                                  <span>{cat.icon_name || "Folder"}</span>
+                            <td className="py-3.5 px-4 text-center">
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-mono text-[11px] max-w-[140px] truncate">
+                                <CategoryIconRenderer iconName={cat.icon_name} categoryName={cat.name} size={15} />
+                                <span className="truncate">
+                                  {isCustomImageIcon(cat.icon_name) ? "Foto Kustom" : cat.icon_name || (mainTab === "JASA" ? "Wrench" : "Package")}
                                 </span>
-                              </td>
-                            )}
+                              </span>
+                            </td>
                             <td className="py-3.5 px-4 font-mono text-[11px] text-slate-600">{cat.code}</td>
                             <td className="py-3.5 px-4 text-center font-bold text-slate-700">{childCount}</td>
                             <td className="py-3.5 px-4 text-center">
@@ -1414,7 +1423,7 @@ export default function AdminTaxonomyPage() {
                                   onClick={() => {
                                     setEditingCategory(cat);
                                     setEditCatName(cat.name);
-                                    setEditCatIcon(cat.icon_name || "Wrench");
+                                    setEditCatIcon(cat.icon_name || (cat.master_code === "JASA" ? "Wrench" : "Package"));
                                   }}
                                   className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 cursor-pointer"
                                   title="Edit Kategori"
@@ -1500,10 +1509,15 @@ export default function AdminTaxonomyPage() {
                       {/* Header Kategori Induk */}
                       <div className="bg-slate-50/80 px-5 py-3.5 border-b border-slate-200/80 flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-3">
-                          <span className={`p-2.5 rounded-xl border shadow-2xs shrink-0 ${
+                          <span className={`p-2.5 rounded-xl border shadow-2xs shrink-0 flex items-center justify-center ${
                             isCatInactive ? "bg-slate-100 text-slate-500 border-slate-200" : "bg-white text-[#0F4C81] border-slate-200/90"
                           }`}>
-                            <IconComponent size={20} weight="duotone" />
+                            <CategoryIconRenderer
+                              iconName={cat.icon_name}
+                              categoryName={cat.name}
+                              size={20}
+                              weight="duotone"
+                            />
                           </span>
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">
@@ -2077,74 +2091,12 @@ export default function AdminTaxonomyPage() {
               />
             </div>
 
-            {/* Visual Icon Picker */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block font-bold text-slate-700">Pilih Ikon Kategori</label>
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 text-[#0F4C81] font-bold border border-sky-200">
-                  {React.createElement(CATEGORY_ICON_MAP[newJasaCatIcon] || Folder, { size: 16, weight: "duotone" })}
-                  <span>Terpilih: {newJasaCatIcon}</span>
-                </div>
-              </div>
-
-              {/* 6 Icon Utama Default */}
-              <div className="mb-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                  6 Ikon Utama SERVIO (Rekomendasi)
-                </p>
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                  {AVAILABLE_SERVICE_ICONS.filter((i) => i.isDefault).map((item) => {
-                    const IconComp = item.icon;
-                    const isSelected = newJasaCatIcon === item.name;
-                    return (
-                      <button
-                        key={item.name}
-                        type="button"
-                        onClick={() => setNewJasaCatIcon(item.name)}
-                        className={`p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all text-center ${
-                          isSelected
-                            ? "bg-[#0F4C81] text-white border-[#0F4C81] shadow-xs"
-                            : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
-                        }`}
-                        title={item.label}
-                      >
-                        <IconComp size={22} weight={isSelected ? "bold" : "duotone"} />
-                        <span className="text-[9px] font-bold truncate max-w-full">{item.label.split(" ")[0]}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Pilihan Ikon Lainnya */}
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                  Ikon Tambahan Lainnya (Klik untuk Memilih)
-                </p>
-                <div className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 max-h-40 overflow-y-auto p-1 border border-slate-100 rounded-xl bg-slate-50/50">
-                  {AVAILABLE_SERVICE_ICONS.filter((i) => !i.isDefault).map((item) => {
-                    const IconComp = item.icon;
-                    const isSelected = newJasaCatIcon === item.name;
-                    return (
-                      <button
-                        key={item.name}
-                        type="button"
-                        onClick={() => setNewJasaCatIcon(item.name)}
-                        className={`p-2 rounded-lg border flex flex-col items-center justify-center gap-1 transition-all ${
-                          isSelected
-                            ? "bg-[#0F4C81] text-white border-[#0F4C81] shadow-xs"
-                            : "bg-white border-slate-200 text-slate-600 hover:bg-slate-100"
-                        }`}
-                        title={item.label}
-                      >
-                        <IconComp size={18} weight={isSelected ? "bold" : "duotone"} />
-                        <span className="text-[8px] truncate max-w-full font-medium">{item.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+            {/* Visual Icon Picker & Custom Upload */}
+            <CategoryIconPicker
+              value={newJasaCatIcon}
+              onChange={setNewJasaCatIcon}
+              masterCode="JASA"
+            />
 
             <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
               <Button variant="secondary" size="sm" type="button" onClick={() => setIsAddJasaCategoryOpen(false)}>
@@ -2209,7 +2161,7 @@ export default function AdminTaxonomyPage() {
       )}
 
       {/* ========================================================================= */}
-      {/* MODAL 3: Tambah Kategori Barang (Nama saja)                               */}
+      {/* MODAL 3: Tambah Kategori Barang (Nama + Ikon/Foto)                        */}
       {/* ========================================================================= */}
       {isAddProdukCategoryOpen && (
         <Modal
@@ -2229,6 +2181,13 @@ export default function AdminTaxonomyPage() {
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 font-medium text-xs focus:ring-2 focus:ring-[#0F4C81]/20"
               />
             </div>
+
+            {/* Visual Icon Picker & Custom Upload for Produk */}
+            <CategoryIconPicker
+              value={newProdukCatIcon}
+              onChange={setNewProdukCatIcon}
+              masterCode="PRODUK"
+            />
 
             <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
               <Button variant="secondary" size="sm" type="button" onClick={() => setIsAddProdukCategoryOpen(false)}>
@@ -2313,32 +2272,12 @@ export default function AdminTaxonomyPage() {
               />
             </div>
 
-            {editingCategory.master_code === "JASA" && (
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Pilih Ikon Kategori</label>
-                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-40 overflow-y-auto p-1 border border-slate-100 rounded-xl bg-slate-50/50">
-                  {AVAILABLE_SERVICE_ICONS.map((item) => {
-                    const IconComp = item.icon;
-                    const isSelected = editCatIcon === item.name;
-                    return (
-                      <button
-                        key={item.name}
-                        type="button"
-                        onClick={() => setEditCatIcon(item.name)}
-                        className={`p-2 rounded-lg border flex flex-col items-center justify-center gap-1 transition-all ${
-                          isSelected
-                            ? "bg-[#0F4C81] text-white border-[#0F4C81] shadow-xs"
-                            : "bg-white border-slate-200 text-slate-600 hover:bg-slate-100"
-                        }`}
-                      >
-                        <IconComp size={18} weight={isSelected ? "bold" : "duotone"} />
-                        <span className="text-[8px] truncate max-w-full font-medium">{item.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            {/* Visual Icon Picker & Custom Upload for Editing */}
+            <CategoryIconPicker
+              value={editCatIcon}
+              onChange={setEditCatIcon}
+              masterCode={editingCategory.master_code === "JASA" ? "JASA" : "PRODUK"}
+            />
 
             <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
               <Button variant="secondary" size="sm" type="button" onClick={() => setEditingCategory(null)}>

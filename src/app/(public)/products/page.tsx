@@ -37,6 +37,7 @@ import { useCart } from "@/features/cart/useCart";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { useActiveLocation, isSameCity, calculateStoreDistanceKm } from "@/context/LocationContext";
+import { CategoryIconRenderer } from "@/components/common/CategoryIconRenderer";
 
 type ProductSortOption = "POPULAR" | "PRICE_LOW" | "PRICE_HIGH";
 
@@ -78,7 +79,7 @@ function ProductCatalogContent() {
   const initialBrandParam = searchParams.get("brand") || searchParams.get("brands");
 
   const [products, setProducts] = useState<ApiProduct[]>([]);
-  const [categories, setCategories] = useState<{ id: string; name: string; code?: string }[]>([]);
+  const [categories, setCategories] = useState<{ id: string; name: string; code?: string; icon_name?: string | null }[]>([]);
   const [subcategories, setSubcategories] = useState<{ id: string; category_id: string; name: string; code?: string }[]>([]);
   const [brands, setBrands] = useState<ApiBrand[]>([]);
   const [matchedMerchants, setMatchedMerchants] = useState<ApiShopProfile[]>([]);
@@ -156,6 +157,7 @@ function ProductCatalogContent() {
             id: c.id,
             name: c.name,
             code: c.code,
+            icon_name: c.icon_name || null,
           }))
         );
       }
@@ -1347,7 +1349,6 @@ function ProductCatalogContent() {
 
                 {/* Daftar Kategori Resmi dengan Checkbox Multi-Select */}
                 {categories.map((cat) => {
-                  const Icon = getCategoryIcon(cat.name);
                   const isChecked = tempCategories.includes(cat.id);
                   const isPreviewed = (activePreviewCatId || categories[0]?.id) === cat.id;
 
@@ -1379,7 +1380,14 @@ function ProductCatalogContent() {
                           {isChecked && <Check size={11} weight="bold" />}
                         </button>
 
-                        <Icon size={17} weight={isChecked ? "fill" : "regular"} className="shrink-0" />
+                        <div className="w-5 h-5 rounded-md flex items-center justify-center shrink-0 overflow-hidden">
+                          <CategoryIconRenderer
+                            iconName={cat.icon_name}
+                            categoryName={cat.name}
+                            size={17}
+                            weight={isChecked ? "fill" : "regular"}
+                          />
+                        </div>
                         <span className="truncate">{cat.name}</span>
                       </div>
 

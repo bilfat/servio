@@ -291,5 +291,140 @@ class BusinessCaseController
             return ApiResponse::error('AFTER_SALES_RETURN_INSPECTION_FAILED', $e->getMessage(), 422);
         }
     }
+
+    public function shipReplacement(Request $request, string $id): JsonResponse
+    {
+        /** @var AuthenticatedActor $actor */
+        $actor = $request->attributes->get('actor');
+
+        $validated = $request->validate([
+            'shipping_method' => 'nullable|string|in:GOSEND,KURIR_TOKO',
+            'courier_name' => 'required|string|max:100',
+            'driver_name' => 'nullable|string|max:100',
+            'driver_phone' => 'nullable|string|max:50',
+            'tracking_number' => 'nullable|string|max:100',
+            'tracking_url' => 'nullable|string|max:500',
+            'notes' => 'nullable|string|max:1000',
+        ]);
+
+        try {
+            $case = \Illuminate\Support\Facades\DB::transaction(function () use ($id, $actor, $validated) {
+                /** @var \App\Models\AfterSalesCase $case */
+                $case = \App\Models\AfterSalesCase::where('id', $id)->lockForUpdate()->firstOrFail();
+
+                if ($case->owner_org_id !== $actor->organizationId) {
+                    throw new \Illuminate\Auth\Access\AuthorizationException("Akses ditolak: Kasus ini bukan milik toko Anda.");
+                }
+
+                if ($case->main_status !== 'IN_RESOLUTION' && $case->main_status !== 'AWAITING_RETURN') {
+                    throw new \InvalidArgumentException("Pengiriman unit pengganti hanya dapat dilakukan pada tahap resolusi (IN_RESOLUTION).");
+                }
+
+                $now = now();
+                $shippingMethod = $validated['shipping_method'] ?? (str_contains(strtolower($validated['courier_name']), 'gosend') ? 'GOSEND' : 'KURIR_TOKO');
+                $courierName = trim($validated['courier_name']);
+                $driverName = !empty($validated['driver_name']) ? trim($validated['driver_name']) : null;
+                $driverPhone = !empty($validated['driver_phone']) ? trim($validated['driver_phone']) : null;
+                $trackingNumber = !empty($validated['tracking_number']) ? trim($validated['tracking_number']) : ($driverPhone ?: null);
+                $trackingUrl = !empty($validated['tracking_url']) ? trim($validated['tracking_url']) : null;
+                $notes = !empty($validated['notes']) ? trim($validated['notes']) : null;
+
+                // Ensure resolution exists
+                $resolution = \App\Models\CaseResolution::where('case_id', $case->id)->first();
+                if (!$resolution) {
+                    $resolution = \App\Models\CaseResolution::create([
+                        'case_id' => $case->id,
+                        'solution_code' => 'REPLACEMENT',
+                        'status' => 'IN_PROGRESS',
+                        'started_at' => $now,
+                    ]);
+                } else {
+                    $resolution->update(['status' => 'IN_PROGRESS']);
+                }
+
+                // Update or create external ref
+                $ref = \App\Models\CaseExternalRef::where('case_id', $case->id)
+                    ->where('purpose', 'REPLACEMENT_FULFILLMENT')
+                    ->first();
+
+                if ($ref) {
+                    $ref->update([
+                        'external_id' => $driverPhone ?: ($trackingNumber ?: $ref->external_id),
+                        'external_status' => 'SHIPPED',
+                        'last_checked_at' => $now,
+                    ]);
+                } else {
+                    $ref = \App\Models\CaseExternalRef::create([
+                        'case_id' => $case->id,
+                        'resolution_id' => $resolution->id,
+                        'target_service' => '05A',
+                        'external_id' => $driverPhone ?: ($trackingNumber ?: ('REP-' . strtoupper(\Illuminate\Support\Str::random(10)))),
+                        'external_status' => 'SHIPPED',
+                        'purpose' => 'REPLACEMENT_FULFILLMENT',
+                        'last_checked_at' => $now,
+                    ]);
+                }
+
+                // If order-barang-service has order_replacements, update it too
+                try {
+                    $orderReplacement = \Illuminate\Support\Facades\DB::connection('order_barang_db')
+                        ->table('order_replacements')
+                        ->where('case_id', $case->id)
+                        ->first();
+                    if ($orderReplacement) {
+                        \Illuminate\Support\Facades\DB::connection('order_barang_db')
+                            ->table('order_replacements')
+                            ->where('case_id', $case->id)
+                            ->update([
+                                'status' => 'SHIPPED',
+                                'courier_name' => $courierName,
+                                'waybill_number' => $trackingUrl ?: ($driverPhone ?: $trackingNumber),
+                                'shipped_at' => $now,
+                                'updated_at' => $now,
+                            ]);
+                    }
+                } catch (\Throwable $ignored) {}
+
+                $case->main_status = 'IN_RESOLUTION';
+                $case->save();
+
+                $driverInfo = $driverName ? " (Driver: {$driverName}" . ($driverPhone ? " - {$driverPhone}" : "") . ")" : "";
+                $reasonText = "Toko telah mengirimkan unit baru via {$courierName}{$driverInfo}" . ($trackingUrl ? " (Live Tracking: {$trackingUrl})" : "");
+
+                $lastSeq = (int) $case->events()->max('sequence');
+                \App\Models\CaseEvent::create([
+                    'case_id' => $case->id,
+                    'sequence' => $lastSeq + 1,
+                    'event_type' => 'REPLACEMENT_SHIPPED',
+                    'from_state' => 'IN_RESOLUTION',
+                    'to_state' => 'IN_RESOLUTION',
+                    'actor_kind' => 'MERCHANT',
+                    'actor_id' => $actor->id,
+                    'reason' => $reasonText,
+                    'data_json' => [
+                        'shipping_method' => $shippingMethod,
+                        'courier_name' => $courierName,
+                        'driver_name' => $driverName,
+                        'driver_phone' => $driverPhone,
+                        'tracking_number' => $trackingNumber,
+                        'tracking_url' => $trackingUrl,
+                        'notes' => $notes,
+                        'shipping_fee' => 0,
+                    ],
+                    'occurred_at' => $now,
+                ]);
+
+                return $case->load(['items', 'evidence', 'events', 'returnInstruction', 'returnShipment', 'returnReceipt', 'returnInspection', 'externalRefs', 'resolution']);
+            });
+
+            return ApiResponse::success($case, 200, 'Unit pengganti baru berhasil dikirim via ' . $validated['courier_name'] . '.');
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            return ApiResponse::error('AFTER_SALES_FORBIDDEN', $e->getMessage(), 403);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return ApiResponse::error('AFTER_SALES_CASE_NOT_FOUND', $e->getMessage(), 404);
+        } catch (Throwable $e) {
+            return ApiResponse::error('AFTER_SALES_SHIP_REPLACEMENT_FAILED', $e->getMessage(), 422);
+        }
+    }
 }
 
