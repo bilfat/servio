@@ -7,6 +7,7 @@ import { useProviderOperations } from "@/features/provider/useProviderOperations
 import { Navbar } from "@/components/navigation/Navbar";
 import { RoleSidebar } from "@/components/navigation/RoleSidebar";
 import { BottomNav } from "@/components/navigation/BottomNav";
+import { Footer } from "@/components/layout/Footer";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -63,8 +64,21 @@ export function AppShell({ children }: AppShellProps) {
     }
   };
 
-  // Transactional, catalog, and storefront pages that have their own sticky top headers and manage their own bleed
+  const isChatRoute = Boolean(
+    pathname === "/chat" ||
+    pathname?.startsWith("/chat/") ||
+    pathname === "/provider/chat" ||
+    pathname?.startsWith("/provider/chat/") ||
+    pathname === "/worker/chat" ||
+    pathname?.startsWith("/worker/chat/") ||
+    pathname === "/merchant/chat" ||
+    pathname?.startsWith("/merchant/chat/")
+  );
+
+  // Transactional, catalog, storefront, and homepage pages that manage their own full-bleed canvas
+  const isHomeRoute = pathname === "/";
   const isFullBleed =
+    isHomeRoute ||
     pathname?.startsWith("/completion") ||
     pathname?.startsWith("/proof") ||
     pathname?.startsWith("/checkout") ||
@@ -78,9 +92,11 @@ export function AppShell({ children }: AppShellProps) {
     pathname?.startsWith("/orders/products/") ||
     pathname === "/cart" ||
     pathname?.startsWith("/cart") ||
-    pathname?.startsWith("/chat");
+    isChatRoute;
 
-  const isChatRoute = pathname?.startsWith("/chat");
+  const isAiDiscoveryPage = Boolean(
+    pathname === "/smart-discovery" || pathname?.startsWith("/smart-discovery")
+  );
 
   // Check if current route is a store detail page (provider/jasa or merchant/barang storefront)
   const isStoreDetailPage = Boolean(
@@ -88,16 +104,24 @@ export function AppShell({ children }: AppShellProps) {
     pathname?.startsWith("/merchants/")
   );
 
+  const showFooter =
+    !isOperationalRoute &&
+    !isChatRoute &&
+    !isAiDiscoveryPage &&
+    !isStoreDetailPage &&
+    !isProviderClosed &&
+    !isAuthPage;
+
   return (
     <div
       className={`bg-white flex flex-col selection:bg-sky selection:text-primary ${
-        isChatRoute
-          ? "h-screen max-h-screen overflow-hidden"
+        isChatRoute || isAiDiscoveryPage
+          ? "h-[100dvh] max-h-[100dvh] overflow-hidden"
           : "min-h-screen"
       } ${isProviderClosed ? "overflow-hidden" : ""}`}
     >
-      {/* Top Navbar: Disembunyikan di halaman detail etalase toko (jasa maupun barang) sesuai instruksi UI/UX */}
-      {!isStoreDetailPage && (
+      {/* Top Navbar: Disembunyikan di halaman detail etalase toko & halaman diagnosa AI */}
+      {!isStoreDetailPage && !isAiDiscoveryPage && (
         <Navbar
           onToggleSidebar={handleToggleSidebar}
           isMobileSidebarOpen={mobileSidebarOpen}
@@ -106,7 +130,7 @@ export function AppShell({ children }: AppShellProps) {
       )}
 
       {/* Main Layout Body */}
-      <div className={`flex-1 flex w-full ${isChatRoute ? "min-h-0 overflow-hidden" : ""}`}>
+      <div className={`flex-1 flex w-full ${isChatRoute || isAiDiscoveryPage ? "min-h-0 overflow-hidden" : ""}`}>
         {/* Sidebar for Dashboard roles: Disembunyikan saat Toko Tutup */}
         {isDashboardRole && !isProviderClosed && (
           <RoleSidebar
@@ -120,7 +144,7 @@ export function AppShell({ children }: AppShellProps) {
         {/* Content Viewport */}
         <main
           className={`flex-1 flex flex-col min-w-0 transition-all ${
-            isChatRoute
+            isChatRoute || isAiDiscoveryPage
               ? "p-0 min-h-0 overflow-hidden"
               : isProviderClosed
               ? "p-0 overflow-hidden"
@@ -133,8 +157,8 @@ export function AppShell({ children }: AppShellProps) {
               : "pb-12"
           }`}
         >
-          {isFullBleed || isProviderClosed ? (
-            <div className={`flex-1 w-full overflow-hidden ${isChatRoute ? "h-full min-h-0 flex flex-col" : ""}`}>{children}</div>
+          {isFullBleed || isProviderClosed || isAiDiscoveryPage ? (
+            <div className={`flex-1 w-full ${isHomeRoute ? "overflow-x-clip" : "overflow-hidden"} ${isChatRoute || isAiDiscoveryPage ? "h-full min-h-0 flex flex-col" : ""}`}>{children}</div>
           ) : isDashboardRole ? (
             <div className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6">
               {children}
@@ -146,6 +170,9 @@ export function AppShell({ children }: AppShellProps) {
           )}
         </main>
       </div>
+
+      {/* Footer Navigasi & Informasi Publik/Pelanggan */}
+      {showFooter && <Footer />}
 
       {/* Mobile Bottom Navigation for Customer & Worker */}
       <BottomNav />

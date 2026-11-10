@@ -714,6 +714,13 @@ export const afterSalesApi = {
       });
     },
 
+    async confirmCompletion(caseId: string, payload?: { notes?: string; rating?: number }) {
+      return apiFetch<AfterSalesCase>(`/after-sales/cases/${caseId}/confirm-completion`, {
+        method: "POST",
+        body: JSON.stringify(payload || {}),
+      });
+    },
+
     // Reviews
     async submitReview(payload: SubmitReviewPayload) {
       const res = await apiFetch<ReviewSubmission>("/after-sales/reviews", {

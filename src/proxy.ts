@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getRoleDashboard, isOperationalRole } from "./lib/roleNavigation";
+import { DEV_SESSION_COOKIE, verifyDevSessionToken } from "./lib/devMonitor/auth";
 
 const PROTECTED_CUSTOMER_ROUTES = [
   "/orders",
@@ -37,8 +38,36 @@ const OPERATIONAL_PREFIXES = [
   "/staff",
 ];
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Isolated Developer Observability Portal (/dev) — completely independent from identity-service
+  if (pathname === "/dev" || pathname.startsWith("/dev/")) {
+    const devToken = request.cookies.get(DEV_SESSION_COOKIE)?.value;
+    const devSession = await verifyDevSessionToken(devToken);
+
+    if (pathname === "/dev" || pathname === "/dev/") {
+      return NextResponse.redirect(
+        new URL(devSession ? "/dev/dashboard" : "/dev/login", request.url)
+      );
+    }
+
+    if (pathname === "/dev/login") {
+      if (devSession) {
+        return NextResponse.redirect(new URL("/dev/dashboard", request.url));
+      }
+      return NextResponse.next();
+    }
+
+    if (!devSession) {
+      const loginUrl = new URL("/dev/login", request.url);
+      loginUrl.searchParams.set("next", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+
+    return NextResponse.next();
+  }
+
   const token =
     request.cookies.get("servio_token")?.value ||
     request.cookies.get("servio_session")?.value;
@@ -246,6 +275,8 @@ export const config = {
     "/business/:path*",
     "/ceo/:path*",
     "/executive/:path*",
+    "/dev",
+    "/dev/:path*",
     "/auth/login",
     "/login",
     "/auth/register",

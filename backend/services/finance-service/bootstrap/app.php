@@ -19,6 +19,8 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend(\App\Http\Middleware\CorrelationTraceMiddleware::class);
+
         $middleware->alias([
             'finance.auth' => \App\Http\Middleware\AuthenticateFinanceActor::class,
             'finance.role' => \App\Http\Middleware\RequireFinanceRole::class,

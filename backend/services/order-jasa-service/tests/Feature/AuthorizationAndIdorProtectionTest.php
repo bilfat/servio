@@ -572,4 +572,49 @@ class AuthorizationAndIdorProtectionTest extends TestCase
         ], $legitHeaders);
         $res2->assertStatus(201);
     }
+
+    public function test_internal_order_eligibility_projection_returns_lean_snapshot(): void
+    {
+        $orderId = (string) Str::ulid();
+
+        ServiceOrder::forceCreate([
+            'id' => $orderId,
+            'order_no' => 'SO-PROJ-' . Str::random(6),
+            'customer_id' => 'CUST-PROJ-01',
+            'provider_org_id' => 'ORG-PROJ-01',
+            'service_offering_id' => 'srv-proj-01',
+            'service_snapshot' => [
+                'id' => 'srv-proj-01',
+                'title' => 'Servis AC Split',
+                'name' => 'Servis AC Split',
+                'warranty_config' => ['durationDays' => 30],
+            ],
+            'recipient_snapshot' => ['name' => 'Siti Aminah'],
+            'address_snapshot' => ['city' => 'Jakarta'],
+            'complaint_text' => 'AC kurang dingin',
+            'status' => 'COMPLETED',
+            'phase' => 'TERMINAL',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $res = $this->getJson(
+            "/internal/v1/order-jasa/orders/{$orderId}?projection=eligibility",
+            $this->internalHeaders()
+        );
+
+        $res->assertStatus(200)
+            ->assertJsonPath('data.id', $orderId)
+            ->assertJsonPath('data.customer_id', 'CUST-PROJ-01')
+            ->assertJsonPath('data.provider_org_id', 'ORG-PROJ-01')
+            ->assertJsonPath('data.service_offering_id', 'srv-proj-01')
+            ->assertJsonPath('data.service_snapshot.id', 'srv-proj-01')
+            ->assertJsonPath('data.service_snapshot.title', 'Servis AC Split')
+            ->assertJsonPath('data.service_snapshot.name', 'Servis AC Split')
+            ->assertJsonPath('data.customer_name', 'Siti Aminah')
+            ->assertJsonPath('data.status', 'COMPLETED')
+            ->assertJsonMissingPath('data.service_snapshot.warranty_config')
+            ->assertJsonMissingPath('data.booking')
+            ->assertJsonMissingPath('data.payment_obligations');
+    }
 }

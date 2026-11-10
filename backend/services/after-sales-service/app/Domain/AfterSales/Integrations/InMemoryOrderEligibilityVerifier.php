@@ -21,7 +21,8 @@ class InMemoryOrderEligibilityVerifier implements OrderEligibilityVerifierInterf
         string $customerId,
         string $orderKind,
         string $orderId,
-        ?string $subOrderId = null
+        ?string $subOrderId = null,
+        bool $includeClaimedQuantities = true
     ): OrderEligibilityDto {
         if (isset($this->records[$orderId])) {
             $dto = $this->records[$orderId];

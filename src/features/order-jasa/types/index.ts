@@ -350,6 +350,7 @@ export interface ServiceOrder {
     status?: string;
     otwAt?: string;
     arrivedAt?: string;
+    closedAt?: string;
   };
 
   diagnosis?: Diagnosis;
@@ -366,6 +367,7 @@ export interface ServiceOrder {
   timeline: ServiceOrderTimelineEvent[];
   issues: OperationalIssue[];
 
+  completedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

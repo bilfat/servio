@@ -499,8 +499,8 @@ export default function AdminDashboardPage() {
             <button
               onClick={() => setActiveTab("grafik")}
               className={`flex items-center gap-2 pb-3.5 px-2 text-sm font-bold transition-all relative ${activeTab === "grafik"
-                  ? "text-[#0F4C81] border-b-2 border-[#0F4C81]"
-                  : "text-slate-500 hover:text-slate-900"
+                ? "text-[#0F4C81] border-b-2 border-[#0F4C81]"
+                : "text-slate-500 hover:text-slate-900"
                 }`}
             >
               <ChartPie size={18} weight={activeTab === "grafik" ? "fill" : "regular"} />
@@ -513,8 +513,8 @@ export default function AdminDashboardPage() {
             <button
               onClick={() => setActiveTab("operasional")}
               className={`flex items-center gap-2 pb-3.5 px-2 text-sm font-bold transition-all relative ${activeTab === "operasional"
-                  ? "text-[#0F4C81] border-b-2 border-[#0F4C81]"
-                  : "text-slate-500 hover:text-slate-900"
+                ? "text-[#0F4C81] border-b-2 border-[#0F4C81]"
+                : "text-slate-500 hover:text-slate-900"
                 }`}
             >
               <SlidersHorizontal size={18} weight={activeTab === "operasional" ? "fill" : "regular"} />
@@ -1438,8 +1438,8 @@ export default function AdminDashboardPage() {
                 <button
                   onClick={() => setMonitoringTab("orders")}
                   className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 ${monitoringTab === "orders"
-                      ? "bg-white text-[#0F4C81] shadow-2xs"
-                      : "text-slate-600 hover:text-slate-900"
+                    ? "bg-white text-[#0F4C81] shadow-2xs"
+                    : "text-slate-600 hover:text-slate-900"
                     }`}
                 >
                   <ShoppingBag size={14} weight={monitoringTab === "orders" ? "fill" : "regular"} />
@@ -1454,8 +1454,8 @@ export default function AdminDashboardPage() {
                 <button
                   onClick={() => setMonitoringTab("mitra")}
                   className={`px-3 py-1.5 rounded-lg font-bold transition-all flex items-center gap-1.5 ${monitoringTab === "mitra"
-                      ? "bg-white text-[#0F4C81] shadow-2xs"
-                      : "text-slate-600 hover:text-slate-900"
+                    ? "bg-white text-[#0F4C81] shadow-2xs"
+                    : "text-slate-600 hover:text-slate-900"
                     }`}
                 >
                   <Users size={14} weight={monitoringTab === "mitra" ? "fill" : "regular"} />

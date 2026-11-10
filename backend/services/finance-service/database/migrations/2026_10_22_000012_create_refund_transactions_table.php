@@ -28,7 +28,7 @@ return new class extends Migration
             $table->foreign('payment_allocation_id')->references('id')->on('payment_allocations')->onDelete('restrict');
             $table->foreign('payment_intent_id')->references('id')->on('payment_intents')->onDelete('restrict');
             $table->foreign('customer_spay_account_id')->references('id')->on('spay_accounts')->onDelete('restrict');
-            $table->unique(['payment_allocation_id', 'refund_reason_scope'], 'refund_alloc_scope_uq');
+            $table->index(['payment_allocation_id', 'refund_reason_scope'], 'refund_alloc_scope_idx');
             $table->index(['status', 'created_at']);
         });
     }

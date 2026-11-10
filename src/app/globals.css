@@ -221,3 +221,97 @@ h1, h2, h3, h4, h5, h6, .font-display, .font-heading {
   background: #94a3b8;
 }
 
+/* Lightweight GPU-only Homepage Animations (No Scroll Jank) */
+@keyframes servioFloatY {
+  0%, 100% {
+    transform: translate3d(0, -4px, 0);
+  }
+  50% {
+    transform: translate3d(0, 5px, 0);
+  }
+}
+
+@keyframes servioFloatAlt {
+  0%, 100% {
+    transform: translate3d(0, 4px, 0);
+  }
+  50% {
+    transform: translate3d(0, -5px, 0);
+  }
+}
+
+@keyframes servioSpinSlow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes servioSpinReverse {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes servioWaveRing {
+  0% {
+    transform: scale(0.88);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(1.22);
+    opacity: 0;
+  }
+}
+
+@keyframes servioWrenchRock {
+  0%, 100% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(7deg);
+  }
+}
+
+.animate-servio-float {
+  animation: servioFloatY 4.6s ease-in-out infinite;
+  will-change: transform;
+}
+
+.animate-servio-float-alt {
+  animation: servioFloatAlt 4.2s ease-in-out infinite;
+  will-change: transform;
+}
+
+.animate-servio-spin {
+  animation: servioSpinSlow 24s linear infinite;
+  will-change: transform;
+}
+
+.animate-servio-spin-fast {
+  animation: servioSpinSlow 12s linear infinite;
+  will-change: transform;
+}
+
+.animate-servio-spin-reverse {
+  animation: servioSpinReverse 18s linear infinite;
+  will-change: transform;
+}
+
+.animate-servio-wave {
+  animation: servioWaveRing 3.4s ease-out infinite;
+  will-change: transform, opacity;
+}
+
+.animate-servio-wrench {
+  animation: servioWrenchRock 2.8s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center bottom;
+}
+
+

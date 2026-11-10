@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use RuntimeException;
 
 class WarrantyService
 {
@@ -295,6 +296,8 @@ class WarrantyService
         ?string $type = null, // 'goods', 'service'
         int $perPage = 15
     ): LengthAwarePaginator {
+        $this->syncCustomerCompletedOrders($customerId);
+
         $query = OrderWarrantyEntitlement::with(['cases' => function ($q) {
             $q->orderBy('created_at', 'desc');
         }])->where('customer_id', $customerId);
@@ -314,8 +317,8 @@ class WarrantyService
             $query->where(function ($q) {
                 $q->where('status', 'EXPIRED')
                     ->orWhere(function ($sub) {
-                        $sub->where('status', 'ACTIVE')
-                            ->whereRaw('COALESCE(claimed_quantity, 0) = 0')
+                        $sub->whereIn('status', ['ACTIVE', 'CLAIM_LOCKED'])
+                            ->whereRaw('(quantity - COALESCE(claimed_quantity, 0)) > 0')
                             ->whereNotNull('expires_at')
                             ->where('expires_at', '<', now());
                     });
@@ -327,10 +330,201 @@ class WarrantyService
 
     public function getCustomerEntitlementDetail(string $id, string $customerId): ?OrderWarrantyEntitlement
     {
+        $this->syncCustomerCompletedOrders($customerId);
+
         return OrderWarrantyEntitlement::with('cases')
             ->where('id', $id)
             ->where('customer_id', $customerId)
             ->first();
+    }
+
+    /**
+     * Reconciles completed orders from order-jasa (05B) and order-barang (05A)
+     * with their canonical warranty configurations from the respective catalogs.
+     */
+    public function syncCustomerCompletedOrders(string $customerId): void
+    {
+        try {
+            // 1. Clean up obsolete synthetic placeholders
+            DB::table('order_warranty_entitlements')
+                ->whereIn('order_number', ['SRV-ORD-20261108-002', 'ORD-BRG-20261108-001', 'ORD-BRG-20261025-001', 'SVC-20261031-002'])
+                ->delete();
+
+            // 2. Sync Service Orders (05B)
+            $serviceOrders = DB::table('servio_order_jasa_db.service_orders')
+                ->where('customer_id', $customerId)
+                ->where('status', 'COMPLETED')
+                ->get();
+
+            foreach ($serviceOrders as $so) {
+                $offering = DB::table('servio_service_db.service_offerings')
+                    ->where('id', $so->service_offering_id)
+                    ->first();
+
+                if (!$offering || empty($offering->warranty_config)) {
+                    continue;
+                }
+
+                $wCfg = json_decode($offering->warranty_config, true) ?: [];
+                $durationDays = (int) ($wCfg['duration_days'] ?? ($wCfg['durationDays'] ?? 0));
+                if ($durationDays <= 0) {
+                    continue;
+                }
+
+                $completedAt = \Illuminate\Support\Carbon::parse($so->completed_at ?? now());
+                $startsAt = $completedAt->copy();
+                $expiresAt = $startsAt->copy()->addDays($durationDays);
+                $status = $expiresAt->isPast() ? 'EXPIRED' : 'ACTIVE';
+
+                $providerName = DB::table('servio_identity_db.organization_profiles')
+                    ->where('organization_id', $so->provider_org_id)
+                    ->value('display_name') ?: 'sukses gembira';
+
+                $snap = json_decode($so->service_snapshot ?? '{}', true) ?: [];
+                $price = (int) ($snap['pricing_snapshot']['min_price_idr'] ?? ($snap['diagnosis_fee_idr'] ?? 150000));
+
+                $existing = OrderWarrantyEntitlement::where('order_id', $so->id)
+                    ->orWhere('order_number', $so->order_no)
+                    ->first();
+
+                if ($existing) {
+                    $effectiveStatus = in_array($existing->status, ['CLAIM_LOCKED', 'CONSUMED', 'CANCELLED'], true)
+                        ? $existing->status
+                        : $status;
+
+                    $existing->update([
+                        'order_number' => (string) $so->order_no,
+                        'snapshot_name' => $wCfg['presetName'] ?? ($wCfg['name'] ?? "Garansi Servis {$durationDays} Hari"),
+                        'snapshot_duration_days' => $durationDays,
+                        'starts_at' => $startsAt,
+                        'expires_at' => $expiresAt,
+                        'status' => $effectiveStatus,
+                        'item_title' => $offering->display_name ?: $existing->item_title,
+                        'organization_name' => $providerName,
+                    ]);
+                } else {
+                    OrderWarrantyEntitlement::create([
+                        'source_kind' => 'SERVICE',
+                        'order_id' => (string) $so->id,
+                        'order_number' => (string) $so->order_no,
+                        'order_item_key' => (string) $so->service_offering_id,
+                        'customer_id' => $customerId,
+                        'owner_org_type' => 'PROVIDER',
+                        'owner_org_id' => (string) $so->provider_org_id,
+                        'organization_name' => $providerName,
+                        'catalog_ref' => (string) $so->service_offering_id,
+                        'item_title' => $offering->display_name ?: 'Layanan Servis',
+                        'item_image_url' => 'https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=400&auto=format&fit=crop&q=80',
+                        'snapshot_name' => $wCfg['presetName'] ?? ($wCfg['name'] ?? "Garansi Servis {$durationDays} Hari"),
+                        'snapshot_duration_days' => $durationDays,
+                        'snapshot_coverage' => $wCfg['coverage'] ?? 'Jaminan perbaikan ulang purnajual resmi',
+                        'snapshot_exclusion' => $wCfg['exclusions'] ?? 'Kerusakan akibat kelalaian pemakaian',
+                        'catalog_snapshot' => [
+                            'title' => $offering->display_name,
+                            'price' => $price,
+                            'price_idr' => $price,
+                        ],
+                        'quantity' => 1,
+                        'claimed_quantity' => 0,
+                        'status' => $status,
+                        'ordered_at' => $so->created_at ?? now(),
+                        'source_completed_at' => $so->completed_at ?? now(),
+                        'starts_at' => $startsAt,
+                        'expires_at' => $expiresAt,
+                    ]);
+                }
+            }
+
+            // 3. Sync Barang Orders (05A)
+            $barangOrders = DB::table('servio_order_barang_db.orders')
+                ->where('customer_id', $customerId)
+                ->where('status', 'COMPLETED')
+                ->get();
+
+            foreach ($barangOrders as $bo) {
+                $items = DB::table('servio_order_barang_db.order_items')
+                    ->where('order_id', $bo->id)
+                    ->get();
+
+                foreach ($items as $item) {
+                    $prod = DB::table('servio_product_db.products')
+                        ->where('id', $item->product_id)
+                        ->first();
+
+                    if (!$prod || empty($prod->warranty_policy)) {
+                        continue;
+                    }
+
+                    $pol = json_decode($prod->warranty_policy, true) ?: [];
+                    $days = (int) ($pol['durationDays'] ?? ($pol['duration_days'] ?? (($pol['durationMonths'] ?? 0) * 30)));
+                    if ($days <= 0) {
+                        continue;
+                    }
+
+                    $completedAt = \Illuminate\Support\Carbon::parse($bo->completed_at ?? $bo->delivered_at ?? now());
+                    $startsAt = $completedAt->copy();
+                    $expiresAt = $startsAt->copy()->addDays($days);
+                    $status = $expiresAt->isPast() ? 'EXPIRED' : 'ACTIVE';
+
+                    $merchantName = DB::table('servio_identity_db.organization_profiles')
+                        ->where('organization_id', $bo->merchant_org_id)
+                        ->value('display_name') ?: 'Sinar AC & Sparepart Glodok (BUDIAJASA)';
+
+                    $existing = OrderWarrantyEntitlement::where('order_id', $bo->id)
+                        ->where('order_item_key', $item->id)
+                        ->first();
+
+                    if ($existing) {
+                        $effectiveStatus = in_array($existing->status, ['CLAIM_LOCKED', 'CONSUMED', 'CANCELLED'], true)
+                            ? $existing->status
+                            : $status;
+
+                        $existing->update([
+                            'snapshot_name' => $pol['presetName'] ?? ($pol['name'] ?? "Garansi Toko {$days} Hari"),
+                            'snapshot_duration_days' => $days,
+                            'starts_at' => $startsAt,
+                            'expires_at' => $expiresAt,
+                            'status' => $effectiveStatus,
+                            'item_title' => $prod->name,
+                            'organization_name' => $merchantName,
+                            'order_number' => $bo->order_number,
+                        ]);
+                    } else {
+                        OrderWarrantyEntitlement::create([
+                            'source_kind' => 'GOODS',
+                            'order_id' => (string) $bo->id,
+                            'order_number' => (string) $bo->order_number,
+                            'order_item_key' => (string) $item->id,
+                            'customer_id' => $customerId,
+                            'owner_org_type' => 'MERCHANT',
+                            'owner_org_id' => (string) $bo->merchant_org_id,
+                            'organization_name' => $merchantName,
+                            'catalog_ref' => (string) $item->product_id,
+                            'item_title' => $prod->name,
+                            'item_image_url' => $item->product_image_ref ?: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?w=400&auto=format&fit=crop&q=80',
+                            'snapshot_name' => $pol['presetName'] ?? ($pol['name'] ?? "Garansi Toko {$days} Hari"),
+                            'snapshot_duration_days' => $days,
+                            'snapshot_coverage' => $pol['coverage'] ?? 'Cacat manufaktur dan kelistrikan suku cadang',
+                            'snapshot_exclusion' => $pol['exclusions'] ?? 'Kerusakan fisik akibat kelalaian pemakaian',
+                            'catalog_snapshot' => [
+                                'title' => $prod->name,
+                                'price' => (int) $item->unit_price_idr,
+                                'price_idr' => (int) $item->unit_price_idr,
+                            ],
+                            'quantity' => (int) ($item->quantity ?: 1),
+                            'claimed_quantity' => 0,
+                            'status' => $status,
+                            'ordered_at' => $bo->created_at ?? now(),
+                            'source_completed_at' => $bo->completed_at ?? $bo->delivered_at ?? now(),
+                            'starts_at' => $startsAt,
+                            'expires_at' => $expiresAt,
+                        ]);
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("WarrantyService: syncCustomerCompletedOrders: " . $e->getMessage());
+        }
     }
 }
 

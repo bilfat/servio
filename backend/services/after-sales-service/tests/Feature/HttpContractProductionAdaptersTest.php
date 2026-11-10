@@ -500,4 +500,58 @@ class HttpContractProductionAdaptersTest extends TestCase
             'external_status' => 'SUCCEEDED',
         ]);
     }
+
+    public function test_goods_and_service_eligibility_use_lightweight_projection_when_claimed_quantities_omitted(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8005/internal/v1/order-barang/orders/ord-g-light?projection=eligibility' => Http::response([
+                'success' => true,
+                'data' => [
+                    'id' => 'ord-g-light',
+                    'checkout_group_id' => 'grp-light-1',
+                    'customer_id' => 'cust-light',
+                    'merchant_org_id' => 'org-merch-light',
+                    'status' => 'COMPLETED',
+                    'recipient_name' => 'Ahmad Fauzi',
+                    'created_at' => '2026-11-01T10:00:00Z',
+                    'items' => [
+                        [
+                            'id' => 'item-light-1',
+                            'product_id' => 'prod-light-1',
+                            'name' => 'Kampas Rem',
+                            'price' => 150000,
+                            'quantity' => 2,
+                        ],
+                    ],
+                ],
+            ], 200),
+            'http://127.0.0.1:8007/internal/v1/order-jasa/orders/ord-s-light?projection=eligibility' => Http::response([
+                'success' => true,
+                'data' => [
+                    'id' => 'ord-s-light',
+                    'customer_id' => 'cust-light',
+                    'provider_org_id' => 'org-prov-light',
+                    'service_offering_id' => 'srv-light-1',
+                    'service_snapshot' => ['id' => 'srv-light-1', 'title' => 'Servis AC'],
+                    'customer_name' => 'Ahmad Fauzi',
+                    'status' => 'COMPLETED',
+                    'created_at' => '2026-11-02T10:00:00Z',
+                ],
+            ], 200),
+        ]);
+
+        $verifier = new HttpOrderEligibilityVerifier();
+
+        $goodsDto = $verifier->verifyOrderEligibility('cust-light', 'GOODS', 'ord-g-light', 'ord-g-light', false);
+        $this->assertTrue($goodsDto->isValid);
+        $this->assertEquals('COMPLETED', $goodsDto->orderStatus);
+        $this->assertEquals('org-merch-light', $goodsDto->ownerOrgId);
+        $this->assertEquals(2, $goodsDto->items[0]['remaining_quantity']);
+
+        $serviceDto = $verifier->verifyOrderEligibility('cust-light', 'SERVICE', 'ord-s-light', null, false);
+        $this->assertTrue($serviceDto->isValid);
+        $this->assertEquals('COMPLETED', $serviceDto->orderStatus);
+        $this->assertEquals('org-prov-light', $serviceDto->ownerOrgId);
+        $this->assertEquals('srv-light-1', $serviceDto->items[0]['item_id']);
+    }
 }

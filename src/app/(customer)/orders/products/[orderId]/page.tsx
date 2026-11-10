@@ -32,7 +32,10 @@ import { Toast } from "@/components/feedback/Toast";
 import { useAfterSales } from "@/features/afterSales/useAfterSales";
 import { ProductReturnModal } from "@/components/features/afterSales/ProductReturnModal";
 import { WarrantyClaimModal } from "@/components/features/afterSales/WarrantyClaimModal";
-import { OrderReviewModal } from "@/components/features/afterSales/OrderReviewModal";
+import {
+  OrderReviewModal,
+  OrderReviewModalTarget,
+} from "@/components/features/afterSales/OrderReviewModal";
 import { CustomerWarrantyEntitlement } from "@/types/afterSales";
 import { afterSalesApi, ReviewSubmission } from "@/lib/afterSalesApi";
 
@@ -382,6 +385,7 @@ export default function ProductOrderDetailPage() {
       checkoutGroupId: raw?.checkout_group_id || store?.checkoutGroupId || null,
       status,
       merchantName,
+      merchantOrganizationId: raw?.merchant_organization_id || raw?.merchant_id || store?.merchantId || "merchant-01",
       items,
       recipientName,
       recipientPhone,
@@ -460,18 +464,57 @@ export default function ProductOrderDetailPage() {
 
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [existingOrderReview, setExistingOrderReview] = useState<ReviewSubmission | null>(null);
+  const [hasCheckedOrderReview, setHasCheckedOrderReview] = useState(false);
 
   useEffect(() => {
-    if (!orderId) return;
+    if (!orderId || orderData.status !== "COMPLETED") {
+      setHasCheckedOrderReview(false);
+      return;
+    }
+    let cancelled = false;
+    setHasCheckedOrderReview(false);
     afterSalesApi.customer
       .getMyReview(orderId)
       .then((res) => {
-        if (res.success && res.data && res.data.id) {
+        if (!cancelled && res.success && res.data && res.data.id) {
           setExistingOrderReview(res.data);
         }
       })
-      .catch(() => {});
-  }, [orderId]);
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setHasCheckedOrderReview(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [orderId, orderData.status]);
+
+  const goodsReviewTarget = useMemo<OrderReviewModalTarget | null>(() => {
+    return {
+      sourceKind: "GOODS",
+      orderId: orderData.id || orderId,
+      subOrderId: orderData.id || orderId,
+      orderNumber: orderData.orderNumber || orderId,
+      orderedAt: orderData.createdAt,
+      completedAt: orderData.completedAt || orderData.deliveredAt,
+      businessOrgId:
+        (realBackendOrder as any)?.merchant_org_id ||
+        (storeOrder as any)?.merchantId ||
+        "merch-jaya-motor",
+      businessName: orderData.merchantName || "Toko Official",
+      items: (orderData.items || []).map((it: any) => ({
+        orderItemId: it.id,
+        targetId: it.productId || it.id,
+        title: it.title,
+        imageUrl: it.imageUrl,
+        quantity: it.quantity,
+        variantLabel: it.variant,
+        price: it.unitPrice,
+      })),
+      existingSubmission: existingOrderReview,
+      skipExistingReviewCheck: orderData.status !== "COMPLETED" || hasCheckedOrderReview,
+    };
+  }, [orderData, orderId, realBackendOrder, storeOrder, existingOrderReview, hasCheckedOrderReview]);
 
   // Active After-Sales Case (Claim or Return) for this Order
   const activeCase = useMemo(() => {
@@ -1086,15 +1129,13 @@ export default function ProductOrderDetailPage() {
                     >
                       Batalkan Pesanan
                     </button>
-                    <a
-                      href={`https://wa.me/?text=Halo%20${encodeURIComponent(orderData.merchantName)},%20saya%20ingin%20menanyakan%20pesanan%20${orderData.orderNumber}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="w-full py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    <Link
+                      href={`/chat?partner_id=${encodeURIComponent(orderData.merchantOrganizationId || "0c1467e7-af68-4b26-ae84-daa41d51aed0")}&partner_type=merchant&partner_name=${encodeURIComponent(orderData.merchantName || "BUDIAJASA")}&ctx_type=order_barang&ctx_id=${encodeURIComponent(orderData.orderNumber || orderData.id)}&ctx_title=${encodeURIComponent(orderData.items?.[0]?.productTitle || `Pesanan ${orderData.orderNumber}`)}&ctx_status=${encodeURIComponent(orderData.status)}&ctx_price=${encodeURIComponent(((orderData as any).pricing?.total ?? (orderData as any).totalAmount ?? 0))}&ctx_thumb=${encodeURIComponent(orderData.items?.[0]?.productImageUrl || "")}&ctx_summary=${encodeURIComponent(`Total: Rp ${(((orderData as any).pricing?.total ?? (orderData as any).totalAmount ?? 0)).toLocaleString("id-ID")} • ${orderData.items?.length || 1} Barang • Kurir ${orderData.courierMethod || "Toko"}`)}&ctx_url=${encodeURIComponent(`/orders/products/${orderData.orderNumber || orderData.id}`)}`}
+                      className="w-full py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
                     >
-                      <ChatDots size={15} />
-                      <span>Hubungi Toko</span>
-                    </a>
+                      <ChatDots size={15} weight="bold" className="text-emerald-600" />
+                      <span>Chat Toko (In-App)</span>
+                    </Link>
                   </div>
                 </div>
               )}
@@ -1134,15 +1175,13 @@ export default function ProductOrderDetailPage() {
                       >
                         Ajukan Pembatalan
                       </button>
-                      <a
-                        href={`https://wa.me/?text=Halo%20${encodeURIComponent(orderData.merchantName)},%20pesanan%20${orderData.orderNumber}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="w-full py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      <Link
+                        href={`/chat?partner_id=${encodeURIComponent(orderData.merchantOrganizationId || "0c1467e7-af68-4b26-ae84-daa41d51aed0")}&partner_type=merchant&partner_name=${encodeURIComponent(orderData.merchantName || "BUDIAJASA")}&ctx_type=order_barang&ctx_id=${encodeURIComponent(orderData.orderNumber || orderData.id)}&ctx_title=${encodeURIComponent(orderData.items?.[0]?.productTitle || `Pesanan ${orderData.orderNumber}`)}&ctx_status=${encodeURIComponent(orderData.status)}&ctx_price=${encodeURIComponent(((orderData as any).pricing?.total ?? (orderData as any).totalAmount ?? 0))}&ctx_thumb=${encodeURIComponent(orderData.items?.[0]?.productImageUrl || "")}&ctx_summary=${encodeURIComponent(`Total: Rp ${(((orderData as any).pricing?.total ?? (orderData as any).totalAmount ?? 0)).toLocaleString("id-ID")} • ${orderData.items?.length || 1} Barang • Kurir ${orderData.courierMethod || "Toko"}`)}&ctx_url=${encodeURIComponent(`/orders/products/${orderData.orderNumber || orderData.id}`)}`}
+                        className="w-full py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
                       >
-                        <ChatDots size={15} />
-                        <span>Hubungi Toko</span>
-                      </a>
+                        <ChatDots size={15} weight="bold" className="text-emerald-600" />
+                        <span>Chat Toko (In-App)</span>
+                      </Link>
                     </div>
                   )}
                 </div>
@@ -1163,15 +1202,13 @@ export default function ProductOrderDetailPage() {
                     </p>
                   </div>
 
-                  <a
-                    href={`https://wa.me/?text=Halo%20${encodeURIComponent(orderData.merchantName)},%20kapan%20paket%20${orderData.orderNumber}%20dikirim?`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-full py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  <Link
+                    href={`/chat?partner_id=${encodeURIComponent(orderData.merchantOrganizationId || "0c1467e7-af68-4b26-ae84-daa41d51aed0")}&partner_type=merchant&partner_name=${encodeURIComponent(orderData.merchantName || "BUDIAJASA")}&ctx_type=order_barang&ctx_id=${encodeURIComponent(orderData.orderNumber || orderData.id)}&ctx_title=${encodeURIComponent(orderData.items?.[0]?.productTitle || `Pesanan ${orderData.orderNumber}`)}&ctx_status=${encodeURIComponent(orderData.status)}&ctx_price=${encodeURIComponent(((orderData as any).pricing?.total ?? (orderData as any).totalAmount ?? 0))}&ctx_thumb=${encodeURIComponent(orderData.items?.[0]?.productImageUrl || "")}&ctx_summary=${encodeURIComponent(`Total: Rp ${(((orderData as any).pricing?.total ?? (orderData as any).totalAmount ?? 0)).toLocaleString("id-ID")} • ${orderData.items?.length || 1} Barang • Kurir ${orderData.courierMethod || "Toko"}`)}&ctx_url=${encodeURIComponent(`/orders/products/${orderData.orderNumber || orderData.id}`)}`}
+                    className="w-full py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
                   >
-                    <ChatDots size={15} />
-                    <span>Hubungi Toko</span>
-                  </a>
+                    <ChatDots size={15} weight="bold" className="text-emerald-600" />
+                    <span>Chat Toko (In-App)</span>
+                  </Link>
                 </div>
               )}
 
@@ -1809,26 +1846,7 @@ export default function ProductOrderDetailPage() {
       <OrderReviewModal
         isOpen={isReviewModalOpen}
         onClose={() => setIsReviewModalOpen(false)}
-        target={{
-          sourceKind: "GOODS",
-          orderId: orderData.id || orderId,
-          subOrderId: orderData.id || orderId,
-          orderNumber: orderData.orderNumber || orderId,
-          orderedAt: orderData.createdAt,
-          completedAt: orderData.completedAt || orderData.deliveredAt,
-          businessOrgId: (realBackendOrder as any)?.merchant_org_id || (storeOrder as any)?.merchantId || "merch-jaya-motor",
-          businessName: orderData.merchantName || "Toko Official",
-          items: (orderData.items || []).map((it: any) => ({
-            orderItemId: it.id,
-            targetId: it.productId || it.id,
-            title: it.title,
-            imageUrl: it.imageUrl,
-            quantity: it.quantity,
-            variantLabel: it.variant,
-            price: it.unitPrice,
-          })),
-          existingSubmission: existingOrderReview,
-        }}
+        target={goodsReviewTarget}
         onSubmitted={(sub) => {
           setExistingOrderReview(sub);
           setToastType("success");

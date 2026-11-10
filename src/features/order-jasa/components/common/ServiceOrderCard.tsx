@@ -21,6 +21,7 @@ import {
   Cube,
   Tag,
   CurrencyCircleDollar,
+  ChatCircleDots,
 } from "@phosphor-icons/react";
 import { ServiceOrder } from "../../types";
 import { getSubStatusBadgeInfo } from "../../constants";
@@ -104,6 +105,42 @@ export function ServiceOrderCard({
     info: "bg-blue-50 text-blue-800 border-blue-200",
     neutral: "bg-slate-100 text-slate-700 border-slate-200",
   }[badgeInfo.variant];
+
+  const subStr = order.subStatus as string;
+  const isTerminalOrder = order.status === "COMPLETED" || order.status === "CANCELLED";
+  const isPastOtwStage = [
+    "WORKER_ARRIVED",
+    "DIAGNOSING",
+    "WAITING_CUSTOMER_CONSENT",
+    "IN_PERSON_CONSENT_RECORDED",
+    "PRICE_APPROVED",
+    "EXECUTING",
+    "EXECUTION_IN_PROGRESS",
+    "WORK_FINISHED",
+    "EXECUTION_PENDING",
+    "PAYMENT_OVERDUE",
+    "WAITING_WORKER_CLOSE_VISIT",
+    "VISIT_CLOSED",
+    "AWAITING_CUSTOMER_CONFIRMATION",
+    "COMPLETED_NORMAL",
+    "AUTO_COMPLETED_72H",
+  ].includes(subStr);
+  const isPastArrivedStage = [
+    "DIAGNOSING",
+    "WAITING_CUSTOMER_CONSENT",
+    "IN_PERSON_CONSENT_RECORDED",
+    "PRICE_APPROVED",
+    "EXECUTING",
+    "EXECUTION_IN_PROGRESS",
+    "WORK_FINISHED",
+    "EXECUTION_PENDING",
+    "PAYMENT_OVERDUE",
+    "WAITING_WORKER_CLOSE_VISIT",
+    "VISIT_CLOSED",
+    "AWAITING_CUSTOMER_CONFIRMATION",
+    "COMPLETED_NORMAL",
+    "AUTO_COMPLETED_72H",
+  ].includes(subStr);
 
   // Specific role context labels & badges
   const isDiagnosisPending =
@@ -377,7 +414,108 @@ export function ServiceOrderCard({
           {badgeInfo.description}
         </p>
 
-        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto flex-wrap">
+          {/* Dual-Path Chat Action: Provider vs Worker */}
+          {role === "CUSTOMER" && (() => {
+            const snapshot = order.serviceSnapshot as any;
+            const price = snapshot?.finalPrice ?? snapshot?.diagnosisFee ?? snapshot?.price ?? 150000;
+            const thumb = snapshot?.imageUrl || "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=400&auto=format&fit=crop&q=80";
+
+            return order.assignment && order.assignment.status === "ACCEPTED" ? (
+              <>
+                <Link
+                  href={`/chat?partner_id=${encodeURIComponent(order.assignment.workerId || "acfdfc27-9ba5-472f-bec1-3c372f47fff6")}&partner_type=worker&partner_name=${encodeURIComponent(order.assignment.workerName || "Ahmad Teknisi")}&provider_name=${encodeURIComponent(order.providerName || "sukses gembira")}&ctx_type=order_jasa&ctx_id=${encodeURIComponent(order.id)}&ctx_title=${encodeURIComponent(order.serviceSnapshot?.title || "Pesanan Jasa")}&ctx_status=${encodeURIComponent(order.status)}&ctx_price=${encodeURIComponent(price)}&ctx_thumb=${encodeURIComponent(thumb)}&ctx_summary=${encodeURIComponent(`Teknisi: ${order.assignment.workerName || "Ahmad Teknisi"} • Jadwal: ${order.schedule?.date || "9 Nov 2026"} (${order.schedule?.timeSlot || "10:00 WIB"})`)}&ctx_url=${encodeURIComponent(`/orders/${order.id}`)}`}
+                  className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold hover:bg-amber-100 transition flex items-center gap-1.5 shadow-2xs"
+                  title="Chat Teknisi Langsung"
+                >
+                  <ChatCircleDots size={15} weight="bold" className="text-amber-700" />
+                  <span>Chat Teknisi</span>
+                </Link>
+                <Link
+                  href={`/chat?partner_id=${encodeURIComponent(order.providerId || "0740d857-b665-4191-aaf5-d7dd3611dc1d")}&partner_type=provider&partner_name=${encodeURIComponent(order.providerName || "sukses gembira")}&ctx_type=order_jasa&ctx_id=${encodeURIComponent(order.id)}&ctx_title=${encodeURIComponent(order.serviceSnapshot?.title || "Pesanan Jasa")}&ctx_status=${encodeURIComponent(order.status)}&ctx_price=${encodeURIComponent(price)}&ctx_thumb=${encodeURIComponent(thumb)}&ctx_summary=${encodeURIComponent(`Penyedia: ${order.providerName || "sukses gembira"} • Biaya: Rp ${Number(price).toLocaleString("id-ID")}`)}&ctx_url=${encodeURIComponent(`/orders/${order.id}`)}`}
+                  className="px-3 py-2 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 text-xs font-bold hover:bg-purple-100 transition flex items-center gap-1.5 shadow-2xs"
+                  title="Chat Provider Jasa"
+                >
+                  <ChatCircleDots size={15} weight="bold" className="text-purple-700" />
+                  <span>Chat Provider</span>
+                </Link>
+              </>
+            ) : (
+              <Link
+                href={`/chat?partner_id=${encodeURIComponent(order.providerId || "0740d857-b665-4191-aaf5-d7dd3611dc1d")}&partner_type=provider&partner_name=${encodeURIComponent(order.providerName || "sukses gembira")}&ctx_type=order_jasa&ctx_id=${encodeURIComponent(order.id)}&ctx_title=${encodeURIComponent(order.serviceSnapshot?.title || "Pesanan Jasa")}&ctx_status=${encodeURIComponent(order.status)}&ctx_price=${encodeURIComponent(price)}&ctx_thumb=${encodeURIComponent(thumb)}&ctx_summary=${encodeURIComponent(`Penyedia: ${order.providerName || "sukses gembira"} • Biaya: Rp ${Number(price).toLocaleString("id-ID")}`)}&ctx_url=${encodeURIComponent(`/orders/${order.id}`)}`}
+                className="px-3 py-2 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 text-xs font-bold hover:bg-purple-100 transition flex items-center gap-1.5 shadow-2xs"
+                title="Chat Provider Jasa"
+              >
+                <ChatCircleDots size={15} weight="bold" className="text-purple-700" />
+                <span>Chat Provider</span>
+              </Link>
+            );
+          })()}
+
+          {/* Provider Jasa Chat Actions: Chat Pelanggan & Chat Teknisi */}
+          {role === "PROVIDER" && (() => {
+            const snapshot = order.serviceSnapshot as any;
+            const price = snapshot?.finalPrice ?? snapshot?.diagnosisFee ?? snapshot?.price ?? 150000;
+            const thumb = snapshot?.imageUrl || order.serviceSnapshot?.thumbnailUrl || "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=400&auto=format&fit=crop&q=80";
+            const customerId = order.customerId || "692f03fd-2362-485a-9a23-a672bbb4533f";
+            const customerName = order.customerName || order.addressSnapshot?.recipientName || "Ahmad Fauzi";
+            const isWorkerAssigned = order.assignment && (order.assignment.status === "ACCEPTED" || Boolean(order.assignment.workerId));
+
+            return (
+              <>
+                <Link
+                  href={`/provider/chat?partner_id=${encodeURIComponent(customerId)}&partner_type=customer&partner_name=${encodeURIComponent(customerName)}&ctx_type=order_jasa&ctx_id=${encodeURIComponent(order.id)}&ctx_title=${encodeURIComponent(order.serviceSnapshot?.title || "Pesanan Jasa")}&ctx_status=${encodeURIComponent(order.status)}&ctx_price=${encodeURIComponent(price)}&ctx_thumb=${encodeURIComponent(thumb)}&ctx_summary=${encodeURIComponent(`Pelanggan: ${customerName} • Biaya: Rp ${Number(price).toLocaleString("id-ID")}`)}&ctx_url=${encodeURIComponent(`/provider/orders/${order.id}`)}`}
+                  className="px-3 py-2 rounded-xl bg-sky-50 border border-sky-200 text-[#0F4C81] text-xs font-bold hover:bg-sky-100 transition flex items-center gap-1.5 shadow-2xs"
+                  title="Chat Pelanggan"
+                >
+                  <ChatCircleDots size={15} weight="bold" className="text-[#0F4C81]" />
+                  <span>Chat Pelanggan</span>
+                </Link>
+                {isWorkerAssigned && (
+                  <Link
+                    href={`/provider/chat?partner_id=${encodeURIComponent(order.assignment!.workerId || "acfdfc27-9ba5-472f-bec1-3c372f47fff6")}&partner_type=worker&partner_name=${encodeURIComponent(order.assignment!.workerName || "Ahmad Teknisi")}&provider_name=${encodeURIComponent(order.providerName || "sukses gembira")}&ctx_type=order_jasa&ctx_id=${encodeURIComponent(order.id)}&ctx_title=${encodeURIComponent(order.serviceSnapshot?.title || "Pesanan Jasa")}&ctx_status=${encodeURIComponent(order.status)}&ctx_price=${encodeURIComponent(price)}&ctx_thumb=${encodeURIComponent(thumb)}&ctx_summary=${encodeURIComponent(`Teknisi: ${order.assignment!.workerName || "Ahmad Teknisi"} • Jadwal: ${order.schedule?.date || "9 Nov 2026"} (${order.schedule?.timeSlot || "10:00 WIB"})`)}&ctx_url=${encodeURIComponent(`/provider/orders/${order.id}`)}`}
+                    className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold hover:bg-amber-100 transition flex items-center gap-1.5 shadow-2xs"
+                    title="Chat Teknisi Langsung"
+                  >
+                    <ChatCircleDots size={15} weight="bold" className="text-amber-700" />
+                    <span>Chat Teknisi</span>
+                  </Link>
+                )}
+              </>
+            );
+          })()}
+
+          {/* Worker / Teknisi Chat Actions: Chat Pelanggan & Chat Provider */}
+          {role === "WORKER" && (() => {
+            const snapshot = order.serviceSnapshot as any;
+            const price = snapshot?.finalPrice ?? snapshot?.diagnosisFee ?? snapshot?.price ?? 150000;
+            const thumb = snapshot?.imageUrl || order.serviceSnapshot?.thumbnailUrl || "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=400&auto=format&fit=crop&q=80";
+            const customerId = order.customerId || "692f03fd-2362-485a-9a23-a672bbb4533f";
+            const customerName = order.customerName || order.addressSnapshot?.recipientName || "Ahmad Fauzi";
+            const providerId = order.providerId || "0740d857-b665-4191-aaf5-d7dd3611dc1d";
+            const providerName = order.providerName || "sukses gembira";
+
+            return (
+              <>
+                <Link
+                  href={`/worker/chat?partner_id=${encodeURIComponent(customerId)}&partner_type=customer&partner_name=${encodeURIComponent(customerName)}&ctx_type=order_jasa&ctx_id=${encodeURIComponent(order.id)}&ctx_title=${encodeURIComponent(order.serviceSnapshot?.title || "Pesanan Jasa")}&ctx_status=${encodeURIComponent(order.status)}&ctx_price=${encodeURIComponent(price)}&ctx_thumb=${encodeURIComponent(thumb)}&ctx_summary=${encodeURIComponent(`Pelanggan: ${customerName} • Jadwal: ${order.schedule?.date || "9 Nov 2026"} (${order.schedule?.timeSlot || "10:00 WIB"})`)}&ctx_url=${encodeURIComponent(`/worker/jobs/${order.id}`)}`}
+                  className="px-3 py-2 rounded-xl bg-sky-50 border border-sky-200 text-[#0F4C81] text-xs font-bold hover:bg-sky-100 transition flex items-center gap-1.5 shadow-2xs"
+                  title="Chat Pelanggan"
+                >
+                  <ChatCircleDots size={15} weight="bold" className="text-[#0F4C81]" />
+                  <span>Chat Pelanggan</span>
+                </Link>
+                <Link
+                  href={`/worker/chat?partner_id=${encodeURIComponent(providerId)}&partner_type=provider&partner_name=${encodeURIComponent(providerName)}&ctx_type=order_jasa&ctx_id=${encodeURIComponent(order.id)}&ctx_title=${encodeURIComponent(order.serviceSnapshot?.title || "Pesanan Jasa")}&ctx_status=${encodeURIComponent(order.status)}&ctx_price=${encodeURIComponent(price)}&ctx_thumb=${encodeURIComponent(thumb)}&ctx_summary=${encodeURIComponent(`Provider: ${providerName} • Order #${order.id}`)}&ctx_url=${encodeURIComponent(`/worker/jobs/${order.id}`)}`}
+                  className="px-3 py-2 rounded-xl bg-purple-50 border border-purple-200 text-purple-900 text-xs font-bold hover:bg-purple-100 transition flex items-center gap-1.5 shadow-2xs"
+                  title="Chat Provider Jasa"
+                >
+                  <ChatCircleDots size={15} weight="bold" className="text-purple-700" />
+                  <span>Chat Provider</span>
+                </Link>
+              </>
+            );
+          })()}
           {/* Secondary Action if available (except Worker which has dedicated Tolak button) */}
           {onSecondaryAction && role !== "WORKER" && (
             <button
@@ -423,7 +561,11 @@ export function ServiceOrderCard({
             </button>
           )}
 
-          {role === "CUSTOMER" && (order.subStatus === "VISIT_CLOSED" || (order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION" && order.visit?.status === "CLOSED")) && (
+          {role === "CUSTOMER" &&
+            !isTerminalOrder &&
+            (order.subStatus === "VISIT_CLOSED" ||
+              (order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION" && order.visit?.status === "CLOSED") ||
+              (order.paymentSummary?.executionPayment?.status === "PAID" && order.visit?.status === "CLOSED")) && (
             <button
               type="button"
               onClick={() => (onPrimaryAction ? onPrimaryAction(order) : undefined)}
@@ -478,7 +620,10 @@ export function ServiceOrderCard({
             })()
           )}
 
-          {role === "WORKER" && (order.subStatus === "WORKER_OTW" || order.visit?.status === "OTW" || order.visit?.status === "ON_THE_WAY") && (
+          {role === "WORKER" &&
+            !isTerminalOrder &&
+            (order.subStatus === "WORKER_OTW" ||
+              ((order.visit?.status === "OTW" || order.visit?.status === "ON_THE_WAY") && !isPastOtwStage)) && (
             <button
               type="button"
               onClick={() => (onPrimaryAction ? onPrimaryAction(order) : undefined)}
@@ -489,7 +634,10 @@ export function ServiceOrderCard({
             </button>
           )}
 
-          {role === "WORKER" && (order.subStatus === "WORKER_ARRIVED" || order.visit?.status === "ARRIVED") && (
+          {role === "WORKER" &&
+            !isTerminalOrder &&
+            (order.subStatus === "WORKER_ARRIVED" ||
+              (order.visit?.status === "ARRIVED" && !order.diagnosis && !isPastArrivedStage)) && (
             <button
               type="button"
               onClick={() => (onPrimaryAction ? onPrimaryAction(order) : undefined)}
@@ -532,7 +680,13 @@ export function ServiceOrderCard({
             </button>
           )}
 
-          {role === "WORKER" && (order.subStatus === "WAITING_WORKER_CLOSE_VISIT" || order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION" || order.paymentSummary?.executionPayment?.status === "PAID") && order.visit?.status !== "CLOSED" && (
+          {role === "WORKER" &&
+            !isTerminalOrder &&
+            order.subStatus !== "VISIT_CLOSED" &&
+            order.subStatus !== "AWAITING_CUSTOMER_CONFIRMATION" &&
+            order.visit?.status !== "CLOSED" &&
+            (order.subStatus === "WAITING_WORKER_CLOSE_VISIT" ||
+              order.paymentSummary?.executionPayment?.status === "PAID") && (
             <button
               type="button"
               onClick={() => (onPrimaryAction ? onPrimaryAction(order) : undefined)}

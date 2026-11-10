@@ -10,6 +10,7 @@ import { MOCK_ORDERS } from "@/mocks/orders";
 import { MOCK_WORKERS } from "@/mocks/workers";
 import { MOCK_WARRANTIES } from "@/mocks/warranties";
 import { domainRepository } from "@/lib/repository/domainRepository";
+import { attachCorrelationHeaders, reportClientTelemetry } from "@/lib/devMonitor/clientReporter";
 
 export interface ApiResponse<T = unknown> {
   message?: string;
@@ -1135,6 +1136,8 @@ export async function apiFetch<T = unknown>(
   // REAL BACKEND INTEGRATION: Modul 01 Identity & Access Service
   // =========================================================================
   if (isIdentityRoute(pathname)) {
+    const startedAt = Date.now();
+    let requestId: string | undefined = (options as any)?._requestId;
     try {
       // Map compatibility aliases
       let resolvedEndpoint = endpoint;
@@ -1202,6 +1205,8 @@ export async function apiFetch<T = unknown>(
         headers["Content-Type"] = "application/json";
       }
 
+      requestId = attachCorrelationHeaders(headers, requestId, getCookie("servio_active_role") || "CUSTOMER");
+
       const cleanPath = resolvedEndpoint.startsWith("/api/v1") ? resolvedEndpoint.slice(7) : resolvedEndpoint;
       const targetUrl = `${IDENTITY_BASE_URL.replace(/\/+$/, "")}/${cleanPath.replace(/^\/+/, "")}`;
 
@@ -1233,7 +1238,7 @@ export async function apiFetch<T = unknown>(
       // If 419 CSRF mismatch, refresh CSRF and retry once
       if (res.status === 419 && !(options as any)._isRetry) {
         await ensureSanctumCsrf(true);
-        return apiFetch<T>(endpoint, { ...options, _isRetry: true } as any);
+        return apiFetch<T>(endpoint, { ...options, _isRetry: true, _requestId: requestId } as any);
       }
 
       if (!res.ok) {
@@ -1242,10 +1247,21 @@ export async function apiFetch<T = unknown>(
           json?.message ||
           (typeof json?.error === "string" ? json.error : null) ||
           `Request ke Identity Service gagal dengan kode status ${res.status}.`;
+        reportClientTelemetry({
+          kind: "API_ERROR",
+          requestId,
+          method,
+          endpoint: targetUrl,
+          httpStatus: res.status,
+          errorCode: json?.code || json?.error?.code || null,
+          message: errorMsg,
+          durationMs: Date.now() - startedAt,
+        });
         const err: any = new Error(errorMsg);
         err.status = res.status;
         err.code = json?.code;
         err.errors = json?.error?.field_errors || json?.errors;
+        err.requestId = requestId;
         throw err;
       }
 
@@ -1289,6 +1305,14 @@ export async function apiFetch<T = unknown>(
       if ((err as any)?.status) {
         throw err;
       }
+      reportClientTelemetry({
+        kind: "NETWORK_ERROR",
+        requestId,
+        method,
+        endpoint,
+        message: err instanceof Error ? err.message : "Identity Service network failure (fallback to mock)",
+        durationMs: Date.now() - startedAt,
+      });
       console.warn("Identity Service network failure, fallback to mock provider:", err);
     }
   }
@@ -1297,6 +1321,9 @@ export async function apiFetch<T = unknown>(
   // REAL BACKEND INTEGRATION: Modul 02 Category Management Service
   // =========================================================================
   if (isCategoryRoute(pathname)) {
+    const startedAt = Date.now();
+    let requestId: string | undefined = (options as any)?._requestId;
+    let activeRole = "CUSTOMER";
     try {
       const headers: Record<string, string> = {
         Accept: "application/json",
@@ -1307,7 +1334,7 @@ export async function apiFetch<T = unknown>(
       headers["X-Gateway-Key"] = gatewayKey;
 
       const activeRoleCookie = getCookie("servio_active_role");
-      const activeRole = resolveActorRole(activeRoleCookie || "CUSTOMER");
+      activeRole = resolveActorRole(activeRoleCookie || "CUSTOMER");
 
       const currentUser = MOCK_USERS_BY_ROLE[activeRole] || MOCK_USERS_BY_ROLE["CUSTOMER"];
       if (currentUser?.id) {
@@ -1345,6 +1372,8 @@ export async function apiFetch<T = unknown>(
         headers["Content-Type"] = "application/json";
       }
 
+      requestId = attachCorrelationHeaders(headers, requestId, activeRole);
+
       const cleanPath = endpoint.startsWith("/api/v1") ? endpoint.slice(7) : endpoint;
       const targetUrl = `${CATEGORY_BASE_URL.replace(/\/+$/, "")}/${cleanPath.replace(/^\/+/, "")}`;
 
@@ -1374,10 +1403,22 @@ export async function apiFetch<T = unknown>(
           json?.message ||
           (typeof json?.error === "string" ? json.error : null) ||
           `Request ke Category Service gagal dengan kode status ${res.status}.`;
+        reportClientTelemetry({
+          kind: "API_ERROR",
+          requestId,
+          userRole: activeRole,
+          method,
+          endpoint: targetUrl,
+          httpStatus: res.status,
+          errorCode: json?.code || json?.error?.code || null,
+          message: errorMsg,
+          durationMs: Date.now() - startedAt,
+        });
         const err: any = new Error(errorMsg);
         err.status = res.status;
         err.code = json?.code;
         err.errors = json?.error?.field_errors || json?.errors;
+        err.requestId = requestId;
         throw err;
       }
 
@@ -1393,6 +1434,15 @@ export async function apiFetch<T = unknown>(
       if ((err as any)?.status) {
         throw err;
       }
+      reportClientTelemetry({
+        kind: "NETWORK_ERROR",
+        requestId,
+        userRole: activeRole,
+        method,
+        endpoint,
+        message: err instanceof Error ? err.message : "Category Service network failure",
+        durationMs: Date.now() - startedAt,
+      });
       console.warn("Category Service network failure:", err);
       throw err;
     }
@@ -1402,6 +1452,9 @@ export async function apiFetch<T = unknown>(
   // REAL BACKEND INTEGRATION: Modul 03 Product / Catalog Service (Port 8003)
   // =========================================================================
   if (isProductRoute(pathname)) {
+    const startedAt = Date.now();
+    let requestId: string | undefined = (options as any)?._requestId;
+    let activeRole = "CUSTOMER";
     try {
       const headers: Record<string, string> = {
         Accept: "application/json",
@@ -1412,7 +1465,7 @@ export async function apiFetch<T = unknown>(
       headers["X-Gateway-Key"] = gatewayKey;
 
       const activeRoleCookie = getCookie("servio_active_role");
-      const activeRole = resolveActorRole(activeRoleCookie || "CUSTOMER");
+      activeRole = resolveActorRole(activeRoleCookie || "CUSTOMER");
 
       const currentUser = MOCK_USERS_BY_ROLE[activeRole] || MOCK_USERS_BY_ROLE["CUSTOMER"];
       if (currentUser?.id) {
@@ -1451,6 +1504,8 @@ export async function apiFetch<T = unknown>(
         headers["Content-Type"] = "application/json";
       }
 
+      requestId = attachCorrelationHeaders(headers, requestId, activeRole);
+
       const cleanPath = endpoint.startsWith("/api/v1") ? endpoint.slice(7) : endpoint;
       const targetUrl = `${PRODUCT_BASE_URL.replace(/\/+$/, "")}/${cleanPath.replace(/^\/+/, "")}`;
 
@@ -1480,11 +1535,23 @@ export async function apiFetch<T = unknown>(
           json?.message ||
           (typeof json?.error === "string" ? json.error : null) ||
           `Request ke Product Service gagal dengan kode status ${res.status}.`;
+        reportClientTelemetry({
+          kind: "API_ERROR",
+          requestId,
+          userRole: activeRole,
+          method,
+          endpoint: targetUrl,
+          httpStatus: res.status,
+          errorCode: json?.code || json?.error?.code || null,
+          message: errorMsg,
+          durationMs: Date.now() - startedAt,
+        });
         const err: any = new Error(errorMsg);
         err.status = res.status;
         err.code = json?.code;
         err.errors = json?.error?.field_errors || json?.errors;
         err.data = json?.data;
+        err.requestId = requestId;
         throw err;
       }
 
@@ -1500,6 +1567,15 @@ export async function apiFetch<T = unknown>(
       if ((err as any)?.status) {
         throw err;
       }
+      reportClientTelemetry({
+        kind: "NETWORK_ERROR",
+        requestId,
+        userRole: activeRole,
+        method,
+        endpoint,
+        message: err instanceof Error ? err.message : "Product Service network failure",
+        durationMs: Date.now() - startedAt,
+      });
       console.warn("Product Service network failure:", err);
       throw err;
     }
@@ -1509,6 +1585,9 @@ export async function apiFetch<T = unknown>(
   // REAL BACKEND INTEGRATION: Modul 04 Service Offering Service (Port 8004)
   // =========================================================================
   if (isServiceRoute(pathname)) {
+    const startedAt = Date.now();
+    let requestId: string | undefined = (options as any)?._requestId;
+    let activeRole = "CUSTOMER";
     try {
       const headers: Record<string, string> = {
         Accept: "application/json",
@@ -1519,7 +1598,7 @@ export async function apiFetch<T = unknown>(
       headers["X-Gateway-Key"] = gatewayKey;
 
       const activeRoleCookie = getCookie("servio_active_role");
-      let activeRole = resolveActorRole(activeRoleCookie || "");
+      activeRole = resolveActorRole(activeRoleCookie || "");
       if (!activeRole || activeRole === "CUSTOMER") {
         if (pathname.startsWith("/provider/")) {
           activeRole = "SERVICE_PROVIDER";
@@ -1571,6 +1650,8 @@ export async function apiFetch<T = unknown>(
         headers["Content-Type"] = "application/json";
       }
 
+      requestId = attachCorrelationHeaders(headers, requestId, activeRole);
+
       const cleanPath = endpoint.startsWith("/api/v1") ? endpoint.slice(7) : endpoint;
       const targetUrl = `${SERVICE_BASE_URL.replace(/\/+$/, "")}/${cleanPath.replace(/^\/+/, "")}`;
 
@@ -1600,11 +1681,23 @@ export async function apiFetch<T = unknown>(
           json?.message ||
           (typeof json?.error === "string" ? json.error : null) ||
           `Request ke Service Offering Service gagal dengan kode status ${res.status}.`;
+        reportClientTelemetry({
+          kind: "API_ERROR",
+          requestId,
+          userRole: activeRole,
+          method,
+          endpoint: targetUrl,
+          httpStatus: res.status,
+          errorCode: json?.code || json?.error?.code || null,
+          message: errorMsg,
+          durationMs: Date.now() - startedAt,
+        });
         const err: any = new Error(errorMsg);
         err.status = res.status;
         err.code = json?.code;
         err.errors = json?.error?.field_errors || json?.error?.fields || json?.errors;
         err.data = json?.data;
+        err.requestId = requestId;
         throw err;
       }
 
@@ -1620,6 +1713,15 @@ export async function apiFetch<T = unknown>(
       if ((err as any)?.status) {
         throw err;
       }
+      reportClientTelemetry({
+        kind: "NETWORK_ERROR",
+        requestId,
+        userRole: activeRole,
+        method,
+        endpoint,
+        message: err instanceof Error ? err.message : "Service Offering Service network failure (fallback to mock)",
+        durationMs: Date.now() - startedAt,
+      });
       console.warn("Service Offering Service network failure, fallback to mock provider:", err);
     }
   }
@@ -1628,6 +1730,9 @@ export async function apiFetch<T = unknown>(
   // REAL BACKEND INTEGRATION: Modul 06 Finance Service (Port 8006)
   // =========================================================================
   if (isFinanceRoute(pathname)) {
+    const startedAt = Date.now();
+    let requestId: string | undefined = (options as any)?._requestId;
+    let activeRole = "CUSTOMER";
     try {
       const headers: Record<string, string> = {
         Accept: "application/json",
@@ -1655,7 +1760,7 @@ export async function apiFetch<T = unknown>(
         pathname.includes("/demo") ||
         isWindowOps;
 
-      let activeRole = resolveActorRole(activeRoleCookie || "");
+      activeRole = resolveActorRole(activeRoleCookie || "");
 
       if (isWindowCeo || pathname.includes("/ceo") || (isPolicyRoute && (!activeRole || activeRole === "CUSTOMER"))) {
         activeRole = "CEO_PRODUCT_OWNER";
@@ -1716,6 +1821,8 @@ export async function apiFetch<T = unknown>(
         headers["Content-Type"] = "application/json";
       }
 
+      requestId = attachCorrelationHeaders(headers, requestId, activeRole);
+
       const cleanSub = pathname.replace(/^\/api\/v1/, "").replace(/^\/+/, "");
       let subWithoutFinance = cleanSub.replace(/^finance\/?/, "");
       if (subWithoutFinance.startsWith("platform-policy")) {
@@ -1750,10 +1857,22 @@ export async function apiFetch<T = unknown>(
           json?.message ||
           (typeof json?.error === "string" ? json.error : null) ||
           `Request ke Finance Service gagal dengan kode status ${res.status}.`;
+        reportClientTelemetry({
+          kind: "API_ERROR",
+          requestId,
+          userRole: activeRole,
+          method,
+          endpoint: targetUrl,
+          httpStatus: res.status,
+          errorCode: json?.code || json?.error?.code || null,
+          message: errorMsg,
+          durationMs: Date.now() - startedAt,
+        });
         const err: any = new Error(errorMsg);
         err.status = res.status;
         err.code = json?.code;
         err.errors = json?.error?.field_errors || json?.errors;
+        err.requestId = requestId;
         throw err;
       }
 
@@ -1771,8 +1890,17 @@ export async function apiFetch<T = unknown>(
       }
       if (!(options as any)?._isRetry && typeof window !== "undefined") {
         await new Promise((resolve) => setTimeout(resolve, 300));
-        return apiFetch<T>(endpoint, { ...options, _isRetry: true } as any);
+        return apiFetch<T>(endpoint, { ...options, _isRetry: true, _requestId: requestId } as any);
       }
+      reportClientTelemetry({
+        kind: "NETWORK_ERROR",
+        requestId,
+        userRole: activeRole,
+        method,
+        endpoint,
+        message: err instanceof Error ? err.message : "Finance Service network failure",
+        durationMs: Date.now() - startedAt,
+      });
       console.warn("Finance Service network failure:", err);
       throw err;
     }
@@ -1782,6 +1910,10 @@ export async function apiFetch<T = unknown>(
   // REAL BACKEND INTEGRATION: Modul 05A Order Barang Service (Port 8005)
   // =========================================================================
   if (isOrderBarangRoute(pathname)) {
+    const startedAt = Date.now();
+    let requestId: string | undefined = (options as any)?._requestId;
+    let activeRole = "CUSTOMER";
+    let effectiveUserId: string | undefined;
     try {
       const headers: Record<string, string> = {
         Accept: "application/json",
@@ -1794,7 +1926,7 @@ export async function apiFetch<T = unknown>(
       const isMerchantEndpoint = pathname.includes("/merchant");
       const isAdminEndpoint = pathname.includes("/admin");
       const activeRoleCookie = getCookie("servio_active_role");
-      const activeRole = isAdminEndpoint
+      activeRole = isAdminEndpoint
         ? "ADMIN_OPERATIONS"
         : isMerchantEndpoint
         ? "MERCHANT"
@@ -1802,7 +1934,7 @@ export async function apiFetch<T = unknown>(
 
       const currentUser = MOCK_USERS_BY_ROLE[activeRole] || MOCK_USERS_BY_ROLE[isAdminEndpoint ? "ADMIN_OPERATIONS" : isMerchantEndpoint ? "MERCHANT" : "CUSTOMER"];
       const userIdCookie = getCookie("servio_user_id");
-      const effectiveUserId = (activeRole === "CUSTOMER" && userIdCookie)
+      effectiveUserId = (activeRole === "CUSTOMER" && userIdCookie)
         ? userIdCookie
         : (currentUser?.id || (isAdminEndpoint ? "8480d446-5855-4cb1-9488-01879e2da2cf" : isMerchantEndpoint ? "4bee4c28-6799-4054-87a3-321e29811921" : "692f03fd-2362-485a-9a23-a672bbb4533f"));
 
@@ -1845,6 +1977,8 @@ export async function apiFetch<T = unknown>(
         headers["Content-Type"] = "application/json";
       }
 
+      requestId = attachCorrelationHeaders(headers, requestId, activeRole);
+
       const cleanSub = pathname.replace(/^\/api\/v1/, "").replace(/^\/+/, "");
       const subWithoutOrder = cleanSub.replace(/^order-barang\/?/, "");
 
@@ -1876,10 +2010,23 @@ export async function apiFetch<T = unknown>(
           json?.message ||
           (typeof json?.error === "string" ? json.error : null) ||
           `Request ke Order Barang Service gagal dengan status ${res.status}.`;
+        reportClientTelemetry({
+          kind: "API_ERROR",
+          requestId,
+          userRole: activeRole,
+          userId: effectiveUserId || null,
+          method,
+          endpoint: targetUrl,
+          httpStatus: res.status,
+          errorCode: json?.code || json?.error?.code || null,
+          message: errorMsg,
+          durationMs: Date.now() - startedAt,
+        });
         const err: any = new Error(errorMsg);
         err.status = res.status;
         err.code = json?.code || json?.error?.code;
         err.errors = json?.error?.field_errors || json?.errors;
+        err.requestId = requestId;
         throw err;
       }
 
@@ -1897,8 +2044,18 @@ export async function apiFetch<T = unknown>(
       }
       if (!(options as any)?._isRetry && typeof window !== "undefined") {
         await new Promise((resolve) => setTimeout(resolve, 300));
-        return apiFetch<T>(endpoint, { ...options, _isRetry: true } as any);
+        return apiFetch<T>(endpoint, { ...options, _isRetry: true, _requestId: requestId } as any);
       }
+      reportClientTelemetry({
+        kind: "NETWORK_ERROR",
+        requestId,
+        userRole: activeRole,
+        userId: effectiveUserId || null,
+        method,
+        endpoint,
+        message: err instanceof Error ? err.message : "Order Barang Service network failure",
+        durationMs: Date.now() - startedAt,
+      });
       console.warn("Order Barang Service network failure:", err);
       throw err;
     }
@@ -1908,6 +2065,9 @@ export async function apiFetch<T = unknown>(
   // REAL BACKEND INTEGRATION: Modul 05B Order Jasa Service (Port 8007)
   // =========================================================================
   if (isOrderJasaRoute(pathname)) {
+    const startedAt = Date.now();
+    let requestId: string | undefined = (options as any)?._requestId;
+    let activeRole = "CUSTOMER";
     try {
       const headers: Record<string, string> = {
         Accept: "application/json",
@@ -1918,7 +2078,7 @@ export async function apiFetch<T = unknown>(
       headers["X-Gateway-Key"] = gatewayKey;
 
       const activeRoleCookie = getCookie("servio_active_role");
-      let activeRole = resolveActorRole(activeRoleCookie || "CUSTOMER");
+      activeRole = resolveActorRole(activeRoleCookie || "CUSTOMER");
 
       // Context-aware role adjustment based strictly on the endpoint path:
       if (pathname.includes("/order-jasa/provider")) {
@@ -1995,6 +2155,8 @@ export async function apiFetch<T = unknown>(
         headers["Content-Type"] = "application/json";
       }
 
+      requestId = attachCorrelationHeaders(headers, requestId, activeRole);
+
       const cleanSub = pathname.replace(/^\/api\/v1/, "").replace(/^\/+/, "");
       const subWithoutOrder = cleanSub.replace(/^order-jasa\/?/, "");
 
@@ -2026,11 +2188,24 @@ export async function apiFetch<T = unknown>(
           json?.message ||
           (typeof json?.error === "string" ? json.error : null) ||
           `Request ke Order Jasa Service gagal dengan status ${res.status}.`;
+        reportClientTelemetry({
+          kind: "API_ERROR",
+          requestId,
+          userRole: activeRole,
+          userId: currentUser?.id || null,
+          method,
+          endpoint: targetUrl,
+          httpStatus: res.status,
+          errorCode: json?.code || json?.error?.code || null,
+          message: errorMsg,
+          durationMs: Date.now() - startedAt,
+        });
         console.warn(`[Order Jasa Service Error ${res.status}] ${targetUrl}:`, json || errorMsg);
         const err: any = new Error(errorMsg);
         err.status = res.status;
         err.code = json?.code || json?.error?.code;
         err.errors = json?.error?.field_errors || json?.errors;
+        err.requestId = requestId;
         throw err;
       }
 
@@ -2049,8 +2224,17 @@ export async function apiFetch<T = unknown>(
       }
       if (!(options as any)?._isRetry && typeof window !== "undefined") {
         await new Promise((resolve) => setTimeout(resolve, 300));
-        return apiFetch<T>(endpoint, { ...options, _isRetry: true } as any);
+        return apiFetch<T>(endpoint, { ...options, _isRetry: true, _requestId: requestId } as any);
       }
+      reportClientTelemetry({
+        kind: "NETWORK_ERROR",
+        requestId,
+        userRole: activeRole,
+        method,
+        endpoint,
+        message: err instanceof Error ? err.message : "Order Jasa Service network failure",
+        durationMs: Date.now() - startedAt,
+      });
       console.warn("Order Jasa Service network failure:", err);
       throw err;
     }
@@ -2060,6 +2244,9 @@ export async function apiFetch<T = unknown>(
   // REAL BACKEND INTEGRATION: Modul 07 After-Sales & Feedback Service (Port 8008)
   // =========================================================================
   if (isAfterSalesRoute(pathname)) {
+    const startedAt = Date.now();
+    let requestId: string | undefined = (options as any)?._requestId;
+    let activeRole = "CUSTOMER";
     try {
       const headers: Record<string, string> = {
         Accept: "application/json",
@@ -2070,11 +2257,11 @@ export async function apiFetch<T = unknown>(
       headers["X-Gateway-Key"] = gatewayKey;
 
       const activeRoleCookie = getCookie("servio_active_role");
-      let activeRole = resolveActorRole(activeRoleCookie || "CUSTOMER");
+      activeRole = resolveActorRole(activeRoleCookie || "CUSTOMER");
 
       // Context-aware role adjustment:
+      const currentUrlPath = typeof window !== "undefined" ? window.location.pathname : "";
       if (pathname.includes("/after-sales/business")) {
-        const currentUrlPath = typeof window !== "undefined" ? window.location.pathname : "";
         if (
           activeRole === "SERVICE_PROVIDER" ||
           activeRole === "PROVIDER" ||
@@ -2087,6 +2274,12 @@ export async function apiFetch<T = unknown>(
       } else if (pathname.includes("/after-sales/admin")) {
         activeRole = "ADMIN_OPERATIONS";
       } else if (
+        currentUrlPath.startsWith("/worker") ||
+        activeRole === "WORKER" ||
+        activeRole === "WORKER_TECHNICIAN"
+      ) {
+        activeRole = "WORKER";
+      } else if (
         pathname.startsWith("/after-sales/warranties") ||
         pathname.startsWith("/after-sales/cases") ||
         pathname.startsWith("/after-sales/reviews")
@@ -2095,31 +2288,31 @@ export async function apiFetch<T = unknown>(
       }
 
       const roleLookup =
-        activeRole === "PROVIDER"
+        activeRole === "PROVIDER" || activeRole === "SERVICE_PROVIDER"
           ? "SERVICE_PROVIDER"
           : activeRole === "MERCHANT"
           ? "MERCHANT"
-          : activeRole === "ADMIN_OPERATIONS"
+          : activeRole === "WORKER" || activeRole === "WORKER_TECHNICIAN"
+          ? "WORKER_TECHNICIAN"
+          : activeRole === "ADMIN_OPERATIONS" || activeRole === "ADMIN"
           ? "ADMIN_OPERATIONS"
+          : activeRole.startsWith("FINANCE")
+          ? "FINANCE_PAYMENT_OPS"
           : "CUSTOMER";
 
       const currentUser = MOCK_USERS_BY_ROLE[roleLookup] || MOCK_USERS_BY_ROLE["CUSTOMER"];
       if (currentUser?.id) {
         headers["X-Actor-User-Id"] = currentUser.id;
-        headers["X-Actor-Role"] = activeRole;
+        headers["X-Actor-Role"] = activeRole === "SERVICE_PROVIDER" ? "PROVIDER" : activeRole;
         if (currentUser.activeRole?.assignmentId) {
           headers["X-Actor-Role-Assignment-Id"] = currentUser.activeRole.assignmentId;
         }
         if (currentUser.organizationId) {
           headers["X-Actor-Org-Id"] = currentUser.organizationId;
-        } else if (activeRole === "MERCHANT") {
-          headers["X-Actor-Org-Id"] = "org-merch-jaya-motor";
-        } else if (activeRole === "PROVIDER") {
-          headers["X-Actor-Org-Id"] = "org-serv-sejuk-jaya";
         }
         if (activeRole === "MERCHANT") {
           headers["X-Actor-Org-Type"] = "MERCHANT";
-        } else if (activeRole === "PROVIDER") {
+        } else if (activeRole === "PROVIDER" || activeRole === "SERVICE_PROVIDER" || activeRole === "WORKER" || activeRole === "WORKER_TECHNICIAN") {
           headers["X-Actor-Org-Type"] = "PROVIDER";
         }
         headers["X-Actor-Org-Active"] = "true";
@@ -2150,6 +2343,8 @@ export async function apiFetch<T = unknown>(
       if (options.body && !(options.body instanceof FormData) && !headers["Content-Type"]) {
         headers["Content-Type"] = "application/json";
       }
+
+      requestId = attachCorrelationHeaders(headers, requestId, activeRole);
 
       const cleanPath = endpoint.startsWith("/api/v1") ? endpoint.slice(7) : endpoint;
       const targetUrl =
@@ -2183,11 +2378,24 @@ export async function apiFetch<T = unknown>(
           json?.message ||
           (typeof json?.error === "string" ? json.error : null) ||
           `Request ke After-Sales Service gagal dengan status ${res.status}.`;
+        reportClientTelemetry({
+          kind: "API_ERROR",
+          requestId,
+          userRole: activeRole,
+          userId: currentUser?.id || null,
+          method,
+          endpoint: targetUrl,
+          httpStatus: res.status,
+          errorCode: json?.code || json?.error?.code || null,
+          message: errorMsg,
+          durationMs: Date.now() - startedAt,
+        });
         console.warn(`[After-Sales Service Error ${res.status}] ${targetUrl}:`, json || errorMsg);
         const err: any = new Error(errorMsg);
         err.status = res.status;
         err.code = json?.code || json?.error?.code;
         err.errors = json?.error?.field_errors || json?.errors;
+        err.requestId = requestId;
         throw err;
       }
 
@@ -2206,8 +2414,17 @@ export async function apiFetch<T = unknown>(
       }
       if (!(options as any)?._isRetry && typeof window !== "undefined") {
         await new Promise((resolve) => setTimeout(resolve, 300));
-        return apiFetch<T>(endpoint, { ...options, _isRetry: true } as any);
+        return apiFetch<T>(endpoint, { ...options, _isRetry: true, _requestId: requestId } as any);
       }
+      reportClientTelemetry({
+        kind: "NETWORK_ERROR",
+        requestId,
+        userRole: activeRole,
+        method,
+        endpoint,
+        message: err instanceof Error ? err.message : "After-Sales Service network failure",
+        durationMs: Date.now() - startedAt,
+      });
       console.warn("After-Sales Service network failure:", err);
       throw err;
     }

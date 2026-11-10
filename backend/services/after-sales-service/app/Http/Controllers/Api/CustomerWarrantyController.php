@@ -21,6 +21,10 @@ class CustomerWarrantyController
         /** @var AuthenticatedActor $actor */
         $actor = $request->attributes->get('actor');
 
+        if ($actor && $actor->id) {
+            $this->warrantyService->syncCustomerCompletedOrders($actor->id);
+        }
+
         $state = $request->query('state'); // active, expired
         $type = $request->query('type'); // goods, service
         $perPage = (int) $request->query('per_page', 15);
@@ -46,6 +50,10 @@ class CustomerWarrantyController
         /** @var AuthenticatedActor $actor */
         $actor = $request->attributes->get('actor');
 
+        if ($actor && $actor->id) {
+            $this->warrantyService->syncCustomerCompletedOrders($actor->id);
+        }
+
         $activeCount = \App\Models\OrderWarrantyEntitlement::where('customer_id', $actor->id)
             ->where('status', 'ACTIVE')
             ->whereRaw('(quantity - COALESCE(claimed_quantity, 0)) > 0')
@@ -58,8 +66,8 @@ class CustomerWarrantyController
             ->where(function ($q) {
                 $q->where('status', 'EXPIRED')
                     ->orWhere(function ($sub) {
-                        $sub->where('status', 'ACTIVE')
-                            ->whereRaw('COALESCE(claimed_quantity, 0) = 0')
+                        $sub->whereIn('status', ['ACTIVE', 'CLAIM_LOCKED'])
+                            ->whereRaw('(quantity - COALESCE(claimed_quantity, 0)) > 0')
                             ->whereNotNull('expires_at')
                             ->where('expires_at', '<', now());
                     });

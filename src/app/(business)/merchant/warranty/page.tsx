@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, Suspense } from "react";
+import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -16,13 +17,18 @@ import {
   Camera,
   Star,
   ChatCircleText,
+  ChatCircleDots,
   Storefront,
   ChartBar,
   CalendarBlank,
   Play,
   FilePlus,
+  Bank,
+  SlidersHorizontal,
+  Truck,
 } from "@phosphor-icons/react";
 import { useAfterSales } from "@/features/afterSales/useAfterSales";
+import { useActiveRole } from "@/context/RoleContext";
 import { WarrantyPresetManager } from "@/components/features/afterSales/WarrantyPresetManager";
 import { AfterSalesCase, AfterSalesSolutionType } from "@/types/afterSales";
 import {
@@ -31,28 +37,37 @@ import {
   BusinessReviewSummary,
 } from "@/lib/afterSalesApi";
 
-type MerchantTab = "summary" | "settings" | "claims" | "returns" | "reviews";
+type MerchantTab = "summary" | "settings" | "refunds" | "returns" | "reviews";
 
 function MerchantAfterSalesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const rawTab = searchParams.get("tab") as MerchantTab | null;
+  const rawTab = searchParams.get("tab") as string | null;
 
-  const [activeTab, setActiveTab] = useState<MerchantTab>(
-    rawTab && ["summary", "settings", "claims", "returns"].includes(rawTab)
-      ? rawTab
-      : "summary"
-  );
+  const resolveTab = (t: string | null): MerchantTab => {
+    if (t === "settings") return "settings";
+    if (t === "refund" || t === "refunds") return "refunds";
+    if (t === "returns" || t === "claims") return "returns";
+    return "summary";
+  };
+
+  const [activeTab, setActiveTab] = useState<MerchantTab>(resolveTab(rawTab));
 
   useEffect(() => {
-    if (rawTab === "reviews") {
-      router.replace("/merchant/reviews");
+    if (rawTab) {
+      if (rawTab === "reviews") {
+        router.replace("/merchant/reviews");
+      } else {
+        setActiveTab(resolveTab(rawTab));
+      }
     }
   }, [rawTab, router]);
 
+  const { user } = useActiveRole();
   const {
     cases,
     warrantyPresets,
+    activeOrgId: contextOrgId,
     merchantApproveCase,
     merchantRejectCase,
     merchantProposeAlternative,
@@ -65,19 +80,24 @@ function MerchantAfterSalesContent() {
     getMainStatusDisplay,
   } = useAfterSales();
 
-  const activeOrgId = "merch-jaya-motor";
+  const activeOrgId = user?.organizationId || contextOrgId || "0c1467e7-af68-4b26-ae84-daa41d51aed0";
 
-  const merchantClaims = cases.filter(
+  const merchantAllCases = cases.filter(
     (c) =>
-      c.caseType === "claim_product" &&
+      (c.caseType === "claim_product" || c.caseType === "return_product") &&
       (c.organizationId === activeOrgId || c.organizationType === "MERCHANT")
   );
 
-  const merchantReturns = cases.filter(
-    (c) =>
-      c.caseType === "return_product" &&
-      (c.organizationId === activeOrgId || c.organizationType === "MERCHANT")
-  );
+  const isCaseRefund = (c: AfterSalesCase) =>
+    c.customerRequestedSolution === "REFUND" ||
+    c.chosenSolution === "REFUND" ||
+    c.approvedSolution === "REFUND" ||
+    (c as any).agreedSolution === "REFUND" ||
+    (c as any).initial_solution === "REFUND" ||
+    (c as any).initialSolution === "REFUND";
+
+  const merchantRefunds = merchantAllCases.filter(isCaseRefund);
+  const merchantReturns = merchantAllCases.filter((c) => !isCaseRefund(c));
 
   const activePresetsCount = warrantyPresets.filter(
     (p) =>
@@ -87,7 +107,8 @@ function MerchantAfterSalesContent() {
 
   // Search and filter
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [returnStatusFilter, setReturnStatusFilter] = useState("ALL");
+  const [refundStatusFilter, setRefundStatusFilter] = useState("ALL");
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   // Reviews State (M08)
@@ -323,26 +344,27 @@ function MerchantAfterSalesContent() {
     return true;
   });
 
-  const filterCaseList = (list: AfterSalesCase[]) =>
+  const filterCaseList = (list: AfterSalesCase[], status: string) =>
     list.filter((c) => {
-      const matchesStatus = statusFilter === "ALL" || c.mainStatus === statusFilter;
+      const matchesStatus = status === "ALL" || c.mainStatus === status;
+      const q = searchQuery.toLowerCase().trim();
       const matchesSearch =
-        !searchQuery.trim() ||
-        c.caseNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.itemTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.sourceOrderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.customerName.toLowerCase().includes(searchQuery.toLowerCase());
+        !q ||
+        c.caseNumber.toLowerCase().includes(q) ||
+        c.itemTitle.toLowerCase().includes(q) ||
+        c.sourceOrderNumber.toLowerCase().includes(q) ||
+        c.customerName.toLowerCase().includes(q);
       return matchesStatus && matchesSearch;
     });
 
-  const filteredClaims = filterCaseList(merchantClaims);
-  const filteredReturns = filterCaseList(merchantReturns);
+  const filteredRefunds = filterCaseList(merchantRefunds, refundStatusFilter);
+  const filteredReturns = filterCaseList(merchantReturns, returnStatusFilter);
 
-  const overdueCasesCount = [...merchantClaims, ...merchantReturns].filter((c) => c.isNoResponse).length;
-  const inResolutionCount = [...merchantClaims, ...merchantReturns].filter(
+  const overdueCasesCount = [...merchantRefunds, ...merchantReturns].filter((c) => c.isNoResponse).length;
+  const inResolutionCount = [...merchantRefunds, ...merchantReturns].filter(
     (c) => c.mainStatus === "IN_RESOLUTION"
   ).length;
-  const activeClaimsCount = merchantClaims.filter(
+  const activeRefundsCount = merchantRefunds.filter(
     (c) => c.mainStatus !== "COMPLETED" && c.mainStatus !== "REJECTED" && c.mainStatus !== "CANCELLED"
   ).length;
   const activeReturnsCount = merchantReturns.filter(
@@ -352,6 +374,413 @@ function MerchantAfterSalesContent() {
   const switchTab = (tab: MerchantTab) => {
     setActiveTab(tab);
     router.push(`/merchant/warranty?tab=${tab}`);
+  };
+
+  const renderCaseCard = (c: AfterSalesCase, isRefund: boolean) => {
+    const statusBadge = getMainStatusDisplay(c.mainStatus);
+    const isCompleted = c.mainStatus === "COMPLETED";
+    const isRejected = c.mainStatus === "REJECTED";
+
+    return (
+      <div
+        key={c.id}
+        className="p-5 sm:p-6 rounded-3xl bg-white border border-slate-200/90 shadow-xs space-y-4 hover:border-slate-300 transition"
+      >
+        {/* Top Header Card */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-100">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`font-mono font-bold text-xs ${
+                  isRefund ? "text-rose-600" : "text-blue-600"
+                }`}
+              >
+                #{c.caseNumber}
+              </span>
+              <span className="text-slate-300">•</span>
+              <span className="text-xs text-slate-500 font-mono">Order #{c.sourceOrderNumber}</span>
+              <span className="text-slate-300">•</span>
+              <span className="text-xs font-semibold text-slate-700">
+                Pembeli: {c.customerName}
+              </span>
+            </div>
+            <h3 className="font-bold text-base text-slate-900 mt-1">{c.itemTitle}</h3>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {c.isNoResponse && (
+              <span className="px-2.5 py-0.5 bg-amber-500 text-white rounded-full text-[10px] font-bold animate-pulse">
+                TIDAK DITANGGAPI (+72h)
+              </span>
+            )}
+            {c.specialCondition === "WAITING_CUSTOMER_APPROVAL" && (
+              <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-800 rounded-full text-[10px] font-bold border border-indigo-200">
+                Menunggu Persetujuan Customer
+              </span>
+            )}
+            {c.specialCondition === "WAITING_CUSTOMER_INFO" && (
+              <span className="px-2.5 py-0.5 bg-amber-50 text-amber-800 rounded-full text-[10px] font-bold border border-amber-200">
+                Menunggu Bukti Tambahan Customer
+              </span>
+            )}
+            <span
+              className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${statusBadge.color}`}
+            >
+              {statusBadge.label} ({c.mainStatus})
+            </span>
+          </div>
+        </div>
+
+        {/* SECTION 1: RINGKASAN ORDER ASLI & SLA */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs bg-slate-50/80 p-3.5 rounded-2xl border border-slate-100">
+          <div className="space-y-1">
+            <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">
+              Ringkasan Pesanan Barang Asal:
+            </span>
+            <p className="font-bold text-slate-800 text-xs">
+              {c.itemTitle}
+            </p>
+            <p className="text-slate-600 text-[11px]">
+              No. Order: <strong className="font-mono text-slate-700">#{c.sourceOrderNumber}</strong> • Pembeli: <strong className="text-slate-700">{c.customerName}</strong>
+            </p>
+            <p className="text-slate-600 text-[11px]">
+              Total Dibeli: <strong className="text-slate-800">{c.orderedQuantity || 1} Unit</strong>
+              {Boolean(c.itemPrice) && (
+                <> • Nilai Satuan: <strong className="text-emerald-700">Rp {Number(c.itemPrice).toLocaleString("id-ID")}</strong></>
+              )}
+            </p>
+          </div>
+
+          <div className="space-y-1 md:text-right">
+            <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">
+              Tenggat Respons Regulasi (SLA 72 Jam):
+            </span>
+            <p className="font-mono font-bold text-slate-800 text-xs">
+              {new Date(c.slaDeadlineAt).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })} WIB
+            </p>
+            <p className="text-xs text-slate-600">
+              Solusi Pembeli:{" "}
+              <strong className={isRefund ? "text-rose-700 font-bold" : "text-blue-700 font-bold"}>
+                {c.customerRequestedSolution || (isRefund ? "REFUND" : "REPLACEMENT")}
+              </strong>
+              {c.chosenSolution && (
+                <span className="ml-1.5 text-emerald-700 font-bold">
+                  • Disepakati: {c.chosenSolution}
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+
+        {/* SECTION 2: DATA FORM PENGAJUAN PEMBELI */}
+        <div className="p-4 bg-slate-50/90 rounded-2xl border border-slate-200/80 text-xs space-y-2.5">
+          <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/60">
+            <span className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5">
+              <FilePlus size={14} weight="bold" className={isRefund ? "text-rose-600" : "text-blue-600"} />
+              Formulir Pengajuan Pembeli:
+            </span>
+            <span className="text-[11px] font-semibold text-slate-600">
+              Unit Diklaim: <strong className="text-slate-900">{c.affectedQuantity || 1} Unit</strong> (dari {c.orderedQuantity || 1} unit dipesan)
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            <div>
+              <span className="text-slate-400 text-[10px] uppercase font-semibold block">Kendala / Kerusakan:</span>
+              <strong className="text-slate-800">{c.issueReason}</strong>
+              <p className="text-slate-600 mt-1 italic bg-white p-2.5 rounded-xl border border-slate-200/60 text-[11px]">
+                &ldquo;{c.issueDescription}&rdquo;
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-slate-400 text-[10px] uppercase font-semibold block">Bukti Foto / Media Pembeli:</span>
+              {c.evidenceMedia && c.evidenceMedia.length > 0 ? (
+                <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                  {c.evidenceMedia.map((url, idx) => (
+                    <a key={idx} href={url} target="_blank" rel="noreferrer" className="block shrink-0">
+                      <img
+                        src={url}
+                        alt={`Bukti ${idx + 1}`}
+                        className="w-14 h-14 rounded-xl object-cover border border-slate-200 hover:scale-105 transition"
+                      />
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-slate-400 text-[11px] italic">Pembeli tidak melampirkan foto bukti tambahan.</p>
+              )}
+
+              {c.rejectionReason && (
+                <div className="p-2 bg-rose-50 rounded-xl border border-rose-200 text-rose-800 text-[11px] mt-1">
+                  <strong>Catatan Penolakan:</strong> {c.rejectionReason}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* SECTION 3: VISUAL TIMELINE RESOLUSI */}
+        {isRefund ? (
+          <div className="p-3 bg-rose-50/50 rounded-2xl border border-rose-200/80 space-y-2">
+            <div className="flex items-center justify-between text-[11px] font-bold text-rose-900">
+              <span className="flex items-center gap-1.5">
+                <Bank size={14} weight="bold" className="text-rose-600" />
+                Alur Penyelesaian Refund Produk:
+              </span>
+              <span className="text-rose-700 font-mono">
+                {isCompleted ? "Refund Selesai" : isRejected ? "Ditolak" : "Berjalan"}
+              </span>
+            </div>
+            <div className="grid grid-cols-4 gap-1.5 text-center text-[9px] font-bold">
+              <div className="space-y-0.5">
+                <div className="h-1.5 rounded-full bg-emerald-500" />
+                <span className="text-emerald-800">1. Diajukan</span>
+              </div>
+              <div className="space-y-0.5">
+                <div className={`h-1.5 rounded-full ${c.mainStatus !== "SUBMITTED" ? "bg-emerald-500" : "bg-slate-200"}`} />
+                <span className={c.mainStatus !== "SUBMITTED" ? "text-emerald-800" : "text-slate-400"}>2. Persetujuan Toko</span>
+              </div>
+              <div className="space-y-0.5">
+                <div className={`h-1.5 rounded-full ${c.mainStatus === "IN_RESOLUTION" ? "bg-rose-600 animate-pulse" : isCompleted ? "bg-emerald-500" : "bg-slate-200"}`} />
+                <span className={c.mainStatus === "IN_RESOLUTION" ? "text-rose-700" : isCompleted ? "text-emerald-800" : "text-slate-400"}>3. Pencairan S-Pay</span>
+              </div>
+              <div className="space-y-0.5">
+                <div className={`h-1.5 rounded-full ${isCompleted ? "bg-emerald-500" : isRejected ? "bg-rose-500" : "bg-slate-200"}`} />
+                <span className={isCompleted ? "text-emerald-800" : isRejected ? "text-rose-700" : "text-slate-400"}>{isRejected ? "Ditolak" : "4. Selesai"}</span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="p-3 bg-blue-50/60 rounded-2xl border border-blue-200 space-y-2">
+            <div className="flex items-center justify-between text-[11px] font-bold text-blue-900">
+              <span className="flex items-center gap-1.5">
+                <Package size={14} weight="bold" className="text-blue-600" />
+                Alur Retur &amp; Penggantian Barang Fisik:
+              </span>
+              <span className="text-blue-700 font-mono">
+                {isCompleted ? "Unit Pengganti Selesai" : isRejected ? "Ditolak" : "Berjalan"}
+              </span>
+            </div>
+            <div className="grid grid-cols-5 gap-1 text-center text-[9px] font-bold">
+              <div className="space-y-0.5">
+                <div className="h-1.5 rounded-full bg-emerald-500" />
+                <span className="text-emerald-800">1. Diajukan</span>
+              </div>
+              <div className="space-y-0.5">
+                <div className={`h-1.5 rounded-full ${c.mainStatus !== "SUBMITTED" ? "bg-emerald-500" : "bg-slate-200"}`} />
+                <span className={c.mainStatus !== "SUBMITTED" ? "text-emerald-800" : "text-slate-400"}>2. Alamat Terbit</span>
+              </div>
+              <div className="space-y-0.5">
+                <div className={`h-1.5 rounded-full ${c.returnShipping?.trackingNumber ? "bg-emerald-500" : "bg-slate-200"}`} />
+                <span className={c.returnShipping?.trackingNumber ? "text-emerald-800" : "text-slate-400"}>3. Pembeli Kirim</span>
+              </div>
+              <div className="space-y-0.5">
+                <div className={`h-1.5 rounded-full ${c.returnShipping?.inspectedByMerchant ? "bg-emerald-500" : c.mainStatus === "IN_RESOLUTION" ? "bg-blue-600 animate-pulse" : "bg-slate-200"}`} />
+                <span className={c.returnShipping?.inspectedByMerchant ? "text-emerald-800" : "text-slate-400"}>4. Toko QC</span>
+              </div>
+              <div className="space-y-0.5">
+                <div className={`h-1.5 rounded-full ${isCompleted ? "bg-emerald-500" : isRejected ? "bg-rose-500" : "bg-slate-200"}`} />
+                <span className={isCompleted ? "text-emerald-800" : isRejected ? "text-rose-700" : "text-slate-400"}>{isRejected ? "Ditolak" : "5. Selesai"}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 4: INFORMASI LOGISTIK RETUR FISIK (Bila Retur Barang) */}
+        {!isRefund && (
+          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-1.5">
+            <span className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5">
+              <Truck size={14} weight="bold" className="text-blue-600" />
+              Status Logistik &amp; Kurir Retur:
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-700 pt-0.5">
+              <p>
+                Resi Kirim Pembeli:{" "}
+                <strong className="font-mono text-blue-700">
+                  {c.returnShipping?.trackingNumber || "Belum diinput pembeli"}
+                </strong>
+              </p>
+              <p>
+                Penerimaan Toko:{" "}
+                <strong>
+                  {c.returnShipping?.receivedByMerchant ? "✓ Paket Fisik Diterima" : "Menunggu Pengiriman"}
+                </strong>
+              </p>
+              <p>
+                Hasil Pemeriksaan QC:{" "}
+                <strong>
+                  {c.returnShipping?.inspectedByMerchant ? "✓ Lolos Inspeksi QC" : "Belum Diinspeksi"}
+                </strong>
+              </p>
+              <p>
+                Unit Pengganti Toko:{" "}
+                <strong className="font-mono text-emerald-700">
+                  {c.replacementShipment?.trackingNumber || (isCompleted ? "Unit Pengganti Terkirim" : "Diproses setelah QC")}
+                </strong>
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 5: FOOTER ACTION BUTTONS */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-100">
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/chat?partner_id=${encodeURIComponent(c.customerId || "")}&partner_type=customer&partner_name=${encodeURIComponent(c.customerName || "Customer")}&ctx_type=warranty_barang&ctx_id=${encodeURIComponent(c.id)}&ctx_title=${encodeURIComponent(c.itemTitle)}&ctx_summary=${encodeURIComponent(`Kasus Purnajual #${c.caseNumber}`)}`}
+              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <ChatCircleDots size={14} weight="bold" className="text-blue-700" />
+              <span>Chat Pembeli</span>
+            </Link>
+            <button
+              type="button"
+              onClick={() => setViewingDetailCase(c)}
+              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <Eye size={14} weight="bold" />
+              <span>Detail Lengkap</span>
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {(c.mainStatus === "SUBMITTED" || c.mainStatus === "UNDER_REVIEW") && (
+              <>
+                {isRefund ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setApprovingCase(c);
+                      setChosenApprovalSolution("REFUND");
+                      setRequiresPhysicalReturn(false);
+                      setNoReturnReason("Refund dana disetujui tanpa pengiriman fisik kembali.");
+                    }}
+                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Bank size={14} weight="bold" />
+                    <span>Setujui Refund Dana</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setApprovingCase(c);
+                      setChosenApprovalSolution("REPLACEMENT");
+                      setRequiresPhysicalReturn(true);
+                      setNoReturnReason("");
+                    }}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <ArrowsClockwise size={14} weight="bold" />
+                    <span>Setujui &amp; Buat Alamat Retur</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAltCase(c);
+                    setAltSolution(isRefund ? "REPLACEMENT" : "REFUND");
+                  }}
+                  className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Tawarkan Alternatif
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReqEvidenceCase(c);
+                    setReqEvidenceReason("");
+                  }}
+                  className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Minta Bukti Tambahan
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setRejectingCase(c)}
+                  className="px-4 py-2 bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Tolak dengan Alasan
+                </button>
+              </>
+            )}
+
+            {c.mainStatus === "AWAITING_RETURN" && (
+              <>
+                {c.returnShipping?.trackingNumber && !c.returnShipping.receivedByMerchant && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReceivingCase(c);
+                      setReceiptQuantity(c.affectedQuantity || 1);
+                      setReceiptPackageCondition("BAIK_TERSEGEL");
+                      setReceiptStaffName("Staff Gudang / Logistik Toko");
+                      setReceiptNotes("");
+                    }}
+                    className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Package size={14} weight="bold" />
+                    <span>Konfirmasi Paket Diterima</span>
+                  </button>
+                )}
+
+                {c.returnShipping?.receivedByMerchant && !c.returnShipping.inspectedByMerchant && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInspectingCase(c);
+                      setInspectPackageIntact(true);
+                      setInspectSealIntact(true);
+                      setInspectSerialMatched(true);
+                      setInspectionResultPass(true);
+                      setInspectionNotes("");
+                    }}
+                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1.5"
+                  >
+                    <CheckCircle size={14} weight="bold" />
+                    <span>Pemeriksaan Fisik Retur (QC)</span>
+                  </button>
+                )}
+
+                {!c.returnShipping?.trackingNumber && (
+                  <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200">
+                    Menunggu Pembeli Mengirimkan Barang
+                  </span>
+                )}
+              </>
+            )}
+
+            {c.mainStatus === "IN_RESOLUTION" && c.chosenSolution !== "REPAIR" && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleStartResolution(c)}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Play size={13} weight="fill" />
+                  <span>Mulai Penyelesaian</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCompletingCase(c);
+                    setCompletionEvidenceRef("");
+                  }}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <CheckCircle size={14} weight="bold" />
+                  <span>Selesaikan Kasus</span>
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -400,7 +829,7 @@ function MerchantAfterSalesContent() {
           </div>
         </div>
 
-        {/* 5 Merchant Tabs (M04, M01, M05, M06, M08) */}
+        {/* 4 Merchant Tabs: Ringkasan, Pengaturan Garansi, Refund, Retur Barang */}
         <div className="flex items-center gap-1 sm:gap-2 -mb-px overflow-x-auto">
           <button
             type="button"
@@ -430,18 +859,20 @@ function MerchantAfterSalesContent() {
 
           <button
             type="button"
-            onClick={() => switchTab("claims")}
+            onClick={() => switchTab("refunds")}
             className={`pb-2.5 px-3.5 text-xs font-bold transition flex items-center gap-1.5 border-b-2 cursor-pointer shrink-0 ${
-              activeTab === "claims"
-                ? "border-blue-600 text-blue-600 font-extrabold bg-blue-50/40 rounded-t-lg"
+              activeTab === "refunds"
+                ? "border-rose-600 text-rose-600 font-extrabold bg-rose-50/40 rounded-t-lg"
                 : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-t-lg"
             }`}
           >
-            <Package size={15} weight={activeTab === "claims" ? "fill" : "bold"} />
-            <span>Klaim Garansi Produk</span>
-            <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-blue-100 text-blue-700 font-bold">
-              {merchantClaims.length}
-            </span>
+            <Bank size={15} weight={activeTab === "refunds" ? "fill" : "bold"} />
+            <span>Refund</span>
+            {merchantRefunds.length > 0 && (
+              <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-rose-100 text-rose-700 font-bold">
+                {merchantRefunds.length}
+              </span>
+            )}
           </button>
 
           <button
@@ -455,9 +886,11 @@ function MerchantAfterSalesContent() {
           >
             <ArrowsClockwise size={15} weight={activeTab === "returns" ? "fill" : "bold"} />
             <span>Retur Barang</span>
-            <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-rose-100 text-rose-700 font-bold">
-              {merchantReturns.length}
-            </span>
+            {merchantReturns.length > 0 && (
+              <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-blue-100 text-blue-700 font-bold">
+                {merchantReturns.length}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -465,48 +898,54 @@ function MerchantAfterSalesContent() {
       {/* Main Container */}
       <div className="w-full px-4 sm:px-6 py-3 space-y-3.5">
         {/* Live Service Indicator */}
-        <div className="px-3.5 py-2 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-800 font-medium flex flex-wrap items-center justify-between gap-2">
+        <div className="px-3.5 py-2 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-800 font-medium flex flex-wrap items-center justify-between gap-2 shadow-2xs">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
             <span className="font-bold">Pusat After-Sales Merchant Terintegrasi</span>
-            <span className="text-emerald-600 text-[11px]">• Microservice After-Sales (Port 8008)</span>
+            <span className="text-emerald-600 text-[11px]">• Microservice After-Sales (Port 8008) • Auto-Sync Aktif</span>
           </div>
-          <span className="text-[11px] font-mono text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-emerald-200">
-            SLA Tanggapan Awal: 72 Jam Kalender
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white text-emerald-800 border border-emerald-200 flex items-center gap-1 shadow-2xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+              Real-Time Stream
+            </span>
+            <span className="text-[11px] font-mono text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-emerald-200">
+              SLA Respon: 72 Jam Kalender
+            </span>
+          </div>
         </div>
 
-        {/* TAB 0: RINGKASAN (M04) */}
+        {/* TAB 0: RINGKASAN */}
         {activeTab === "summary" && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
               <button
                 type="button"
-                onClick={() => switchTab("claims")}
-                className="p-4 bg-white rounded-2xl border border-slate-200/80 text-left hover:border-blue-400 transition cursor-pointer shadow-xs"
-              >
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                  Klaim Garansi Aktif
-                </span>
-                <p className="text-2xl font-extrabold text-blue-600 mt-1">{activeClaimsCount}</p>
-                <span className="text-[11px] text-slate-500">Total {merchantClaims.length} klaim</span>
-              </button>
-
-              <button
-                type="button"
                 onClick={() => switchTab("returns")}
-                className="p-4 bg-white rounded-2xl border border-slate-200/80 text-left hover:border-rose-400 transition cursor-pointer shadow-xs"
+                className="p-4 bg-white rounded-2xl border border-slate-200/80 text-left hover:border-blue-400 transition cursor-pointer shadow-xs"
               >
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
                   Retur Barang Aktif
                 </span>
-                <p className="text-2xl font-extrabold text-rose-600 mt-1">{activeReturnsCount}</p>
+                <p className="text-2xl font-extrabold text-blue-600 mt-1">{activeReturnsCount}</p>
                 <span className="text-[11px] text-slate-500">Total {merchantReturns.length} retur</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => switchTab("claims")}
+                onClick={() => switchTab("refunds")}
+                className="p-4 bg-white rounded-2xl border border-slate-200/80 text-left hover:border-rose-400 transition cursor-pointer shadow-xs"
+              >
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                  Refund Barang Aktif
+                </span>
+                <p className="text-2xl font-extrabold text-rose-600 mt-1">{activeRefundsCount}</p>
+                <span className="text-[11px] text-slate-500">Total {merchantRefunds.length} refund</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => switchTab("returns")}
                 className="p-4 bg-white rounded-2xl border border-amber-200 text-left hover:border-amber-400 transition cursor-pointer shadow-xs"
               >
                 <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 block">
@@ -518,7 +957,7 @@ function MerchantAfterSalesContent() {
 
               <button
                 type="button"
-                onClick={() => switchTab("claims")}
+                onClick={() => switchTab("returns")}
                 className="p-4 bg-white rounded-2xl border border-indigo-200 text-left hover:border-indigo-400 transition cursor-pointer shadow-xs"
               >
                 <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 block">
@@ -560,24 +999,25 @@ function MerchantAfterSalesContent() {
             <div className="bg-white rounded-2xl border border-slate-200/80 p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-xs font-bold text-slate-900">
-                  Pengajuan Klaim &amp; Retur Terbaru yang Memerlukan Perhatian
+                  Pengajuan Retur &amp; Refund Terbaru yang Memerlukan Perhatian
                 </h2>
                 <button
                   type="button"
-                  onClick={() => switchTab("claims")}
+                  onClick={() => switchTab("returns")}
                   className="text-xs font-bold text-blue-600 hover:underline cursor-pointer"
                 >
-                  Lihat Semua Kasus →
+                  Kelola Semua Kasus →
                 </button>
               </div>
-              {[...merchantClaims, ...merchantReturns].length === 0 ? (
+              {[...merchantRefunds, ...merchantReturns].length === 0 ? (
                 <p className="text-xs text-slate-500 py-4 text-center">
-                  Belum ada pengajuan klaim atau retur barang yang masuk.
+                  Belum ada pengajuan retur atau refund barang yang masuk.
                 </p>
               ) : (
                 <div className="divide-y divide-slate-100">
-                  {[...merchantClaims, ...merchantReturns].slice(0, 5).map((c) => {
+                  {[...merchantRefunds, ...merchantReturns].slice(0, 5).map((c) => {
                     const statusBadge = getMainStatusDisplay(c.mainStatus);
+                    const isRef = isCaseRefund(c);
                     return (
                       <div
                         key={c.id}
@@ -585,9 +1025,11 @@ function MerchantAfterSalesContent() {
                       >
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="font-mono font-bold text-blue-600">#{c.caseNumber}</span>
-                            <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[10px] font-bold">
-                              {c.caseType === "claim_product" ? "Klaim Garansi" : "Retur Barang"}
+                            <span className={`font-mono font-bold ${isRef ? "text-rose-600" : "text-blue-600"}`}>
+                              #{c.caseNumber}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${isRef ? "bg-rose-50 text-rose-700" : "bg-blue-50 text-blue-700"}`}>
+                              {isRef ? "Refund" : "Retur Barang"}
                             </span>
                             <span className="text-slate-500">Order #{c.sourceOrderNumber}</span>
                           </div>
@@ -631,306 +1073,146 @@ function MerchantAfterSalesContent() {
           />
         )}
 
-        {/* TAB 2 & 3: KLAIM GARANSI PRODUK (M05) & RETUR BARANG (M06) */}
-        {(activeTab === "claims" || activeTab === "returns") && (
-          <div className="space-y-3.5">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-3.5 rounded-2xl border border-slate-200/80">
+        {/* TAB 2: REFUND */}
+        {activeTab === "refunds" && (
+          <div className="space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-3xl border border-slate-200">
               <div>
-                <h2 className="text-xs font-bold text-slate-900">
-                  {activeTab === "claims"
-                    ? "Daftar Permohonan Klaim Garansi Barang Masuk"
-                    : "Daftar Permintaan Retur Barang dari Pembeli"}
+                <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Bank size={18} className="text-rose-600" />
+                  <span>Daftar Permohonan Refund Produk</span>
                 </h2>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  Klik setiap kartu atau tombol detail untuk meninjau bukti, riwayat audit, dan memberikan keputusan resmi.
+                  Tindak lanjuti permohonan pengembalian dana dari pembeli produk dengan persetujuan refund, penawaran unit alternatif, atau penolakan beralasan.
                 </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="px-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-slate-50 font-semibold text-slate-700"
-                >
-                  <option value="ALL">Semua Status</option>
-                  <option value="SUBMITTED">Diajukan (SUBMITTED)</option>
-                  <option value="UNDER_REVIEW">Ditinjau (UNDER_REVIEW)</option>
-                  <option value="IN_RESOLUTION">Dalam Penyelesaian (IN_RESOLUTION)</option>
-                  <option value="COMPLETED">Selesai (COMPLETED)</option>
-                  <option value="REJECTED">Ditolak (REJECTED)</option>
-                </select>
-                <div className="relative">
-                  <MagnifyingGlass size={14} className="absolute left-3 top-2.5 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Cari nomor kasus / item / order..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full sm:w-64 pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                </div>
+
+              <div className="relative">
+                <MagnifyingGlass size={15} className="absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Cari nomor klaim / customer..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full sm:w-64 pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200"
+                />
               </div>
             </div>
 
-            {(activeTab === "claims" ? filteredClaims : filteredReturns).length === 0 ? (
+            {/* Sub-tab Status Filters */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {[
+                { id: "ALL", label: "Semua", count: merchantRefunds.length },
+                { id: "SUBMITTED", label: "Menunggu Respon", count: merchantRefunds.filter((c) => c.mainStatus === "SUBMITTED").length },
+                { id: "UNDER_REVIEW", label: "Ditinjau / Info", count: merchantRefunds.filter((c) => c.mainStatus === "UNDER_REVIEW").length },
+                { id: "IN_RESOLUTION", label: "Proses Refund", count: merchantRefunds.filter((c) => c.mainStatus === "IN_RESOLUTION").length },
+                { id: "COMPLETED", label: "Selesai", count: merchantRefunds.filter((c) => c.mainStatus === "COMPLETED").length },
+                { id: "REJECTED", label: "Ditolak", count: merchantRefunds.filter((c) => c.mainStatus === "REJECTED").length },
+              ].map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  onClick={() => setRefundStatusFilter(st.id)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                    refundStatusFilter === st.id
+                      ? "bg-rose-600 text-white shadow-xs"
+                      : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <span>{st.label}</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                      refundStatusFilter === st.id
+                        ? "bg-rose-800 text-rose-100"
+                        : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {st.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {filteredRefunds.length === 0 ? (
               <div className="p-8 text-center bg-white rounded-2xl border border-slate-200/80 text-xs text-slate-500">
-                Belum ada {activeTab === "claims" ? "klaim garansi produk" : "permintaan retur barang"} yang sesuai filter.
+                Belum ada permohonan refund barang yang sesuai dengan filter ini.
               </div>
             ) : (
               <div className="space-y-3">
-                {(activeTab === "claims" ? filteredClaims : filteredReturns).map((c) => {
-                  const statusBadge = getMainStatusDisplay(c.mainStatus);
-                  return (
-                    <div
-                      key={c.id}
-                      className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/80 shadow-xs space-y-3"
-                    >
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-slate-100">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className={`font-mono font-bold text-xs ${
-                                c.caseType === "claim_product" ? "text-blue-600" : "text-rose-600"
-                              }`}
-                            >
-                              #{c.caseNumber}
-                            </span>
-                            <span className="text-slate-300">•</span>
-                            <span className="text-xs text-slate-500">Order #{c.sourceOrderNumber}</span>
-                            <span className="text-slate-300">•</span>
-                            <span className="text-xs font-semibold text-slate-700">
-                              Customer: {c.customerName}
-                            </span>
-                          </div>
-                          <h3 className="font-bold text-sm text-slate-900 mt-0.5">{c.itemTitle}</h3>
-                        </div>
+                {filteredRefunds.map((c) => renderCaseCard(c, true))}
+              </div>
+            )}
+          </div>
+        )}
 
-                        <div className="flex flex-wrap items-center gap-2 shrink-0">
-                          {c.isNoResponse && (
-                            <span className="px-2.5 py-0.5 bg-amber-500 text-white rounded-full text-[10px] font-bold">
-                              TIDAK DITANGGAPI (+72h)
-                            </span>
-                          )}
-                          {c.specialCondition === "WAITING_CUSTOMER_APPROVAL" && (
-                            <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-800 rounded-full text-[10px] font-bold border border-indigo-200">
-                              Menunggu Persetujuan Customer
-                            </span>
-                          )}
-                          {c.specialCondition === "WAITING_CUSTOMER_INFO" && (
-                            <span className="px-2.5 py-0.5 bg-amber-50 text-amber-800 rounded-full text-[10px] font-bold border border-amber-200">
-                              Menunggu Bukti Tambahan Customer
-                            </span>
-                          )}
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${statusBadge.color}`}
-                          >
-                            {statusBadge.label} ({c.mainStatus})
-                          </span>
-                        </div>
-                      </div>
+        {/* TAB 3: RETUR BARANG */}
+        {activeTab === "returns" && (
+          <div className="space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-3xl border border-slate-200">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <ArrowsClockwise size={18} className="text-blue-600" />
+                  <span>Daftar Permintaan Retur &amp; Ganti Unit</span>
+                </h2>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Kelola pengembalian barang fisik dari pembeli, verifikasi kedatangan paket kurir, inspeksi kondisi QC fisik, dan selesaikan penggantian unit baru.
+                </p>
+              </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs bg-slate-50/80 p-3 rounded-xl border border-slate-100">
-                        <div className="space-y-1">
-                          <span className="text-slate-400 block text-[10px] uppercase font-semibold">
-                            Kendala &amp; Kuantitas Klaim:
-                          </span>
-                          <p className="font-bold text-slate-800 text-xs">
-                            {c.issueReason} ({c.affectedQuantity} dari {c.orderedQuantity} unit)
-                          </p>
-                          <p className="text-slate-600 text-[11px] leading-snug">{c.issueDescription}</p>
-                        </div>
+              <div className="relative">
+                <MagnifyingGlass size={15} className="absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Cari nomor kasus / item / order..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full sm:w-64 pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200"
+                />
+              </div>
+            </div>
 
-                        <div className="space-y-1">
-                          <span className="text-slate-400 block text-[10px] uppercase font-semibold">
-                            Tenggat SLA 72 Jam &amp; Solusi:
-                          </span>
-                          <p className="font-semibold text-slate-800 text-xs">
-                            Batas Respons: {new Date(c.slaDeadlineAt).toLocaleString("id-ID")}
-                          </p>
-                          <p className="text-xs text-slate-700">
-                            Pilihan Customer:{" "}
-                            <strong className="text-blue-700">
-                              {c.customerRequestedSolution || "REPLACEMENT"}
-                            </strong>
-                            {c.chosenSolution && (
-                              <span className="ml-2 text-emerald-700 font-bold">
-                                • Disepakati: {c.chosenSolution}
-                              </span>
-                            )}
-                          </p>
-                          {c.merchantAlternativeProposal && (
-                            <p className="text-indigo-800 bg-indigo-50 p-2 rounded-lg border border-indigo-100 mt-1 text-[11px]">
-                              <strong>Usulan Alternatif Toko:</strong> {c.merchantAlternativeProposal.solution} — &ldquo;{c.merchantAlternativeProposal.note}&rdquo;
-                            </p>
-                          )}
-                          {c.rejectionReason && (
-                            <p className="text-rose-700 mt-0.5 text-[11px]">
-                              <strong>Alasan Ditolak:</strong> {c.rejectionReason}
-                            </p>
-                          )}
-                        </div>
-                      </div>
+            {/* Sub-tab Status Filters */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {[
+                { id: "ALL", label: "Semua", count: merchantReturns.length },
+                { id: "SUBMITTED", label: "Menunggu Respon", count: merchantReturns.filter((c) => c.mainStatus === "SUBMITTED").length },
+                { id: "AWAITING_RETURN", label: "Menunggu Kirim", count: merchantReturns.filter((c) => c.mainStatus === "AWAITING_RETURN").length },
+                { id: "UNDER_REVIEW", label: "Sedang Diperiksa", count: merchantReturns.filter((c) => c.mainStatus === "UNDER_REVIEW").length },
+                { id: "IN_RESOLUTION", label: "Ganti Unit / Resolusi", count: merchantReturns.filter((c) => c.mainStatus === "IN_RESOLUTION").length },
+                { id: "COMPLETED", label: "Selesai", count: merchantReturns.filter((c) => c.mainStatus === "COMPLETED").length },
+                { id: "REJECTED", label: "Ditolak", count: merchantReturns.filter((c) => c.mainStatus === "REJECTED").length },
+              ].map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  onClick={() => setReturnStatusFilter(st.id)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                    returnStatusFilter === st.id
+                      ? "bg-blue-600 text-white shadow-xs"
+                      : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <span>{st.label}</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                      returnStatusFilter === st.id
+                        ? "bg-blue-800 text-blue-100"
+                        : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {st.count}
+                  </span>
+                </button>
+              ))}
+            </div>
 
-                      {/* Resolution Guidance when IN_RESOLUTION */}
-                      {c.mainStatus === "IN_RESOLUTION" && (
-                        <div className="p-3 rounded-xl bg-indigo-50/70 border border-indigo-200 text-xs space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-indigo-900">
-                              Subpanel Penyelesaian ({c.chosenSolution || c.customerRequestedSolution || "REPLACEMENT"})
-                            </span>
-                            {c.refundTrack && (
-                              <span className="px-2 py-0.5 bg-white rounded border border-indigo-200 text-[10px] font-bold text-indigo-700">
-                                Refund Finance 06: {c.refundTrack.financeStatus}
-                              </span>
-                            )}
-                          </div>
-                          {c.chosenSolution === "REPAIR" ? (
-                            <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-[11px] flex items-center gap-2">
-                              <WarningCircle size={16} weight="fill" className="text-amber-600 shrink-0" />
-                              <span>
-                                <strong>Status Integrasi REPAIR_GOODS:</strong> Adapter pemenuhan pengiriman barang rusak untuk perbaikan masih diblokir pada rilis ini. Jangan menyelesaikan kasus secara sepihak sebelum integrasi logistik perbaikan aktif.
-                              </span>
-                            </div>
-                          ) : (
-                            <p className="text-[11px] text-indigo-800">
-                              Kasus berada pada tahap penyelesaian. Klik <strong>Mulai Penyelesaian</strong> untuk menginisiasi proses ke Finance 06 / Penggantian, lalu <strong>Selesaikan Kasus</strong> setelah bukti otoritatif tersedia.
-                            </p>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Action buttons */}
-                      <div className="flex flex-wrap items-center justify-end gap-2 pt-1 border-t border-slate-100">
-                        <button
-                          type="button"
-                          onClick={() => setViewingDetailCase(c)}
-                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <Eye size={14} weight="bold" />
-                          <span>Lihat Detail Kasus</span>
-                        </button>
-
-                        {(c.mainStatus === "SUBMITTED" || c.mainStatus === "UNDER_REVIEW") && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setApprovingCase(c);
-                                setChosenApprovalSolution(c.customerRequestedSolution || "REPLACEMENT");
-                                setRequiresPhysicalReturn(c.caseType === "return_product");
-                                setNoReturnReason("");
-                              }}
-                              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-xs cursor-pointer"
-                            >
-                              Setujui ({c.customerRequestedSolution || "REPLACEMENT"})
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setAltCase(c);
-                                setAltSolution(
-                                  c.customerRequestedSolution === "REFUND" ? "REPLACEMENT" : "REFUND"
-                                );
-                              }}
-                              className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-xl transition cursor-pointer"
-                            >
-                              Tawarkan Alternatif
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setReqEvidenceCase(c);
-                                setReqEvidenceReason("");
-                              }}
-                              className="px-3.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold rounded-xl transition cursor-pointer"
-                            >
-                              Minta Bukti Tambahan
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => setRejectingCase(c)}
-                              className="px-3.5 py-1.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 text-xs font-bold rounded-xl transition cursor-pointer"
-                            >
-                              Tolak dengan Alasan
-                            </button>
-                          </>
-                        )}
-
-                        {c.mainStatus === "AWAITING_RETURN" && (
-                          <>
-                            {c.returnShipping?.trackingNumber && !c.returnShipping.receivedByMerchant && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setReceivingCase(c);
-                                  setReceiptQuantity(c.affectedQuantity || 1);
-                                  setReceiptPackageCondition("BAIK_TERSEGEL");
-                                  setReceiptStaffName("Staff Gudang / Logistik Toko");
-                                  setReceiptNotes("");
-                                }}
-                                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1.5"
-                              >
-                                <Package size={14} weight="bold" />
-                                <span>Konfirmasi Paket Diterima</span>
-                              </button>
-                            )}
-
-                            {c.returnShipping?.receivedByMerchant && !c.returnShipping.inspectedByMerchant && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setInspectingCase(c);
-                                  setInspectPackageIntact(true);
-                                  setInspectSealIntact(true);
-                                  setInspectSerialMatched(true);
-                                  setInspectionResultPass(true);
-                                  setInspectionNotes("");
-                                }}
-                                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-xs cursor-pointer flex items-center gap-1.5"
-                              >
-                                <CheckCircle size={14} weight="bold" />
-                                <span>Pemeriksaan Fisik Retur</span>
-                              </button>
-                            )}
-
-                            {!c.returnShipping?.trackingNumber && (
-                              <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-3 py-1 rounded-xl border border-amber-200">
-                                Menunggu Customer Mengirimkan Barang
-                              </span>
-                            )}
-                          </>
-                        )}
-
-                        {c.mainStatus === "IN_RESOLUTION" && c.chosenSolution !== "REPAIR" && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleStartResolution(c)}
-                              className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <Play size={13} weight="fill" />
-                              <span>Mulai Penyelesaian</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCompletingCase(c);
-                                setCompletionEvidenceRef("");
-                              }}
-                              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-xs flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <CheckCircle size={14} weight="bold" />
-                              <span>Selesaikan Kasus</span>
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+            {filteredReturns.length === 0 ? (
+              <div className="p-8 text-center bg-white rounded-2xl border border-slate-200/80 text-xs text-slate-500">
+                Belum ada permintaan retur barang yang sesuai dengan filter ini.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredReturns.map((c) => renderCaseCard(c, false))}
               </div>
             )}
           </div>

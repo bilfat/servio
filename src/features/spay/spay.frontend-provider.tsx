@@ -40,7 +40,7 @@ export function SPayProvider({
   forcedOwnerType?: SPayOwnerType;
   forcedOrgId?: string;
 }) {
-  const { activeRole, user, isLoadingAuth } = useActiveRole();
+  const { activeRole, user, isLoadingAuth, isAuthenticated, isPublicGuest } = useActiveRole();
 
   // Determine owner type based on explicit prop or active role context
   const resolvedOwnerType: SPayOwnerType = useMemo(() => {
@@ -78,8 +78,8 @@ export function SPayProvider({
 
   // Sync with authoritative backend Finance Service
   React.useEffect(() => {
-    // Only attempt to sync after authentication state is settled
-    if (isLoadingAuth) return;
+    // Only attempt to sync after authentication state is settled and session is authenticated
+    if (isLoadingAuth || isPublicGuest || !isAuthenticated) return;
 
     let isMounted = true;
     const syncSpayBalance = () => {
@@ -200,7 +200,7 @@ export function SPayProvider({
       isMounted = false;
       clearInterval(intervalId);
     };
-  }, [resolvedOwnerType, activeRole, currentOrgId, isLoadingAuth]);
+  }, [resolvedOwnerType, activeRole, currentOrgId, isLoadingAuth, isAuthenticated, isPublicGuest]);
 
   // Balance Visibility State
   const [isBalanceVisible, setIsBalanceVisible] = useState<boolean>(true);

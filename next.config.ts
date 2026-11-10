@@ -318,30 +318,6 @@ const nextConfig: NextConfig = {
         source: "/api/v1/finance",
         destination: "http://127.0.0.1:8006/api/v1/finance",
       },
-      // Sanctum CSRF (Identity Service - Port 8001)
-      {
-        source: "/sanctum/:path*",
-        destination: "http://127.0.0.1:8001/sanctum/:path*",
-      },
-      // Order Barang Service (Modul 05A - Port 8005)
-      {
-        source: "/api/v1/order-barang/:path*",
-        destination: "http://127.0.0.1:8005/api/v1/order-barang/:path*",
-      },
-      {
-        source: "/api/v1/order-barang",
-        destination: "http://127.0.0.1:8005/api/v1/order-barang",
-      },
-
-      // After-Sales & Feedback Service (Modul 07 - Port 8008)
-      {
-        source: "/api/v1/after-sales/:path*",
-        destination: "http://127.0.0.1:8008/api/v1/after-sales/:path*",
-      },
-      {
-        source: "/api/v1/after-sales",
-        destination: "http://127.0.0.1:8008/api/v1/after-sales",
-      },
       // Order Jasa Service (Modul 05B - Port 8007)
       {
         source: "/api/v1/order-jasa/:path*",
@@ -350,6 +326,19 @@ const nextConfig: NextConfig = {
       {
         source: "/api/v1/order-jasa",
         destination: "http://127.0.0.1:8007/api/v1/order-jasa",
+      },
+      // Chat Service (Port 8009)
+      {
+        source: "/api/v1/chat/:path*",
+        destination: "http://127.0.0.1:8009/api/v1/chat/:path*",
+      },
+      {
+        source: "/api/v1/chat",
+        destination: "http://127.0.0.1:8009/api/v1/chat",
+      },
+      {
+        source: "/storage/chat-media/:path*",
+        destination: "http://127.0.0.1:8009/storage/chat-media/:path*",
       },
       // Identity Service (Modul 01 - Port 8001)
       {

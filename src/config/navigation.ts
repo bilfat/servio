@@ -115,29 +115,34 @@ export const SIX_SERVICE_DOMAINS = [
  */
 export const PUBLIC_NAV_ITEMS = [
   {
+    id: "public-home",
+    label: "Beranda",
+    href: "/",
+  },
+  {
     id: "public-services",
     label: "Jasa",
     href: "/services",
-    children: SIX_SERVICE_DOMAINS,
   },
   {
     id: "public-products",
-    label: "Produk",
+    label: "Produk & Sparepart",
     href: "/products",
   },
   {
-    id: "public-how-it-works",
-    label: "Cara Kerja",
-    href: "/how-it-works",
+    id: "public-partners",
+    label: "Gabung Mitra",
+    href: "/registration",
   },
   {
     id: "public-help",
-    label: "Bantuan",
-    href: "/support",
+    label: "Cara Kerja & Bantuan",
+    href: "/how-it-works",
     children: [
-      { id: "help-center", label: "Pusat Bantuan", href: "/support", icon: Info },
-      { id: "help-faq", label: "FAQ & Garansi", href: "/faq", icon: Question },
-      { id: "help-contact", label: "Hubungi Kami", href: "/contact", icon: ChatCircleText },
+      { id: "help-how-it-works", label: "Cara Kerja & Keamanan Uang", href: "/how-it-works", icon: Info },
+      { id: "help-faq", label: "FAQ & Garansi Digital", href: "/faq", icon: Question },
+      { id: "help-contact", label: "Hubungi Kami 24/7", href: "/contact", icon: ChatCircleText },
+      { id: "help-reg-status", label: "Cek Status Pendaftaran Mitra", href: "/registration/status", icon: ClipboardText },
     ],
   },
 ];
@@ -177,6 +182,7 @@ export const CANONICAL_NAVIGATION_SECTIONS: Partial<Record<UserRole, NavigationS
         { id: "prov-serv", label: "Katalog Layanan", href: "/provider/services", icon: Wrench, roles: ["SERVICE_PROVIDER"] },
         { id: "prov-tax-req", label: "Ajukan Subkategori", href: "/provider/taxonomy-request", icon: PlusCircle, roles: ["SERVICE_PROVIDER"] },
         { id: "prov-ord", label: "Order Operasional", href: "/provider/orders", icon: ClipboardText, roles: ["SERVICE_PROVIDER"] },
+        { id: "prov-chat", label: "Chat & Pesan", href: "/provider/chat", icon: ChatCircleText, roles: ["SERVICE_PROVIDER"] },
       ],
     },
     {
@@ -191,8 +197,7 @@ export const CANONICAL_NAVIGATION_SECTIONS: Partial<Record<UserRole, NavigationS
       id: "prov-warranty-section",
       title: "Purnajual & Garansi",
       items: [
-        { id: "prov-war", label: "Garansi", href: "/provider/warranty", icon: ShieldCheck, roles: ["SERVICE_PROVIDER"] },
-        { id: "prov-war-req", label: "Pengajuan Garansi", href: "/provider/warranty/requests", icon: ClipboardText, roles: ["SERVICE_PROVIDER"] },
+        { id: "prov-warranty", label: "Purnajual & Garansi", href: "/provider/warranty", icon: ShieldCheck, roles: ["SERVICE_PROVIDER"] },
         { id: "prov-reviews", label: "Rating & Ulasan", href: "/provider/reviews", icon: Star, roles: ["SERVICE_PROVIDER"] },
       ],
     },
@@ -224,6 +229,7 @@ export const CANONICAL_NAVIGATION_SECTIONS: Partial<Record<UserRole, NavigationS
       title: "Pekerjaan",
       items: [
         { id: "work-my-jobs", label: "Pekerjaan Saya", href: "/worker/jobs", icon: Wrench, roles: ["WORKER_TECHNICIAN"] },
+        { id: "work-chat", label: "Chat Pelanggan", href: "/worker/chat", icon: ChatCircleText, roles: ["WORKER_TECHNICIAN"] },
       ],
     },
     {
@@ -270,6 +276,7 @@ export const CANONICAL_NAVIGATION_SECTIONS: Partial<Record<UserRole, NavigationS
         { id: "merch-prod", label: "Katalog Produk", href: "/merchant/products", icon: Package, roles: ["MERCHANT"] },
         { id: "merch-tax-req", label: "Ajukan Kategori", href: "/merchant/taxonomy-request", icon: PlusCircle, roles: ["MERCHANT"] },
         { id: "merch-ord", label: "Pesanan Toko", href: "/merchant/orders", icon: ClipboardText, badge: "4", roles: ["MERCHANT"] },
+        { id: "merch-chat", label: "Chat Pembeli", href: "/merchant/chat", icon: ChatCircleText, roles: ["MERCHANT"] },
         { id: "merch-shipping-settings", label: "Pengaturan Pengiriman", href: "/merchant/shipping-settings", icon: Truck, roles: ["MERCHANT"] },
       ],
     },
@@ -277,7 +284,7 @@ export const CANONICAL_NAVIGATION_SECTIONS: Partial<Record<UserRole, NavigationS
       id: "merch-warranty-section",
       title: "Purnajual & Garansi",
       items: [
-        { id: "merch-war", label: "Garansi & Klaim", href: "/merchant/warranty", icon: ShieldCheck, roles: ["MERCHANT"] },
+        { id: "merch-warranty", label: "Purnajual & Garansi", href: "/merchant/warranty", icon: ShieldCheck, roles: ["MERCHANT"] },
         { id: "merch-reviews", label: "Rating & Ulasan", href: "/merchant/reviews", icon: Star, roles: ["MERCHANT"] },
       ],
     },
@@ -491,10 +498,10 @@ export const CANONICAL_NAVIGATION: Record<UserRole, NavigationItem[]> = {
     { id: "prov-services", label: "Katalog Layanan", href: "/provider/services", icon: Wrench, roles: ["SERVICE_PROVIDER"] },
     { id: "prov-tax-req", label: "Ajukan Subkategori", href: "/provider/taxonomy-request", icon: PlusCircle, roles: ["SERVICE_PROVIDER"] },
     { id: "prov-orders", label: "Order Operasional", href: "/provider/orders", icon: ClipboardText, roles: ["SERVICE_PROVIDER"] },
+    { id: "prov-chat", label: "Chat & Pesan", href: "/provider/chat", icon: ChatCircleText, roles: ["SERVICE_PROVIDER"] },
     { id: "prov-workers", label: "Teknisi", href: "/provider/workers", icon: Users, roles: ["SERVICE_PROVIDER"] },
     { id: "prov-service-area", label: "Area & Cakupan", href: "/provider/service-area", icon: SlidersHorizontal, roles: ["SERVICE_PROVIDER"] },
-    { id: "prov-warranty", label: "Garansi", href: "/provider/warranty", icon: ShieldCheck, roles: ["SERVICE_PROVIDER"] },
-    { id: "prov-warranty-requests", label: "Pengajuan Garansi", href: "/provider/warranty/requests", icon: ClipboardText, roles: ["SERVICE_PROVIDER"] },
+    { id: "prov-warranty", label: "Purnajual & Garansi", href: "/provider/warranty", icon: ShieldCheck, roles: ["SERVICE_PROVIDER"] },
     { id: "prov-reviews", label: "Rating & Ulasan", href: "/provider/reviews", icon: Star, roles: ["SERVICE_PROVIDER"] },
     { id: "prov-spay", label: "Dompet S-Pay", href: "/provider/spay", icon: Bank, roles: ["SERVICE_PROVIDER"] },
     { id: "prov-profile", label: "Profil", href: "/provider/profile", icon: User, roles: ["SERVICE_PROVIDER"] },
@@ -502,6 +509,7 @@ export const CANONICAL_NAVIGATION: Record<UserRole, NavigationItem[]> = {
   WORKER_TECHNICIAN: [
     { id: "work-dashboard", label: "Dashboard", href: "/worker/dashboard", icon: House, roles: ["WORKER_TECHNICIAN"] },
     { id: "work-jobs", label: "Pekerjaan Saya", href: "/worker/jobs", icon: Wrench, roles: ["WORKER_TECHNICIAN"] },
+    { id: "work-chat", label: "Chat Pelanggan", href: "/worker/chat", icon: ChatCircleText, roles: ["WORKER_TECHNICIAN"] },
     { id: "work-guide", label: "Bantuan & SOP", href: "/worker/guide", icon: Question, roles: ["WORKER_TECHNICIAN"] },
     { id: "work-profile", label: "Profil", href: "/worker/profile", icon: User, roles: ["WORKER_TECHNICIAN"] },
   ],
@@ -528,8 +536,9 @@ export const CANONICAL_NAVIGATION: Record<UserRole, NavigationItem[]> = {
     { id: "merch-products", label: "Katalog Produk", href: "/merchant/products", icon: Package, roles: ["MERCHANT"] },
     { id: "merch-tax-req", label: "Ajukan Kategori", href: "/merchant/taxonomy-request", icon: PlusCircle, roles: ["MERCHANT"] },
     { id: "merch-orders", label: "Pesanan Toko", href: "/merchant/orders", icon: ClipboardText, badge: "4", roles: ["MERCHANT"] },
+    { id: "merch-chat", label: "Chat Pembeli", href: "/merchant/chat", icon: ChatCircleText, roles: ["MERCHANT"] },
     { id: "merch-shipping-settings", label: "Pengaturan Pengiriman", href: "/merchant/shipping-settings", icon: Truck, roles: ["MERCHANT"] },
-    { id: "merch-warranty", label: "Garansi & Klaim", href: "/merchant/warranty", icon: ShieldCheck, roles: ["MERCHANT"] },
+    { id: "merch-warranty", label: "Purnajual & Garansi", href: "/merchant/warranty", icon: ShieldCheck, roles: ["MERCHANT"] },
     { id: "merch-reviews", label: "Rating & Ulasan", href: "/merchant/reviews", icon: Star, roles: ["MERCHANT"] },
     { id: "merch-settlement", label: "Settlement & Saldo", href: "/merchant/settlement", icon: Bank, roles: ["MERCHANT"] },
     { id: "merch-spay", label: "Dompet S-Pay", href: "/merchant/spay", icon: Bank, roles: ["MERCHANT"] },

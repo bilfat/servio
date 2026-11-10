@@ -19,6 +19,8 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend(\App\Http\Middleware\CorrelationTraceMiddleware::class);
+
         $middleware->alias([
             'service.auth' => \App\Http\Middleware\AuthenticateServiceActor::class,
             'service.perm' => \App\Http\Middleware\RequireServicePermission::class,

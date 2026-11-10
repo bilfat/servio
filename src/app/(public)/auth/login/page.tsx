@@ -31,6 +31,7 @@ import {
   UserCircle,
   Headset,
   Sparkle,
+  TerminalWindow,
 } from "@phosphor-icons/react";
 
 interface DevRoleOption {
@@ -264,6 +265,28 @@ export default function LoginPage() {
   // Dev Stage Role Switcher State
   const [devCategoryFilter, setDevCategoryFilter] = useState<"ALL" | "INTERNAL" | "BUSINESS" | "CUSTOMER">("ALL");
   const [devLoginLoadingRole, setDevLoginLoadingRole] = useState<string | null>(null);
+  const [devPortalLoading, setDevPortalLoading] = useState(false);
+
+  const handleQuickDevPortalLogin = async () => {
+    setDevPortalLoading(true);
+    setErrorMsg(null);
+    try {
+      const res = await fetch("/api/dev/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quickDevStage: true }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.message || "Gagal masuk ke Portal Developer.");
+      }
+      window.location.assign("/dev/dashboard");
+    } catch (err: unknown) {
+      const error = err as Error;
+      setErrorMsg(error.message || "Gagal terhubung ke Portal Developer.");
+      setDevPortalLoading(false);
+    }
+  };
 
   // Quick Login Handler for Dev Stage
   const handleQuickLogin = async (account: DevRoleOption) => {
@@ -679,6 +702,56 @@ export default function LoginPage() {
                 <p className="text-xs text-slate-400 mt-0.5">
                   Akses cepat untuk pengujian alur kerja & dashboard 9 role ekosistem tanpa perlu mengetik kredensial.
                 </p>
+              </div>
+            </div>
+
+            {/* Developer Observability Cockpit Quick Access (Isolated Portal /dev) */}
+            <div className="rounded-2xl bg-emerald-950/35 border border-emerald-500/35 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start sm:items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
+                  <TerminalWindow size={21} weight="bold" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-bold text-white">
+                      Developer Observability Dashboard
+                    </span>
+                    <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      TERISOLASI · /dev
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300/90 mt-0.5 truncate">
+                    Monitor 8 Microservice, Log Laravel, Audit DB, Trace Error &amp; Outbox (
+                    <span className="font-mono text-emerald-300">developer@servio.com</span>)
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  disabled={devPortalLoading || devLoginLoadingRole !== null || loading}
+                  onClick={handleQuickDevPortalLogin}
+                  className="py-2 px-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-[0.98] text-slate-950 text-xs font-bold shadow-sm transition flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  {devPortalLoading ? (
+                    <>
+                      <SpinnerGap size={14} className="animate-spin" />
+                      <span>Membuka...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Lightning size={14} weight="fill" />
+                      <span>Masuk Dashboard Dev</span>
+                    </>
+                  )}
+                </button>
+                <Link
+                  href="/dev/login"
+                  className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition whitespace-nowrap"
+                >
+                  /dev/login
+                </Link>
               </div>
             </div>
 

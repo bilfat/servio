@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Star,
@@ -43,6 +43,7 @@ export interface OrderReviewModalTarget {
   businessName: string;
   items: ReviewableOrderItem[];
   existingSubmission?: ReviewSubmission | null;
+  skipExistingReviewCheck?: boolean;
 }
 
 interface OrderReviewModalProps {
@@ -91,6 +92,7 @@ export function OrderReviewModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [justSubmitted, setJustSubmitted] = useState(false);
+  const [failedImageKeys, setFailedImageKeys] = useState<Record<string, boolean>>({});
 
   // Deduplicate items by targetId so multi-line items with the same product_id only ask once
   const distinctItems = useMemo(() => {
@@ -106,15 +108,34 @@ export function OrderReviewModal({
     return Array.from(map.values());
   }, [target]);
 
+  const targetIdentityKey =
+    isOpen && target
+      ? `${target.sourceKind}:${target.orderId}:${target.subOrderId || ""}`
+      : "";
+
+  const distinctItemsRef = useRef(distinctItems);
+  const existingSubmissionRef = useRef(target?.existingSubmission);
+  const skipCheckRef = useRef(target?.skipExistingReviewCheck);
+  const targetRef = useRef(target);
+
   useEffect(() => {
-    if (!isOpen || !target) return;
+    distinctItemsRef.current = distinctItems;
+    existingSubmissionRef.current = target?.existingSubmission;
+    skipCheckRef.current = target?.skipExistingReviewCheck;
+    targetRef.current = target;
+  });
+
+  useEffect(() => {
+    const activeTarget = targetRef.current;
+    if (!isOpen || !targetIdentityKey || !activeTarget) return;
     setErrorMsg(null);
     setJustSubmitted(false);
+    setFailedImageKeys({});
 
     // Initialize empty (0 stars) for each distinct item until Customer explicitly chooses 1–5
     const initialRatings: Record<string, number> = {};
     const initialTexts: Record<string, string> = {};
-    for (const it of distinctItems) {
+    for (const it of distinctItemsRef.current) {
       initialRatings[it.targetId] = 0;
       initialTexts[it.targetId] = "";
     }
@@ -123,8 +144,15 @@ export function OrderReviewModal({
     setBusinessRating(0);
     setBusinessText("");
 
-    if (target.existingSubmission) {
-      setSubmission(target.existingSubmission);
+    const existing = existingSubmissionRef.current;
+    if (existing) {
+      setSubmission(existing);
+      setLoadingExisting(false);
+      return;
+    }
+
+    if (skipCheckRef.current) {
+      setSubmission(null);
       setLoadingExisting(false);
       return;
     }
@@ -134,7 +162,7 @@ export function OrderReviewModal({
     setSubmission(null);
 
     afterSalesApi.customer
-      .getMyReview(target.orderId, target.subOrderId || undefined)
+      .getMyReview(activeTarget.orderId, activeTarget.subOrderId || undefined)
       .then((res) => {
         if (cancelled) return;
         if (res.success && res.data && res.data.id) {
@@ -149,7 +177,14 @@ export function OrderReviewModal({
     return () => {
       cancelled = true;
     };
-  }, [isOpen, target, distinctItems]);
+  }, [isOpen, targetIdentityKey]);
+
+  useEffect(() => {
+    if (isOpen && target?.existingSubmission) {
+      setSubmission(target.existingSubmission);
+      setLoadingExisting(false);
+    }
+  }, [isOpen, target?.existingSubmission]);
 
   if (!isOpen || !target) return null;
 
@@ -261,10 +296,11 @@ export function OrderReviewModal({
   const renderReadOnlyEntry = (entry: ReviewEntry) => {
     const isItemEntry =
       entry.target_type === "PRODUCT" || entry.target_type === "SERVICE";
-    const matchedItem = distinctItems.find(
-      (it) =>
-        it.targetId === entry.target_id || it.orderItemId === entry.source_item_key
-    );
+    const matchedItem =
+      distinctItems.find(
+        (it) =>
+          it.targetId === entry.target_id || it.orderItemId === entry.source_item_key
+      ) || (!isGoods && entry.target_type === "SERVICE" ? distinctItems[0] : undefined);
     const title = isItemEntry
       ? matchedItem?.title ||
         (entry.target_type === "PRODUCT"
@@ -276,6 +312,10 @@ export function OrderReviewModal({
 
     const commentText = entry.review_text ?? entry.text;
     const replyText = entry.reply?.reply_text ?? entry.reply?.text;
+    const roImgKey = `ro-${entry.id}`;
+    const showReadOnlyImg = Boolean(
+      isItemEntry && matchedItem?.imageUrl && !failedImageKeys[roImgKey]
+    );
 
     return (
       <div
@@ -285,13 +325,22 @@ export function OrderReviewModal({
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2.5">
             <div
-              className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+              className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden ${
                 isItemEntry
                   ? "bg-blue-50 text-blue-600 border border-blue-200"
                   : "bg-amber-50 text-amber-600 border border-amber-200"
               }`}
             >
-              {isItemEntry ? (
+              {showReadOnlyImg ? (
+                <img
+                  src={matchedItem!.imageUrl!}
+                  alt={title}
+                  onError={() =>
+                    setFailedImageKeys((prev) => ({ ...prev, [roImgKey]: true }))
+                  }
+                  className="w-full h-full object-cover"
+                />
+              ) : isItemEntry ? (
                 isGoods ? (
                   <Package size={18} weight="duotone" />
                 ) : (
@@ -514,10 +563,16 @@ export function OrderReviewModal({
                     >
                       <div className="flex items-center gap-3">
                         <div className="w-11 h-11 rounded-xl bg-white border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden">
-                          {it.imageUrl ? (
+                          {it.imageUrl && !failedImageKeys[`form-${it.targetId}`] ? (
                             <img
                               src={it.imageUrl}
                               alt={it.title}
+                              onError={() =>
+                                setFailedImageKeys((prev) => ({
+                                  ...prev,
+                                  [`form-${it.targetId}`]: true,
+                                }))
+                              }
                               className="w-full h-full object-cover"
                             />
                           ) : isGoods ? (

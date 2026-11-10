@@ -33,6 +33,46 @@ class InternalOrderJasaController
      */
     public function show(Request $request, string $id): JsonResponse
     {
+        if ($request->query('projection') === 'eligibility') {
+            $order = ServiceOrder::select([
+                'id',
+                'customer_id',
+                'provider_org_id',
+                'service_offering_id',
+                'service_snapshot',
+                'recipient_snapshot',
+                'status',
+                'created_at',
+            ])->find($id);
+
+            if (!$order) {
+                return ApiResponse::error('ORDER_JASA_NOT_FOUND', 'Pesanan jasa tidak ditemukan.', 404);
+            }
+
+            $serviceSnapshot = is_array($order->service_snapshot) ? $order->service_snapshot : [];
+            $recipientSnapshot = is_array($order->recipient_snapshot) ? $order->recipient_snapshot : [];
+
+            $serviceTitle = $serviceSnapshot['title']
+                ?? $serviceSnapshot['name']
+                ?? $serviceSnapshot['display_name']
+                ?? 'Layanan Jasa';
+
+            return ApiResponse::success([
+                'id' => $order->id,
+                'customer_id' => $order->customer_id,
+                'provider_org_id' => $order->provider_org_id,
+                'service_offering_id' => $order->service_offering_id,
+                'service_snapshot' => [
+                    'id' => $serviceSnapshot['id'] ?? $order->service_offering_id,
+                    'title' => $serviceTitle,
+                    'name' => $serviceSnapshot['name'] ?? $serviceTitle,
+                ],
+                'customer_name' => $recipientSnapshot['name'] ?? $recipientSnapshot['recipient_name'] ?? null,
+                'status' => $order->status,
+                'created_at' => $order->created_at?->toIso8601String(),
+            ], 200);
+        }
+
         $order = ServiceOrder::with([
             'booking.activeAssignment.attempt',
             'visit',
@@ -90,7 +130,7 @@ class InternalOrderJasaController
                 'scope_description' => $validated['scope_description'],
                 'price_idr' => 0,
                 'status' => 'ASSIGNED',
-                'worker_id' => $validated['worker_id'] ?? ('wrk-' . strtoupper(\Illuminate\Support\Str::random(8))),
+                'worker_id' => $validated['worker_id'] ?? 'acfdfc27-9ba5-472f-bec1-3c372f47fff6',
             ]);
 
             return ApiResponse::success($job, 201);

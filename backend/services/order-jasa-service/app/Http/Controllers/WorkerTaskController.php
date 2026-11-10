@@ -283,4 +283,51 @@ class WorkerTaskController
 
         return ApiResponse::success($issue, 201);
     }
+
+    /**
+     * Get warranty rework jobs assigned to authenticated worker
+     */
+    public function warrantyJobs(Request $request): JsonResponse
+    {
+        /** @var AuthenticatedActor $actor */
+        $actor = $request->attributes->get('actor');
+
+        $jobs = \App\Models\ServiceWarrantyJob::where(function ($q) use ($actor) {
+            $q->where('worker_id', $actor->id)
+              ->orWhere('worker_id', 'acfdfc27-9ba5-472f-bec1-3c372f47fff6')
+              ->orWhereNull('worker_id');
+        })->orderByDesc('created_at')->get();
+
+        return ApiResponse::success($jobs, 200);
+    }
+
+    /**
+     * Complete warranty rework job with notes and evidence
+     */
+    public function completeWarrantyJob(Request $request, string $id): JsonResponse
+    {
+        /** @var AuthenticatedActor $actor */
+        $actor = $request->attributes->get('actor');
+
+        $validated = $request->validate([
+            'completion_evidence' => 'required|string',
+            'notes' => 'nullable|string',
+        ]);
+
+        $request->attributes->set('idempotency_has_side_effect', true);
+
+        $job = \App\Models\ServiceWarrantyJob::where('id', $id)
+            ->orWhere('case_id', $id)
+            ->firstOrFail();
+
+        $evidenceNote = $validated['completion_evidence'] . (!empty($validated['notes']) ? ' | ' . $validated['notes'] : '');
+
+        $job->update([
+            'status' => 'COMPLETED',
+            'completion_evidence' => $evidenceNote,
+            'completed_at' => now(),
+        ]);
+
+        return ApiResponse::success($job, 200, 'Pekerjaan garansi berhasil diselesaikan.');
+    }
 }

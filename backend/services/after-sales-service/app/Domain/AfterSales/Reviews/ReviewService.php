@@ -38,7 +38,8 @@ class ReviewService
             customerId: $customerId,
             orderKind: $sourceKind,
             orderId: $sourceOrderId,
-            subOrderId: $sourceMerchantOrderId
+            subOrderId: $sourceMerchantOrderId,
+            includeClaimedQuantities: false
         );
 
         if (!$eligibility->isValid) {
@@ -168,20 +169,22 @@ class ReviewService
             $idempotencyKey,
             $eligibility
         ) {
+            $now = now();
             $submission = ReviewSubmission::create([
                 'source_kind' => $sourceKind,
                 'source_order_id' => $sourceOrderId,
                 'source_merchant_order_id' => $normalizedSubOrderId,
                 'customer_id' => $customerId,
-                'submitted_at' => now(),
+                'submitted_at' => $now,
                 'idempotency_key' => $idempotencyKey,
             ]);
 
+            $createdEntries = new \Illuminate\Database\Eloquent\Collection();
             foreach ($ratings as $r) {
                 $targetType = strtoupper($r['target_type']);
                 $targetId = (string) $r['target_id'];
 
-                ReviewEntry::create([
+                $entry = ReviewEntry::create([
                     'submission_id' => $submission->id,
                     'owner_org_id' => $validBusinessOrgId,
                     'source_item_key' => $r['source_item_key'] ?? null,
@@ -191,14 +194,21 @@ class ReviewService
                     'text' => $r['text'] ?? $r['comment'] ?? null,
                     'media_refs' => $r['media_refs'] ?? null,
                     'status' => 'VISIBLE',
-                    'submitted_at' => now(),
+                    'submitted_at' => $now,
                 ]);
+                $entry->setRelation('reply', null);
+                $entry->setRelation('submission', $submission);
+                $createdEntries->push($entry);
             }
 
             $safeCustomerName = $this->formatSafeCustomerDisplayName(
                 $eligibility->customerDisplayName,
                 $customerId
             );
+
+            $orderedAtResolved = $eligibility->orderedAt
+                ?? $submission->created_at?->toIso8601String()
+                ?? $submission->submitted_at?->toIso8601String();
 
             OutboxEvent::create([
                 'event_type' => 'after_sales.review.created.v1',
@@ -217,10 +227,20 @@ class ReviewService
                 ],
             ]);
 
-            $loaded = $submission->load('entries.reply');
-            $this->enrichReviewSubmission($loaded);
+            foreach ($createdEntries as $entry) {
+                $entry->setAttribute('review_text', $entry->text);
+                $entry->setAttribute('ordered_at', $orderedAtResolved);
+                $entry->setAttribute('customer_display_name', $safeCustomerName);
+                $entry->setAttribute('source_order_id', $sourceOrderId);
+                $entry->setAttribute('source_merchant_order_id', $normalizedSubOrderId);
+                $entry->setAttribute('source_kind', $sourceKind);
+            }
 
-            return $loaded;
+            $submission->setRelation('entries', $createdEntries);
+            $submission->setAttribute('ordered_at', $orderedAtResolved);
+            $submission->setAttribute('customer_display_name', $safeCustomerName);
+
+            return $submission;
         });
     }
 

@@ -19,18 +19,13 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend(\App\Http\Middleware\CorrelationTraceMiddleware::class);
+
         $middleware->alias([
             'order_jasa.auth' => \App\Http\Middleware\AuthenticateOrderJasaActor::class,
             'order_jasa.role' => \App\Http\Middleware\RequireOrderJasaRole::class,
             'order_jasa.internal' => \App\Http\Middleware\RequireInternalServiceKey::class,
             'order_jasa.idempotency' => \App\Http\Middleware\HandleOrderJasaIdempotency::class,
-        ]);
-
-        $middleware->statefulApi();
-
-        $middleware->validateCsrfTokens(except: [
-            'internal/*',
-            'api/*',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

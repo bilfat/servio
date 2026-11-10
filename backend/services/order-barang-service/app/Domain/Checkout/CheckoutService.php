@@ -654,6 +654,7 @@ class CheckoutService
                 'product_snapshot' => [
                     'product_id' => $productId,
                     'name' => $snapshot['name'] ?? ($item['product_name'] ?? "Produk {$productId}"),
+                    'warranty_policy' => $snapshot['warranty_policy'] ?? ($item['warranty_policy'] ?? null),
                 ],
                 'variant_snapshot' => [
                     'variant_id' => $variantId,

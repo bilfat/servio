@@ -417,7 +417,17 @@ class PhysicalReturnService
             // Transition case status to IN_RESOLUTION if inspection passed or partial
             if ($outcome === 'MATCHED' || ($outcome === 'PARTIAL' && $quantityApproved > 0)) {
                 $case->main_status = 'IN_RESOLUTION';
+                $case->agreed_solution = $case->initial_solution ?: 'REPLACEMENT';
                 $case->save();
+
+                \App\Models\CaseResolution::updateOrCreate(
+                    ['case_id' => $case->id],
+                    [
+                        'solution_code' => $case->agreed_solution,
+                        'agreed_at' => now(),
+                        'status' => 'NOT_STARTED',
+                    ]
+                );
             }
 
             $lastSeq = (int) $case->events()->max('sequence');

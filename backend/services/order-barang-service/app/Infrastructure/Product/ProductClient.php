@@ -58,6 +58,7 @@ class ProductClient
                         'product_public_eligible' => (bool) ($data['product_public_eligible'] ?? false),
                         'variant_active' => (bool) ($data['variant_active'] ?? false),
                         'version' => (int) ($data['version'] ?? 1),
+                        'warranty_policy' => $data['warranty_policy'] ?? null,
                     ];
                 }
             }

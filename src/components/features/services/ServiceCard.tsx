@@ -253,7 +253,7 @@ export function ServiceCard({
             <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wider">
               {isRange ? "Rentang Biaya" : "Mulai Dari"}
             </p>
-            <p className="text-[11px] sm:text-xs font-bold font-display text-[#0F4C81] leading-tight whitespace-nowrap">
+            <p className="text-[11px] sm:text-xs font-bold font-display text-[#0F4C81] leading-snug">
               {isRange
                 ? `${formatRupiah(minPrice)} – ${formatRupiah(maxPrice)}`
                 : formatRupiah(minPrice)}

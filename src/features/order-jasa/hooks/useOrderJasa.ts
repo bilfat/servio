@@ -152,6 +152,8 @@ export function useOrderJasa() {
               o.diagnosis?.costBreakdown?.spareparts?.length === next[idx]?.diagnosis?.costBreakdown?.spareparts?.length &&
               o.paymentSummary?.diagnosisPayment?.status === next[idx]?.paymentSummary?.diagnosisPayment?.status &&
               o.paymentSummary?.executionPayment?.status === next[idx]?.paymentSummary?.executionPayment?.status &&
+              o.visit?.status === next[idx]?.visit?.status &&
+              o.completedAt === next[idx]?.completedAt &&
               o.providerName === next[idx]?.providerName &&
               o.serviceSnapshot?.warrantyDurationDays === next[idx]?.serviceSnapshot?.warrantyDurationDays &&
               o.serviceSnapshot?.subcategoryName === next[idx]?.serviceSnapshot?.subcategoryName &&
@@ -852,6 +854,7 @@ export function useOrderJasa() {
 
   const confirmCustomerCompleted = useCallback(
     async (orderId: string) => {
+      const nowIso = new Date().toISOString();
       setOrders((prev) => {
         const next = prev.map((o) =>
           o.id === orderId || o.orderNumber === orderId
@@ -859,17 +862,28 @@ export function useOrderJasa() {
                 ...o,
                 status: "COMPLETED" as const,
                 subStatus: "COMPLETED_NORMAL" as const,
-                completedAt: new Date().toISOString(),
+                completedAt: nowIso,
+                visit: o.visit
+                  ? { ...o.visit, status: "CLOSED", closedAt: o.visit.closedAt || nowIso }
+                  : { status: "CLOSED", closedAt: nowIso },
+                execution: o.execution
+                  ? { ...o.execution, visitStatus: "PAID_VISIT_ENDED" as const }
+                  : o.execution,
               }
             : o
         );
         saveOrdersToCache(next);
         return next;
       });
-      notifyOrderJasaUpdated(orderId);
-      await httpOrderJasaRepository.confirmCustomerCompleted(orderId);
-      void syncBackendOrders(true);
-      return true;
+      try {
+        await httpOrderJasaRepository.confirmCustomerCompleted(orderId);
+        notifyOrderJasaUpdated(orderId);
+        void syncBackendOrders(true, true);
+        return true;
+      } catch (err) {
+        void syncBackendOrders(true, true);
+        throw err;
+      }
     },
     [syncBackendOrders]
   );

@@ -952,6 +952,14 @@ export default function ProductDetailPage() {
 
               {/* Desktop Action Buttons: Compact, Clean Horizontal Row */}
               <div className="hidden md:flex items-center gap-3 pt-3">
+                <Link
+                  href={`/chat?partner_id=${encodeURIComponent(product.merchantOrganizationId || "0c1467e7-af68-4b26-ae84-daa41d51aed0")}&partner_type=merchant&partner_name=${encodeURIComponent(merchantStoreName || "BUDIAJASA")}&ctx_type=catalog_barang&ctx_id=${encodeURIComponent(product.productId)}&ctx_title=${encodeURIComponent(product.name)}&ctx_price=${encodeURIComponent(selectedVariant?.price || product.minPrice || 0)}&ctx_thumb=${encodeURIComponent(product.primary_image_url || "")}&ctx_summary=${encodeURIComponent(`Penjual: ${merchantStoreName || "BUDIAJASA"} • ${selectedVariant?.name ? `Varian: ${selectedVariant.name} • ` : ""}Stok Tersedia`)}&ctx_url=${encodeURIComponent(`/products/${product.productId}`)}`}
+                  className="py-2.5 px-3.5 rounded-xl border border-slate-200 hover:border-emerald-300 hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 font-bold text-xs flex items-center justify-center gap-1.5 transition shadow-xs"
+                  title="Chat Penjual mengenai produk ini"
+                >
+                  <ChatCircleDots size={16} weight="bold" className="text-emerald-600 shrink-0" />
+                  <span>Chat Toko</span>
+                </Link>
                 <button
                   id="btn-add-to-cart"
                   type="button"
@@ -1442,6 +1450,15 @@ export default function ProductDetailPage() {
         >
           <Storefront size={20} weight="regular" />
           <span className="text-[9px] font-semibold mt-0.5">Toko</span>
+        </Link>
+
+        {/* Shortcut 1.5: Chat Toko */}
+        <Link
+          href={`/chat?partner_id=${encodeURIComponent(product.merchantOrganizationId || "0c1467e7-af68-4b26-ae84-daa41d51aed0")}&partner_type=merchant&partner_name=${encodeURIComponent(merchantStoreName || "BUDIAJASA")}&ctx_type=catalog_barang&ctx_id=${encodeURIComponent(product.productId)}&ctx_title=${encodeURIComponent(product.name)}&ctx_price=${encodeURIComponent(selectedVariant?.price || product.minPrice || 0)}&ctx_thumb=${encodeURIComponent(product.primary_image_url || "")}&ctx_summary=${encodeURIComponent(`Penjual: ${merchantStoreName || "BUDIAJASA"} • ${selectedVariant?.name ? `Varian: ${selectedVariant.name} • ` : ""}Stok Tersedia`)}&ctx_url=${encodeURIComponent(`/products/${product.productId}`)}`}
+          className="flex flex-col items-center justify-center px-2 py-1 text-slate-600 hover:text-emerald-600 shrink-0"
+        >
+          <ChatCircleDots size={20} weight="regular" />
+          <span className="text-[9px] font-semibold mt-0.5">Chat</span>
         </Link>
 
         {/* Shortcut 2: Cart */}

@@ -165,7 +165,7 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="min-h-[78vh] flex items-center justify-center py-12 px-4 bg-slate-50/50">
+    <div className="min-h-[78vh] flex items-center justify-center py-12 px-4 bg-white">
       <div className="max-w-md w-full bg-white rounded-3xl border border-slate-200/80 p-8 shadow-servio-md space-y-6">
         
         {/* Step Indicator */}

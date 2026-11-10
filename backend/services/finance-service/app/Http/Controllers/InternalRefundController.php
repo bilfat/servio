@@ -90,15 +90,19 @@ class InternalRefundController extends Controller
 
     public function showRefund(string $refundId): JsonResponse
     {
-        $refund = RefundTransaction::find($refundId);
+        $refund = RefundTransaction::with(['customerSPayAccount', 'paymentAllocation'])->find($refundId);
         if (!$refund) {
             return ApiResponse::error('REFUND_NOT_FOUND', 'Data refund tidak ditemukan.', 404);
         }
 
+        $customerId = $refund->customerSPayAccount?->owner_external_id
+            ?? $refund->paymentAllocation?->customer_id
+            ?? $refund->allocation?->customer_id;
+
         return ApiResponse::success([
             'refund_id' => $refund->id,
             'case_id' => $refund->source_funding_reference,
-            'customer_id' => $refund->customerSPayAccount?->owner_external_id,
+            'customer_id' => $customerId,
             'status' => $refund->status,
             'refund_amount_idr' => $refund->requested_amount_idr,
             'credited_amount_idr' => $refund->credited_amount_idr,

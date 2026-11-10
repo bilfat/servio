@@ -253,6 +253,7 @@ export function resolveCurrentStageIndex(order: ServiceOrder): number {
   // Step 13: Visit Closed
   if (
     subStatus === "VISIT_CLOSED" ||
+    subStatus === "AWAITING_CUSTOMER_CONFIRMATION" ||
     subStatus === "WAITING_WORKER_CLOSE_VISIT" ||
     visitStatus === "PAID_VISIT_ENDED" ||
     visitStatus === "CLOSED" ||
@@ -280,7 +281,6 @@ export function resolveCurrentStageIndex(order: ServiceOrder): number {
     subStatus === "WORKER_FINISHED" ||
     subStatus === "WORK_FINISHED" ||
     subStatus === "EXECUTION_FINISHED" ||
-    subStatus === "AWAITING_CUSTOMER_CONFIRMATION" ||
     Boolean(order.execution?.finishedAt)
   ) {
     return 10; // Tahap 11 (Index 10)
@@ -290,6 +290,7 @@ export function resolveCurrentStageIndex(order: ServiceOrder): number {
   if (
     subStatus === "EXECUTING" ||
     subStatus === "EXECUTION_IN_PROGRESS" ||
+    subStatus === "IN_PERSON_CONSENT_RECORDED" ||
     subStatus === "PRICE_APPROVED" ||
     subStatus === "CONSENT_APPROVED" ||
     subStatus === "APPROVED_BY_CUSTOMER" ||
@@ -410,6 +411,14 @@ export function ServiceOrderStageBanner({ order, role }: ServiceOrderStageBanner
       ? "Pesanan ditolak oleh mitra penyedia jasa."
       : "Pesanan dibatalkan sesuai kebijakan operasional.");
 
+  const isCompleted =
+    order.status === "COMPLETED" ||
+    order.subStatus === "COMPLETED_NORMAL" ||
+    order.subStatus === "AUTO_COMPLETED_72H";
+
+  const warrantyDays = order.serviceSnapshot?.warrantyDurationDays ?? 0;
+  const hasWarranty = warrantyDays > 0;
+
   const currentStageIndex = resolveCurrentStageIndex(order);
   const currentStage = LIFECYCLE_STAGES[currentStageIndex] || LIFECYCLE_STAGES[0];
 
@@ -419,13 +428,71 @@ export function ServiceOrderStageBanner({ order, role }: ServiceOrderStageBanner
     ? Math.min(100, (currentStageIndex / (totalStages - 1)) * 100)
     : 0;
 
-  // Contextual description based on role
-  const resolvedDescription =
-    role === "PROVIDER"
+  // Dynamic title & contextual description based on status, warranty, and role
+  const stageTitle = (() => {
+    if (isCompleted) {
+      return hasWarranty
+        ? `Pesanan Selesai & Garansi Resmi ${warrantyDays} Hari Aktif`
+        : "Pesanan Selesai Tuntas";
+    }
+    if (currentStage.id === "VISIT_CLOSED") {
+      if (
+        order.subStatus === "VISIT_CLOSED" ||
+        order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION"
+      ) {
+        return "Kunjungan Ditutup — Menunggu Konfirmasi Pelanggan";
+      }
+      if (order.subStatus === "WAITING_WORKER_CLOSE_VISIT") {
+        return "Pembayaran Lunas — Menunggu Penutupan Kunjungan";
+      }
+    }
+    return currentStage.title;
+  })();
+
+  const resolvedDescription = (() => {
+    if (isCompleted) {
+      if (role === "CUSTOMER") {
+        return hasWarranty
+          ? `Pesanan telah Anda verifikasi selesai dan berfungsi dengan baik! Perlindungan garansi resmi ${warrantyDays} hari kini aktif di Pusat Garansi Servio, dan Anda dapat memberikan ulasan.`
+          : "Pesanan telah Anda verifikasi selesai dan unit dipastikan bekerja dengan baik! Pembayaran diteruskan ke sistem escrow dan Anda dapat memberikan ulasan.";
+      }
+      if (role === "PROVIDER") {
+        return hasWarranty
+          ? `Pesanan selesai sukses (COMPLETED). Masa perlindungan garansi ${warrantyDays} hari aktif dan dana masuk penahanan escrow 120 jam.`
+          : "Pesanan selesai sukses (COMPLETED). Dana masuk masa penahanan escrow 120 jam sebelum pencairan otomatis.";
+      }
+      return "Pekerjaan selesai sukses dan dikonfirmasi baik oleh pelanggan. Riwayat kinerja tercatat di rekapitulasi performa teknisi.";
+    }
+    if (
+      currentStage.id === "VISIT_CLOSED" &&
+      (order.subStatus === "VISIT_CLOSED" || order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION")
+    ) {
+      if (role === "CUSTOMER") {
+        return "Pembayaran pengerjaan telah lunas dan teknisi telah menutup kunjungan. Pastikan kembali hasil servis bekerja dengan baik, lalu tekan 'Pekerjaan Telah Selesai'.";
+      }
+      if (role === "PROVIDER") {
+        return "Kunjungan lapangan telah ditutup teknisi. Menunggu pelanggan mengonfirmasi pekerjaan selesai dengan baik.";
+      }
+      return "Kunjungan lapangan telah resmi Anda tutup. Menunggu konfirmasi akhir dari pelanggan.";
+    }
+    if (
+      currentStage.id === "VISIT_CLOSED" &&
+      order.subStatus === "WAITING_WORKER_CLOSE_VISIT"
+    ) {
+      if (role === "CUSTOMER") {
+        return "Pembayaran pengerjaan telah lunas terverifikasi di escrow. Menunggu teknisi menekan 'Akhiri Kunjungan' di lokasi.";
+      }
+      if (role === "PROVIDER") {
+        return "Pembayaran pengerjaan telah lunas diverifikasi. Menunggu teknisi menutup kunjungan lapangan secara resmi.";
+      }
+      return "Pembayaran pengerjaan telah lunas diverifikasi! Segera rapikan peralatan kerja dan tekan 'Akhiri Kunjungan'.";
+    }
+    return role === "PROVIDER"
       ? currentStage.descriptionProvider
       : role === "WORKER"
       ? currentStage.descriptionWorker
       : currentStage.descriptionCustomer;
+  })();
 
   // Check if today is scheduled date
   const todayStr = new Date().toISOString().split("T")[0];
@@ -476,7 +543,15 @@ export function ServiceOrderStageBanner({ order, role }: ServiceOrderStageBanner
   }, [isExpanded, targetProgressPercent]);
 
   return (
-    <div className={`w-full rounded-2xl bg-white border shadow-servio-xs overflow-hidden transition-all duration-300 ${isCancelled ? "border-rose-200" : "border-slate-200/90"}`}>
+    <div
+      className={`w-full rounded-2xl bg-white border shadow-servio-xs overflow-hidden transition-all duration-300 ${
+        isCancelled
+          ? "border-rose-200"
+          : isCompleted
+          ? "border-emerald-200/90"
+          : "border-slate-200/90"
+      }`}
+    >
       {/* --------------------------------------------------------------------- */}
       {/* 1. TOP COMPACT SUMMARY BANNER (ALWAYS VISIBLE)                         */}
       {/* --------------------------------------------------------------------- */}
@@ -484,6 +559,8 @@ export function ServiceOrderStageBanner({ order, role }: ServiceOrderStageBanner
         className={`p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b ${
           isCancelled
             ? "bg-gradient-to-r from-rose-50/90 via-red-50/40 to-white border-rose-200/80"
+            : isCompleted
+            ? "bg-gradient-to-r from-emerald-50/85 via-teal-50/40 to-white border-emerald-200/70"
             : "bg-gradient-to-r from-sky-50/70 via-indigo-50/40 to-white border-slate-100"
         }`}
       >
@@ -492,11 +569,19 @@ export function ServiceOrderStageBanner({ order, role }: ServiceOrderStageBanner
             className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 mt-0.5 shadow-2xs ${
               isCancelled
                 ? "bg-rose-100 border border-rose-200 text-rose-600"
+                : isCompleted
+                ? "bg-emerald-100 border border-emerald-200 text-emerald-700"
                 : "bg-primary/10 border border-primary/20 text-primary"
             }`}
           >
             {isCancelled ? (
               <XCircle size={22} weight="bold" />
+            ) : isCompleted ? (
+              hasWarranty ? (
+                <ShieldCheck size={22} weight="fill" />
+              ) : (
+                <CheckCircle size={22} weight="fill" />
+              )
             ) : (
               React.createElement(currentStage.icon, { size: 20, weight: "bold" })
             )}
@@ -512,6 +597,25 @@ export function ServiceOrderStageBanner({ order, role }: ServiceOrderStageBanner
                     ✓ Refund 100% S-Pay (Rp {(order.serviceSnapshot.diagnosisFee || 50000).toLocaleString("id-ID")})
                   </span>
                 </>
+              ) : isCompleted ? (
+                <>
+                  <span className="font-mono text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-emerald-600 text-white shadow-2xs">
+                    Tahap {currentStage.stepNo} dari {totalStages}
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                    ✓ Selesai Tuntas
+                  </span>
+                  {hasWarranty ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                      <ShieldCheck size={12} weight="fill" />
+                      Garansi Resmi {warrantyDays} Hari Aktif
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                      Tanpa Garansi Tambahan
+                    </span>
+                  )}
+                </>
               ) : (
                 <>
                   <span className="font-mono text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full bg-primary text-white shadow-2xs">
@@ -522,20 +626,23 @@ export function ServiceOrderStageBanner({ order, role }: ServiceOrderStageBanner
                       Terjadwal ({order.schedule.date})
                     </span>
                   )}
-                  {order.status === "COMPLETED" && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                      Selesai Tuntas
-                    </span>
-                  )}
                 </>
               )}
             </div>
-            <h3 className={`text-sm sm:text-base font-black font-display leading-tight truncate ${isCancelled ? "text-rose-950" : "text-slate-900"}`}>
+            <h3
+              className={`text-sm sm:text-base font-black font-display leading-tight truncate ${
+                isCancelled
+                  ? "text-rose-950"
+                  : isCompleted
+                  ? "text-emerald-950"
+                  : "text-slate-900"
+              }`}
+            >
               {isCancelled
                 ? isRejectedByProvider
                   ? `Pesanan Ditolak oleh Mitra Toko (${currentStage.title})`
                   : `Pesanan Telah Dibatalkan (${currentStage.title})`
-                : currentStage.title}
+                : stageTitle}
             </h3>
             <p className={`text-xs leading-relaxed max-w-3xl line-clamp-2 md:line-clamp-none ${isCancelled ? "text-rose-800 font-medium" : "text-slate-600"}`}>
               {isCancelled
@@ -576,12 +683,18 @@ export function ServiceOrderStageBanner({ order, role }: ServiceOrderStageBanner
             <div className="flex items-center gap-2">
               <span
                 className={`w-2.5 h-2.5 rounded-full ring-2 ${
-                  isCancelled ? "bg-rose-600 ring-rose-200" : "bg-[#0F4C81] ring-sky-200"
+                  isCancelled
+                    ? "bg-rose-600 ring-rose-200"
+                    : isCompleted
+                    ? "bg-emerald-600 ring-emerald-200"
+                    : "bg-[#0F4C81] ring-sky-200"
                 }`}
               />
               <h4 className="font-display font-bold text-xs sm:text-sm text-slate-900 tracking-tight">
                 {isCancelled
                   ? `Alur Perjalanan Pesanan Jasa (Terhenti di Tahap ${currentStage.stepNo}: ${currentStage.shortLabel})`
+                  : isCompleted
+                  ? "Alur Perjalanan Pesanan Jasa — Seluruh Tahapan Tuntas"
                   : "Alur Perjalanan Pesanan Jasa (14 Tahapan Terstandarisasi)"}
               </h4>
             </div>
@@ -591,11 +704,15 @@ export function ServiceOrderStageBanner({ order, role }: ServiceOrderStageBanner
                 className={`font-extrabold px-2.5 py-0.5 rounded-full border ${
                   isCancelled
                     ? "text-rose-700 bg-rose-100 border-rose-300"
+                    : isCompleted
+                    ? "text-emerald-800 bg-emerald-100 border-emerald-300"
                     : "text-[#0F4C81] bg-sky-100/80 border-[#0F4C81]/20"
                 }`}
               >
                 {isCancelled
                   ? `Terhenti di Tahap ${currentStage.stepNo} / ${totalStages}`
+                  : isCompleted
+                  ? `100% (${totalStages} / ${totalStages} Tuntas)`
                   : `${Math.round(targetProgressPercent)}% (${currentStage.stepNo} / ${totalStages} Tahapan)`}
               </span>
             </div>
@@ -631,10 +748,14 @@ export function ServiceOrderStageBanner({ order, role }: ServiceOrderStageBanner
                   });
                 }}
                 className={`hover:underline font-bold cursor-pointer text-[11px] ${
-                  isCancelled ? "text-rose-700" : "text-[#0F4C81]"
+                  isCancelled
+                    ? "text-rose-700"
+                    : isCompleted
+                    ? "text-emerald-700"
+                    : "text-[#0F4C81]"
                 }`}
               >
-                {isCancelled ? "Fokus ke Tahap Penolakan" : "Fokus ke Tahap Aktif"}
+                {isCancelled ? "Fokus ke Tahap Penolakan" : isCompleted ? "Fokus ke Tahap Selesai" : "Fokus ke Tahap Aktif"}
               </button>
             </div>
 
@@ -665,11 +786,13 @@ export function ServiceOrderStageBanner({ order, role }: ServiceOrderStageBanner
                       transitionTimingFunction: "cubic-bezier(0.25, 0.8, 0.25, 1)",
                       background: isCancelled
                         ? "linear-gradient(90deg, #10b981 0%, #f59e0b 60%, #e11d48 100%)"
+                        : isCompleted
+                        ? "linear-gradient(90deg, #10b981 0%, #059669 100%)"
                         : "linear-gradient(90deg, #10b981 0%, #0F4C81 70%, #2563eb 100%)",
                     }}
                   >
-                    {/* Glowing Leading Head Pulser */}
-                    {animatedProgress > 0 && (
+                    {/* Glowing Leading Head Pulser (static when completed) */}
+                    {animatedProgress > 0 && !isCompleted && (
                       <span
                         className={`absolute -right-2 -top-[5px] w-4 h-4 bg-white rounded-full border-2 shadow-sm flex items-center justify-center ${
                           isCancelled
@@ -690,16 +813,21 @@ export function ServiceOrderStageBanner({ order, role }: ServiceOrderStageBanner
                 {/* Stepper Nodes Flex Row (Spacious & Lega: min-w-[96px] per Node) */}
                 <div className="flex items-start justify-between relative z-10 gap-1">
                   {LIFECYCLE_STAGES.map((st, idx) => {
-                    const isPassed = idx < currentStageIndex;
-                    const isCurrent = idx === currentStageIndex;
+                    const isFinalCompletedNode = isCompleted && idx === totalStages - 1;
+                    const isPassed = idx < currentStageIndex || isFinalCompletedNode;
+                    const isCurrent = idx === currentStageIndex && !isCompleted;
                     const isFuture = idx > currentStageIndex;
+                    const nodeShortLabel =
+                      st.id === "COMPLETED" && !hasWarranty ? "Selesai & Tuntas" : st.shortLabel;
 
                     return (
                       <div
                         key={st.id}
-                        ref={isCurrent ? activeNodeRef : undefined}
+                        ref={idx === currentStageIndex ? activeNodeRef : undefined}
                         className={`flex-1 min-w-[96px] max-w-[108px] flex flex-col items-center text-center p-2.5 rounded-2xl transition-all duration-300 ${
-                          isCurrent
+                          isFinalCompletedNode
+                            ? "bg-emerald-50/90 border-2 border-emerald-500 ring-4 ring-emerald-500/15 shadow-sm"
+                            : isCurrent
                             ? isCancelled
                               ? "bg-rose-50/95 border-2 border-rose-600 ring-4 ring-rose-500/20 shadow-md scale-105"
                               : "bg-sky-50/90 border-2 border-[#0F4C81] ring-4 ring-[#0F4C81]/15 shadow-md scale-105"
@@ -734,7 +862,9 @@ export function ServiceOrderStageBanner({ order, role }: ServiceOrderStageBanner
                         {/* Step Short Label */}
                         <span
                           className={`text-[11px] font-bold leading-tight h-8 flex items-center justify-center line-clamp-2 px-1 ${
-                            isCurrent
+                            isFinalCompletedNode
+                              ? "text-emerald-950 font-black"
+                              : isCurrent
                               ? isCancelled
                                 ? "text-rose-900 font-black"
                                 : "text-[#0F4C81] font-black"
@@ -745,12 +875,16 @@ export function ServiceOrderStageBanner({ order, role }: ServiceOrderStageBanner
                               : "text-slate-500"
                           }`}
                         >
-                          {st.shortLabel}
+                          {nodeShortLabel}
                         </span>
 
                         {/* Status Pill Badge */}
                         <span className="mt-2 text-[9px] font-mono uppercase tracking-wider block">
-                          {isPassed ? (
+                          {isFinalCompletedNode ? (
+                            <span className="text-emerald-800 font-extrabold bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300 shadow-2xs">
+                              {hasWarranty ? "Garansi Aktif" : "Tuntas"}
+                            </span>
+                          ) : isPassed ? (
                             <span className="text-emerald-700 font-bold bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-200">
                               Tuntas
                             </span>
@@ -783,7 +917,11 @@ export function ServiceOrderStageBanner({ order, role }: ServiceOrderStageBanner
             <div className="flex items-center gap-2">
               <span
                 className={`w-2.5 h-2.5 rounded-full ${
-                  isCancelled ? "bg-rose-500 animate-ping" : "bg-emerald-500 animate-ping"
+                  isCancelled
+                    ? "bg-rose-500 animate-ping"
+                    : isCompleted
+                    ? "bg-emerald-600"
+                    : "bg-emerald-500 animate-ping"
                 }`}
               />
               <span className="font-medium text-slate-700">
@@ -791,9 +929,13 @@ export function ServiceOrderStageBanner({ order, role }: ServiceOrderStageBanner
                   <>
                     Status Pesanan: <strong className="text-rose-800 font-bold">{isRejectedByProvider ? "Ditolak oleh Mitra Toko" : "Pesanan Dibatalkan"}</strong> (Terhenti di Tahap {currentStage.stepNo}: {currentStage.title})
                   </>
+                ) : isCompleted ? (
+                  <>
+                    Status Pesanan: <strong className="text-emerald-800 font-bold">{stageTitle}</strong>
+                  </>
                 ) : (
                   <>
-                    Tahap Sekarang: <strong className="text-slate-900 font-bold">{currentStage.title}</strong>
+                    Tahap Sekarang: <strong className="text-slate-900 font-bold">{stageTitle}</strong>
                   </>
                 )}
               </span>
@@ -801,6 +943,10 @@ export function ServiceOrderStageBanner({ order, role }: ServiceOrderStageBanner
             <span className="text-[11px] text-slate-400 italic">
               {isCancelled
                 ? "Pesanan ditutup. Dana diagnosis 100% telah dikembalikan ke saldo S-Pay pelanggan."
+                : isCompleted
+                ? hasWarranty
+                  ? `Seluruh 14 tahapan tuntas. Garansi layanan ${warrantyDays} hari aktif & terlindungi.`
+                  : "Seluruh 14 tahapan tuntas dan hasil pekerjaan telah dikonfirmasi bekerja dengan baik."
                 : "Animasi garis berjalan secara otomatis menyesuaikan setiap kali pesanan diperbarui."}
             </span>
           </div>

@@ -46,3 +46,8 @@ backend/**/storage/framework/cache/
 backend/**/storage/framework/sessions/
 backend/**/storage/framework/views/
 
+# AI Diagnosis uploaded complaint media & keyframes
+/storage/ai-media/
+storage/ai-media/
+
+

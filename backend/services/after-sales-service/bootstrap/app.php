@@ -19,18 +19,13 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend(\App\Http\Middleware\CorrelationTraceMiddleware::class);
+
         $middleware->alias([
             'after_sales.auth' => \App\Http\Middleware\AuthenticateAfterSalesActor::class,
             'after_sales.role' => \App\Http\Middleware\RequireAfterSalesRole::class,
             'after_sales.internal' => \App\Http\Middleware\RequireInternalServiceKey::class,
             'after_sales.idempotency' => \App\Http\Middleware\HandleAfterSalesIdempotency::class,
-        ]);
-
-        $middleware->statefulApi();
-
-        $middleware->validateCsrfTokens(except: [
-            'internal/*',
-            'api/*',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

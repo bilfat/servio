@@ -1,7 +1,58 @@
-
-   WARN  Unable to respect the `PHP_CLI_SERVER_WORKERS` environment variable without the `--no-reload` flag. Only creating a single server.  
-
-   INFO  Server running on [http://127.0.0.1:8004].  
-
-  Press Ctrl+C to stop the server
-
+[Mon Nov 9 12:59:17 2026] 127.0.0.1:58832 [GET] URI: /api/v1/services
+[Mon Nov 9 12:59:33 2026] 127.0.0.1:52812 [GET] URI: /api/v1/services
+[Mon Nov 9 12:59:34 2026] 127.0.0.1:52545 [GET] URI: /api/v1/services
+[Mon Nov 9 12:59:35 2026] 127.0.0.1:57793 [GET] URI: /api/v1/services
+[Mon Nov 9 13:07:44 2026] 127.0.0.1:61588 [GET] URI: /api/v1/services
+[Mon Nov 9 13:07:45 2026] 127.0.0.1:52877 [GET] URI: /api/v1/services
+[Mon Nov 9 13:07:55 2026] 127.0.0.1:56565 [GET] URI: /api/v1/services/6129bf1a-ee2b-4c63-92c0-d32f9df2bfcd
+[Mon Nov 9 13:07:56 2026] 127.0.0.1:56566 [GET] URI: /api/v1/services
+[Mon Nov 9 13:07:57 2026] 127.0.0.1:56568 [GET] URI: /api/v1/services/6129bf1a-ee2b-4c63-92c0-d32f9df2bfcd
+[Mon Nov 9 13:07:57 2026] 127.0.0.1:56569 [GET] URI: /api/v1/services
+[Mon Nov 9 13:10:27 2026] 127.0.0.1:49672 [GET] URI: /api/v1/services
+[Mon Nov 9 13:10:28 2026] 127.0.0.1:62864 [GET] URI: /api/v1/services
+[Mon Nov 9 13:10:31 2026] 127.0.0.1:56293 [GET] URI: /api/v1/services/6129bf1a-ee2b-4c63-92c0-d32f9df2bfcd
+[Mon Nov 9 13:10:32 2026] 127.0.0.1:56294 [GET] URI: /api/v1/services
+[Mon Nov 9 13:10:33 2026] 127.0.0.1:56296 [GET] URI: /api/v1/services/6129bf1a-ee2b-4c63-92c0-d32f9df2bfcd
+[Mon Nov 9 13:10:33 2026] 127.0.0.1:64479 [GET] URI: /api/v1/services
+[Mon Nov 9 13:10:43 2026] 127.0.0.1:58094 [GET] URI: /api/v1/services
+[Mon Nov 9 13:10:43 2026] 127.0.0.1:50784 [GET] URI: /api/v1/services
+[Mon Nov 9 13:10:46 2026] 127.0.0.1:51698 [GET] URI: /api/v1/services/6129bf1a-ee2b-4c63-92c0-d32f9df2bfcd
+[Mon Nov 9 13:10:46 2026] 127.0.0.1:51699 [GET] URI: /api/v1/services
+[Mon Nov 9 13:10:47 2026] 127.0.0.1:51701 [GET] URI: /api/v1/services/6129bf1a-ee2b-4c63-92c0-d32f9df2bfcd
+[Mon Nov 9 13:10:48 2026] 127.0.0.1:58274 [GET] URI: /api/v1/services
+[Mon Nov 9 13:17:26 2026] 127.0.0.1:59325 [GET] URI: /api/v1/services
+[Mon Nov 9 13:17:27 2026] 127.0.0.1:52352 [GET] URI: /api/v1/services
+[Mon Nov 9 13:17:29 2026] 127.0.0.1:58544 [GET] URI: /api/v1/services/6129bf1a-ee2b-4c63-92c0-d32f9df2bfcd
+[Mon Nov 9 13:17:30 2026] 127.0.0.1:58545 [GET] URI: /api/v1/services
+[Mon Nov 9 13:17:30 2026] 127.0.0.1:58547 [GET] URI: /api/v1/services/6129bf1a-ee2b-4c63-92c0-d32f9df2bfcd
+[Mon Nov 9 13:17:31 2026] 127.0.0.1:54316 [GET] URI: /api/v1/services
+[Mon Nov 9 13:18:18 2026] 127.0.0.1:60080 [GET] URI: /api/v1/services
+[Mon Nov 9 13:18:19 2026] 127.0.0.1:54276 [GET] URI: /api/v1/services
+[Mon Nov 9 13:18:21 2026] 127.0.0.1:57796 [GET] URI: /api/v1/services/6129bf1a-ee2b-4c63-92c0-d32f9df2bfcd
+[Mon Nov 9 13:18:22 2026] 127.0.0.1:57797 [GET] URI: /api/v1/services
+[Mon Nov 9 13:18:23 2026] 127.0.0.1:57799 [GET] URI: /api/v1/services/6129bf1a-ee2b-4c63-92c0-d32f9df2bfcd
+[Mon Nov 9 13:18:24 2026] 127.0.0.1:57800 [GET] URI: /api/v1/services
+[Mon Nov 9 14:15:38 2026] 127.0.0.1:52537 [GET] URI: /api/v1/services
+[Mon Nov 9 14:16:00 2026] 127.0.0.1:54094 [GET] URI: /api/v1/services
+[Mon Nov 9 14:16:02 2026] 127.0.0.1:51273 [GET] URI: /api/v1/service-media/e2cdd6f2-c651-4fcf-a2f1-37d8a1224819
+[Mon Nov 9 14:16:08 2026] 127.0.0.1:64418 [GET] URI: /api/v1/service-media/3765adfa-be27-45bf-b317-08e35f10ca78
+[Mon Nov 9 14:16:50 2026] 127.0.0.1:61400 [GET] URI: /api/v1/governance/service-offerings
+[Mon Nov 9 14:16:55 2026] 127.0.0.1:49749 [GET] URI: /api/v1/governance/service-offerings
+[Mon Nov 9 14:33:37 2026] 127.0.0.1:59160 [GET] URI: /api/v1/services
+[Mon Nov 9 14:33:40 2026] 127.0.0.1:63862 [GET] URI: /api/v1/services
+[Mon Nov 9 14:33:47 2026] 127.0.0.1:62441 [GET] URI: /api/v1/services/6129bf1a-ee2b-4c63-92c0-d32f9df2bfcd
+[Mon Nov 9 14:33:47 2026] 127.0.0.1:62442 [GET] URI: /api/v1/services
+[Mon Nov 9 14:33:47 2026] 127.0.0.1:62444 [GET] URI: /api/v1/services
+[Mon Nov 9 14:33:48 2026] 127.0.0.1:62445 [GET] URI: /api/v1/services/6129bf1a-ee2b-4c63-92c0-d32f9df2bfcd
+[Mon Nov 9 14:35:13 2026] 127.0.0.1:65283 [GET] URI: /api/v1/provider/services
+[Mon Nov 9 14:35:15 2026] 127.0.0.1:65288 [GET] URI: /api/v1/provider/services
+[Mon Nov 9 14:35:16 2026] 127.0.0.1:51149 [GET] URI: /api/v1/service-media/e2cdd6f2-c651-4fcf-a2f1-37d8a1224819
+[Mon Nov 9 14:35:16 2026] 127.0.0.1:51150 [GET] URI: /api/v1/service-media/3765adfa-be27-45bf-b317-08e35f10ca78
+[Mon Nov 9 15:12:38 2026] 127.0.0.1:53458 [GET] URI: /api/v1/provider/services
+[Mon Nov 9 15:12:40 2026] 127.0.0.1:53469 [GET] URI: /api/v1/provider/services
+[Mon Nov 9 15:12:45 2026] 127.0.0.1:58311 [GET] URI: /api/v1/provider/services
+[Mon Nov 9 15:12:47 2026] 127.0.0.1:64030 [GET] URI: /api/v1/provider/services
+[Mon Nov 9 17:37:19 2026] 127.0.0.1:62251 [GET] URI: /api/v1/provider/services
+[Mon Nov 9 17:37:58 2026] 127.0.0.1:63555 [GET] URI: /api/v1/provider/services
+[Mon Nov 9 20:02:53 2026] 127.0.0.1:63970 [GET] URI: /api/v1/governance/service-offerings
+[Mon Nov 9 20:02:59 2026] 127.0.0.1:56594 [GET] URI: /api/v1/governance/service-offerings

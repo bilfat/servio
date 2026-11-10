@@ -546,7 +546,7 @@ function ServicesCatalogContent() {
                 className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-2xl bg-sky-50 text-[#0F4C81] border border-sky-200 text-xs font-bold hover:bg-sky-100 transition shadow-2xs"
               >
                 <Sparkle size={16} weight="fill" className="text-primary" />
-                <span>Diagnosa AI Gratis</span>
+                <span>Diagnosa AI Servio</span>
               </Link>
             </div>
           </div>
@@ -1184,7 +1184,7 @@ export default function ServicesCatalogPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-slate-50 flex items-center justify-center text-xs text-slate-400">
+        <div className="min-h-screen bg-white flex items-center justify-center text-xs text-slate-400">
           <CircleNotch size={24} className="animate-spin text-primary mr-2" />
           Memuat katalog layanan jasa SERVIO...
         </div>

@@ -18,6 +18,8 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend(\App\Http\Middleware\CorrelationTraceMiddleware::class);
+
         $middleware->alias([
             'identity.auth' => \App\Http\Middleware\AuthenticateIdentitySession::class,
             'identity.perm' => \App\Http\Middleware\RequirePermission::class,

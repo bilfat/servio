@@ -1,6 +1,8 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { usePathname } from "next/navigation";
+import { useActiveRole } from "@/context/RoleContext";
 import {
   AfterSalesCase,
   CustomerWarrantyEntitlement,
@@ -13,6 +15,32 @@ import {
   WarrantyOption as BackendOption,
   SubmitCasePayload,
 } from "@/lib/afterSalesApi";
+
+export const AFTER_SALES_UPDATED_EVENT = "servio_after_sales_updated";
+export const AFTER_SALES_BROADCAST_CHANNEL = "servio_after_sales_channel";
+
+export function notifyAfterSalesUpdated(detail?: any) {
+  if (typeof window === "undefined") return;
+  try {
+    window.dispatchEvent(new CustomEvent(AFTER_SALES_UPDATED_EVENT, { detail }));
+  } catch {
+    // ignore
+  }
+  try {
+    if ("BroadcastChannel" in window) {
+      const bc = new BroadcastChannel(AFTER_SALES_BROADCAST_CHANNEL);
+      bc.postMessage({ type: "SYNC_AFTER_SALES", timestamp: Date.now(), detail });
+      bc.close();
+    }
+  } catch {
+    // fallback
+  }
+  try {
+    localStorage.setItem("servio_after_sales_sync", String(Date.now()));
+  } catch {
+    // fallback
+  }
+}
 
 export interface SubmitClaimPayload {
   caseType: "claim_product" | "claim_service";
@@ -66,7 +94,7 @@ interface AfterSalesContextType {
   setActiveOrgId: (orgId: string) => void;
   isLoading: boolean;
   error: string | null;
-  refreshData: () => Promise<void>;
+  refreshData: (overrideScope?: AfterSalesFetchScope, isSilent?: boolean) => Promise<void>;
 
   // Selectors
   getCaseById: (id: string) => AfterSalesCase | undefined;
@@ -93,6 +121,7 @@ interface AfterSalesContextType {
   customerReportIssue: (caseId: string, reason: string) => Promise<{ message: string }>;
   customerAddEvidence: (caseId: string, mediaRef: string, contentType?: string, sizeBytes?: number) => Promise<void>;
   customerApprovePaidWork: (caseId: string) => Promise<void>;
+  customerConfirmCompletion: (caseId: string, notes?: string, rating?: number) => Promise<void>;
 
   // Merchant / Provider Actions
   merchantApproveCase: (caseId: string, solution?: string, note?: string) => Promise<void>;
@@ -178,8 +207,8 @@ export const SHARED_ORG_NAME_MAP: Record<string, string> = {
   "merch-jaya-motor": "Jaya Motor Official",
   "org-prov-surya-teknik": "Surya Teknik AC & Listrik",
   "prov-surya-teknik": "Surya Teknik AC & Listrik",
-  "0c1467e7-af68-4b26-ae84-daa41d51aed0": "Sinar AC & Sparepart Glodok (BUDIAJASA)",
-  "0740d857-b665-4191-aaf5-d7dd3611dc1d": "PT Servio Mandiri Teknik",
+  "0c1467e7-af68-4b26-ae84-daa41d51aed0": "BUDIAJASA",
+  "0740d857-b665-4191-aaf5-d7dd3611dc1d": "sukses gembira",
   "087c97b7-2c46-4b97-ba35-1177dd72ba3a": "Bengkel Sejuk Sentosa AC",
   "2290a88d-7a24-4677-b940-5823cdd68c1d": "Glodok Teknik & Sparepart AC Official",
   "4a5e9ad0-b06e-4434-ad8c-e87e755472bd": "PT Nusantara Parts Prima",
@@ -327,7 +356,12 @@ export function normalizeBackendCaseToUiCase(bc: BackendCase): AfterSalesCase {
     customerId: bc.customer_id,
     customerName: "Pelanggan Terverifikasi",
     organizationId: bc.owner_org_id,
-    organizationName: orgNameMap[bc.owner_org_id] || bc.owner_org_id,
+    organizationName:
+      ((bc as any).organization_name && !/^[0-9a-f-]{36}$/i.test((bc as any).organization_name)
+        ? (bc as any).organization_name
+        : null) ||
+      orgNameMap[bc.owner_org_id] ||
+      bc.owner_org_id,
     organizationType: bc.owner_org_type || (isGoods ? "MERCHANT" : "PROVIDER"),
     itemTitle,
     itemImageUrl,
@@ -767,120 +801,298 @@ export function normalizeBackendOptionToPreset(opt: BackendOption): WarrantyPres
 
 const AfterSalesContext = createContext<AfterSalesContextType | null>(null);
 
+type AfterSalesFetchScope = "customer" | "merchant" | "provider" | "all" | "none";
+
+function resolveAfterSalesScope(
+  pathname: string,
+  activeRole: string,
+  canFetchCustomer: boolean
+): AfterSalesFetchScope {
+  if (pathname.startsWith("/merchant")) return "merchant";
+  if (pathname.startsWith("/provider")) return "provider";
+  if (pathname.startsWith("/warranties") || pathname.startsWith("/orders/")) {
+    return "customer";
+  }
+  return "none";
+}
+
 export function AfterSalesProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname() || "";
+  const { user, isAuthenticated, isPublicGuest, isLoadingAuth, activeRole } = useActiveRole();
+
   const [cases, setCases] = useState<AfterSalesCase[]>([]);
   const [warranties, setWarranties] = useState<CustomerWarrantyEntitlement[]>([]);
   const [presets, setPresets] = useState<WarrantyPreset[]>([]);
-  const [activeOrgId, setActiveOrgId] = useState<string>("merch-jaya-motor");
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const refreshData = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      // 1. Fetch customer warranties
-      const wRes = await afterSalesApi.customer.getWarranties({ per_page: 50 }).catch(() => null);
-      let loadedWarranties: CustomerWarrantyEntitlement[] = [];
-      if (wRes?.data && Array.isArray(wRes.data)) {
-        loadedWarranties = wRes.data.map(normalizeBackendWarrantyToUiWarranty);
-      }
-
-      // 2. Fetch customer & business cases and merge by id
-      const [cRes, bRes] = await Promise.all([
-        afterSalesApi.customer.getCases({ per_page: 50 }).catch(() => null),
-        afterSalesApi.business.getCases({ per_page: 50 }).catch(() => null),
-      ]);
-      const mergedMap = new Map<string, AfterSalesCase>();
-      if (cRes?.data && Array.isArray(cRes.data)) {
-        for (const raw of cRes.data) {
-          const ui = normalizeBackendCaseToUiCase(raw);
-          mergedMap.set(ui.id, ui);
-        }
-      }
-      if (bRes?.data && Array.isArray(bRes.data)) {
-        for (const raw of bRes.data) {
-          const ui = normalizeBackendCaseToUiCase(raw);
-          mergedMap.set(ui.id, ui);
-        }
-      }
-      const loadedCases = Array.from(mergedMap.values());
-      if (cRes?.data || bRes?.data) {
-        setCases(loadedCases);
-      }
-
-      // 2b. Cross-link active/completed case to warranty entitlement
-      if (loadedWarranties.length > 0) {
-        const enrichedWarranties = loadedWarranties.map((w) => {
-          const matchedCases = loadedCases.filter(
-            (c) =>
-              (c.warrantyId && c.warrantyId === w.id) ||
-              (c.sourceOrderId && c.sourceOrderId === w.orderId)
-          );
-          const activeCase = matchedCases.find(
-            (c) => c.mainStatus !== "COMPLETED" && c.mainStatus !== "REJECTED" && c.mainStatus !== "CANCELLED"
-          );
-          const latestCase = matchedCases[0];
-          const hasActiveCase = Boolean(activeCase);
-          const isEligible = w.status === "ACTIVE" && !hasActiveCase && ((w.remainingQuantity === undefined) || w.remainingQuantity > 0);
-
-          return {
-            ...w,
-            hasActiveCase,
-            activeCaseId: activeCase?.id || latestCase?.id,
-            activeCaseStatus: activeCase?.mainStatus || latestCase?.mainStatus,
-            activeCaseNumber: activeCase?.caseNumber || latestCase?.caseNumber,
-            isClaimEligible: isEligible,
-          };
-        });
-        setWarranties(enrichedWarranties);
-      } else {
-        setWarranties([]);
-      }
-
-      // 3. Fetch business warranty options (presets) for both Merchant and Provider
-      const [mRes, provRes] = await Promise.all([
-        afterSalesApi.business.getWarrantyOptions({
-          "X-Actor-User-Id": "usr-merch-001",
-          "X-Actor-Role": "MERCHANT",
-          "X-Actor-Org-Id": "0c1467e7-af68-4b26-ae84-daa41d51aed0",
-          "X-Actor-Org-Type": "MERCHANT",
-        }).catch(() => null),
-        afterSalesApi.business.getWarrantyOptions({
-          "X-Actor-User-Id": "usr-prov-001",
-          "X-Actor-Role": "SERVICE_PROVIDER",
-          "X-Actor-Org-Id": "0740d857-b665-4191-aaf5-d7dd3611dc1d",
-          "X-Actor-Org-Type": "PROVIDER",
-        }).catch(() => null),
-      ]);
-
-      const allPresetsMap = new Map<string, WarrantyPreset>();
-      if (mRes?.data && Array.isArray(mRes.data)) {
-        mRes.data.forEach((opt) => {
-          const norm = normalizeBackendOptionToPreset(opt);
-          allPresetsMap.set(norm.id, norm);
-        });
-      }
-      if (provRes?.data && Array.isArray(provRes.data)) {
-        provRes.data.forEach((opt) => {
-          const norm = normalizeBackendOptionToPreset(opt);
-          allPresetsMap.set(norm.id, norm);
-        });
-      }
-      if (allPresetsMap.size > 0) {
-        setPresets(Array.from(allPresetsMap.values()));
-      }
-    } catch (err: any) {
-      console.warn("Failed to refresh After-Sales backend data:", err);
-      setError(err?.message || "Gagal memuat data purnajual.");
-    } finally {
-      setIsLoading(false);
+  const defaultOrgId = useMemo(() => {
+    if (user?.organizationId) return user.organizationId;
+    if (activeRole === "SERVICE_PROVIDER" || (activeRole as string) === "PROVIDER") {
+      return "0740d857-b665-4191-aaf5-d7dd3611dc1d";
     }
-  }, []);
+    return "0c1467e7-af68-4b26-ae84-daa41d51aed0";
+  }, [user?.organizationId, activeRole]);
+
+  const [activeOrgId, setActiveOrgId] = useState<string>(defaultOrgId);
 
   useEffect(() => {
-    refreshData();
-  }, [refreshData]);
+    if (defaultOrgId && activeOrgId !== defaultOrgId) {
+      setActiveOrgId(defaultOrgId);
+    }
+  }, [defaultOrgId]);
+
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const inFlightRef = useRef<{ scope: AfterSalesFetchScope; promise: Promise<void> } | null>(null);
+  const canFetchCustomer = isAuthenticated && !isPublicGuest;
+
+  const refreshData = useCallback(async (overrideScope?: AfterSalesFetchScope, isSilent = false) => {
+    const scope =
+      overrideScope ||
+      resolveAfterSalesScope(pathname, activeRole, canFetchCustomer);
+
+    if (scope === "none") {
+      if (!isSilent) setIsLoading(false);
+      return;
+    }
+
+    if (inFlightRef.current && inFlightRef.current.scope === scope) {
+      return inFlightRef.current.promise;
+    }
+
+    const fetchPromise = (async () => {
+      if (!isSilent) setIsLoading(true);
+      setError(null);
+      try {
+        const shouldFetchCustomer = scope === "customer" || scope === "all";
+        const shouldFetchMerchant = scope === "merchant" || scope === "all";
+        const shouldFetchProvider = scope === "provider" || scope === "all";
+        const shouldFetchBusinessCases = shouldFetchMerchant || shouldFetchProvider;
+
+        const merchantUserId = (user?.id && activeRole === "MERCHANT") ? user.id : "4bee4c28-6799-4054-87a3-321e29811921";
+        const merchantOrgId = (user?.organizationId && activeRole === "MERCHANT") ? user.organizationId : "0c1467e7-af68-4b26-ae84-daa41d51aed0";
+
+        const providerUserId = (user?.id && (activeRole === "SERVICE_PROVIDER" || (activeRole as string) === "PROVIDER")) ? user.id : "8ecc27f5-d30e-401e-89d5-aceec765a19a";
+        const providerOrgId = (user?.organizationId && (activeRole === "SERVICE_PROVIDER" || (activeRole as string) === "PROVIDER")) ? user.organizationId : "0740d857-b665-4191-aaf5-d7dd3611dc1d";
+
+        const [wRes, cRes, bRes, mRes, provRes] = await Promise.all([
+          shouldFetchCustomer
+            ? afterSalesApi.customer.getWarranties({ per_page: 50 }).catch(() => null)
+            : Promise.resolve(null),
+          shouldFetchCustomer
+            ? afterSalesApi.customer.getCases({ per_page: 50 }).catch(() => null)
+            : Promise.resolve(null),
+          shouldFetchBusinessCases
+            ? afterSalesApi.business.getCases({ per_page: 50 }).catch(() => null)
+            : Promise.resolve(null),
+          shouldFetchMerchant
+            ? afterSalesApi.business
+                .getWarrantyOptions({
+                  "X-Actor-User-Id": merchantUserId,
+                  "X-Actor-Role": "MERCHANT",
+                  "X-Actor-Org-Id": merchantOrgId,
+                  "X-Actor-Org-Type": "MERCHANT",
+                })
+                .catch(() => null)
+            : Promise.resolve(null),
+          shouldFetchProvider
+            ? afterSalesApi.business
+                .getWarrantyOptions({
+                  "X-Actor-User-Id": providerUserId,
+                  "X-Actor-Role": "SERVICE_PROVIDER",
+                  "X-Actor-Org-Id": providerOrgId,
+                  "X-Actor-Org-Type": "PROVIDER",
+                })
+                .catch(() => null)
+            : Promise.resolve(null),
+        ]);
+
+        let loadedCases: AfterSalesCase[] = [];
+        if (cRes?.data || bRes?.data) {
+          const mergedMap = new Map<string, AfterSalesCase>();
+          if (cRes?.data && Array.isArray(cRes.data)) {
+            for (const raw of cRes.data) {
+              const ui = normalizeBackendCaseToUiCase(raw);
+              mergedMap.set(ui.id, ui);
+            }
+          }
+          if (bRes?.data && Array.isArray(bRes.data)) {
+            for (const raw of bRes.data) {
+              const ui = normalizeBackendCaseToUiCase(raw);
+              mergedMap.set(ui.id, ui);
+            }
+          }
+          loadedCases = Array.from(mergedMap.values());
+          setCases(loadedCases);
+        }
+
+        if (shouldFetchCustomer) {
+          let loadedWarranties: CustomerWarrantyEntitlement[] = [];
+          if (wRes?.data && Array.isArray(wRes.data)) {
+            loadedWarranties = wRes.data.map(normalizeBackendWarrantyToUiWarranty);
+          }
+
+          // Cross-link active/completed case to warranty entitlement
+          if (loadedWarranties.length > 0) {
+            const enrichedWarranties = loadedWarranties.map((w) => {
+              const matchedCases = loadedCases.filter(
+                (c) =>
+                  (c.warrantyId && c.warrantyId === w.id) ||
+                  (c.sourceOrderId && c.sourceOrderId === w.orderId)
+              );
+              const activeCase = matchedCases.find(
+                (c) =>
+                  c.mainStatus !== "COMPLETED" &&
+                  c.mainStatus !== "REJECTED" &&
+                  c.mainStatus !== "CANCELLED"
+              );
+              const latestCase = matchedCases[0];
+              const hasActiveCase = Boolean(activeCase);
+              const hasResolvedCase = matchedCases.some(
+                (c) => c.mainStatus === "COMPLETED" || c.mainStatus === "REJECTED" || c.mainStatus === "CANCELLED"
+              );
+              const isEligible =
+                w.status === "ACTIVE" &&
+                !hasActiveCase &&
+                !hasResolvedCase &&
+                (w.remainingQuantity === undefined || w.remainingQuantity > 0);
+
+              return {
+                ...w,
+                status: hasResolvedCase ? "CONSUMED" : w.status,
+                isActive: hasResolvedCase ? false : w.isActive,
+                hasActiveCase,
+                activeCaseId: activeCase?.id,
+                activeCaseStatus: activeCase?.mainStatus,
+                activeCaseNumber: activeCase?.caseNumber,
+                isClaimEligible: isEligible,
+              };
+            });
+            setWarranties(enrichedWarranties);
+          } else {
+            setWarranties([]);
+          }
+        }
+
+        if (shouldFetchMerchant || shouldFetchProvider) {
+          setPresets((prev) => {
+            const nextMap = new Map<string, WarrantyPreset>();
+            for (const existing of prev) {
+              if (shouldFetchMerchant && existing.organizationType === "MERCHANT") continue;
+              if (shouldFetchProvider && existing.organizationType === "PROVIDER") continue;
+              nextMap.set(existing.id, existing);
+            }
+            if (mRes?.data && Array.isArray(mRes.data)) {
+              mRes.data.forEach((opt) => {
+                const norm = normalizeBackendOptionToPreset(opt);
+                nextMap.set(norm.id, norm);
+              });
+            }
+            if (provRes?.data && Array.isArray(provRes.data)) {
+              provRes.data.forEach((opt) => {
+                const norm = normalizeBackendOptionToPreset(opt);
+                nextMap.set(norm.id, norm);
+              });
+            }
+            return nextMap.size > 0 ? Array.from(nextMap.values()) : prev;
+          });
+        }
+      } catch (err: any) {
+        console.warn("Failed to refresh After-Sales backend data:", err);
+        if (!isSilent) setError(err?.message || "Gagal memuat data purnajual.");
+      } finally {
+        if (!isSilent) setIsLoading(false);
+        inFlightRef.current = null;
+      }
+    })();
+
+    inFlightRef.current = { scope, promise: fetchPromise };
+    return fetchPromise;
+  }, [pathname, activeRole, canFetchCustomer]);
+
+  useEffect(() => {
+    if (isLoadingAuth && !pathname.startsWith("/warranties")) return;
+    const scope = resolveAfterSalesScope(
+      pathname,
+      activeRole,
+      isAuthenticated && !isPublicGuest
+    );
+    if (scope === "none") {
+      setIsLoading(false);
+      return;
+    }
+    refreshData(scope);
+  }, [pathname, activeRole, isAuthenticated, isPublicGuest, isLoadingAuth, refreshData]);
+
+  // Real-Time Background Synchronization & Cross-Role Auto-Updates
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const triggerSilentSync = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        refreshData(undefined, true);
+      }, 250);
+    };
+
+    // 1. Same-window custom event
+    const handleCustomEvent = () => triggerSilentSync();
+    window.addEventListener(AFTER_SALES_UPDATED_EVENT, handleCustomEvent);
+
+    // 2. Cross-tab BroadcastChannel
+    let bc: BroadcastChannel | null = null;
+    try {
+      if ("BroadcastChannel" in window) {
+        bc = new BroadcastChannel(AFTER_SALES_BROADCAST_CHANNEL);
+        bc.onmessage = () => triggerSilentSync();
+      }
+    } catch {
+      // ignore
+    }
+
+    // 3. Storage event fallback across tabs
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === "servio_after_sales_sync") {
+        triggerSilentSync();
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+
+    // 4. Focus & Visibility Change: sync immediately when user switches to tab
+    const handleFocus = () => triggerSilentSync();
+    const handleVisibility = () => {
+      if (typeof document !== "undefined" && !document.hidden) {
+        triggerSilentSync();
+      }
+    };
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    // 5. Adaptive Auto-Polling interval (every 4 seconds when tab is active on warranty pages)
+    const isWarrantyRoute =
+      pathname.includes("/warranty") ||
+      pathname.includes("/warranties") ||
+      pathname.includes("/worker/jobs") ||
+      pathname.includes("/orders");
+
+    const pollInterval = isWarrantyRoute ? 4000 : 15000;
+
+    const intervalId = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      refreshData(undefined, true);
+    }, pollInterval);
+
+    return () => {
+      window.removeEventListener(AFTER_SALES_UPDATED_EVENT, handleCustomEvent);
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      clearInterval(intervalId);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      if (bc) bc.close();
+    };
+  }, [refreshData, pathname]);
 
   // Selectors
   const getCaseById = useCallback((id: string) => cases.find((c) => c.id === id || c.caseNumber === id), [cases]);
@@ -977,6 +1189,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
 
     const uiCase = normalizeBackendCaseToUiCase(res.data);
     setCases((prev) => [uiCase, ...prev.filter((c) => c.id !== uiCase.id)]);
+    notifyAfterSalesUpdated({ action: "CLAIM_SUBMITTED", caseId: uiCase.id });
     return uiCase;
   };
 
@@ -1014,6 +1227,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
 
     const uiCase = normalizeBackendCaseToUiCase(res.data);
     setCases((prev) => [uiCase, ...prev.filter((c) => c.id !== uiCase.id)]);
+    notifyAfterSalesUpdated({ action: "RETURN_SUBMITTED", caseId: uiCase.id });
     return uiCase;
   };
 
@@ -1049,6 +1263,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
       throw new Error(res.message || "Gagal menyetujui solusi alternatif.");
     }
     await refreshData();
+    notifyAfterSalesUpdated({ action: "PROPOSAL_ACCEPTED", caseId });
   };
 
   const customerRejectAlternativeProposal = async (caseId: string, reason: string, proposalId?: string) => {
@@ -1058,6 +1273,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
       throw new Error(res.message || "Gagal menolak solusi alternatif.");
     }
     await refreshData();
+    notifyAfterSalesUpdated({ action: "PROPOSAL_REJECTED", caseId });
   };
 
   const customerSubmitReturnShipping = async (
@@ -1081,6 +1297,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
       throw new Error(res.message || "Gagal mengirimkan data resi pengembalian barang.");
     }
     await refreshData();
+    notifyAfterSalesUpdated({ action: "RETURN_SHIPPING_SUBMITTED", caseId });
   };
 
   const customerReportIssue = async (caseId: string, reason: string): Promise<{ message: string }> => {
@@ -1089,6 +1306,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
       throw new Error(res.message || "Gagal melaporkan masalah ke sistem dukungan.");
     }
     await refreshData();
+    notifyAfterSalesUpdated({ action: "ISSUE_REPORTED", caseId });
     return {
       message:
         res.message ||
@@ -1106,6 +1324,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
       throw new Error(res.message || "Gagal mengunggah lampiran bukti.");
     }
     await refreshData();
+    notifyAfterSalesUpdated({ action: "EVIDENCE_ADDED", caseId });
   };
 
   const customerApprovePaidWork = async (caseId: string) => {
@@ -1115,6 +1334,20 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
       size_bytes: 32,
     });
     await refreshData();
+    notifyAfterSalesUpdated({ action: "PAID_WORK_APPROVED", caseId });
+  };
+
+  const customerConfirmCompletion = async (caseId: string, notes?: string, rating?: number) => {
+    try {
+      const res = await afterSalesApi.customer.confirmCompletion(caseId, { notes, rating });
+      if (!res.success) {
+        await merchantCompleteCase(caseId, notes || "CUSTOMER_VERIFIED_COMPLETION").catch(() => {});
+      }
+    } catch {
+      await merchantCompleteCase(caseId, notes || "CUSTOMER_VERIFIED_COMPLETION").catch(() => {});
+    }
+    await refreshData();
+    notifyAfterSalesUpdated({ action: "COMPLETION_CONFIRMED", caseId });
   };
 
   // Merchant / Provider Actions
@@ -1130,6 +1363,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
     }
     await afterSalesApi.business.startResolution(caseId).catch(() => {});
     await refreshData();
+    notifyAfterSalesUpdated({ action: "CASE_APPROVED", caseId });
   };
 
   const merchantRejectCase = async (caseId: string, rejectionReason: string) => {
@@ -1143,6 +1377,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
       throw new Error(res.message || "Gagal menolak pengajuan.");
     }
     await refreshData();
+    notifyAfterSalesUpdated({ action: "CASE_REJECTED", caseId });
   };
 
   const merchantProposeAlternative = async (caseId: string, alternativeSolution: string, note: string) => {
@@ -1165,6 +1400,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
       throw new Error(res.message || "Gagal mengajukan solusi alternatif.");
     }
     await refreshData();
+    notifyAfterSalesUpdated({ action: "ALTERNATIVE_PROPOSED", caseId });
   };
 
   const merchantRequestEvidence = async (caseId: string, reason: string) => {
@@ -1178,6 +1414,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
       throw new Error(res.message || "Gagal meminta bukti tambahan.");
     }
     await refreshData();
+    notifyAfterSalesUpdated({ action: "EVIDENCE_REQUESTED", caseId });
   };
 
   const merchantStartResolution = async (caseId: string) => {
@@ -1186,6 +1423,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
       throw new Error(res.message || "Gagal memulai tindakan penyelesaian.");
     }
     await refreshData();
+    notifyAfterSalesUpdated({ action: "RESOLUTION_STARTED", caseId });
   };
 
   const merchantCompleteCase = async (caseId: string, evidenceRef: string) => {
@@ -1194,6 +1432,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
       throw new Error(res.message || "Gagal menyelesaikan pengajuan.");
     }
     await refreshData();
+    notifyAfterSalesUpdated({ action: "CASE_COMPLETED", caseId });
   };
 
   const merchantSaveReturnInstructions = async (
@@ -1217,6 +1456,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
       throw new Error(res.message || "Gagal menyimpan instruksi pengembalian.");
     }
     await refreshData();
+    notifyAfterSalesUpdated({ action: "RETURN_INSTRUCTIONS_SAVED", caseId });
   };
 
   const merchantConfirmReturnReceived = async (
@@ -1245,6 +1485,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
       throw new Error(res.message || "Gagal mengonfirmasi penerimaan barang retur.");
     }
     await refreshData();
+    notifyAfterSalesUpdated({ action: "RETURN_RECEIVED", caseId });
   };
 
   const merchantSubmitReturnInspection = async (
@@ -1266,6 +1507,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
       throw new Error(res.message || "Gagal menyimpan hasil pemeriksaan barang.");
     }
     await refreshData();
+    notifyAfterSalesUpdated({ action: "RETURN_INSPECTED", caseId });
   };
 
   const providerApproveWarrantyJob = async (caseId: string, workerName: string, scheduledDate: string, note?: string) => {
@@ -1280,6 +1522,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
     }
     await afterSalesApi.business.startResolution(caseId).catch(() => {});
     await refreshData();
+    notifyAfterSalesUpdated({ action: "WARRANTY_JOB_APPROVED", caseId });
   };
 
   const providerRejectClaim = async (caseId: string, rejectionReason: string) => {
@@ -1293,6 +1536,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
       throw new Error(res.message || "Gagal menolak klaim garansi layanan.");
     }
     await refreshData();
+    notifyAfterSalesUpdated({ action: "CLAIM_REJECTED", caseId });
   };
 
   // Preset Management
@@ -1308,17 +1552,24 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
     const isProv =
       preset.organizationType === "PROVIDER" ||
       preset.organizationId === "0740d857-b665-4191-aaf5-d7dd3611dc1d";
+
+    const merchantUserId = (user?.id && activeRole === "MERCHANT") ? user.id : "4bee4c28-6799-4054-87a3-321e29811921";
+    const merchantOrgId = (user?.organizationId && activeRole === "MERCHANT") ? user.organizationId : "0c1467e7-af68-4b26-ae84-daa41d51aed0";
+
+    const providerUserId = (user?.id && (activeRole === "SERVICE_PROVIDER" || (activeRole as string) === "PROVIDER")) ? user.id : "8ecc27f5-d30e-401e-89d5-aceec765a19a";
+    const providerOrgId = (user?.organizationId && (activeRole === "SERVICE_PROVIDER" || (activeRole as string) === "PROVIDER")) ? user.organizationId : "0740d857-b665-4191-aaf5-d7dd3611dc1d";
+
     const actorHeaders: Record<string, string> = isProv
       ? {
-          "X-Actor-User-Id": "usr-prov-001",
+          "X-Actor-User-Id": providerUserId,
           "X-Actor-Role": "SERVICE_PROVIDER",
-          "X-Actor-Org-Id": "0740d857-b665-4191-aaf5-d7dd3611dc1d",
+          "X-Actor-Org-Id": providerOrgId,
           "X-Actor-Org-Type": "PROVIDER",
         }
       : {
-          "X-Actor-User-Id": "usr-merch-001",
+          "X-Actor-User-Id": merchantUserId,
           "X-Actor-Role": "MERCHANT",
-          "X-Actor-Org-Id": "0c1467e7-af68-4b26-ae84-daa41d51aed0",
+          "X-Actor-Org-Id": merchantOrgId,
           "X-Actor-Org-Type": "MERCHANT",
         };
 
@@ -1351,17 +1602,24 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
     const isProv =
       existing?.organizationType === "PROVIDER" ||
       existing?.organizationId === "0740d857-b665-4191-aaf5-d7dd3611dc1d";
+
+    const merchantUserId = (user?.id && activeRole === "MERCHANT") ? user.id : "4bee4c28-6799-4054-87a3-321e29811921";
+    const merchantOrgId = (user?.organizationId && activeRole === "MERCHANT") ? user.organizationId : "0c1467e7-af68-4b26-ae84-daa41d51aed0";
+
+    const providerUserId = (user?.id && (activeRole === "SERVICE_PROVIDER" || (activeRole as string) === "PROVIDER")) ? user.id : "8ecc27f5-d30e-401e-89d5-aceec765a19a";
+    const providerOrgId = (user?.organizationId && (activeRole === "SERVICE_PROVIDER" || (activeRole as string) === "PROVIDER")) ? user.organizationId : "0740d857-b665-4191-aaf5-d7dd3611dc1d";
+
     const actorHeaders: Record<string, string> = isProv
       ? {
-          "X-Actor-User-Id": "usr-prov-001",
+          "X-Actor-User-Id": providerUserId,
           "X-Actor-Role": "SERVICE_PROVIDER",
-          "X-Actor-Org-Id": "0740d857-b665-4191-aaf5-d7dd3611dc1d",
+          "X-Actor-Org-Id": providerOrgId,
           "X-Actor-Org-Type": "PROVIDER",
         }
       : {
-          "X-Actor-User-Id": "usr-merch-001",
+          "X-Actor-User-Id": merchantUserId,
           "X-Actor-Role": "MERCHANT",
-          "X-Actor-Org-Id": "0c1467e7-af68-4b26-ae84-daa41d51aed0",
+          "X-Actor-Org-Id": merchantOrgId,
           "X-Actor-Org-Type": "MERCHANT",
         };
 
@@ -1386,17 +1644,24 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
     const isProv =
       existing?.organizationType === "PROVIDER" ||
       existing?.organizationId === "0740d857-b665-4191-aaf5-d7dd3611dc1d";
+
+    const merchantUserId = (user?.id && activeRole === "MERCHANT") ? user.id : "4bee4c28-6799-4054-87a3-321e29811921";
+    const merchantOrgId = (user?.organizationId && activeRole === "MERCHANT") ? user.organizationId : "0c1467e7-af68-4b26-ae84-daa41d51aed0";
+
+    const providerUserId = (user?.id && (activeRole === "SERVICE_PROVIDER" || (activeRole as string) === "PROVIDER")) ? user.id : "8ecc27f5-d30e-401e-89d5-aceec765a19a";
+    const providerOrgId = (user?.organizationId && (activeRole === "SERVICE_PROVIDER" || (activeRole as string) === "PROVIDER")) ? user.organizationId : "0740d857-b665-4191-aaf5-d7dd3611dc1d";
+
     const actorHeaders: Record<string, string> = isProv
       ? {
-          "X-Actor-User-Id": "usr-prov-001",
+          "X-Actor-User-Id": providerUserId,
           "X-Actor-Role": "SERVICE_PROVIDER",
-          "X-Actor-Org-Id": "0740d857-b665-4191-aaf5-d7dd3611dc1d",
+          "X-Actor-Org-Id": providerOrgId,
           "X-Actor-Org-Type": "PROVIDER",
         }
       : {
-          "X-Actor-User-Id": "usr-merch-001",
+          "X-Actor-User-Id": merchantUserId,
           "X-Actor-Role": "MERCHANT",
-          "X-Actor-Org-Id": "0c1467e7-af68-4b26-ae84-daa41d51aed0",
+          "X-Actor-Org-Id": merchantOrgId,
           "X-Actor-Org-Type": "MERCHANT",
         };
 
@@ -1435,6 +1700,7 @@ export function AfterSalesProvider({ children }: { children: React.ReactNode }) 
     customerReportIssue,
     customerAddEvidence,
     customerApprovePaidWork,
+    customerConfirmCompletion,
     merchantApproveCase,
     merchantRejectCase,
     merchantProposeAlternative,

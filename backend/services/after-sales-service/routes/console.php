@@ -15,6 +15,28 @@ Artisan::command('after-sales:process-sla', function (SlaService $slaService) {
 
 Schedule::command('after-sales:process-sla')->everyTenMinutes();
 
+Artisan::command('after-sales:process-expiry', function () {
+    $now = now();
+    $count = \App\Models\OrderWarrantyEntitlement::whereIn('status', ['ACTIVE', 'CLAIM_LOCKED'])
+        ->whereNotNull('expires_at')
+        ->where('expires_at', '<', $now)
+        ->where(function ($q) {
+            // When remaining quantity is completely 0, it is either CLAIM_LOCKED or CONSUMED.
+            // If it had zero claims and expired, mark EXPIRED.
+            // If it had partial claims and remaining units expired without being claimed, mark EXPIRED for the remainder.
+            $q->whereNull('claimed_quantity')
+              ->orWhereRaw('(quantity - COALESCE(claimed_quantity, 0)) > 0');
+        })
+        ->update([
+            'status' => 'EXPIRED',
+            'updated_at' => $now,
+        ]);
+
+    $this->info("Completed. Marked {$count} unclaimed warranty entitlements as EXPIRED.");
+})->purpose('Evaluate and transition expired warranty entitlements to EXPIRED');
+
+Schedule::command('after-sales:process-expiry')->hourly();
+
 Artisan::command('after-sales:dispatch-outbox', function () {
     $events = OutboxEvent::where('status', 'PENDING')
         ->where('retry_count', '<', 5)

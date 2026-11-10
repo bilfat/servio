@@ -8,7 +8,8 @@ $services = @(
     @{ Name = "Order Barang Service (Modul 05A)"; Dir = "backend\services\order-barang-service"; Port = 8005 },
     @{ Name = "Finance Service (Modul 06)"; Dir = "backend\services\finance-service"; Port = 8006 },
     @{ Name = "Order Jasa Service (Modul 05B)"; Dir = "backend\services\order-jasa-service"; Port = 8007 },
-    @{ Name = "After-Sales Service (Modul 07)"; Dir = "backend\services\after-sales-service"; Port = 8008 }
+    @{ Name = "After-Sales Service (Modul 07)"; Dir = "backend\services\after-sales-service"; Port = 8008 },
+    @{ Name = "Chat & Messaging Service"; Dir = "backend\services\chat-service"; Port = 8009 }
 )
 
 $baseDir = $PSScriptRoot
@@ -28,7 +29,7 @@ if (-not (Test-Path $logsDir)) {
     New-Item -ItemType Directory -Path $logsDir -Force | Out-Null
 }
 
-Write-Host "Stopping any existing processes on ports 8001-8008..."
+Write-Host "Stopping any existing processes on ports 8001-8009..."
 foreach ($svc in $services) {
     $port = $svc.Port
     $conns = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
@@ -45,11 +46,22 @@ foreach ($svc in $services) {
 
 Start-Sleep -Seconds 1
 
-Write-Host "Starting all 8 microservices in background (hidden)..."
-$env:PHP_CLI_SERVER_WORKERS = "4"
+Write-Host "Starting all 8 microservices in background (hidden) with OPcache enabled..."
+$opcacheFlags = @(
+    "-d", "zend_extension=opcache",
+    "-d", "opcache.enable=1",
+    "-d", "opcache.enable_cli=1",
+    "-d", "opcache.memory_consumption=64",
+    "-d", "opcache.interned_strings_buffer=8",
+    "-d", "opcache.max_accelerated_files=4000",
+    "-d", "opcache.validate_timestamps=1",
+    "-d", "opcache.revalidate_freq=2"
+)
 
 foreach ($svc in $services) {
     $svcPath = Join-Path $repoRoot $svc.Dir
+    $publicPath = Join-Path $svcPath "public"
+    $serverScript = Join-Path $svcPath "vendor\laravel\framework\src\Illuminate\Foundation\resources\server.php"
     $stdoutLog = Join-Path $logsDir ("service-" + $svc.Port + ".log")
     $stderrLog = Join-Path $logsDir ("service-" + $svc.Port + "-err.log")
 
@@ -57,9 +69,14 @@ foreach ($svc in $services) {
     if (Test-Path $stdoutLog) { Remove-Item $stdoutLog -Force }
     if (Test-Path $stderrLog) { Remove-Item $stderrLog -Force }
 
+    $argList = $opcacheFlags + @(
+        "-S", "127.0.0.1:$($svc.Port)",
+        "`"$serverScript`""
+    )
+
     $proc = Start-Process -FilePath "php" `
-        -ArgumentList "artisan", "serve", "--host=127.0.0.1", "--port=$($svc.Port)" `
-        -WorkingDirectory $svcPath `
+        -ArgumentList $argList `
+        -WorkingDirectory $publicPath `
         -WindowStyle Hidden `
         -RedirectStandardOutput $stdoutLog `
         -RedirectStandardError $stderrLog `

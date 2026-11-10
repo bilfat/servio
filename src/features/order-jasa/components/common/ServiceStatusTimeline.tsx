@@ -93,6 +93,8 @@ const LIFECYCLE_STEPS: StepDefinition[] = [
 export function ServiceStatusTimeline({ order }: ServiceStatusTimelineProps) {
   const [showLogDetails, setShowLogDetails] = useState(false);
 
+  const warrantyDays = order.serviceSnapshot?.warrantyDurationDays ?? 0;
+  const hasWarranty = warrantyDays > 0;
   const diagPayment = order.paymentSummary.diagnosisPayment;
   const execPayment = order.paymentSummary.executionPayment;
   const isCancelled = order.status === "CANCELLED";
@@ -121,6 +123,7 @@ export function ServiceStatusTimeline({ order }: ServiceStatusTimelineProps) {
       subStatus === "DIAGNOSING" ||
       subStatus === "WAITING_CUSTOMER_CONSENT" ||
       subStatus === "IN_PERSON_CONSENT_RECORDED" ||
+      subStatus === "PRICE_APPROVED" ||
       subStatus === "RESCHEDULE_PROPOSED"
     ) {
       activeStepId = 5;
@@ -129,10 +132,11 @@ export function ServiceStatusTimeline({ order }: ServiceStatusTimelineProps) {
     } else if (
       subStatus === "WORK_FINISHED" ||
       subStatus === "EXECUTION_PENDING" ||
-      subStatus === "PAYMENT_OVERDUE"
+      subStatus === "PAYMENT_OVERDUE" ||
+      subStatus === "WAITING_WORKER_CLOSE_VISIT"
     ) {
       activeStepId = 7;
-    } else if (subStatus === "AWAITING_CUSTOMER_CONFIRMATION") {
+    } else if (subStatus === "VISIT_CLOSED" || subStatus === "AWAITING_CUSTOMER_CONFIRMATION") {
       activeStepId = 8;
     } else if (subStatus === "COMPLETED_NORMAL" || subStatus === "AUTO_COMPLETED_72H") {
       activeStepId = 8;
@@ -269,7 +273,13 @@ export function ServiceStatusTimeline({ order }: ServiceStatusTimelineProps) {
                           : "text-slate-400"
                       }`}
                     >
-                      {step.title}
+                      {step.id === 8
+                        ? order.status !== "COMPLETED" && isCurrent
+                          ? "Menunggu Konfirmasi Penyelesaian Pelanggan"
+                          : hasWarranty
+                          ? "Pesanan Selesai & Garansi Aktif"
+                          : "Pesanan Selesai & Tuntas"
+                        : step.title}
                     </h4>
 
                     {/* Badge Status */}
@@ -309,7 +319,13 @@ export function ServiceStatusTimeline({ order }: ServiceStatusTimelineProps) {
                         : "text-slate-400"
                     }`}
                   >
-                    {step.description}
+                    {step.id === 8
+                      ? order.status !== "COMPLETED" && isCurrent
+                        ? "Kunjungan telah ditutup teknisi. Pastikan pekerjaan selesai dengan baik sebelum mengonfirmasi selesai."
+                        : hasWarranty
+                        ? `Seluruh pekerjaan tuntas dan dilindungi garansi resmi ${warrantyDays} hari Servio`
+                        : "Seluruh pekerjaan telah tuntas dan diverifikasi berfungsi dengan baik"
+                      : step.description}
                   </p>
 
                   {/* Contextual Info per Step if Available */}

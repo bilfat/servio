@@ -63,26 +63,50 @@ try {
   }
 } catch (e) {}
 
-// 3. Start each service detached & hidden (zero popups/windows)
-console.log('\nLaunching all 8 SERVIO Microservices in background...');
+// 3. Start each service detached & hidden (zero popups/windows) with OPcache enabled
+console.log('\nLaunching all 8 SERVIO Microservices in background (OPcache enabled)...');
+const opcacheFlags = [
+  '-d', 'zend_extension=opcache',
+  '-d', 'opcache.enable=1',
+  '-d', 'opcache.enable_cli=1',
+  '-d', 'opcache.memory_consumption=64',
+  '-d', 'opcache.interned_strings_buffer=8',
+  '-d', 'opcache.max_accelerated_files=4000',
+  '-d', 'opcache.validate_timestamps=1',
+  '-d', 'opcache.revalidate_freq=2',
+];
+
 for (const svc of services) {
-  const cwd = path.join(repoRoot, svc.dir);
+  const svcRoot = path.join(repoRoot, svc.dir);
+  const publicDir = path.join(svcRoot, 'public');
+  const serverScript = path.join(
+    svcRoot,
+    'vendor',
+    'laravel',
+    'framework',
+    'src',
+    'Illuminate',
+    'Foundation',
+    'resources',
+    'server.php'
+  );
   const outLog = path.join(logsDir, `service-${svc.port}.log`);
   const errLog = path.join(logsDir, `service-${svc.port}-err.log`);
 
   const out = fs.openSync(outLog, 'w');
   const err = fs.openSync(errLog, 'w');
 
-  const child = spawn('php', ['artisan', 'serve', '--host=127.0.0.1', `--port=${svc.port}`, '--no-reload'], {
-    cwd,
-    detached: true,
-    windowsHide: true,
-    stdio: ['ignore', out, err],
-    env: {
-      ...process.env,
-      PHP_CLI_SERVER_WORKERS: '4',
-    },
-  });
+  const child = spawn(
+    'php',
+    [...opcacheFlags, '-S', `127.0.0.1:${svc.port}`, serverScript],
+    {
+      cwd: publicDir,
+      detached: true,
+      windowsHide: true,
+      stdio: ['ignore', out, err],
+      env: { ...process.env },
+    }
+  );
 
   child.unref();
   console.log(`  -> [STARTED] ${svc.name} on http://127.0.0.1:${svc.port} (PID: ${child.pid})`);

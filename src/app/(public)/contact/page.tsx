@@ -10,11 +10,9 @@ import {
   Envelope,
   MapPin,
   Clock,
-  ShieldCheck,
   CheckCircle,
   Paperclip,
   PaperPlaneRight,
-  ArrowRight,
   Question,
   WarningCircle,
   Buildings,
@@ -78,9 +76,9 @@ export default function ContactUsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/60 pb-24">
+    <div className="min-h-screen bg-white pb-24">
       {/* Hero Header */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-white via-sky/20 to-slate-50 border-b border-slate-200/80 pt-12 pb-16">
+      <section className="relative overflow-hidden bg-white border-b border-slate-200/80 pt-10 pb-14">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-sky/60 border border-primary/20 text-primary text-xs font-bold uppercase tracking-wider mb-4 shadow-xs">
             <Headset size={16} weight="fill" className="text-secondary" />

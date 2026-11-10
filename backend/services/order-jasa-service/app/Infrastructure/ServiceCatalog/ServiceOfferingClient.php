@@ -67,8 +67,11 @@ class ServiceOfferingClient implements ServiceOfferingClientInterface
             'diagnosis_fee_idr' => (int) ($survey['fee_idr'] ?? 50000),
             'is_active' => (bool) ($data['eligible'] ?? true),
             'provider_org_id' => (string) ($data['provider_org_id'] ?? 'ORG-PROVIDER-01'),
+            'provider_name' => (string) ($data['provider_name'] ?? ($data['store_name'] ?? 'Mitra Penyedia Jasa')),
             'pricing_snapshot' => $pricing,
             'survey_snapshot' => $survey,
+            'warranty_config' => $data['warranty_config'] ?? ($data['warranty_policy'] ?? null),
+            'warranty_policy' => $data['warranty_config'] ?? ($data['warranty_policy'] ?? null),
         ];
     }
 

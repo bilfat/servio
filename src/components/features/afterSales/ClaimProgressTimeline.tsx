@@ -112,13 +112,19 @@ export function ClaimProgressTimeline({
           {/* Background Connecting Line */}
           <div className="absolute top-5 left-8 right-8 h-1 bg-slate-100 rounded-full" />
 
-          {/* Animated Active Progress Line */}
+          {/* Animated Active Progress Line with Flowing Light Beam */}
           <motion.div
-            className="absolute top-5 left-8 h-1 bg-gradient-to-r from-emerald-500 to-primary rounded-full"
+            className="absolute top-5 left-8 h-1 bg-gradient-to-r from-emerald-500 via-sky-500 to-primary rounded-full overflow-hidden"
             initial={{ width: 0 }}
             animate={{ width: `${progressPercent}%` }}
             transition={{ duration: 0.8, ease: "easeOut" }}
-          />
+          >
+            <motion.div
+              className="w-full h-full bg-gradient-to-r from-transparent via-white/80 to-transparent"
+              animate={{ x: ["-100%", "100%"] }}
+              transition={{ repeat: Infinity, duration: 1.8, ease: "linear" }}
+            />
+          </motion.div>
 
           {/* Step Nodes Row */}
           <div className="relative flex items-start gap-8 sm:gap-12">
@@ -149,6 +155,10 @@ export function ClaimProgressTimeline({
                         : "bg-white text-slate-300 border-2 border-slate-200 group-hover:border-slate-400 group-hover:text-slate-500"
                     }`}
                   >
+                    {step.status === "CURRENT" && (
+                      <span className="absolute -inset-1 rounded-2xl bg-sky-400/40 animate-ping pointer-events-none" />
+                    )}
+
                     {step.status === "COMPLETED" ? (
                       <Check size={16} weight="bold" />
                     ) : step.status === "REJECTED" ? (

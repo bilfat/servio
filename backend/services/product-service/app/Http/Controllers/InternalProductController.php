@@ -79,6 +79,7 @@ class InternalProductController extends Controller
             'product_public_eligible' => $product->status === 'ACTIVE',
             'variant_active' => $variant->status === 'ACTIVE',
             'version' => $variant->lock_version,
+            'warranty_policy' => $product->warranty_policy,
         ];
 
         return ApiResponse::success($snapshot, 'PRODUCT_VARIANT_SNAPSHOT_LOADED', 200);

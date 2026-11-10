@@ -1503,7 +1503,7 @@ export default function ProductCatalogPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-slate-50 flex items-center justify-center text-xs text-slate-400">
+        <div className="min-h-screen bg-white flex items-center justify-center text-xs text-slate-400">
           Memuat katalog SERVIO...
         </div>
       }

@@ -538,6 +538,15 @@ export function CustomerOrderCard({
             className="flex items-center gap-2 mt-2 flex-wrap justify-end"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Contextual In-App Chat Button */}
+            <Link
+              href={`/chat?partner_id=${encodeURIComponent(order.merchantId || "0c1467e7-af68-4b26-ae84-daa41d51aed0")}&partner_type=merchant&partner_name=${encodeURIComponent(order.merchantName || "BUDIAJASA")}&ctx_type=order_barang&ctx_id=${encodeURIComponent(order.orderNumber || order.id)}&ctx_title=${encodeURIComponent(firstItem?.title || `Pesanan #${order.orderNumber}`)}&ctx_status=${encodeURIComponent(order.status)}&ctx_price=${encodeURIComponent(order.totalAmount ?? order.pricing?.merchantOrderTotal ?? 0)}&ctx_thumb=${encodeURIComponent(firstItem?.thumbnailUrl || "")}&ctx_summary=${encodeURIComponent(`Total Tagihan: ${formatRupiah(order.totalAmount ?? order.pricing?.merchantOrderTotal ?? 0)} • ${order.items?.length || 1} Barang • Pengiriman Kurir Toko`)}&ctx_url=${encodeURIComponent(`/orders/products/${order.orderNumber || order.id}`)}`}
+              className="px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-3xs"
+              title="Chat Toko mengenai pesanan ini"
+            >
+              <ChatDots size={14} weight="bold" className="text-emerald-600" />
+              <span>Chat Toko</span>
+            </Link>
             {/* UNPAID Actions (Only when NOT expired) */}
             {(order.status === "CREATED" || order.status === "PAYMENT_PENDING") && !isExpired && (
               <>

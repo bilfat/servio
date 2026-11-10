@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import {
   Package,
   Storefront,
@@ -16,6 +17,7 @@ import {
   MapPin,
   Eye,
   Info,
+  ChatCircleDots,
 } from "@phosphor-icons/react";
 import { MockMerchantOrder } from "@/types/order-barang";
 import { formatRupiah, formatDateTimeIndo } from "../helpers";
@@ -332,6 +334,30 @@ export function MerchantOrderCard({
             className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Contextual In-App Chat: Merchant -> Pembeli */}
+            <Link
+              href={`/merchant/chat?partner_id=${encodeURIComponent(
+                order.customerId || "692f03fd-2362-485a-9a23-a672bbb4533f"
+              )}&partner_type=customer&partner_name=${encodeURIComponent(
+                order.customerName || "Ahmad Fauzi"
+              )}&ctx_type=order_barang&ctx_id=${encodeURIComponent(
+                order.orderNumber || order.id
+              )}&ctx_title=${encodeURIComponent(
+                order.items[0]?.title || `Pesanan #${order.orderNumber || order.id}`
+              )}&ctx_status=${encodeURIComponent(effectiveStatus)}&ctx_price=${encodeURIComponent(
+                order.pricing?.merchantOrderTotal ?? order.totalAmount ?? 0
+              )}&ctx_thumb=${encodeURIComponent(
+                order.items[0]?.thumbnailUrl || ""
+              )}&ctx_summary=${encodeURIComponent(
+                `Pembeli: ${order.customerName || "Pelanggan"} • ${order.items.length} Barang • Total: ${formatRupiah(order.pricing?.merchantOrderTotal ?? order.totalAmount ?? 0)}`
+              )}&ctx_url=${encodeURIComponent(`/merchant/orders?order_id=${order.id}`)}`}
+              className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-3xs"
+              title="Chat Pembeli (In-App)"
+            >
+              <ChatCircleDots size={14} weight="bold" className="text-emerald-600" />
+              <span>Chat Pembeli</span>
+            </Link>
+
             {/* TAB BELUM BAYAR: PAYMENT_PENDING / CREATED (Not Expired) */}
             {isUnpaid && !isExpired ? (
               <div className="flex items-center gap-2 flex-wrap justify-end">

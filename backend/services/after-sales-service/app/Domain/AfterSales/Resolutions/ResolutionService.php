@@ -286,12 +286,15 @@ class ResolutionService
             $case->version += 1;
             $case->save();
 
-            // Transition linked warranty entitlement to CONSUMED if fully claimed
+            // Transition linked warranty entitlement to CONSUMED once resolved (garansi 1x per transaksi)
             if ($case->entitlement_id) {
                 /** @var \App\Models\OrderWarrantyEntitlement|null $entModel */
                 $entModel = \App\Models\OrderWarrantyEntitlement::where('id', $case->entitlement_id)->lockForUpdate()->first();
-                if ($entModel && $entModel->remaining_quantity <= 0) {
-                    $entModel->update(['status' => 'CONSUMED']);
+                if ($entModel) {
+                    $entModel->update([
+                        'status' => 'CONSUMED',
+                        'claimed_quantity' => $entModel->quantity,
+                    ]);
                 }
             }
 

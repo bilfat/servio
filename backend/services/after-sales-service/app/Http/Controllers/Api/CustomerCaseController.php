@@ -270,5 +270,88 @@ class CustomerCaseController
             );
         }
     }
+
+    public function confirmCompletion(Request $request, string $id): JsonResponse
+    {
+        /** @var AuthenticatedActor $actor */
+        $actor = $request->attributes->get('actor');
+
+        $validated = $request->validate([
+            'notes' => 'nullable|string|max:1000',
+            'rating' => 'nullable|integer|min:1|max:5',
+        ]);
+
+        try {
+            $case = \Illuminate\Support\Facades\DB::transaction(function () use ($id, $actor, $validated) {
+                /** @var \App\Models\AfterSalesCase $case */
+                $case = \App\Models\AfterSalesCase::where('id', $id)->lockForUpdate()->firstOrFail();
+
+                // Anti-IDOR: verify customer owns the case
+                if ($case->customer_id !== $actor->id) {
+                    throw new \Illuminate\Auth\Access\AuthorizationException("Akses ditolak: Kasus ini bukan milik akun Anda.");
+                }
+
+                if ($case->main_status === 'COMPLETED') {
+                    return $case;
+                }
+
+                if ($case->main_status !== 'IN_RESOLUTION') {
+                    throw new \InvalidArgumentException("Hanya kasus yang sedang dalam penyelesaian (IN_RESOLUTION) yang dapat diverifikasi selesai.");
+                }
+
+                $now = now();
+
+                // Update resolution record if exists
+                $resolution = \App\Models\CaseResolution::where('case_id', $case->id)->first();
+                if ($resolution) {
+                    $resolution->update([
+                        'status' => 'VERIFIED_DONE',
+                        'evidence_ref' => 'CUSTOMER_VERIFIED_COMPLETION',
+                    ]);
+                }
+
+                $case->main_status = 'COMPLETED';
+                $case->resolved_at = $now;
+                $case->version += 1;
+                $case->save();
+
+                // Transition linked warranty entitlement to CONSUMED if remaining quantity is 0
+                if ($case->entitlement_id) {
+                    /** @var \App\Models\OrderWarrantyEntitlement|null $entModel */
+                    $entModel = \App\Models\OrderWarrantyEntitlement::where('id', $case->entitlement_id)->lockForUpdate()->first();
+                    if ($entModel && $entModel->remaining_quantity <= 0) {
+                        $entModel->update(['status' => 'CONSUMED']);
+                    }
+                }
+
+                $lastSeq = (int) $case->events()->max('sequence');
+                \App\Models\CaseEvent::create([
+                    'case_id' => $case->id,
+                    'sequence' => $lastSeq + 1,
+                    'event_type' => 'CASE_COMPLETED',
+                    'from_state' => 'IN_RESOLUTION',
+                    'to_state' => 'COMPLETED',
+                    'actor_kind' => 'CUSTOMER',
+                    'actor_id' => $actor->id,
+                    'reason' => $validated['notes'] ?? 'Konsumen telah mengonfirmasi penerimaan solusi dan menutup kasus secara sah.',
+                    'data_json' => [
+                        'verified_by' => 'CUSTOMER',
+                        'rating' => $validated['rating'] ?? null,
+                    ],
+                    'occurred_at' => $now,
+                ]);
+
+                return $case;
+            });
+
+            return ApiResponse::success($case, 200, 'Verifikasi selesai! Kasus purnajual berhasil diselesaikan.');
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            return ApiResponse::error('AFTER_SALES_FORBIDDEN', $e->getMessage(), 403);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return ApiResponse::error('AFTER_SALES_CASE_NOT_FOUND', $e->getMessage(), 404);
+        } catch (Throwable $e) {
+            return ApiResponse::error('AFTER_SALES_CONFIRM_FAILED', $e->getMessage(), 422);
+        }
+    }
 }
 

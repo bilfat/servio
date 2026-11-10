@@ -97,6 +97,51 @@ export function CurrentOrderStatusPanel({
   // =========================================================================
 
   const resolveStatusDetails = () => {
+    const sub = order.subStatus as string;
+    const isPreArrivedTransitioned = [
+      "WORKER_ARRIVED",
+      "DIAGNOSING",
+      "WAITING_CUSTOMER_CONSENT",
+      "PRICE_APPROVED",
+      "IN_PERSON_CONSENT_RECORDED",
+      "EXECUTING",
+      "EXECUTION_IN_PROGRESS",
+      "WORK_FINISHED",
+      "EXECUTION_PENDING",
+      "PAYMENT_OVERDUE",
+      "WAITING_WORKER_CLOSE_VISIT",
+      "VISIT_CLOSED",
+      "AWAITING_CUSTOMER_CONFIRMATION",
+      "COMPLETED_NORMAL",
+      "AUTO_COMPLETED_72H",
+    ].includes(sub);
+
+    const isPostConsentSub = [
+      "PRICE_APPROVED",
+      "IN_PERSON_CONSENT_RECORDED",
+      "EXECUTING",
+      "EXECUTION_IN_PROGRESS",
+      "WORK_FINISHED",
+      "EXECUTION_PENDING",
+      "PAYMENT_OVERDUE",
+      "WAITING_WORKER_CLOSE_VISIT",
+      "VISIT_CLOSED",
+      "AWAITING_CUSTOMER_CONFIRMATION",
+      "COMPLETED_NORMAL",
+      "AUTO_COMPLETED_72H",
+    ].includes(sub);
+
+    const isPostExecutionSub = [
+      "WORK_FINISHED",
+      "EXECUTION_PENDING",
+      "PAYMENT_OVERDUE",
+      "WAITING_WORKER_CLOSE_VISIT",
+      "VISIT_CLOSED",
+      "AWAITING_CUSTOMER_CONFIRMATION",
+      "COMPLETED_NORMAL",
+      "AUTO_COMPLETED_72H",
+    ].includes(sub);
+
     // -----------------------------------------------------------------------
     // CANCELLED or REJECTED (All roles)
     // -----------------------------------------------------------------------
@@ -148,35 +193,48 @@ export function CurrentOrderStatusPanel({
     if (isCompleted) {
       const holdUntil = order.paymentSummary?.providerFunds?.heldUntil;
       return {
-        title: "Pesanan Selesai & Pekerjaan Tuntas",
-        subStatusLabel: "Pesanan Selesai",
+        title: hasWarranty
+          ? "Pesanan Selesai & Garansi Resmi Aktif"
+          : "Pesanan Selesai & Pekerjaan Tuntas",
+        subStatusLabel: hasWarranty ? "Selesai • Garansi Aktif" : "Pesanan Selesai",
         variant: "success" as const,
         description:
           role === "CUSTOMER"
-            ? "Pekerjaan servis telah Anda verifikasi tuntas. Pembayaran dilindungi sistem dan garansi resmi layanan telah aktif."
+            ? hasWarranty
+              ? `Pekerjaan servis telah Anda verifikasi selesai dan bekerja dengan baik. Pembayaran diproses melalui sistem escrow dan garansi resmi ${warrantyDays} hari kini telah aktif.`
+              : "Pekerjaan servis telah Anda verifikasi selesai dan bekerja dengan baik. Pembayaran diteruskan melalui sistem escrow Servio (layanan ini tanpa tambahan masa garansi)."
             : role === "PROVIDER"
-            ? "Pesanan berhasil diselesaikan pelanggan. Dana mitra dialokasikan ke rekening escrow dan akan dicairkan otomatis setelah masa perlindungan 120 jam."
+            ? hasWarranty
+              ? `Pesanan berhasil diselesaikan pelanggan dan garansi ${warrantyDays} hari aktif. Dana mitra dialokasikan ke rekening escrow untuk pencairan otomatis setelah masa perlindungan 120 jam.`
+              : "Pesanan berhasil diselesaikan pelanggan. Dana mitra dialokasikan ke rekening escrow dan akan dicairkan otomatis setelah masa perlindungan 120 jam."
             : "Tugas servis Anda telah tuntas dikonfirmasi oleh pelanggan. Riwayat pengerjaan tercatat di rekapitulasi bulanan teknisi.",
         responsibleParty: "Sistem Escrow SERVIO",
         responsibleRole: "ESCROW",
         nextStep:
           role === "CUSTOMER"
-            ? "Beri ulasan teknisi & mitra toko atau simpan bukti transaksi untuk proteksi klaim garansi."
+            ? hasWarranty
+              ? `Beri ulasan kualitas teknisi & mitra toko atau simpan bukti transaksi untuk klaim garansi resmi ${warrantyDays} hari di Pusat Garansi Servio.`
+              : "Terima kasih telah memastikan pekerjaan selesai dengan baik! Anda dapat memberi rating & ulasan untuk teknisi dan mitra toko."
             : "Alokasi dana akan otomatis diteruskan ke saldo S-Pay Mitra setelah batas waktu escrow.",
         contextChips: [
           { label: "Status Pesanan", value: "Tuntas (COMPLETED)", icon: CheckCircle },
-          { label: "Proteksi Garansi", value: isCompleted && hasWarranty ? `${warrantyText} (Aktif)` : warrantyText, highlight: hasWarranty },
+          {
+            label: "Proteksi Garansi",
+            value: hasWarranty ? `${warrantyText} (Aktif)` : warrantyText,
+            highlight: hasWarranty,
+            icon: ShieldCheck,
+          },
           ...(role === "PROVIDER" && holdUntil
             ? [{ label: "Pencairan Escrow", value: "Masa Tahan 120 Jam", icon: Clock }]
             : []),
         ],
-        lastCompletedStep: "✓ Pelanggan Mengonfirmasi Pekerjaan Tuntas",
+        lastCompletedStep: "✓ Pelanggan Mengonfirmasi Pekerjaan Selesai & Berfungsi Baik",
         primaryAction:
-          role === "CUSTOMER"
+          role === "CUSTOMER" && onOpenSummaryModal
             ? {
-                label: "Beri Ulasan Layanan",
-                icon: CheckCircle,
-                onClick: () => onOpenSummaryModal(),
+                label: hasWarranty ? "Lihat Ringkasan & Garansi" : "Lihat Ringkasan Pesanan",
+                icon: FileText,
+                onClick: () => onOpenSummaryModal?.(),
                 variant: "success" as const,
               }
             : undefined,
@@ -279,7 +337,10 @@ export function CurrentOrderStatusPanel({
       // 5. Menunggu Jadwal Kunjungan (Evaluasi Hari Ini vs Terjadwal Mendatang)
       if (
         order.subStatus === "WORKER_ACCEPTED" ||
-        (order.status === "SCHEDULED" && order.assignment?.status === "ACCEPTED" && order.subStatus !== "WORKER_OTW")
+        (order.status === "SCHEDULED" &&
+          order.assignment?.status === "ACCEPTED" &&
+          order.subStatus !== "WORKER_OTW" &&
+          !isPreArrivedTransitioned)
       ) {
         const workerName = order.assignment?.workerName || "Teknisi Lapangan";
         const todayStr = new Date().toISOString().split("T")[0];
@@ -324,14 +385,7 @@ export function CurrentOrderStatusPanel({
       // 6. Teknisi Menuju Lokasi
       if (
         order.subStatus === "WORKER_OTW" ||
-        (order.visit?.status === "ON_THE_WAY" &&
-          order.subStatus !== "WORKER_ARRIVED" &&
-          order.subStatus !== "DIAGNOSING" &&
-          order.subStatus !== "WAITING_CUSTOMER_CONSENT" &&
-          order.subStatus !== "PRICE_APPROVED" &&
-          order.subStatus !== "EXECUTING" &&
-          order.subStatus !== "EXECUTION_PENDING" &&
-          order.subStatus !== "WORK_FINISHED")
+        (order.visit?.status === "ON_THE_WAY" && !isPreArrivedTransitioned)
       ) {
         const workerName = order.assignment?.workerName || "Teknisi";
         return {
@@ -358,10 +412,7 @@ export function CurrentOrderStatusPanel({
           !order.diagnosis &&
           order.subStatus !== "DIAGNOSING" &&
           order.subStatus !== "WAITING_CUSTOMER_CONSENT" &&
-          order.subStatus !== "PRICE_APPROVED" &&
-          order.subStatus !== "EXECUTING" &&
-          order.subStatus !== "EXECUTION_PENDING" &&
-          order.subStatus !== "WORK_FINISHED")
+          !isPostConsentSub)
       ) {
         const workerName = order.assignment?.workerName || "Teknisi";
         return {
@@ -406,7 +457,8 @@ export function CurrentOrderStatusPanel({
         order.subStatus === "WAITING_CUSTOMER_CONSENT" ||
         (order.diagnosis?.status === "SUBMITTED" &&
           order.diagnosis?.consent?.type !== "REMOTE_APPROVED" &&
-          order.diagnosis?.consent?.type !== "IN_PERSON_RECORDED")
+          order.diagnosis?.consent?.type !== "IN_PERSON_RECORDED" &&
+          !isPostConsentSub)
       ) {
         return {
           title: "Persetujuan Rincian Biaya Perbaikan Diperlukan",
@@ -431,9 +483,9 @@ export function CurrentOrderStatusPanel({
 
       // 10. Harga Disetujui
       if (
-        order.subStatus === "PRICE_APPROVED" ||
-        order.subStatus === "IN_PERSON_CONSENT_RECORDED" ||
-        order.diagnosis?.consent?.type === "IN_PERSON_RECORDED"
+        (order.subStatus === "PRICE_APPROVED" ||
+          order.subStatus === "IN_PERSON_CONSENT_RECORDED") &&
+        !isPostExecutionSub
       ) {
         const isInPerson =
           order.diagnosis?.consent?.type === "IN_PERSON_RECORDED" ||
@@ -463,8 +515,8 @@ export function CurrentOrderStatusPanel({
       if (
         order.subStatus === "EXECUTING" ||
         (order.status === "IN_PROGRESS" && (order.subStatus as string) === "EXECUTION_IN_PROGRESS") ||
-        order.visit?.status === "EXECUTING" ||
-        Boolean(order.execution && !order.execution.finishedAt)
+        ((order.visit?.status === "EXECUTING" || Boolean(order.execution && !order.execution.finishedAt)) &&
+          !isPostExecutionSub)
       ) {
         return {
           title: "Tindakan Perbaikan Fisik Sedang Berlangsung",
@@ -485,9 +537,10 @@ export function CurrentOrderStatusPanel({
 
       // 12. Bayar Pengerjaan (Worker Finished -> Awaiting Execution Payment)
       if (
-        order.subStatus === "WORK_FINISHED" ||
-        order.subStatus === "EXECUTION_PENDING" ||
-        order.subStatus === "PAYMENT_OVERDUE"
+        (order.subStatus === "WORK_FINISHED" ||
+          order.subStatus === "EXECUTION_PENDING" ||
+          order.subStatus === "PAYMENT_OVERDUE") &&
+        execPayment?.status !== "PAID"
       ) {
         const isOverdue = order.subStatus === "PAYMENT_OVERDUE" || execPayment?.status === "OVERDUE";
         return {
@@ -516,8 +569,10 @@ export function CurrentOrderStatusPanel({
 
       // 13. Pembayaran Berhasil — Menunggu Teknisi
       if (
-        order.subStatus === "WAITING_WORKER_CLOSE_VISIT" ||
-        (execPayment?.status === "PAID" && order.subStatus !== "VISIT_CLOSED" && order.subStatus !== "AWAITING_CUSTOMER_CONFIRMATION")
+        order.subStatus !== "VISIT_CLOSED" &&
+        order.subStatus !== "AWAITING_CUSTOMER_CONFIRMATION" &&
+        order.visit?.status !== "CLOSED" &&
+        (order.subStatus === "WAITING_WORKER_CLOSE_VISIT" || execPayment?.status === "PAID")
       ) {
         return {
           title: "Pembayaran Berhasil — Menunggu Teknisi Menutup Kunjungan",
@@ -537,20 +592,28 @@ export function CurrentOrderStatusPanel({
       }
 
       // 14. Menunggu Konfirmasi Pekerjaan Selesai (Visit Closed)
-      if (order.subStatus === "VISIT_CLOSED" || order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION") {
+      if (
+        order.subStatus === "VISIT_CLOSED" ||
+        order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION" ||
+        (execPayment?.status === "PAID" && order.visit?.status === "CLOSED")
+      ) {
+        const workerName = order.assignment?.workerName || "Teknisi bertugas";
         return {
-          title: "Kunjungan Ditutup — Konfirmasi Pekerjaan Tuntas",
+          title: "Kunjungan Ditutup — Konfirmasi Pekerjaan Telah Selesai",
           subStatusLabel: "Menunggu Konfirmasi Pekerjaan Selesai",
           variant: "success" as const,
           description:
-            "Teknisi telah resmi mengakhiri kunjungan servis. Silakan pastikan unit beroperasi optimal dan tekan tombol 'Pekerjaan Telah Selesai' untuk menyelesaikan pesanan.",
+            `Pembayaran Anda telah lunas dan teknisi ${workerName} telah resmi menutup kunjungan. Pastikan kembali hasil pekerjaan sudah rapi dan unit bekerja dengan baik sebelum menekan 'Pekerjaan Telah Selesai'.`,
           responsibleParty: "Pelanggan (Anda)",
           responsibleRole: "CUSTOMER",
-          nextStep: "Konfirmasi Anda akan menyelesaikan pesanan, memulai masa tahan escrow mitra, dan mengaktifkan garansi resmi.",
+          nextStep: hasWarranty
+            ? `Klik 'Pekerjaan Telah Selesai' jika Anda sudah puas dengan hasilnya. Status akan menjadi COMPLETED dan garansi resmi ${warrantyDays} hari langsung aktif.`
+            : "Klik 'Pekerjaan Telah Selesai' setelah Anda memastikan unit berfungsi normal dan hasilnya memuaskan (layanan ini tanpa tambahan masa garansi).",
           deadline: { label: "Konfirmasi Otomatis", value: "72 Jam Tanpa Komplain" },
           contextChips: [
             { label: "Kunjungan Fisik", value: "Telah Ditutup Teknisi", icon: CheckCircle },
-            { label: "Status Unit", value: order.execution?.testResults || "Fungsi Normal", highlight: true },
+            { label: "Hasil Uji Teknisi", value: order.execution?.testResults || "Fungsi Normal", highlight: true },
+            { label: "Jaminan Garansi", value: warrantyText, icon: ShieldCheck },
           ],
           lastCompletedStep: "✓ Teknisi Menutup Kunjungan Fisik Secara Resmi",
           primaryAction: onConfirmCompleted
@@ -646,7 +709,10 @@ export function CurrentOrderStatusPanel({
       // 4. Teknisi Siap Berangkat
       if (
         order.subStatus === "WORKER_ACCEPTED" ||
-        (order.status === "SCHEDULED" && order.assignment?.status === "ACCEPTED" && order.subStatus !== "WORKER_OTW")
+        (order.status === "SCHEDULED" &&
+          order.assignment?.status === "ACCEPTED" &&
+          order.subStatus !== "WORKER_OTW" &&
+          !isPreArrivedTransitioned)
       ) {
         const workerName = order.assignment?.workerName || "Teknisi";
         const todayStr = new Date().toISOString().split("T")[0];
@@ -712,13 +778,15 @@ export function CurrentOrderStatusPanel({
         order.subStatus === "PRICE_APPROVED" ||
         order.subStatus === "IN_PERSON_CONSENT_RECORDED" ||
         order.subStatus === "EXECUTING" ||
-        order.visit?.status === "EXECUTING" ||
-        Boolean(order.execution && !order.execution.finishedAt)
+        (order.status === "IN_PROGRESS" && (order.subStatus as string) === "EXECUTION_IN_PROGRESS") ||
+        ((order.visit?.status === "EXECUTING" || Boolean(order.execution && !order.execution.finishedAt)) &&
+          !isPostExecutionSub)
       ) {
         const isExecuting =
           order.subStatus === "EXECUTING" ||
-          order.visit?.status === "EXECUTING" ||
-          Boolean(order.execution && !order.execution.finishedAt);
+          (order.status === "IN_PROGRESS" && (order.subStatus as string) === "EXECUTION_IN_PROGRESS") ||
+          (!isPostExecutionSub &&
+            (order.visit?.status === "EXECUTING" || Boolean(order.execution && !order.execution.finishedAt)));
         const consentLabel =
           order.subStatus === "WAITING_CUSTOMER_CONSENT"
             ? "Menunggu Persetujuan Harga Customer"
@@ -752,9 +820,10 @@ export function CurrentOrderStatusPanel({
 
       // 11. Menunggu Pembayaran
       if (
-        order.subStatus === "WORK_FINISHED" ||
-        order.subStatus === "EXECUTION_PENDING" ||
-        order.subStatus === "PAYMENT_OVERDUE"
+        (order.subStatus === "WORK_FINISHED" ||
+          order.subStatus === "EXECUTION_PENDING" ||
+          order.subStatus === "PAYMENT_OVERDUE") &&
+        execPayment?.status !== "PAID"
       ) {
         return {
           title: "Pekerjaan Fisik Selesai — Menunggu Pembayaran Pelanggan",
@@ -775,8 +844,10 @@ export function CurrentOrderStatusPanel({
 
       // 12. Pembayaran Berhasil — Menunggu Worker Menutup Kunjungan
       if (
-        order.subStatus === "WAITING_WORKER_CLOSE_VISIT" ||
-        (execPayment?.status === "PAID" && order.subStatus !== "VISIT_CLOSED" && order.subStatus !== "AWAITING_CUSTOMER_CONFIRMATION")
+        order.subStatus !== "VISIT_CLOSED" &&
+        order.subStatus !== "AWAITING_CUSTOMER_CONFIRMATION" &&
+        order.visit?.status !== "CLOSED" &&
+        (order.subStatus === "WAITING_WORKER_CLOSE_VISIT" || execPayment?.status === "PAID")
       ) {
         const workerName = order.assignment?.workerName || "Teknisi";
         return {
@@ -797,13 +868,17 @@ export function CurrentOrderStatusPanel({
       }
 
       // 13. Menunggu Konfirmasi Customer (Visit Closed)
-      if (order.subStatus === "VISIT_CLOSED" || order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION") {
+      if (
+        order.subStatus === "VISIT_CLOSED" ||
+        order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION" ||
+        (execPayment?.status === "PAID" && order.visit?.status === "CLOSED")
+      ) {
         return {
           title: "Kunjungan Ditutup — Menunggu Konfirmasi Akhir Pelanggan",
           subStatusLabel: "Menunggu Konfirmasi Customer",
           variant: "primary" as const,
           description:
-            "Teknisi telah menyelesaikan seluruh kunjungan. Menunggu pelanggan mengonfirmasi pekerjaan selesai untuk mencairkan pesanan ke COMPLETED.",
+            "Teknisi telah menyelesaikan seluruh kunjungan. Menunggu pelanggan mengonfirmasi pekerjaan selesai untuk memproses pesanan ke COMPLETED.",
           responsibleParty: "Pelanggan",
           responsibleRole: "CUSTOMER",
           nextStep: "Jika pelanggan tidak merespons dalam 72 jam, sistem akan menyelesaikan pesanan secara otomatis.",
@@ -811,6 +886,7 @@ export function CurrentOrderStatusPanel({
           contextChips: [
             { label: "Kunjungan", value: "Telah Ditutup Teknisi", icon: CheckCircle },
             { label: "Estimasi Hak Mitra", value: formatRupiah(order.paymentSummary?.providerFunds?.netAmount || execAmount), highlight: true },
+            { label: "Proteksi Layanan", value: warrantyText, icon: ShieldCheck },
           ],
           lastCompletedStep: "✓ Teknisi Menutup Kunjungan Servis",
         };
@@ -851,7 +927,10 @@ export function CurrentOrderStatusPanel({
       // 2-3. Terjadwal & Siap Berangkat
       if (
         order.subStatus === "WORKER_ACCEPTED" ||
-        (order.status === "SCHEDULED" && order.assignment?.status === "ACCEPTED" && order.subStatus !== "WORKER_OTW")
+        (order.status === "SCHEDULED" &&
+          order.assignment?.status === "ACCEPTED" &&
+          order.subStatus !== "WORKER_OTW" &&
+          !isPreArrivedTransitioned)
       ) {
         const todayStr = new Date().toISOString().split("T")[0];
         const isFutureDate = Boolean(order.schedule.date && order.schedule.date > todayStr);
@@ -893,14 +972,7 @@ export function CurrentOrderStatusPanel({
       // 4. Menuju Lokasi
       if (
         order.subStatus === "WORKER_OTW" ||
-        (order.visit?.status === "ON_THE_WAY" &&
-          order.subStatus !== "WORKER_ARRIVED" &&
-          order.subStatus !== "DIAGNOSING" &&
-          order.subStatus !== "WAITING_CUSTOMER_CONSENT" &&
-          order.subStatus !== "PRICE_APPROVED" &&
-          order.subStatus !== "EXECUTING" &&
-          order.subStatus !== "EXECUTION_PENDING" &&
-          order.subStatus !== "WORK_FINISHED")
+        (order.visit?.status === "ON_THE_WAY" && !isPreArrivedTransitioned)
       ) {
         return {
           title: "Dalam Perjalanan Menuju Alamat Pelanggan",
@@ -929,10 +1001,7 @@ export function CurrentOrderStatusPanel({
           !order.diagnosis &&
           order.subStatus !== "DIAGNOSING" &&
           order.subStatus !== "WAITING_CUSTOMER_CONSENT" &&
-          order.subStatus !== "PRICE_APPROVED" &&
-          order.subStatus !== "EXECUTING" &&
-          order.subStatus !== "EXECUTION_PENDING" &&
-          order.subStatus !== "WORK_FINISHED")
+          !isPostConsentSub)
       ) {
         return {
           title: "Tiba di Lokasi — Siap Melakukan Pemeriksaan",
@@ -979,7 +1048,10 @@ export function CurrentOrderStatusPanel({
       // 8. Menunggu Persetujuan Harga
       if (
         order.subStatus === "WAITING_CUSTOMER_CONSENT" ||
-        (order.diagnosis?.status === "SUBMITTED" && order.diagnosis?.consent?.type !== "REMOTE_APPROVED")
+        (order.diagnosis?.status === "SUBMITTED" &&
+          order.diagnosis?.consent?.type !== "REMOTE_APPROVED" &&
+          order.diagnosis?.consent?.type !== "IN_PERSON_RECORDED" &&
+          !isPostConsentSub)
       ) {
         return {
           title: "Menunggu Persetujuan Rincian Biaya dari Pelanggan",
@@ -1002,7 +1074,10 @@ export function CurrentOrderStatusPanel({
       }
 
       // 9-10. Harga Disetujui / Lanjutkan Pengerjaan
-      if (order.subStatus === "PRICE_APPROVED" || order.subStatus === "IN_PERSON_CONSENT_RECORDED") {
+      if (
+        (order.subStatus === "PRICE_APPROVED" || order.subStatus === "IN_PERSON_CONSENT_RECORDED") &&
+        !isPostExecutionSub
+      ) {
         return {
           title: "Biaya Disetujui — Mulai Pengerjaan Fisik",
           subStatusLabel: "Harga Telah Disetujui",
@@ -1027,8 +1102,8 @@ export function CurrentOrderStatusPanel({
       if (
         order.subStatus === "EXECUTING" ||
         (order.status === "IN_PROGRESS" && (order.subStatus as string) === "EXECUTION_IN_PROGRESS") ||
-        order.visit?.status === "EXECUTING" ||
-        Boolean(order.execution && !order.execution.finishedAt)
+        ((order.visit?.status === "EXECUTING" || Boolean(order.execution && !order.execution.finishedAt)) &&
+          !isPostExecutionSub)
       ) {
         return {
           title: "Perbaikan Fisik Sedang Berlangsung",
@@ -1052,9 +1127,10 @@ export function CurrentOrderStatusPanel({
 
       // 12-13. Selesai Pengerjaan / Menunggu Pembayaran Pelanggan
       if (
-        order.subStatus === "WORK_FINISHED" ||
-        order.subStatus === "EXECUTION_PENDING" ||
-        order.subStatus === "PAYMENT_OVERDUE"
+        (order.subStatus === "WORK_FINISHED" ||
+          order.subStatus === "EXECUTION_PENDING" ||
+          order.subStatus === "PAYMENT_OVERDUE") &&
+        execPayment?.status !== "PAID"
       ) {
         return {
           title: "Pekerjaan Fisik Selesai — Menunggu Pelunasan Pelanggan",
@@ -1075,8 +1151,10 @@ export function CurrentOrderStatusPanel({
 
       // 14. Pembayaran Berhasil — Akhiri Kunjungan
       if (
-        order.subStatus === "WAITING_WORKER_CLOSE_VISIT" ||
-        (execPayment?.status === "PAID" && order.subStatus !== "VISIT_CLOSED" && order.subStatus !== "AWAITING_CUSTOMER_CONFIRMATION")
+        order.subStatus !== "VISIT_CLOSED" &&
+        order.subStatus !== "AWAITING_CUSTOMER_CONFIRMATION" &&
+        order.visit?.status !== "CLOSED" &&
+        (order.subStatus === "WAITING_WORKER_CLOSE_VISIT" || execPayment?.status === "PAID")
       ) {
         return {
           title: "Pembayaran Telah Lunas — Akhiri Kunjungan Fisik",
@@ -1099,13 +1177,17 @@ export function CurrentOrderStatusPanel({
       }
 
       // 15. Kunjungan Ditutup
-      if (order.subStatus === "VISIT_CLOSED" || order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION") {
+      if (
+        order.subStatus === "VISIT_CLOSED" ||
+        order.subStatus === "AWAITING_CUSTOMER_CONFIRMATION" ||
+        (execPayment?.status === "PAID" && order.visit?.status === "CLOSED")
+      ) {
         return {
           title: "Kunjungan Ditutup — Menunggu Konfirmasi Pelanggan",
           subStatusLabel: "Kunjungan Ditutup",
           variant: "info" as const,
           description:
-            "Kunjungan fisik telah resmi Anda tutup. Pesanan akan otomatis berstatus COMPLETED setelah pelanggan mengonfirmasi atau melewati batas SLA 72 jam.",
+            "Kunjungan fisik telah resmi Anda tutup. Pesanan akan otomatis berstatus COMPLETED setelah pelanggan mengonfirmasi pekerjaan selesai dengan baik atau melewati batas SLA 72 jam.",
           responsibleParty: "Pelanggan",
           responsibleRole: "CUSTOMER",
           nextStep: "Tugas lapangan Anda telah selesai. Pendapatan kerja Anda akan dialokasikan ke rekap bulanan.",
@@ -1217,7 +1299,7 @@ export function CurrentOrderStatusPanel({
 
         <div className="flex items-center gap-2 flex-wrap">
           <span className={`text-[11px] font-bold px-3 py-1 rounded-full border shadow-3xs flex items-center gap-1.5 ${variantStyles.pill}`}>
-            <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+            <span className={`w-1.5 h-1.5 rounded-full bg-current ${!isCompleted && !isCancelled ? "animate-pulse" : ""}`} />
             <span>{status.subStatusLabel}</span>
           </span>
         </div>

@@ -161,6 +161,11 @@ export function mapBackendOrderToServiceOrder(
     subcategoryName: resolvedSubcategory,
     thumbnailUrl:
       rawService.thumbnailUrl ||
+      rawService.thumbnail_url ||
+      rawService.image_url ||
+      rawService.primary_media_url ||
+      rawService.primary_media?.url ||
+      (Array.isArray(rawService.media) ? rawService.media[0]?.url : undefined) ||
       "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=500&auto=format&fit=crop&q=80",
     priceModel: (rawService.priceModel as any) || "AFTER_SURVEY",
     diagnosisFee: backendOrder.diagnosis_fee_idr ?? 50000,
@@ -542,6 +547,16 @@ export function mapBackendOrderToServiceOrder(
     };
   }
 
+  const rawVisit = (backendOrder as any).visit;
+  const mappedVisit = rawVisit
+    ? {
+        status: rawVisit.status,
+        otwAt: rawVisit.otw_at || undefined,
+        arrivedAt: rawVisit.arrived_at || undefined,
+        closedAt: rawVisit.visit_closed_at || undefined,
+      }
+    : undefined;
+
   // Real Execution mapping (only present if execution has occurred on backend)
   let execution: ServiceExecution | undefined = undefined;
   const rawExec = (backendOrder as any).execution;
@@ -549,8 +564,17 @@ export function mapBackendOrderToServiceOrder(
     const beforeEvidences = (rawExec.evidences || []).filter((e: any) => e.type === "BEFORE" || e.evidence_type === "BEFORE");
     const afterEvidences = (rawExec.evidences || []).filter((e: any) => e.type === "AFTER" || e.evidence_type === "AFTER");
 
+    const resolvedVisitStatus: ServiceExecution["visitStatus"] =
+      backendOrder.completed_at ||
+      rawVisit?.status === "CLOSED" ||
+      backendOrder.status === "VISIT_CLOSED"
+        ? "PAID_VISIT_ENDED"
+        : rawExec.finished_at && !isExecPaid
+        ? "AWAITING_PAYMENT"
+        : "IN_PROGRESS";
+
     execution = {
-      visitStatus: backendOrder.completed_at ? "PAID_VISIT_ENDED" : "IN_PROGRESS",
+      visitStatus: resolvedVisitStatus,
       startedAt: rawExec.started_at || backendOrder.created_at,
       finishedAt: rawExec.finished_at || backendOrder.completed_at || undefined,
       beforePhotos: beforeEvidences.map((e: any) => e.url || e.media_reference),
@@ -636,11 +660,13 @@ export function mapBackendOrderToServiceOrder(
           }
         : undefined,
     assignment,
+    visit: mappedVisit,
     diagnosis,
     execution,
     paymentSummary,
     timeline,
     issues: [],
+    completedAt: backendOrder.completed_at || undefined,
     createdAt: backendOrder.created_at,
     updatedAt: backendOrder.updated_at,
   };
@@ -671,6 +697,8 @@ export function mapBackendWorkerTaskToServiceOrder(task: BackendWorkerTask): Ser
       diagnosis: rawOrder.diagnosis,
       consent: rawOrder.consent,
       execution: rawOrder.execution,
+      visit: rawOrder.visit || task.visit,
+      completed_at: rawOrder.completed_at,
     } as any,
     rawOrder.payment_obligations
   );
@@ -696,6 +724,7 @@ export function mapBackendWorkerTaskToServiceOrder(task: BackendWorkerTask): Ser
       status: task.visit.status as any,
       otwAt: task.visit.otw_at,
       arrivedAt: task.visit.arrived_at,
+      closedAt: (task.visit as any).visit_closed_at || undefined,
     };
     // Only infer subStatus from visit if order is still in scheduled/pre-diagnosis phase
     if (

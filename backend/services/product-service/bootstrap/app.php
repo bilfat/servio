@@ -19,6 +19,8 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend(\App\Http\Middleware\CorrelationTraceMiddleware::class);
+
         $middleware->alias([
             'product.auth' => \App\Http\Middleware\AuthenticateProductActor::class,
             'product.perm' => \App\Http\Middleware\RequireProductPermission::class,

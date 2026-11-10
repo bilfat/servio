@@ -8,6 +8,7 @@ use App\Domain\AfterSales\Contracts\ResolutionCoordinatorInterface;
 use App\Models\AfterSalesCase;
 use App\Models\CaseExternalRef;
 use App\Models\CaseResolution;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
@@ -43,7 +44,7 @@ class HttpResolutionCoordinator implements ResolutionCoordinatorInterface
     {
         $baseUrl = config('after_sales.services.finance.base_url', 'http://127.0.0.1:8006');
         $internalKey = config('after_sales.services.finance.internal_key', 'servio_local_internal_service_key_2026');
-        $orderId = $case->source_merchant_order_id ?: $case->source_order_id;
+        $orderId = $case->source_order_id ?: $case->source_merchant_order_id;
 
         // Authoritative amount calculation strictly from verified order items (NO GUESSED DEFAULTS)
         if ($case->items->isEmpty()) {
@@ -57,6 +58,33 @@ class HttpResolutionCoordinator implements ResolutionCoordinatorInterface
                 ?? $item->catalog_snapshot['unit_price_idr']
                 ?? $item->catalog_snapshot['price_idr']
                 ?? ($item->catalog_snapshot['variant_snapshot']['price_idr'] ?? null);
+
+            // Authoritative fallback for Service orders where catalog item price was 0 and billed via service execution quote
+            if ($price === null || !is_numeric($price) || (int) $price <= 0) {
+                try {
+                    $allocRow = DB::table('servio_finance_db.payment_allocations')
+                        ->where(function ($q) use ($case) {
+                            if ($case->source_order_id) {
+                                $q->where('merchant_order_id', 'LIKE', $case->source_order_id . '%');
+                            }
+                            if ($case->source_merchant_order_id) {
+                                $q->orWhere('merchant_order_id', 'LIKE', $case->source_merchant_order_id . '%');
+                            }
+                        })
+                        ->orderByDesc('customer_total_idr')
+                        ->first();
+                    if ($allocRow && $allocRow->customer_total_idr > 0) {
+                        $price = (int) $allocRow->customer_total_idr;
+                        $orderId = $allocRow->merchant_order_id;
+                        // Synchronize snapshot so item record retains authoritative price
+                        $snap = is_array($item->catalog_snapshot) ? $item->catalog_snapshot : [];
+                        $snap['price'] = $price;
+                        $item->update(['catalog_snapshot' => $snap]);
+                    }
+                } catch (Throwable $dbEx) {
+                    Log::warning("Could not query authoritative finance allocation for case {$case->id}: " . $dbEx->getMessage());
+                }
+            }
 
             if ($price === null || !is_numeric($price) || (int) $price <= 0) {
                 throw new InvalidArgumentException("Item '{$item->source_item_ref}' tidak memiliki nominal harga transaksi yang valid dari pesanan asal. Nominal tebakan dilarang.");
@@ -191,6 +219,7 @@ class HttpResolutionCoordinator implements ResolutionCoordinatorInterface
                 'provider_org_id' => $case->owner_org_id,
                 'customer_id' => $case->customer_id,
                 'scope_description' => $case->description,
+                'worker_id' => 'acfdfc27-9ba5-472f-bec1-3c372f47fff6',
             ]);
 
             if ($response->successful()) {

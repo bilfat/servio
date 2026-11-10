@@ -1,23 +1,28 @@
 <?php
-require __DIR__ . '/../backend/services/after-sales-service/vendor/autoload.php';
-$app = require_once __DIR__ . '/../backend/services/after-sales-service/bootstrap/app.php';
-$kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
-$kernel->bootstrap();
+$ch = curl_init('http://127.0.0.1:8008/api/v1/after-sales/warranties');
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    'Accept: application/json',
+    'X-User-Id: 692f03fd-2362-485a-9a23-a672bbb4533f',
+    'X-User-Role: CUSTOMER',
+]);
+$res = curl_exec($ch);
+curl_close($ch);
 
-use Illuminate\Http\Request;
-use App\Http\Controllers\Api\CustomerWarrantyController;
-use App\Support\AuthenticatedActor;
+$data = json_decode($res, true);
+echo "Items returned from API: " . count($data['data'] ?? []) . "\n";
+foreach ($data['data'] ?? [] as $w) {
+    echo sprintf(
+        "Order: %s | Item: %s | Status: %s | isActive: %s | isClaimEligible: %s | remainingQty: %s\n",
+        $w['order_number'],
+        $w['item_title'],
+        $w['status'],
+        $w['is_active'] ? 'true' : 'false',
+        $w['is_claim_eligible'] ? 'true' : 'false',
+        $w['remaining_quantity'] ?? '0'
+    );
+}
 
-$controller = app(CustomerWarrantyController::class);
 
-$actor = new AuthenticatedActor(
-    id: '692f03fd-2362-485a-9a23-a672bbb4533f',
-    role: 'CUSTOMER'
-);
 
-$request = Request::create('/api/v1/after-sales/warranties', 'GET', ['state' => 'active']);
-$request->attributes->set('actor', $actor);
 
-$response = $controller->index($request);
-echo "Status: " . $response->getStatusCode() . "\n";
-echo json_encode(json_decode($response->getContent(), true), JSON_PRETTY_PRINT) . "\n";

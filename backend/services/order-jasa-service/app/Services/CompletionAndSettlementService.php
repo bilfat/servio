@@ -215,7 +215,39 @@ class CompletionAndSettlementService
             }
 
             $days = (int) ($wCfg['duration_days'] ?? ($wCfg['durationDays'] ?? 0));
+            $displayName = $snap['name'] ?? ($snap['title'] ?? ($snap['display_name'] ?? null));
+
+            // Fallback directly to authoritative service offering catalog if snapshot lacked warranty config
+            if (($days <= 0 || empty($displayName)) && $order->service_offering_id) {
+                try {
+                    $offering = \Illuminate\Support\Facades\DB::table('servio_service_db.service_offerings')
+                        ->where('id', $order->service_offering_id)
+                        ->first();
+                    if ($offering) {
+                        $displayName = $displayName ?: $offering->display_name;
+                        if ($days <= 0 && !empty($offering->warranty_config)) {
+                            $catalogWCfg = json_decode($offering->warranty_config, true) ?: [];
+                            $days = (int) ($catalogWCfg['duration_days'] ?? ($catalogWCfg['durationDays'] ?? 0));
+                            if ($days > 0) {
+                                $wCfg = $catalogWCfg;
+                            }
+                        }
+                    }
+                } catch (\Throwable $catEx) {
+                    \Illuminate\Support\Facades\Log::warning("notifyAfterSalesWarranty catalog fallback error: " . $catEx->getMessage());
+                }
+            }
+
             if ($days > 0) {
+                $providerName = $snap['provider_name'] ?? ($snap['provider']['store_name'] ?? null);
+                if (empty($providerName) && $order->provider_org_id) {
+                    try {
+                        $providerName = \Illuminate\Support\Facades\DB::table('servio_identity_db.organization_profiles')
+                            ->where('organization_id', $order->provider_org_id)
+                            ->value('display_name');
+                    } catch (\Throwable) {}
+                }
+
                 $baseUrl = config('services.after_sales.base_url', 'http://127.0.0.1:8008');
                 $key = config('services.after_sales.internal_key', 'servio_local_internal_service_key_2026');
 
@@ -232,21 +264,21 @@ class CompletionAndSettlementService
                             [
                                 'order_item_key' => (string) ($order->service_offering_id ?: $order->id),
                                 'catalog_ref' => (string) ($order->service_offering_id ?: $order->id),
-                                'item_title' => $snap['name'] ?? ($snap['title'] ?? ($snap['display_name'] ?? 'Layanan Jasa Bergaransi')),
+                                'item_title' => $displayName ?: 'Layanan Jasa Bergaransi',
                                 'item_image_url' => $snap['image_url'] ?? ($snap['primary_media']['url'] ?? null),
                                 'quantity' => 1,
                                 'customer_id' => (string) $order->customer_id,
                                 'owner_org_type' => 'PROVIDER',
                                 'owner_org_id' => (string) $order->provider_org_id,
-                                'organization_name' => $snap['provider_name'] ?? ($snap['provider']['store_name'] ?? 'Mitra Penyedia Jasa'),
+                                'organization_name' => $providerName ?: 'sukses gembira',
                                 'order_number' => (string) ($order->order_no ?: $order->id),
                                 'has_warranty' => true,
-                                'snapshot_name' => $wCfg['name'] ?? ($wCfg['presetName'] ?? 'Garansi Layanan Resmi'),
+                                'snapshot_name' => $wCfg['name'] ?? ($wCfg['presetName'] ?? "Garansi Servis {$days} Hari"),
                                 'snapshot_duration_days' => $days,
                                 'snapshot_coverage' => $wCfg['coverage'] ?? ($wCfg['coverage_text'] ?? 'Perbaikan ulang atas kendala yang muncul pasca servis'),
                                 'snapshot_exclusion' => $wCfg['exclusions'] ?? ($wCfg['exclusion_text'] ?? 'Kerusakan di luar lingkup servis sebelumnya'),
                                 'catalog_snapshot' => [
-                                    'name' => $snap['name'] ?? ($snap['title'] ?? null),
+                                    'name' => $displayName,
                                     'image_url' => $snap['image_url'] ?? null,
                                     'price_idr' => (int) ($snap['base_price_idr'] ?? ($snap['price'] ?? 0)),
                                 ],

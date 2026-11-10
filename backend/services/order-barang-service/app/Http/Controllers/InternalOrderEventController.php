@@ -62,9 +62,53 @@ class InternalOrderEventController extends Controller
     /**
      * Internal read for Order snapshot.
      */
-    public function showOrder(string $orderId): JsonResponse
+    public function showOrder(Request $request, string $orderId): JsonResponse
     {
-        $order = Order::where('id', $orderId)->with(['items', 'delivery'])->first();
+        if ($request->query('projection') === 'eligibility') {
+            $order = Order::select([
+                'id',
+                'order_number',
+                'checkout_group_id',
+                'customer_id',
+                'merchant_org_id',
+                'status',
+                'recipient_snapshot',
+                'created_at',
+            ])->with(['items:id,order_id,product_id,quantity,unit_price_idr,product_snapshot'])
+                ->where('id', $orderId)
+                ->orWhere('order_number', $orderId)
+                ->first();
+
+            if (!$order) {
+                return ApiResponse::error('ORDER_NOT_FOUND', 'Pesanan tidak ditemukan.', 404);
+            }
+
+            $recipientName = is_array($order->recipient_snapshot)
+                ? ($order->recipient_snapshot['recipient_name'] ?? $order->recipient_snapshot['name'] ?? null)
+                : null;
+
+            return ApiResponse::success([
+                'id' => $order->id,
+                'order_number' => $order->order_number,
+                'checkout_group_id' => $order->checkout_group_id,
+                'customer_id' => $order->customer_id,
+                'merchant_org_id' => $order->merchant_org_id,
+                'status' => $order->status,
+                'recipient_name' => $recipientName,
+                'created_at' => $order->created_at?->toIso8601String(),
+                'items' => $order->items->map(static fn ($item) => [
+                    'id' => $item->id,
+                    'product_id' => $item->product_id,
+                    'name' => is_array($item->product_snapshot)
+                        ? ($item->product_snapshot['name'] ?? $item->product_snapshot['title'] ?? $item->product_snapshot['product_name'] ?? 'Barang Pesanan')
+                        : 'Barang Pesanan',
+                    'price' => (float) ($item->unit_price_idr ?? 0),
+                    'quantity' => (int) ($item->quantity ?? 1),
+                ])->values()->all(),
+            ], 'ORDER_LOADED');
+        }
+
+        $order = Order::where('id', $orderId)->orWhere('order_number', $orderId)->with(['items', 'delivery'])->first();
         if (!$order) {
             return ApiResponse::error('ORDER_NOT_FOUND', 'Pesanan tidak ditemukan.', 404);
         }

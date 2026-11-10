@@ -43,6 +43,7 @@ Route::prefix('v1/after-sales')->group(function () {
         Route::post('/cases/{id}/solutions/{proposal_id}/decision', [CustomerCaseController::class, 'submitConsent'])->middleware('after_sales.idempotency');
         Route::post('/cases/{id}/report-issue', [CustomerCaseController::class, 'reportIssue']);
         Route::post('/cases/{id}/return-shipment', [CustomerCaseController::class, 'submitReturnShipment'])->middleware('after_sales.idempotency');
+        Route::post('/cases/{id}/confirm-completion', [CustomerCaseController::class, 'confirmCompletion'])->middleware('after_sales.idempotency');
 
         // Reviews
         Route::post('/reviews', [CustomerReviewController::class, 'store'])->middleware('after_sales.idempotency');

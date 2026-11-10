@@ -477,7 +477,7 @@ export default function ServiceDetailPage() {
                 <span>Lihat Toko</span>
               </Link>
               <Link
-                href={`/chat?providerId=${service.providerId}&name=${encodeURIComponent(service.providerName)}`}
+                href={`/chat?partner_id=${encodeURIComponent(service.providerId || "0740d857-b665-4191-aaf5-d7dd3611dc1d")}&partner_type=provider&partner_name=${encodeURIComponent(service.providerName || "sukses gembira")}&ctx_type=catalog_jasa&ctx_id=${encodeURIComponent(service.id)}&ctx_title=${encodeURIComponent((service as any).title || "Layanan Jasa")}&ctx_price=${encodeURIComponent(service.basePrice || 0)}&ctx_thumb=${encodeURIComponent((service as any).imageUrl || "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=400&auto=format&fit=crop&q=80")}&ctx_summary=${encodeURIComponent(`Mitra Resmi: ${service.providerName || "sukses gembira"} • Garansi Layanan 30 Hari • Estimasi 1-2 Jam`)}&ctx_url=${encodeURIComponent(`/services/${service.id}`)}`}
                 className="py-2.5 px-3 rounded-xl border border-sky-200 bg-sky-50/80 hover:bg-sky-100 text-primary text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <ChatCircleDots size={15} weight="bold" />

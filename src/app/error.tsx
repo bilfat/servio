@@ -4,6 +4,7 @@ import React, { useEffect } from "react";
 import Link from "next/link";
 import { ErrorState } from "@/components/feedback/ErrorState";
 import { House } from "@phosphor-icons/react";
+import { reportClientTelemetry } from "@/lib/devMonitor/clientReporter";
 
 export default function GlobalError({
   error,
@@ -14,6 +15,12 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     console.error("Global Application Error:", error);
+    reportClientTelemetry({
+      kind: "REACT_RUNTIME",
+      message: error?.message || "React Global Error Boundary caught an exception",
+      errorCode: error?.digest || "REACT_ERROR_BOUNDARY",
+      stack: error?.stack || null,
+    });
   }, [error]);
 
   return (

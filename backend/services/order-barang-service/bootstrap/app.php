@@ -19,18 +19,13 @@ return Application::configure(basePath: dirname(__DIR__))
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend(\App\Http\Middleware\CorrelationTraceMiddleware::class);
+
         $middleware->alias([
             'order.auth' => \App\Http\Middleware\AuthenticateOrderActor::class,
             'order.role' => \App\Http\Middleware\RequireOrderRole::class,
             'order.internal' => \App\Http\Middleware\RequireInternalServiceKey::class,
             'order.idempotency' => \App\Http\Middleware\HandleOrderIdempotency::class,
-        ]);
-
-        $middleware->statefulApi();
-
-        $middleware->validateCsrfTokens(except: [
-            'internal/*',
-            'api/*',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

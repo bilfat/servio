@@ -111,4 +111,42 @@ class SecurityAndRbacTest extends TestCase
         $res->assertStatus(403);
         $res->assertJsonPath('error.code', 'ORDER_FORBIDDEN_ROLE');
     }
+
+    public function test_internal_order_eligibility_projection_returns_lean_snapshot(): void
+    {
+        $order = $this->createOrderFor('CUST_PROJ_01', 'ORG_STORE_A');
+        $order->update(['status' => Order::STATUS_COMPLETED]);
+
+        $item = \App\Models\OrderItem::create([
+            'id' => (string) Str::ulid(),
+            'order_id' => $order->id,
+            'product_id' => 'PROD_ELIG_01',
+            'variant_id' => 'VAR_ELIG_01',
+            'product_snapshot' => ['product_id' => 'PROD_ELIG_01', 'name' => 'Bor Listrik'],
+            'variant_snapshot' => ['sku' => 'SKU-BOR-01'],
+            'quantity' => 2,
+            'unit_price_idr' => 45000,
+            'line_subtotal_idr' => 90000,
+        ]);
+
+        $res = $this->getJson(
+            "/internal/v1/order-barang/orders/{$order->id}?projection=eligibility",
+            $this->internalHeaders()
+        );
+
+        $res->assertStatus(200)
+            ->assertJsonPath('data.id', $order->id)
+            ->assertJsonPath('data.checkout_group_id', $order->checkout_group_id)
+            ->assertJsonPath('data.customer_id', 'CUST_PROJ_01')
+            ->assertJsonPath('data.merchant_org_id', 'ORG_STORE_A')
+            ->assertJsonPath('data.status', Order::STATUS_COMPLETED)
+            ->assertJsonPath('data.recipient_name', 'Budi')
+            ->assertJsonPath('data.items.0.id', $item->id)
+            ->assertJsonPath('data.items.0.product_id', 'PROD_ELIG_01')
+            ->assertJsonPath('data.items.0.name', 'Bor Listrik')
+            ->assertJsonPath('data.items.0.price', 45000)
+            ->assertJsonPath('data.items.0.quantity', 2)
+            ->assertJsonMissingPath('data.delivery')
+            ->assertJsonMissingPath('data.address_snapshot');
+    }
 }

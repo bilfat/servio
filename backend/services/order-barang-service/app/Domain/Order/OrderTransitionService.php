@@ -141,27 +141,49 @@ class OrderTransitionService
                     $pol = json_decode($pol, true) ?: null;
                 }
                 $days = (int) ($pol['durationDays'] ?? $pol['duration_days'] ?? (($pol['durationMonths'] ?? 0) * 30));
+                $itemTitle = $snapshot['name'] ?? ($snapshot['title'] ?? null);
+
+                // Fallback directly to product catalog if snapshot lacked warranty policy
+                if (($days <= 0 || empty($itemTitle)) && $item->product_id) {
+                    try {
+                        $prod = \Illuminate\Support\Facades\DB::table('servio_product_db.products')
+                            ->where('id', $item->product_id)
+                            ->first();
+                        if ($prod) {
+                            $itemTitle = $itemTitle ?: $prod->name;
+                            if ($days <= 0 && !empty($prod->warranty_policy)) {
+                                $catalogPol = json_decode($prod->warranty_policy, true) ?: [];
+                                $days = (int) ($catalogPol['durationDays'] ?? $catalogPol['duration_days'] ?? (($catalogPol['durationMonths'] ?? 0) * 30));
+                                if ($days > 0) {
+                                    $pol = $catalogPol;
+                                }
+                            }
+                        }
+                    } catch (\Throwable $catEx) {
+                        \Illuminate\Support\Facades\Log::warning("notifyAfterSalesOrderCompleted catalog fallback error: " . $catEx->getMessage());
+                    }
+                }
 
                 if ($days > 0) {
                     $itemsPayload[] = [
                         'order_item_key' => (string) $item->id,
                         'catalog_ref' => (string) $item->product_id,
-                        'item_title' => $snapshot['name'] ?? ($snapshot['title'] ?? 'Produk Bergaransi'),
+                        'item_title' => $itemTitle ?: 'Produk Bergaransi',
                         'item_image_url' => $item->product_image_ref ?? ($snapshot['image_url'] ?? null),
                         'quantity' => (int) ($item->quantity ?: 1),
                         'customer_id' => (string) $order->customer_id,
                         'owner_org_type' => 'MERCHANT',
                         'owner_org_id' => (string) ($order->merchant_id ?? $order->merchant_org_id ?? '0c1467e7-af68-4b26-ae84-daa41d51aed0'),
-                        'organization_name' => (string) ($order->merchant_name ?? 'Toko Mitra SERVIO'),
+                        'organization_name' => (string) ($order->merchant_name ?? 'Sinar AC & Sparepart Glodok (BUDIAJASA)'),
                         'order_number' => (string) ($order->order_no ?? $order->id),
                         'merchant_order_id' => (string) $order->id,
                         'has_warranty' => true,
-                        'snapshot_name' => $pol['name'] ?? ($pol['presetName'] ?? 'Garansi Toko Resmi'),
+                        'snapshot_name' => $pol['name'] ?? ($pol['presetName'] ?? "Garansi Toko {$days} Hari"),
                         'snapshot_duration_days' => $days,
                         'snapshot_coverage' => $pol['coverage'] ?? ($pol['coverage_text'] ?? 'Kerusakan fungsi dan cacat produksi'),
                         'snapshot_exclusion' => $pol['exclusions'] ?? ($pol['exclusion_text'] ?? 'Kerusakan akibat kelalaian pemakaian'),
                         'catalog_snapshot' => [
-                            'name' => $snapshot['name'] ?? null,
+                            'name' => $itemTitle,
                             'image_url' => $item->product_image_ref ?? ($snapshot['image_url'] ?? null),
                             'price_idr' => (int) ($item->unit_price_idr ?: 0),
                             'quantity' => (int) ($item->quantity ?: 1),

@@ -17,34 +17,40 @@ class HttpOrderEligibilityVerifier implements OrderEligibilityVerifierInterface
         string $customerId,
         string $orderKind,
         string $orderId,
-        ?string $subOrderId = null
+        ?string $subOrderId = null,
+        bool $includeClaimedQuantities = true
     ): OrderEligibilityDto {
         $orderKind = strtoupper($orderKind);
 
         if ($orderKind === 'GOODS') {
-            return $this->verifyGoodsOrder($customerId, $orderId, $subOrderId);
+            return $this->verifyGoodsOrder($customerId, $orderId, $subOrderId, $includeClaimedQuantities);
         }
 
         if ($orderKind === 'SERVICE') {
-            return $this->verifyServiceOrder($customerId, $orderId);
+            return $this->verifyServiceOrder($customerId, $orderId, $includeClaimedQuantities);
         }
 
         return OrderEligibilityDto::invalid("Jenis pesanan '{$orderKind}' tidak valid.", $orderId, $customerId);
     }
 
-    protected function verifyGoodsOrder(string $customerId, string $orderId, ?string $subOrderId): OrderEligibilityDto
-    {
+    protected function verifyGoodsOrder(
+        string $customerId,
+        string $orderId,
+        ?string $subOrderId,
+        bool $includeClaimedQuantities = true
+    ): OrderEligibilityDto {
         $baseUrl = config('after_sales.services.order_barang.base_url', 'http://127.0.0.1:8005');
         $internalKey = config('after_sales.services.order_barang.internal_key', 'servio_local_internal_service_key_2026');
 
         try {
             // If subOrderId is specified, verify specific merchant suborder, otherwise orderId
             $lookupId = $subOrderId ?: $orderId;
+            $query = $includeClaimedQuantities ? [] : ['projection' => 'eligibility'];
             $response = Http::withHeaders([
                 'X-Internal-Service-Key' => $internalKey,
                 'X-Source-Service' => 'after-sales-service',
                 'Accept' => 'application/json',
-            ])->timeout(5)->get("{$baseUrl}/internal/v1/order-barang/orders/{$lookupId}");
+            ])->connectTimeout(2)->timeout(5)->get("{$baseUrl}/internal/v1/order-barang/orders/{$lookupId}", $query);
 
             if (!$response->successful()) {
                 Log::warning("HttpOrderEligibilityVerifier: Goods order {$lookupId} lookup failed with status {$response->status()}");
@@ -76,9 +82,12 @@ class HttpOrderEligibilityVerifier implements OrderEligibilityVerifierInterface
             // 05A must authoritatively confirm that the merchant suborder belongs to the specified parent order.
             if ($subOrderId) {
                 $actualSubId = (string) ($data['id'] ?? '');
+                $actualOrderNumber = (string) ($data['order_number'] ?? '');
                 $parentRef = trim((string) ($data['checkout_group_id'] ?? $data['parent_order_id'] ?? ''));
 
-                if ($actualSubId !== $subOrderId) {
+                $isDirectMatch = ($actualSubId === $subOrderId || $actualOrderNumber === $subOrderId);
+
+                if (!$isDirectMatch && $actualSubId !== $subOrderId) {
                     return OrderEligibilityDto::invalid(
                         "Suborder ID '{$subOrderId}' tidak cocok dengan data pesanan sah (Ditemukan: '{$actualSubId}').",
                         $orderId,
@@ -86,7 +95,7 @@ class HttpOrderEligibilityVerifier implements OrderEligibilityVerifierInterface
                     );
                 }
 
-                if ($subOrderId !== $orderId) {
+                if (!$isDirectMatch && $subOrderId !== $orderId) {
                     // Strict: Parent reference cannot be empty or missing when suborder claims under parent
                     if (empty($parentRef)) {
                         return OrderEligibilityDto::invalid(
@@ -96,7 +105,7 @@ class HttpOrderEligibilityVerifier implements OrderEligibilityVerifierInterface
                         );
                     }
 
-                    if ($parentRef !== $orderId) {
+                    if ($parentRef !== $orderId && $parentRef !== $subOrderId) {
                         return OrderEligibilityDto::invalid(
                             "Pelanggaran integritas: Suborder '{$subOrderId}' terikat pada pesanan utama '{$parentRef}', bukan '{$orderId}' (CROSS_PARENT_ORDER_VIOLATION).",
                             $orderId,
@@ -136,15 +145,18 @@ class HttpOrderEligibilityVerifier implements OrderEligibilityVerifierInterface
                 }
                 $qty = (int) ($item['quantity'] ?? 1);
 
-                // Check existing claimed quantity in AfterSalesCase with row locking
-                $alreadyClaimed = (int) CaseItem::whereHas('case', function ($q) use ($customerId, $lookupId) {
-                    $q->where('customer_id', $customerId)
-                        ->where(function ($sub) use ($lookupId) {
-                            $sub->where('source_order_id', $lookupId)
-                                ->orWhere('source_merchant_order_id', $lookupId);
-                        })
-                        ->whereNotIn('main_status', ['REJECTED', 'CANCELLED']);
-                })->where('source_item_ref', $itemId)->sum('quantity_requested');
+                // Check existing claimed quantity in AfterSalesCase when verifying claim eligibility
+                $alreadyClaimed = 0;
+                if ($includeClaimedQuantities) {
+                    $alreadyClaimed = (int) CaseItem::whereHas('case', function ($q) use ($customerId, $lookupId) {
+                        $q->where('customer_id', $customerId)
+                            ->where(function ($sub) use ($lookupId) {
+                                $sub->where('source_order_id', $lookupId)
+                                    ->orWhere('source_merchant_order_id', $lookupId);
+                            })
+                            ->whereNotIn('main_status', ['REJECTED', 'CANCELLED']);
+                    })->where('source_item_ref', $itemId)->sum('quantity_requested');
+                }
 
                 $remainingQty = max(0, $qty - $alreadyClaimed);
 
@@ -190,17 +202,21 @@ class HttpOrderEligibilityVerifier implements OrderEligibilityVerifierInterface
         }
     }
 
-    protected function verifyServiceOrder(string $customerId, string $orderId): OrderEligibilityDto
-    {
+    protected function verifyServiceOrder(
+        string $customerId,
+        string $orderId,
+        bool $includeClaimedQuantities = true
+    ): OrderEligibilityDto {
         $baseUrl = config('after_sales.services.order_jasa.base_url', 'http://127.0.0.1:8007');
         $internalKey = config('after_sales.services.order_jasa.internal_key', 'servio_local_internal_service_key_2026');
 
         try {
+            $query = $includeClaimedQuantities ? [] : ['projection' => 'eligibility'];
             $response = Http::withHeaders([
                 'X-Internal-Service-Key' => $internalKey,
                 'X-Source-Service' => 'after-sales-service',
                 'Accept' => 'application/json',
-            ])->timeout(5)->get("{$baseUrl}/internal/v1/order-jasa/orders/{$orderId}");
+            ])->connectTimeout(2)->timeout(5)->get("{$baseUrl}/internal/v1/order-jasa/orders/{$orderId}", $query);
 
             if (!$response->successful()) {
                 Log::warning("HttpOrderEligibilityVerifier: Service order {$orderId} lookup failed with status {$response->status()}");
@@ -265,11 +281,14 @@ class HttpOrderEligibilityVerifier implements OrderEligibilityVerifierInterface
                 $itemId = (string) ($item['service_offering_id'] ?? $item['service_id'] ?? $item['id'] ?? $serviceOfferingId);
                 $qty = (int) ($item['quantity'] ?? 1);
 
-                $alreadyClaimed = (int) CaseItem::whereHas('case', function ($q) use ($customerId, $orderId) {
-                    $q->where('customer_id', $customerId)
-                        ->where('source_order_id', $orderId)
-                        ->whereNotIn('main_status', ['REJECTED', 'CANCELLED']);
-                })->where('source_item_ref', $itemId)->sum('quantity_requested');
+                $alreadyClaimed = 0;
+                if ($includeClaimedQuantities) {
+                    $alreadyClaimed = (int) CaseItem::whereHas('case', function ($q) use ($customerId, $orderId) {
+                        $q->where('customer_id', $customerId)
+                            ->where('source_order_id', $orderId)
+                            ->whereNotIn('main_status', ['REJECTED', 'CANCELLED']);
+                    })->where('source_item_ref', $itemId)->sum('quantity_requested');
+                }
 
                 $remainingQty = max(0, $qty - $alreadyClaimed);
 

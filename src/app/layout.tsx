@@ -1,12 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
-import { RoleProvider } from "@/context/RoleContext";
-import { LocationProvider } from "@/context/LocationContext";
-import { LocationPickerModal } from "../components/features/location/LocationPickerModal";
-import { PageLoadingProvider } from "@/components/feedback/PageLoadingProvider";
-import { FlyToCartHost } from "@/components/feedback/FlyToCart";
-import { SPayProvider } from "@/features/spay/spay.frontend-provider";
-import { AfterSalesProvider } from "@/features/afterSales/useAfterSales";
+import { AppProvidersShell } from "@/components/AppProvidersShell";
 import "./globals.css";
 
 const sora = localFont({
@@ -105,17 +99,7 @@ export default function RootLayout({
       className={`${sora.variable} ${plusJakartaSans.variable} ${satisfy.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-white text-neutral-dark selection:bg-sky selection:text-primary">
-        <RoleProvider>
-          <LocationProvider>
-            <SPayProvider>
-              <AfterSalesProvider>
-                <PageLoadingProvider>{children}</PageLoadingProvider>
-                <LocationPickerModal />
-                <FlyToCartHost />
-              </AfterSalesProvider>
-            </SPayProvider>
-          </LocationProvider>
-        </RoleProvider>
+        <AppProvidersShell>{children}</AppProvidersShell>
       </body>
     </html>
   );

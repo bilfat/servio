@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
 import {
   X,
   Truck,
@@ -16,6 +17,7 @@ import {
   ArrowsClockwise,
   Receipt,
   XCircle,
+  ChatCircleDots,
 } from "@phosphor-icons/react";
 import { MockMerchantOrder, DeliveryMethod, DeliveryProvider } from "@/types/order-barang";
 import { formatRupiah, formatDateTimeIndo } from "../helpers";
@@ -1086,12 +1088,36 @@ export function MerchantOrderDetailModal({
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
-          >
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/merchant/chat?partner_id=${encodeURIComponent(
+                order.customerId || "692f03fd-2362-485a-9a23-a672bbb4533f"
+              )}&partner_type=customer&partner_name=${encodeURIComponent(
+                order.customerName || "Ahmad Fauzi"
+              )}&ctx_type=order_barang&ctx_id=${encodeURIComponent(
+                order.orderNumber || order.id
+              )}&ctx_title=${encodeURIComponent(
+                order.items[0]?.title || `Pesanan #${order.orderNumber || order.id}`
+              )}&ctx_status=${encodeURIComponent(order.status)}&ctx_price=${encodeURIComponent(
+                order.pricing?.merchantOrderTotal ?? order.totalAmount ?? 0
+              )}&ctx_thumb=${encodeURIComponent(
+                order.items[0]?.thumbnailUrl || ""
+              )}&ctx_summary=${encodeURIComponent(
+                `Pembeli: ${order.customerName || "Pelanggan"} • ${order.items.length} Barang • Total: ${formatRupiah(order.pricing?.merchantOrderTotal ?? order.totalAmount ?? 0)}`
+              )}&ctx_url=${encodeURIComponent(`/merchant/orders?order_id=${order.id}`)}`}
+              className="px-3 py-1.5 rounded-xl bg-sky-50 border border-sky-200 text-[#0F4C81] hover:bg-sky-100 font-bold text-xs transition flex items-center gap-1.5 shadow-2xs"
+              title="Chat Pembeli (In-App)"
+            >
+              <ChatCircleDots size={16} weight="bold" />
+              <span>Chat Pembeli</span>
+            </Link>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Modal Content: 2 Columns Horizontal Layout */}

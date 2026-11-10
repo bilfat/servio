@@ -30,6 +30,7 @@ import {
   Star,
   XCircle,
   Eye,
+  ChatCircleDots,
 } from "@phosphor-icons/react";
 import { ServiceOrder } from "../../types";
 import { getSubStatusBadgeInfo } from "../../constants";
@@ -40,9 +41,13 @@ import { DiagnosisReviewModal } from "./DiagnosisReviewModal";
 import { SparepartSourceModal } from "./SparepartSourceModal";
 import { FollowUpOrderDraftModal } from "./FollowUpOrderDraftModal";
 import { CompleteOrderSummaryModal } from "./CompleteOrderSummaryModal";
+import { ConfirmServiceCompletionModal } from "./ConfirmServiceCompletionModal";
 import { getStoredWorkerPhoto, useWorkerPhoto } from "@/features/worker/workerPhotoHelper";
 import { useAfterSales } from "@/features/afterSales/useAfterSales";
-import { OrderReviewModal } from "@/components/features/afterSales/OrderReviewModal";
+import {
+  OrderReviewModal,
+  OrderReviewModalTarget,
+} from "@/components/features/afterSales/OrderReviewModal";
 import { WarrantyClaimModal } from "@/components/features/afterSales/WarrantyClaimModal";
 import { afterSalesApi, ReviewSubmission } from "@/lib/afterSalesApi";
 
@@ -116,8 +121,20 @@ export function ServiceOrderDetailLayout({
     fetchOrderById,
   } = useOrderJasa();
 
+  const isRefreshingOrderRef = React.useRef(false);
+  const shouldPausePollingRef = React.useRef(false);
+
+  const isTerminalOrder =
+    order.status === "COMPLETED" ||
+    order.status === "CANCELLED" ||
+    order.subStatus === "COMPLETED_NORMAL" ||
+    order.subStatus === "AUTO_COMPLETED_72H" ||
+    order.subStatus.startsWith("CANCELLED_");
+
   const refreshCurrentOrder = React.useCallback(
     async (orderId: string) => {
+      if (isRefreshingOrderRef.current) return;
+      isRefreshingOrderRef.current = true;
       try {
         const fresh = await fetchOrderById(orderId, true);
         if (fresh) {
@@ -126,6 +143,8 @@ export function ServiceOrderDetailLayout({
         }
       } catch (err) {
         console.warn("[ServiceOrderDetailLayout] refreshCurrentOrder error:", err);
+      } finally {
+        isRefreshingOrderRef.current = false;
       }
     },
     [fetchOrderById, onOrderUpdated]
@@ -166,13 +185,18 @@ export function ServiceOrderDetailLayout({
     };
     window.addEventListener("storage", handleStorageEvent);
 
-    // Adaptive auto-refresh: poll every 2s when active tab, and recheck on visibility/focus
-    const intervalId = setInterval(() => {
-      if (typeof document !== "undefined" && document.hidden) return;
-      refreshCurrentOrder(order.id);
-    }, 2000);
+    // Adaptive auto-refresh: poll every 2s only for active non-terminal orders while no modal is open
+    const intervalId = !isTerminalOrder
+      ? setInterval(() => {
+          if ((typeof document !== "undefined" && document.hidden) || shouldPausePollingRef.current) {
+            return;
+          }
+          refreshCurrentOrder(order.id);
+        }, 2000)
+      : null;
 
     const handleVisibility = () => {
+      if (isTerminalOrder || shouldPausePollingRef.current) return;
       if (typeof document !== "undefined" && !document.hidden) {
         refreshCurrentOrder(order.id);
       }
@@ -187,9 +211,9 @@ export function ServiceOrderDetailLayout({
       if (channel) channel.close();
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("focus", handleVisibility);
-      clearInterval(intervalId);
+      if (intervalId) clearInterval(intervalId);
     };
-  }, [order.id, order.orderNumber, refreshCurrentOrder]);
+  }, [order.id, order.orderNumber, isTerminalOrder, refreshCurrentOrder]);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -203,6 +227,8 @@ export function ServiceOrderDetailLayout({
   const [isProviderAssignOpen, setIsProviderAssignOpen] = useState(false);
   const [isSummaryModalOpen, setIsSummaryModalOpen] = useState(false);
   const [isActivityModalOpen, setIsActivityModalOpen] = useState(false);
+  const [isConfirmCompletionOpen, setIsConfirmCompletionOpen] = useState(false);
+  const [isSubmittingCompletion, setIsSubmittingCompletion] = useState(false);
 
   // Payment modal state
   const [activePaymentModal, setActivePaymentModal] = useState<{
@@ -235,6 +261,30 @@ export function ServiceOrderDetailLayout({
   const [isServiceReviewModalOpen, setIsServiceReviewModalOpen] = useState(false);
   const [isServiceClaimModalOpen, setIsServiceClaimModalOpen] = useState(false);
   const [existingServiceReview, setExistingServiceReview] = useState<ReviewSubmission | null>(null);
+  const [hasCheckedServiceReview, setHasCheckedServiceReview] = useState(false);
+
+  const shouldPausePolling =
+    isTerminalOrder ||
+    isDiagnosisReviewOpen ||
+    isSparepartSourceOpen ||
+    isFollowUpModalOpen ||
+    isWorkerDiagnosisOpen ||
+    isWorkerConsentOpen ||
+    isWorkerFinishOpen ||
+    isProviderAssignOpen ||
+    isSummaryModalOpen ||
+    isActivityModalOpen ||
+    isConfirmCompletionOpen ||
+    Boolean(activePaymentModal) ||
+    showCancelModal ||
+    showProviderRejectModal ||
+    showWorkerRejectModal ||
+    isServiceReviewModalOpen ||
+    isServiceClaimModalOpen;
+
+  useEffect(() => {
+    shouldPausePollingRef.current = shouldPausePolling;
+  }, [shouldPausePolling]);
 
   const associatedWarranty = React.useMemo(() => {
     if (!warranties || warranties.length === 0) return null;
@@ -262,16 +312,56 @@ export function ServiceOrderDetailLayout({
   );
 
   useEffect(() => {
-    if (role !== "CUSTOMER" || !order.id) return;
+    if (role !== "CUSTOMER" || !order.id || order.status !== "COMPLETED") {
+      setHasCheckedServiceReview(false);
+      return;
+    }
+    let cancelled = false;
+    setHasCheckedServiceReview(false);
     afterSalesApi.customer
       .getMyReview(order.id)
       .then((res) => {
-        if (res.success && res.data && res.data.id) {
+        if (!cancelled && res.success && res.data && res.data.id) {
           setExistingServiceReview(res.data);
         }
       })
-      .catch(() => {});
-  }, [role, order.id]);
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setHasCheckedServiceReview(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [role, order.id, order.status]);
+
+  const serviceReviewTarget = React.useMemo<OrderReviewModalTarget | null>(() => {
+    if (!order?.id) return null;
+    return {
+      sourceKind: "SERVICE",
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      orderedAt: order.createdAt,
+      completedAt: (order as any).completedAt || order.updatedAt,
+      businessOrgId: order.providerId || "prov-surya-teknik",
+      businessName: order.providerName || "Penyedia Jasa",
+      items: [
+        {
+          orderItemId: order.id,
+          targetId: (order as any).serviceId || order.serviceSnapshot.id || order.id,
+          title: order.serviceSnapshot.title,
+          imageUrl: order.serviceSnapshot.thumbnailUrl,
+          quantity: 1,
+          variantLabel: order.serviceSnapshot.categoryName,
+          price:
+            (order as any).pricing?.finalTotal ??
+            order.paymentSummary?.executionPayment?.amount ??
+            (order.serviceSnapshot as any).minPrice,
+        },
+      ],
+      existingSubmission: existingServiceReview,
+      skipExistingReviewCheck: order.status !== "COMPLETED" || hasCheckedServiceReview,
+    };
+  }, [order, existingServiceReview, hasCheckedServiceReview]);
 
   const badgeInfo = getSubStatusBadgeInfo(order.subStatus);
 
@@ -337,6 +427,93 @@ export function ServiceOrderDetailLayout({
             <span className="w-1.5 h-1.5 rounded-full bg-current" />
             <span>{badgeInfo.label}</span>
           </span>
+
+          {/* Contextual In-App Chat Action Buttons for Customer, Provider, and Worker */}
+          {(() => {
+            const snapshot = order.serviceSnapshot as any;
+            const price = order.diagnosis?.costBreakdown?.grandTotal ?? snapshot?.finalPrice ?? snapshot?.diagnosisFee ?? snapshot?.price ?? 150000;
+            const thumb = snapshot?.thumbnailUrl || snapshot?.imageUrl || "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=400&auto=format&fit=crop&q=80";
+            const customerId = order.customerId || "692f03fd-2362-485a-9a23-a672bbb4533f";
+            const customerName = order.customerName || order.addressSnapshot?.recipientName || "Ahmad Fauzi";
+            const isWorkerAssigned = order.assignment && (order.assignment.status === "ACCEPTED" || Boolean(order.assignment.workerId));
+            const providerId = order.providerId || "0740d857-b665-4191-aaf5-d7dd3611dc1d";
+            const providerName = order.providerName || "sukses gembira";
+
+            if (role === "CUSTOMER") {
+              return (
+                <div className="flex items-center gap-1.5">
+                  {isWorkerAssigned && (
+                    <Link
+                      href={`/chat?partner_id=${encodeURIComponent(order.assignment!.workerId || "acfdfc27-9ba5-472f-bec1-3c372f47fff6")}&partner_type=worker&partner_name=${encodeURIComponent(order.assignment!.workerName || "Ahmad Teknisi")}&provider_name=${encodeURIComponent(providerName)}&ctx_type=order_jasa&ctx_id=${encodeURIComponent(order.id)}&ctx_title=${encodeURIComponent(order.serviceSnapshot?.title || "Pesanan Jasa")}&ctx_status=${encodeURIComponent(order.status)}&ctx_price=${encodeURIComponent(price)}&ctx_thumb=${encodeURIComponent(thumb)}&ctx_summary=${encodeURIComponent(`Teknisi: ${order.assignment!.workerName || "Ahmad Teknisi"} • Jadwal: ${order.schedule?.date || "9 Nov 2026"} (${order.schedule?.timeSlot || "10:00 WIB"})`)}&ctx_url=${encodeURIComponent(`/orders/${order.id}`)}`}
+                      className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold hover:bg-amber-100 transition flex items-center gap-1 shadow-2xs"
+                      title="Chat Teknisi Langsung"
+                    >
+                      <ChatCircleDots size={14} weight="bold" className="text-amber-700" />
+                      <span>Chat Teknisi</span>
+                    </Link>
+                  )}
+                  <Link
+                    href={`/chat?partner_id=${encodeURIComponent(providerId)}&partner_type=provider&partner_name=${encodeURIComponent(providerName)}&ctx_type=order_jasa&ctx_id=${encodeURIComponent(order.id)}&ctx_title=${encodeURIComponent(order.serviceSnapshot?.title || "Pesanan Jasa")}&ctx_status=${encodeURIComponent(order.status)}&ctx_price=${encodeURIComponent(price)}&ctx_thumb=${encodeURIComponent(thumb)}&ctx_summary=${encodeURIComponent(`Penyedia: ${providerName} • Biaya: Rp ${Number(price).toLocaleString("id-ID")}`)}&ctx_url=${encodeURIComponent(`/orders/${order.id}`)}`}
+                    className="px-2.5 py-1 rounded-lg bg-purple-50 border border-purple-200 text-purple-900 text-xs font-bold hover:bg-purple-100 transition flex items-center gap-1 shadow-2xs"
+                    title="Chat Provider Jasa"
+                  >
+                    <ChatCircleDots size={14} weight="bold" className="text-purple-700" />
+                    <span>Chat Provider</span>
+                  </Link>
+                </div>
+              );
+            }
+
+            if (role === "PROVIDER") {
+              return (
+                <div className="flex items-center gap-1.5">
+                  <Link
+                    href={`/provider/chat?partner_id=${encodeURIComponent(customerId)}&partner_type=customer&partner_name=${encodeURIComponent(customerName)}&ctx_type=order_jasa&ctx_id=${encodeURIComponent(order.id)}&ctx_title=${encodeURIComponent(order.serviceSnapshot?.title || "Pesanan Jasa")}&ctx_status=${encodeURIComponent(order.status)}&ctx_price=${encodeURIComponent(price)}&ctx_thumb=${encodeURIComponent(thumb)}&ctx_summary=${encodeURIComponent(`Pelanggan: ${customerName} • Biaya: Rp ${Number(price).toLocaleString("id-ID")}`)}&ctx_url=${encodeURIComponent(`/provider/orders/${order.id}`)}`}
+                    className="px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-200 text-[#0F4C81] text-xs font-bold hover:bg-sky-100 transition flex items-center gap-1 shadow-2xs"
+                    title="Chat Pelanggan"
+                  >
+                    <ChatCircleDots size={14} weight="bold" className="text-[#0F4C81]" />
+                    <span>Chat Pelanggan</span>
+                  </Link>
+                  {isWorkerAssigned && (
+                    <Link
+                      href={`/provider/chat?partner_id=${encodeURIComponent(order.assignment!.workerId || "acfdfc27-9ba5-472f-bec1-3c372f47fff6")}&partner_type=worker&partner_name=${encodeURIComponent(order.assignment!.workerName || "Ahmad Teknisi")}&provider_name=${encodeURIComponent(providerName)}&ctx_type=order_jasa&ctx_id=${encodeURIComponent(order.id)}&ctx_title=${encodeURIComponent(order.serviceSnapshot?.title || "Pesanan Jasa")}&ctx_status=${encodeURIComponent(order.status)}&ctx_price=${encodeURIComponent(price)}&ctx_thumb=${encodeURIComponent(thumb)}&ctx_summary=${encodeURIComponent(`Teknisi: ${order.assignment!.workerName || "Ahmad Teknisi"} • Jadwal: ${order.schedule?.date || "9 Nov 2026"} (${order.schedule?.timeSlot || "10:00 WIB"})`)}&ctx_url=${encodeURIComponent(`/provider/orders/${order.id}`)}`}
+                      className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold hover:bg-amber-100 transition flex items-center gap-1 shadow-2xs"
+                      title="Chat Teknisi Langsung"
+                    >
+                      <ChatCircleDots size={14} weight="bold" className="text-amber-700" />
+                      <span>Chat Teknisi</span>
+                    </Link>
+                  )}
+                </div>
+              );
+            }
+
+            if (role === "WORKER") {
+              return (
+                <div className="flex items-center gap-1.5">
+                  <Link
+                    href={`/worker/chat?partner_id=${encodeURIComponent(customerId)}&partner_type=customer&partner_name=${encodeURIComponent(customerName)}&ctx_type=order_jasa&ctx_id=${encodeURIComponent(order.id)}&ctx_title=${encodeURIComponent(order.serviceSnapshot?.title || "Pesanan Jasa")}&ctx_status=${encodeURIComponent(order.status)}&ctx_price=${encodeURIComponent(price)}&ctx_thumb=${encodeURIComponent(thumb)}&ctx_summary=${encodeURIComponent(`Pelanggan: ${customerName} • Jadwal: ${order.schedule?.date || "9 Nov 2026"} (${order.schedule?.timeSlot || "10:00 WIB"})`)}&ctx_url=${encodeURIComponent(`/worker/jobs/${order.id}`)}`}
+                    className="px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-200 text-[#0F4C81] text-xs font-bold hover:bg-sky-100 transition flex items-center gap-1 shadow-2xs"
+                    title="Chat Pelanggan"
+                  >
+                    <ChatCircleDots size={14} weight="bold" className="text-[#0F4C81]" />
+                    <span>Chat Pelanggan</span>
+                  </Link>
+                  <Link
+                    href={`/worker/chat?partner_id=${encodeURIComponent(providerId)}&partner_type=provider&partner_name=${encodeURIComponent(providerName)}&ctx_type=order_jasa&ctx_id=${encodeURIComponent(order.id)}&ctx_title=${encodeURIComponent(order.serviceSnapshot?.title || "Pesanan Jasa")}&ctx_status=${encodeURIComponent(order.status)}&ctx_price=${encodeURIComponent(price)}&ctx_thumb=${encodeURIComponent(thumb)}&ctx_summary=${encodeURIComponent(`Provider: ${providerName} • Order #${order.id}`)}&ctx_url=${encodeURIComponent(`/worker/jobs/${order.id}`)}`}
+                    className="px-2.5 py-1 rounded-lg bg-purple-50 border border-purple-200 text-purple-900 text-xs font-bold hover:bg-purple-100 transition flex items-center gap-1 shadow-2xs"
+                    title="Chat Provider Jasa"
+                  >
+                    <ChatCircleDots size={14} weight="bold" className="text-purple-700" />
+                    <span>Chat Provider</span>
+                  </Link>
+                </div>
+              );
+            }
+
+            return null;
+          })()}
         </div>
       </div>
 
@@ -432,18 +609,7 @@ export function ServiceOrderDetailLayout({
               }
             }}
             onReviewDiagnosis={() => setIsDiagnosisReviewOpen(true)}
-            onConfirmCompleted={async () => {
-              setIsActionLoading(true);
-              try {
-                await confirmCustomerCompleted(order.id);
-                await refreshCurrentOrder(order.id);
-                setToastMessage("Terima kasih! Pesanan servis berhasil diselesaikan.");
-              } catch (err: any) {
-                setToastMessage(err?.message || "Gagal mengonfirmasi selesai.");
-              } finally {
-                setIsActionLoading(false);
-              }
-            }}
+            onConfirmCompleted={() => setIsConfirmCompletionOpen(true)}
             onRetryPayment={async () => {
               setIsRetryingPayment(true);
               try {
@@ -603,44 +769,66 @@ export function ServiceOrderDetailLayout({
             )}
 
           {/* Customer After-Sales & Review Shortcuts for COMPLETED orders */}
-          {role === "CUSTOMER" && order.status === "COMPLETED" && (
-            <div className="p-4 rounded-3xl bg-emerald-50/70 border border-emerald-200 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 font-bold text-emerald-900 text-xs">
-                  <ShieldCheck size={16} weight="fill" className="text-emerald-600" />
-                  <span>Layanan Selesai — Purnajual &amp; Penilaian</span>
+          {role === "CUSTOMER" && order.status === "COMPLETED" && (() => {
+            const warrantyDays = order.serviceSnapshot?.warrantyDurationDays ?? 0;
+            const hasWarranty = warrantyDays > 0 || Boolean(associatedWarranty);
+            return (
+              <div className="p-4 rounded-3xl bg-emerald-50/75 border border-emerald-200 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 font-bold text-emerald-900 text-xs">
+                    <ShieldCheck size={16} weight="fill" className="text-emerald-600" />
+                    <span>
+                      {warrantyDays > 0
+                        ? `Layanan Selesai — Garansi Resmi ${warrantyDays} Hari Aktif`
+                        : "Layanan Selesai Tuntas — Ulasan & Purnajual"}
+                    </span>
+                  </div>
+                  <span
+                    className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                      hasWarranty
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                        : "bg-slate-100 text-slate-600 border-slate-200"
+                    }`}
+                  >
+                    {warrantyDays > 0 ? `Terproteksi ${warrantyDays} Hari` : "Tanpa Garansi Tambahan"}
+                  </span>
                 </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsServiceReviewModalOpen(true)}
-                  className="w-full py-2 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Star size={14} weight="fill" className="text-amber-500" />
-                  <span>{existingServiceReview ? "Lihat Penilaian Anda" : "Beri Rating & Ulasan"}</span>
-                </button>
-                {associatedWarranty ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={() => setIsServiceClaimModalOpen(true)}
-                    className="w-full py-2 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    onClick={() => setIsServiceReviewModalOpen(true)}
+                    className="w-full py-2 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    <ShieldCheck size={14} weight="bold" />
-                    <span>Ajukan Klaim Garansi</span>
+                    <Star size={14} weight="fill" className="text-amber-500" />
+                    <span>{existingServiceReview ? "Lihat Penilaian Anda" : "Beri Rating & Ulasan"}</span>
                   </button>
-                ) : (
-                  <Link
-                    href="/warranties"
-                    className="w-full py-2 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-xs transition flex items-center justify-center gap-1.5"
-                  >
-                    <ShieldCheck size={14} weight="bold" />
-                    <span>Pusat Garansi Servio</span>
-                  </Link>
-                )}
+                  {associatedWarranty ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsServiceClaimModalOpen(true)}
+                      className="w-full py-2 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <ShieldCheck size={14} weight="bold" />
+                      <span>Ajukan Klaim Garansi</span>
+                    </button>
+                  ) : hasWarranty ? (
+                    <Link
+                      href="/warranties"
+                      className="w-full py-2 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-xs transition flex items-center justify-center gap-1.5"
+                    >
+                      <ShieldCheck size={14} weight="bold" />
+                      <span>Pusat Garansi Servio</span>
+                    </Link>
+                  ) : (
+                    <div className="w-full py-2 px-3 rounded-xl bg-white/80 text-slate-600 border border-slate-200 font-semibold text-xs flex items-center justify-center gap-1.5">
+                      <CheckCircle size={14} weight="fill" className="text-emerald-600 shrink-0" />
+                      <span>Layanan Non-Garansi (Tuntas)</span>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Worker on-site issue reporting */}
           {role === "WORKER" &&
@@ -1189,6 +1377,12 @@ export function ServiceOrderDetailLayout({
                       <span className="font-semibold text-slate-800">
                         {order.status === "COMPLETED"
                           ? "Selesai & Diverifikasi"
+                          : order.subStatus === "VISIT_CLOSED"
+                          ? "Kunjungan Ditutup (Menunggu Pelanggan)"
+                          : order.subStatus === "WAITING_WORKER_CLOSE_VISIT"
+                          ? "Lunas — Tutup Kunjungan"
+                          : order.subStatus === "WORK_FINISHED" || order.subStatus === "EXECUTION_PENDING"
+                          ? "Menunggu Pelunasan Pelanggan"
                           : order.subStatus === "EXECUTING"
                           ? "Sedang Dikerjakan"
                           : "Tugas Aktif"}
@@ -1428,7 +1622,7 @@ export function ServiceOrderDetailLayout({
                     <div className="space-y-1.5">
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
                         <ShieldCheck size={13} weight="fill" className="text-emerald-600" />
-                        Garansi {order.serviceSnapshot.warrantyDurationDays} Hari Servio
+                        Garansi {order.serviceSnapshot.warrantyDurationDays} Hari Servio{order.status === "COMPLETED" ? " (Aktif)" : ""}
                       </span>
                       <p className="text-[10px] text-slate-500 leading-relaxed">
                         Jaminan purnajual terproteksi: Perbaikan ulang gratis untuk kendala komponen yang sama selama {order.serviceSnapshot.warrantyDurationDays} hari kalender.
@@ -1508,6 +1702,34 @@ export function ServiceOrderDetailLayout({
         isOpen={isActivityModalOpen}
         onClose={() => setIsActivityModalOpen(false)}
         order={order}
+      />
+
+      {/* Customer Work Quality Verification Modal before Finalizing COMPLETED */}
+      <ConfirmServiceCompletionModal
+        order={order}
+        isOpen={isConfirmCompletionOpen}
+        isSubmitting={isSubmittingCompletion}
+        onClose={() => {
+          if (!isSubmittingCompletion) setIsConfirmCompletionOpen(false);
+        }}
+        onConfirm={async (orderId) => {
+          setIsSubmittingCompletion(true);
+          try {
+            await confirmCustomerCompleted(orderId);
+            await refreshCurrentOrder(orderId);
+            setIsConfirmCompletionOpen(false);
+            const wDays = order.serviceSnapshot?.warrantyDurationDays ?? 0;
+            setToastMessage(
+              wDays > 0
+                ? `Terima kasih! Pekerjaan terkonfirmasi selesai & berfungsi baik. Garansi resmi ${wDays} hari kini aktif.`
+                : "Terima kasih! Pekerjaan terkonfirmasi selesai & bekerja dengan baik. Pesanan telah tuntas."
+            );
+          } catch (err: any) {
+            setToastMessage(err?.message || "Gagal mengonfirmasi penyelesaian pesanan.");
+          } finally {
+            setIsSubmittingCompletion(false);
+          }
+        }}
       />
 
       {order.diagnosis && (
@@ -2167,26 +2389,7 @@ export function ServiceOrderDetailLayout({
       <OrderReviewModal
         isOpen={isServiceReviewModalOpen}
         onClose={() => setIsServiceReviewModalOpen(false)}
-        target={{
-          sourceKind: "SERVICE",
-          orderId: order.id,
-          orderNumber: order.orderNumber,
-          orderedAt: order.createdAt,
-          completedAt: (order as any).completedAt || order.updatedAt,
-          businessOrgId: order.providerId || "prov-surya-teknik",
-          businessName: order.providerName || "Penyedia Jasa",
-          items: [
-            {
-              orderItemId: order.id,
-              targetId: (order as any).serviceId || order.serviceSnapshot.id || order.id,
-              title: order.serviceSnapshot.title,
-              quantity: 1,
-              variantLabel: order.serviceSnapshot.categoryName,
-              price: (order as any).pricing?.finalTotal ?? order.paymentSummary?.executionPayment?.amount ?? (order.serviceSnapshot as any).minPrice,
-            },
-          ],
-          existingSubmission: existingServiceReview,
-        }}
+        target={serviceReviewTarget}
         onSubmitted={(sub) => {
           setExistingServiceReview(sub);
           setToastMessage("Penilaian layanan jasa dan penyedia berhasil disimpan!");

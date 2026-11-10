@@ -26,8 +26,16 @@ export function BottomNav({ orderBadgeCount, cartBadgeCount }: BottomNavProps) {
   const effectiveCartBadge = cartBadgeCount !== undefined ? cartBadgeCount : totalItemCount;
   const pathname = usePathname();
 
-  // If public guest or role is not mobile-optimized customer/worker, hide bottom nav
-  if (isPublicGuest || (activeRole !== "CUSTOMER" && activeRole !== "WORKER_TECHNICIAN")) {
+  // If public guest or role is not mobile-optimized customer/worker, or on full-screen AI chat/discovery, hide bottom nav
+  if (
+    isPublicGuest ||
+    (activeRole !== "CUSTOMER" && activeRole !== "WORKER_TECHNICIAN") ||
+    pathname?.startsWith("/smart-discovery") ||
+    pathname === "/chat" ||
+    pathname?.startsWith("/chat/") ||
+    pathname === "/worker/chat" ||
+    pathname?.startsWith("/worker/chat/")
+  ) {
     return null;
   }
 

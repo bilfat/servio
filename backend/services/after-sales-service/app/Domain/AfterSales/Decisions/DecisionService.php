@@ -128,17 +128,15 @@ class DecisionService
                 $case->version += 1;
                 $case->save();
 
-                // Unlock entitlement claimed quantity upon rejection so customer can re-apply if eligible
+                // Business Rule 1.3: Merchant/Provider REJECTED tidak otomatis membuka kembali hak garansi.
+                // Entitlement ditandai CONSUMED karena kesempatan garansi 1x per transaksi telah digunakan.
                 if ($case->entitlement_id) {
-                    /** @var \App\Models\OrderWarrantyEntitlement|null $entModel */
                     $entModel = \App\Models\OrderWarrantyEntitlement::where('id', $case->entitlement_id)->lockForUpdate()->first();
                     if ($entModel) {
-                        $caseClaimedQty = (int) ($case->items()->sum('quantity_requested') ?: 1);
-                        $entModel->claimed_quantity = max(0, (int) ($entModel->claimed_quantity ?? 0) - $caseClaimedQty);
-                        if ($entModel->status === 'CLAIM_LOCKED' && $entModel->remaining_quantity > 0) {
-                            $entModel->status = 'ACTIVE';
-                        }
-                        $entModel->save();
+                        $entModel->update([
+                            'status' => 'CONSUMED',
+                            'claimed_quantity' => $entModel->quantity,
+                        ]);
                     }
                 }
 

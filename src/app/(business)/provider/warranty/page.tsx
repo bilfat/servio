@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, Suspense } from "react";
+import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -20,8 +21,11 @@ import {
   CalendarBlank,
   Play,
   FilePlus,
+  Bank,
+  SlidersHorizontal,
 } from "@phosphor-icons/react";
 import { useAfterSales } from "@/features/afterSales/useAfterSales";
+import { useActiveRole } from "@/context/RoleContext";
 import { WarrantyPresetManager } from "@/components/features/afterSales/WarrantyPresetManager";
 import { AfterSalesCase, AfterSalesSolutionType } from "@/types/afterSales";
 import {
@@ -30,22 +34,29 @@ import {
   BusinessReviewSummary,
 } from "@/lib/afterSalesApi";
 
-type ProviderTab = "summary" | "settings" | "claims" | "reviews";
+type ProviderTab = "summary" | "settings" | "refunds" | "rework" | "reviews";
 
 function ProviderAfterSalesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const rawTab = searchParams.get("tab") as ProviderTab | null;
+  const rawTab = searchParams.get("tab") as string | null;
 
-  const [activeTab, setActiveTab] = useState<ProviderTab>(
-    rawTab && ["summary", "settings", "claims"].includes(rawTab)
-      ? rawTab
-      : "summary"
-  );
+  const resolveTab = (t: string | null): ProviderTab => {
+    if (t === "settings") return "settings";
+    if (t === "refund" || t === "refunds") return "refunds";
+    if (t === "rework" || t === "claims") return "rework";
+    return "summary";
+  };
+
+  const [activeTab, setActiveTab] = useState<ProviderTab>(resolveTab(rawTab));
 
   useEffect(() => {
-    if (rawTab === "reviews") {
-      router.replace("/provider/reviews");
+    if (rawTab) {
+      if (rawTab === "reviews") {
+        router.replace("/provider/reviews");
+      } else {
+        setActiveTab(resolveTab(rawTab));
+      }
     }
   }, [rawTab, router]);
 
@@ -96,9 +107,11 @@ function ProviderAfterSalesContent() {
     }
   };
 
+  const { user } = useActiveRole();
   const {
     cases,
     warrantyPresets,
+    activeOrgId: contextOrgId,
     providerApproveWarrantyJob,
     providerRejectClaim,
     merchantProposeAlternative,
@@ -110,13 +123,24 @@ function ProviderAfterSalesContent() {
 
   const [viewingDetailCase, setViewingDetailCase] = useState<AfterSalesCase | null>(null);
 
-  const activeProviderOrgId = "usr-prov-001"; // PT Servio Mandiri Teknik
+  const activeProviderOrgId = user?.organizationId || contextOrgId || "0740d857-b665-4191-aaf5-d7dd3611dc1d";
 
   const serviceClaims = cases.filter(
     (c) =>
       c.caseType === "claim_service" &&
       (c.organizationId === activeProviderOrgId || c.organizationType === "PROVIDER")
   );
+
+  const isCaseRefund = (c: AfterSalesCase) =>
+    c.customerRequestedSolution === "REFUND" ||
+    c.chosenSolution === "REFUND" ||
+    c.approvedSolution === "REFUND" ||
+    (c as any).agreedSolution === "REFUND" ||
+    (c as any).initial_solution === "REFUND" ||
+    (c as any).initialSolution === "REFUND";
+
+  const refundClaims = serviceClaims.filter(isCaseRefund);
+  const reworkClaims = serviceClaims.filter((c) => !isCaseRefund(c));
 
   const activePresetsCount = warrantyPresets.filter(
     (p) =>
@@ -125,7 +149,8 @@ function ProviderAfterSalesContent() {
   ).length;
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [reworkStatusFilter, setReworkStatusFilter] = useState("ALL");
+  const [refundStatusFilter, setRefundStatusFilter] = useState("ALL");
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   // Approve Warranty Job Modal State
@@ -228,8 +253,8 @@ function ProviderAfterSalesContent() {
     return true;
   });
 
-  const filteredClaims = serviceClaims.filter((c) => {
-    const matchesStatus = statusFilter === "ALL" || c.mainStatus === statusFilter;
+  const filteredRework = reworkClaims.filter((c) => {
+    const matchesStatus = reworkStatusFilter === "ALL" || c.mainStatus === reworkStatusFilter;
     const matchesSearch =
       !searchQuery.trim() ||
       c.caseNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -239,7 +264,21 @@ function ProviderAfterSalesContent() {
     return matchesStatus && matchesSearch;
   });
 
-  const activeClaimsCount = serviceClaims.filter(
+  const filteredRefunds = refundClaims.filter((c) => {
+    const matchesStatus = refundStatusFilter === "ALL" || c.mainStatus === refundStatusFilter;
+    const matchesSearch =
+      !searchQuery.trim() ||
+      c.caseNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.itemTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.sourceOrderNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.customerName.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesStatus && matchesSearch;
+  });
+
+  const activeReworkCount = reworkClaims.filter(
+    (c) => c.mainStatus !== "COMPLETED" && c.mainStatus !== "REJECTED" && c.mainStatus !== "CANCELLED"
+  ).length;
+  const activeRefundsCount = refundClaims.filter(
     (c) => c.mainStatus !== "COMPLETED" && c.mainStatus !== "REJECTED" && c.mainStatus !== "CANCELLED"
   ).length;
   const overdueClaimsCount = serviceClaims.filter((c) => c.isNoResponse).length;
@@ -248,6 +287,334 @@ function ProviderAfterSalesContent() {
   const switchTab = (tab: ProviderTab) => {
     setActiveTab(tab);
     router.push(`/provider/warranty?tab=${tab}`);
+  };
+
+  const renderClaimCard = (c: AfterSalesCase, isRefund: boolean) => {
+    const statusBadge = getMainStatusDisplay(c.mainStatus);
+    const isCompleted = c.mainStatus === "COMPLETED";
+    const isRejected = c.mainStatus === "REJECTED";
+
+    return (
+      <div
+        key={c.id}
+        className="p-5 sm:p-6 rounded-3xl bg-white border border-slate-200/90 shadow-xs space-y-4 hover:border-slate-300 transition"
+      >
+        {/* Top Header Card */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`font-mono font-bold text-xs ${isRefund ? "text-rose-700" : "text-purple-700"}`}>
+                #{c.caseNumber}
+              </span>
+              <span className="text-slate-300">•</span>
+              <span className="text-xs text-slate-500 font-mono">Order #{c.sourceOrderNumber}</span>
+              <span className="text-slate-300">•</span>
+              <span className="text-xs font-semibold text-slate-700">Pelanggan: {c.customerName}</span>
+            </div>
+            <h3 className="font-bold text-base text-slate-900 mt-1">{c.itemTitle}</h3>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {c.isNoResponse && (
+              <span className="px-3 py-1 bg-amber-500 text-white rounded-full text-xs font-bold animate-pulse">
+                TIDAK DITANGGAPI (+72h)
+              </span>
+            )}
+            {c.specialCondition === "WAITING_CUSTOMER_APPROVAL" && (
+              <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-800 rounded-full text-[10px] font-bold border border-indigo-200">
+                Menunggu Persetujuan Customer
+              </span>
+            )}
+            {c.specialCondition === "WAITING_CUSTOMER_INFO" && (
+              <span className="px-2.5 py-0.5 bg-amber-50 text-amber-800 rounded-full text-[10px] font-bold border border-amber-200">
+                Menunggu Bukti Customer
+              </span>
+            )}
+            <span className={`px-3 py-1 rounded-full text-xs font-bold border ${statusBadge.color}`}>
+              {statusBadge.label} ({c.mainStatus})
+            </span>
+          </div>
+        </div>
+
+        {/* SECTION 1: RINGKASAN ORDER ASLI & SLA */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs bg-slate-50/80 p-3.5 rounded-2xl border border-slate-100">
+          <div className="space-y-1">
+            <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Ringkasan Pesanan Servis Asal:</span>
+            <p className="font-bold text-slate-800 text-xs">
+              {c.itemTitle}
+            </p>
+            <p className="text-slate-600 text-[11px]">
+              No. Order: <strong className="font-mono text-slate-700">#{c.sourceOrderNumber}</strong> • Pelanggan: <strong className="text-slate-700">{c.customerName}</strong>
+            </p>
+            {Boolean(c.itemPrice) && (
+              <p className="text-emerald-700 font-bold text-xs pt-0.5">
+                Nilai Pesanan Asal: Rp {Number(c.itemPrice).toLocaleString("id-ID")}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1 md:text-right">
+            <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Tenggat Respons Regulasi (SLA 72 Jam):</span>
+            <p className="font-mono font-bold text-slate-800 text-xs">
+              {new Date(c.slaDeadlineAt).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })} WIB
+            </p>
+            <p className="text-xs text-slate-600">
+              Solusi Konsumen:{" "}
+              <strong className={isRefund ? "text-rose-700 font-bold" : "text-purple-700 font-bold"}>
+                {c.customerRequestedSolution || (isRefund ? "REFUND" : "REWORK")}
+              </strong>
+              {c.chosenSolution && (
+                <span className="ml-1.5 text-emerald-700 font-bold">
+                  • Disepakati: {c.chosenSolution}
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+
+        {/* SECTION 2: DATA FORMULIR PENGAJUAN PELANGGAN */}
+        <div className="p-4 bg-slate-50/90 rounded-2xl border border-slate-200/80 text-xs space-y-2.5">
+          <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/60">
+            <span className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5">
+              <FilePlus size={14} weight="bold" className={isRefund ? "text-rose-600" : "text-purple-600"} />
+              Formulir Keluhan Pelanggan:
+            </span>
+            <span className="text-[11px] font-semibold text-slate-500">
+              Opsi: <strong className={isRefund ? "text-rose-700" : "text-purple-700"}>{isRefund ? "Pengembalian Dana (Refund)" : "Pengerjaan Ulang (Rework Rp 0)"}</strong>
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            <div>
+              <span className="text-slate-400 text-[10px] uppercase font-semibold block">Kendala Dilaporkan:</span>
+              <strong className="text-slate-800">{c.issueReason}</strong>
+              <p className="text-slate-600 mt-1 italic bg-white p-2.5 rounded-xl border border-slate-200/60 text-[11px]">
+                &ldquo;{c.issueDescription}&rdquo;
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-slate-400 text-[10px] uppercase font-semibold block">Bukti Foto / Media Kendala:</span>
+              {c.evidenceMedia && c.evidenceMedia.length > 0 ? (
+                <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                  {c.evidenceMedia.map((url, idx) => (
+                    <a key={idx} href={url} target="_blank" rel="noreferrer" className="block shrink-0">
+                      <img
+                        src={url}
+                        alt={`Bukti ${idx + 1}`}
+                        className="w-14 h-14 rounded-xl object-cover border border-slate-200 hover:scale-105 transition"
+                      />
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-slate-400 text-[11px] italic">Pelanggan tidak melampirkan foto bukti tambahan.</p>
+              )}
+
+              {c.rejectionReason && (
+                <div className="p-2 bg-rose-50 rounded-xl border border-rose-200 text-rose-800 text-[11px] mt-1">
+                  <strong>Catatan Penolakan:</strong> {c.rejectionReason}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* SECTION 3: VISUAL TIMELINE RESOLUSI */}
+        {isRefund ? (
+          <div className="p-3 bg-rose-50/50 rounded-2xl border border-rose-200/80 space-y-2">
+            <div className="flex items-center justify-between text-[11px] font-bold text-rose-900">
+              <span className="flex items-center gap-1.5">
+                <Bank size={14} weight="bold" className="text-rose-600" />
+                Alur Penyelesaian Refund Jasa:
+              </span>
+              <span className="text-rose-700 font-mono">
+                {isCompleted ? "Refund Selesai" : isRejected ? "Ditolak" : "Berjalan"}
+              </span>
+            </div>
+            <div className="grid grid-cols-4 gap-1.5 text-center text-[9px] font-bold">
+              <div className="space-y-0.5">
+                <div className="h-1.5 rounded-full bg-emerald-500" />
+                <span className="text-emerald-800">1. Diajukan</span>
+              </div>
+              <div className="space-y-0.5">
+                <div className={`h-1.5 rounded-full ${c.mainStatus !== "SUBMITTED" ? "bg-emerald-500" : "bg-slate-200"}`} />
+                <span className={c.mainStatus !== "SUBMITTED" ? "text-emerald-800" : "text-slate-400"}>2. Persetujuan Mitra</span>
+              </div>
+              <div className="space-y-0.5">
+                <div className={`h-1.5 rounded-full ${c.mainStatus === "IN_RESOLUTION" ? "bg-rose-600 animate-pulse" : isCompleted ? "bg-emerald-500" : "bg-slate-200"}`} />
+                <span className={c.mainStatus === "IN_RESOLUTION" ? "text-rose-700" : isCompleted ? "text-emerald-800" : "text-slate-400"}>3. Pencairan Dana</span>
+              </div>
+              <div className="space-y-0.5">
+                <div className={`h-1.5 rounded-full ${isCompleted ? "bg-emerald-500" : isRejected ? "bg-rose-500" : "bg-slate-200"}`} />
+                <span className={isCompleted ? "text-emerald-800" : isRejected ? "text-rose-700" : "text-slate-400"}>{isRejected ? "Ditolak" : "4. Selesai"}</span>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="p-3 bg-purple-50/60 rounded-2xl border border-purple-200 space-y-2">
+            <div className="flex items-center justify-between text-[11px] font-bold text-purple-900">
+              <span className="flex items-center gap-1.5">
+                <Wrench size={14} weight="bold" className="text-purple-600" />
+                Alur Pengerjaan Ulang Teknisi (Rework Rp 0):
+              </span>
+              <span className="text-purple-700 font-mono">
+                {isCompleted ? "Pengerjaan Selesai" : isRejected ? "Ditolak" : "Berjalan"}
+              </span>
+            </div>
+            <div className="grid grid-cols-4 gap-1.5 text-center text-[9px] font-bold">
+              <div className="space-y-0.5">
+                <div className="h-1.5 rounded-full bg-emerald-500" />
+                <span className="text-emerald-800">1. Diajukan</span>
+              </div>
+              <div className="space-y-0.5">
+                <div className={`h-1.5 rounded-full ${c.mainStatus !== "SUBMITTED" ? "bg-emerald-500" : "bg-slate-200"}`} />
+                <span className={c.mainStatus !== "SUBMITTED" ? "text-emerald-800" : "text-slate-400"}>2. Teknisi Ditugaskan</span>
+              </div>
+              <div className="space-y-0.5">
+                <div className={`h-1.5 rounded-full ${c.mainStatus === "IN_RESOLUTION" ? "bg-purple-600 animate-pulse" : isCompleted ? "bg-emerald-500" : "bg-slate-200"}`} />
+                <span className={c.mainStatus === "IN_RESOLUTION" ? "text-purple-700" : isCompleted ? "text-emerald-800" : "text-slate-400"}>3. Kunjungan Ulang</span>
+              </div>
+              <div className="space-y-0.5">
+                <div className={`h-1.5 rounded-full ${isCompleted ? "bg-emerald-500" : isRejected ? "bg-rose-500" : "bg-slate-200"}`} />
+                <span className={isCompleted ? "text-emerald-800" : isRejected ? "text-rose-700" : "text-slate-400"}>{isRejected ? "Ditolak" : "4. Selesai"}</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 4: INFORMASI PENUGASAN WORKER (Bila ada) */}
+        {c.warrantyJob && (
+          <div className="p-3.5 bg-purple-50/70 rounded-2xl border border-purple-200 text-xs space-y-1.5">
+            <div className="flex items-center justify-between font-bold text-purple-950">
+              <span className="flex items-center gap-1.5">
+                <Wrench size={14} weight="bold" className="text-purple-700" />
+                Pekerjaan Garansi Telah Ditugaskan ke Worker:
+              </span>
+              <span className="text-emerald-700 font-bold bg-white px-2 py-0.5 rounded-md border border-purple-200">
+                Biaya Konsumen: Rp 0 (Ditanggung Provider)
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-purple-900 pt-1">
+              <p>Teknisi: <strong>{c.warrantyJob.workerName}</strong></p>
+              <p>Jadwal Kunjungan: <strong>{c.warrantyJob.scheduledDate}</strong></p>
+              {c.warrantyJob.notes && (
+                <p className="sm:col-span-2 text-purple-800">Instruksi: &ldquo;{c.warrantyJob.notes}&rdquo;</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 5: FOOTER ACTION BUTTONS */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-slate-100">
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/chat?partner_id=${encodeURIComponent(c.customerId || "")}&partner_type=customer&partner_name=${encodeURIComponent(c.customerName || "Customer")}&ctx_type=warranty_jasa&ctx_id=${encodeURIComponent(c.id)}&ctx_title=${encodeURIComponent(c.itemTitle)}&ctx_summary=${encodeURIComponent(`Klaim Garansi #${c.caseNumber}`)}`}
+              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <ChatCircleDots size={14} weight="bold" className="text-purple-700" />
+              <span>Chat Pelanggan</span>
+            </Link>
+            <button
+              type="button"
+              onClick={() => setViewingDetailCase(c)}
+              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <Eye size={14} weight="bold" />
+              <span>Detail Lengkap</span>
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {(c.mainStatus === "SUBMITTED" || c.mainStatus === "UNDER_REVIEW") && (
+              <>
+                {isRefund ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      merchantProposeAlternative(c.id, "REFUND", "Mitra menyetujui refund pengembalian dana kepada pelanggan.");
+                      setToastMsg(`Pengembalian dana (Refund) disetujui untuk kasus #${c.caseNumber}.`);
+                    }}
+                    className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl transition shadow-sm flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Bank size={14} weight="bold" />
+                    <span>Setujui Refund Dana</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setApprovingClaim(c);
+                      setJobNote(`Pengerjaan perbaikan garansi untuk masalah: ${c.issueReason}`);
+                    }}
+                    className="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold rounded-xl transition shadow-sm flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Wrench size={14} weight="bold" />
+                    <span>Setujui &amp; Tugaskan Teknisi (Rp0)</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAltClaim(c);
+                    setAltSolution(isRefund ? "REPAIR" : "REFUND");
+                    setAltReason("");
+                  }}
+                  className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Tawarkan Alternatif
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReqEvidenceClaim(c);
+                    setReqEvidenceReason("");
+                  }}
+                  className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Minta Bukti Tambahan
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setRejectingClaim(c)}
+                  className="px-4 py-2 bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  Tolak dengan Alasan
+                </button>
+              </>
+            )}
+
+            {c.mainStatus === "IN_RESOLUTION" && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleStartResolution(c)}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-sm flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Play size={13} weight="fill" />
+                  <span>{isRefund ? "Proses Pengembalian Dana" : "Mulai Penyelesaian"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCompletingClaim(c);
+                    setCompletionEvidenceRef("");
+                  }}
+                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-sm flex items-center gap-1.5 cursor-pointer"
+                >
+                  <CheckCircle size={14} weight="bold" />
+                  <span>{isRefund ? "Selesaikan Refund" : "Selesaikan Klaim"}</span>
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -293,7 +660,7 @@ function ProviderAfterSalesContent() {
           </div>
         </div>
 
-        {/* 4 Provider Tabs (P03, P01, P04, P06 — No Retur Barang per Non-Negotiable Rule) */}
+        {/* 4 Provider Tabs: Ringkasan, Pengaturan Garansi, Refund, Perbaikan Jasa */}
         <div className="flex items-center gap-1 sm:gap-2 -mb-px overflow-x-auto">
           <button
             type="button"
@@ -318,38 +685,64 @@ function ProviderAfterSalesContent() {
             }`}
           >
             <ShieldCheck size={15} weight={activeTab === "settings" ? "fill" : "bold"} />
-            <span>Pengaturan Garansi Layanan</span>
+            <span>Pengaturan Garansi</span>
           </button>
 
           <button
             type="button"
-            onClick={() => switchTab("claims")}
+            onClick={() => switchTab("refunds")}
             className={`pb-2.5 px-3.5 text-xs font-bold transition flex items-center gap-1.5 border-b-2 cursor-pointer shrink-0 ${
-              activeTab === "claims"
-                ? "border-blue-600 text-blue-600 font-extrabold bg-blue-50/40 rounded-t-lg"
+              activeTab === "refunds"
+                ? "border-rose-600 text-rose-600 font-extrabold bg-rose-50/40 rounded-t-lg"
                 : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-t-lg"
             }`}
           >
-            <Wrench size={15} weight={activeTab === "claims" ? "fill" : "bold"} />
-            <span>Klaim Garansi Jasa</span>
-            <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-purple-100 text-purple-700 font-bold">
-              {serviceClaims.length}
-            </span>
+            <Bank size={15} weight={activeTab === "refunds" ? "fill" : "bold"} />
+            <span>Refund</span>
+            {refundClaims.length > 0 && (
+              <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-rose-100 text-rose-700 font-bold">
+                {refundClaims.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => switchTab("rework")}
+            className={`pb-2.5 px-3.5 text-xs font-bold transition flex items-center gap-1.5 border-b-2 cursor-pointer shrink-0 ${
+              activeTab === "rework"
+                ? "border-purple-600 text-purple-600 font-extrabold bg-purple-50/40 rounded-t-lg"
+                : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-t-lg"
+            }`}
+          >
+            <Wrench size={15} weight={activeTab === "rework" ? "fill" : "bold"} />
+            <span>Perbaikan Jasa</span>
+            {reworkClaims.length > 0 && (
+              <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-purple-100 text-purple-700 font-bold">
+                {reworkClaims.length}
+              </span>
+            )}
           </button>
         </div>
       </div>
 
       <div className="w-full px-4 sm:px-6 py-3 space-y-3.5">
         {/* Live Service Indicator */}
-        <div className="px-3.5 py-2 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-800 font-medium flex flex-wrap items-center justify-between gap-2">
+        <div className="px-3.5 py-2 bg-emerald-50 border border-emerald-300 rounded-xl text-xs text-emerald-800 font-medium flex flex-wrap items-center justify-between gap-2 shadow-2xs">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
             <span className="font-bold">Pusat Garansi Jasa Terintegrasi</span>
-            <span className="text-emerald-600 text-[11px]">• Microservice After-Sales (Port 8008)</span>
+            <span className="text-emerald-600 text-[11px]">• Microservice After-Sales (Port 8008) • Auto-Sync Aktif</span>
           </div>
-          <span className="text-[11px] font-mono text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-emerald-200">
-            SLA Tanggapan Awal: 72 Jam Kalender
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white text-emerald-800 border border-emerald-200 flex items-center gap-1 shadow-2xs">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+              Real-Time Stream
+            </span>
+            <span className="text-[11px] font-mono text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-emerald-200">
+              SLA Respon: 72 Jam Kalender
+            </span>
+          </div>
         </div>
 
         {/* TAB 0: RINGKASAN (P03) */}
@@ -358,19 +751,31 @@ function ProviderAfterSalesContent() {
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
               <button
                 type="button"
-                onClick={() => switchTab("claims")}
+                onClick={() => switchTab("rework")}
                 className="p-4 bg-white rounded-2xl border border-slate-200/80 text-left hover:border-purple-400 transition cursor-pointer shadow-xs"
               >
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                  Klaim Garansi Jasa Aktif
+                  Perbaikan Jasa Aktif
                 </span>
-                <p className="text-2xl font-extrabold text-purple-700 mt-1">{activeClaimsCount}</p>
-                <span className="text-[11px] text-slate-500">Total {serviceClaims.length} klaim jasa</span>
+                <p className="text-2xl font-extrabold text-purple-700 mt-1">{activeReworkCount}</p>
+                <span className="text-[11px] text-slate-500">Total {reworkClaims.length} tiket</span>
               </button>
 
               <button
                 type="button"
-                onClick={() => switchTab("claims")}
+                onClick={() => switchTab("refunds")}
+                className="p-4 bg-white rounded-2xl border border-slate-200/80 text-left hover:border-rose-400 transition cursor-pointer shadow-xs"
+              >
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                  Refund Jasa Aktif
+                </span>
+                <p className="text-2xl font-extrabold text-rose-600 mt-1">{activeRefundsCount}</p>
+                <span className="text-[11px] text-slate-500">Total {refundClaims.length} tiket</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => switchTab("rework")}
                 className="p-4 bg-white rounded-2xl border border-amber-200 text-left hover:border-amber-400 transition cursor-pointer shadow-xs"
               >
                 <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 block">
@@ -382,7 +787,7 @@ function ProviderAfterSalesContent() {
 
               <button
                 type="button"
-                onClick={() => switchTab("claims")}
+                onClick={() => switchTab("rework")}
                 className="p-4 bg-white rounded-2xl border border-indigo-200 text-left hover:border-indigo-400 transition cursor-pointer shadow-xs"
               >
                 <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 block">
@@ -427,7 +832,7 @@ function ProviderAfterSalesContent() {
                 </h2>
                 <button
                   type="button"
-                  onClick={() => switchTab("claims")}
+                  onClick={() => switchTab("rework")}
                   className="text-xs font-bold text-purple-700 hover:underline cursor-pointer"
                 >
                   Kelola Semua Klaim →
@@ -491,215 +896,145 @@ function ProviderAfterSalesContent() {
           />
         )}
 
-        {/* TAB 2: KLAIM GARANSI JASA (P04-P05) */}
-        {activeTab === "claims" && (
+        {/* TAB 3: REFUND JASA */}
+        {activeTab === "refunds" && (
           <div className="space-y-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-3xl border border-slate-200">
               <div>
-                <h2 className="text-sm font-bold text-slate-900">
-                  Daftar Permohonan Klaim Garansi Pengerjaan Layanan
+                <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Bank size={18} className="text-rose-600" />
+                  <span>Daftar Permohonan Refund Jasa</span>
                 </h2>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  Tindak lanjuti klaim dengan penugasan Rework (Rp0), tawaran solusi alternatif, permintaan bukti tambahan, atau penolakan beralasan.
+                  Tindak lanjuti permohonan pengembalian dana dari pelanggan dengan persetujuan refund, tawaran perbaikan alternatif, atau penolakan beralasan.
                 </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="px-3 py-1.5 text-xs rounded-xl border border-slate-200 bg-slate-50 font-semibold text-slate-700"
-                >
-                  <option value="ALL">Semua Status</option>
-                  <option value="SUBMITTED">Diajukan (SUBMITTED)</option>
-                  <option value="UNDER_REVIEW">Ditinjau (UNDER_REVIEW)</option>
-                  <option value="IN_RESOLUTION">Dalam Penyelesaian (IN_RESOLUTION)</option>
-                  <option value="COMPLETED">Selesai (COMPLETED)</option>
-                  <option value="REJECTED">Ditolak (REJECTED)</option>
-                </select>
-                <div className="relative">
-                  <MagnifyingGlass size={15} className="absolute left-3 top-2.5 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Cari nomor klaim / jasa..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full sm:w-64 pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200"
-                  />
-                </div>
+
+              <div className="relative">
+                <MagnifyingGlass size={15} className="absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Cari nomor klaim / customer..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full sm:w-64 pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200"
+                />
               </div>
             </div>
 
-            {filteredClaims.length === 0 ? (
+            {/* Sub-tab Status Filters */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {[
+                { id: "ALL", label: "Semua", count: refundClaims.length },
+                { id: "SUBMITTED", label: "Menunggu Respon", count: refundClaims.filter((c) => c.mainStatus === "SUBMITTED").length },
+                { id: "UNDER_REVIEW", label: "Ditinjau / Info", count: refundClaims.filter((c) => c.mainStatus === "UNDER_REVIEW").length },
+                { id: "IN_RESOLUTION", label: "Proses Refund", count: refundClaims.filter((c) => c.mainStatus === "IN_RESOLUTION").length },
+                { id: "COMPLETED", label: "Selesai", count: refundClaims.filter((c) => c.mainStatus === "COMPLETED").length },
+                { id: "REJECTED", label: "Ditolak", count: refundClaims.filter((c) => c.mainStatus === "REJECTED").length },
+              ].map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  onClick={() => setRefundStatusFilter(st.id)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                    refundStatusFilter === st.id
+                      ? "bg-rose-600 text-white shadow-xs"
+                      : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <span>{st.label}</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                      refundStatusFilter === st.id
+                        ? "bg-rose-800 text-rose-100"
+                        : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {st.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {filteredRefunds.length === 0 ? (
               <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 text-xs text-slate-500">
-                Belum ada klaim garansi jasa yang sesuai dengan filter.
+                Belum ada permohonan refund jasa yang sesuai dengan filter.
               </div>
             ) : (
               <div className="space-y-4">
-                {filteredClaims.map((c) => {
-                  const statusBadge = getMainStatusDisplay(c.mainStatus);
-                  return (
-                    <div
-                      key={c.id}
-                      className="p-6 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-4"
-                    >
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-mono font-bold text-xs text-purple-700">#{c.caseNumber}</span>
-                            <span className="text-slate-300">•</span>
-                            <span className="text-xs text-slate-500">Order #{c.sourceOrderNumber}</span>
-                            <span className="text-slate-300">•</span>
-                            <span className="text-xs font-semibold text-slate-700">Customer: {c.customerName}</span>
-                          </div>
-                          <h3 className="font-bold text-base text-slate-900 mt-1">{c.itemTitle}</h3>
-                        </div>
+                {filteredRefunds.map((c) => renderClaimCard(c, true))}
+              </div>
+            )}
+          </div>
+        )}
 
-                        <div className="flex flex-wrap items-center gap-2">
-                          {c.isNoResponse && (
-                            <span className="px-3 py-1 bg-amber-500 text-white rounded-full text-xs font-bold">
-                              TIDAK DITANGGAPI (+72h)
-                            </span>
-                          )}
-                          {c.specialCondition === "WAITING_CUSTOMER_APPROVAL" && (
-                            <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-800 rounded-full text-[10px] font-bold border border-indigo-200">
-                              Menunggu Persetujuan Customer
-                            </span>
-                          )}
-                          {c.specialCondition === "WAITING_CUSTOMER_INFO" && (
-                            <span className="px-2.5 py-0.5 bg-amber-50 text-amber-800 rounded-full text-[10px] font-bold border border-amber-200">
-                              Menunggu Bukti Customer
-                            </span>
-                          )}
-                          <span
-                            className={`px-3 py-1 rounded-full text-xs font-bold border ${statusBadge.color}`}
-                          >
-                            {statusBadge.label} ({c.mainStatus})
-                          </span>
-                        </div>
-                      </div>
+        {/* TAB 4: PERBAIKAN JASA (REWORK RP0) */}
+        {activeTab === "rework" && (
+          <div className="space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-3xl border border-slate-200">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <Wrench size={18} className="text-purple-600" />
+                  <span>Daftar Permohonan Perbaikan Jasa (Rework Rp0)</span>
+                </h2>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Tindak lanjuti klaim garansi servis dengan penugasan teknisi kunjungan servis ulang, tawaran alternatif, atau penolakan beralasan.
+                </p>
+              </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs bg-slate-50 p-4 rounded-2xl">
-                        <div>
-                          <span className="text-slate-400 block text-[11px]">Kendala Layanan Dilaporkan:</span>
-                          <strong className="text-slate-800">{c.issueReason}</strong>
-                          <p className="text-slate-600 mt-1">{c.issueDescription}</p>
-                        </div>
+              <div className="relative">
+                <MagnifyingGlass size={15} className="absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Cari nomor klaim / customer..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full sm:w-64 pl-8 pr-3 py-1.5 text-xs rounded-xl border border-slate-200"
+                />
+              </div>
+            </div>
 
-                        <div className="space-y-1">
-                          <span className="text-slate-400 block text-[11px]">Batas Respons (SLA 72 Jam):</span>
-                          <p className="font-semibold text-slate-800">
-                            {new Date(c.slaDeadlineAt).toLocaleString("id-ID")}
-                          </p>
-                          <p className="text-xs text-slate-700">
-                            Solusi Diajukan:{" "}
-                            <strong className="text-purple-700">
-                              {c.customerRequestedSolution || "REWORK"}
-                            </strong>
-                            {c.chosenSolution && (
-                              <span className="ml-2 text-emerald-700 font-bold">
-                                • Disepakati: {c.chosenSolution}
-                              </span>
-                            )}
-                          </p>
-                          {c.warrantyJob && (
-                            <div className="p-2 bg-purple-50 rounded-lg border border-purple-200 text-purple-900 mt-1">
-                              <strong>Pekerjaan Garansi Ditugaskan:</strong> {c.warrantyJob.workerName} ({c.warrantyJob.coveredAmountText})
-                            </div>
-                          )}
-                          {c.rejectionReason && (
-                            <p className="text-rose-700 mt-1">
-                              <strong>Alasan Ditolak:</strong> {c.rejectionReason}
-                            </p>
-                          )}
-                        </div>
-                      </div>
+            {/* Sub-tab Status Filters */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {[
+                { id: "ALL", label: "Semua", count: reworkClaims.length },
+                { id: "SUBMITTED", label: "Menunggu Respon", count: reworkClaims.filter((c) => c.mainStatus === "SUBMITTED").length },
+                { id: "UNDER_REVIEW", label: "Ditinjau / Info", count: reworkClaims.filter((c) => c.mainStatus === "UNDER_REVIEW").length },
+                { id: "IN_RESOLUTION", label: "Sedang Dikerjakan", count: reworkClaims.filter((c) => c.mainStatus === "IN_RESOLUTION").length },
+                { id: "COMPLETED", label: "Selesai", count: reworkClaims.filter((c) => c.mainStatus === "COMPLETED").length },
+                { id: "REJECTED", label: "Ditolak", count: reworkClaims.filter((c) => c.mainStatus === "REJECTED").length },
+              ].map((st) => (
+                <button
+                  key={st.id}
+                  type="button"
+                  onClick={() => setReworkStatusFilter(st.id)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                    reworkStatusFilter === st.id
+                      ? "bg-purple-700 text-white shadow-xs"
+                      : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <span>{st.label}</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                      reworkStatusFilter === st.id
+                        ? "bg-purple-900 text-purple-100"
+                        : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {st.count}
+                  </span>
+                </button>
+              ))}
+            </div>
 
-                      {/* Provider Actions */}
-                      <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-slate-100">
-                        <button
-                          type="button"
-                          onClick={() => setViewingDetailCase(c)}
-                          className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <Eye size={14} weight="bold" />
-                          <span>Lihat Detail Kasus</span>
-                        </button>
-
-                        {(c.mainStatus === "SUBMITTED" || c.mainStatus === "UNDER_REVIEW") && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setApprovingClaim(c);
-                                setJobNote(`Pengerjaan perbaikan garansi untuk masalah: ${c.issueReason}`);
-                              }}
-                              className="px-4 py-2 bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold rounded-xl transition shadow-sm flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <Wrench size={14} weight="bold" />
-                              <span>Setujui Pekerjaan Garansi (Rp0)</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setAltClaim(c);
-                                setAltSolution("REFUND");
-                                setAltReason("");
-                              }}
-                              className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-xl transition cursor-pointer"
-                            >
-                              Tawarkan Alternatif
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setReqEvidenceClaim(c);
-                                setReqEvidenceReason("");
-                              }}
-                              className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold rounded-xl transition cursor-pointer"
-                            >
-                              Minta Bukti Tambahan
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => setRejectingClaim(c)}
-                              className="px-4 py-2 bg-white hover:bg-rose-50 text-rose-700 border border-rose-300 text-xs font-bold rounded-xl transition cursor-pointer"
-                            >
-                              Tolak dengan Alasan
-                            </button>
-                          </>
-                        )}
-
-                        {c.mainStatus === "IN_RESOLUTION" && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleStartResolution(c)}
-                              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition shadow-sm flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <Play size={13} weight="fill" />
-                              <span>Mulai Penyelesaian</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setCompletingClaim(c);
-                                setCompletionEvidenceRef("");
-                              }}
-                              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-sm flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <CheckCircle size={14} weight="bold" />
-                              <span>Selesaikan Klaim</span>
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+            {filteredRework.length === 0 ? (
+              <div className="p-12 text-center bg-white rounded-3xl border border-slate-200 text-xs text-slate-500">
+                Belum ada klaim perbaikan jasa yang sesuai dengan filter.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {filteredRework.map((c) => renderClaimCard(c, false))}
               </div>
             )}
           </div>

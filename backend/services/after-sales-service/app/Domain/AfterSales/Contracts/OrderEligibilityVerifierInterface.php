@@ -14,7 +14,8 @@ interface OrderEligibilityVerifierInterface
         string $customerId,
         string $orderKind, // GOODS or SERVICE
         string $orderId,
-        ?string $subOrderId = null
+        ?string $subOrderId = null,
+        bool $includeClaimedQuantities = true
     ): OrderEligibilityDto;
 }
 

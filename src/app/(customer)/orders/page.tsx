@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useActiveRole } from "@/context/RoleContext";
 import { useServiceOrder } from "@/features/orders/useServiceOrder";
 import { useDomainRepository } from "@/lib/repository/domainRepository";
 import { StatusBadge, StatusVariant } from "@/components/data-display/StatusBadge";
@@ -47,7 +48,8 @@ import {
 import { Toast } from "@/components/feedback/Toast";
 import { useOrderJasa } from "@/features/order-jasa/hooks/useOrderJasa";
 import { ServiceOrderCard } from "@/features/order-jasa/components/common/ServiceOrderCard";
-import { CustomerTabType } from "@/features/order-jasa/types";
+import { ConfirmServiceCompletionModal } from "@/features/order-jasa/components/common/ConfirmServiceCompletionModal";
+import { CustomerTabType, ServiceOrder } from "@/features/order-jasa/types";
 
 type OrderDomain = "PRODUCT" | "SERVICE";
 type ProductFilterTab = "BELUM_BAYAR" | "DIPROSES" | "DIKIRIM" | "TIBA" | "SELESAI" | "BATAL" | "PENILAIAN";
@@ -57,12 +59,14 @@ type ServiceFilterTab = "ALL" | "ACTION_REQUIRED" | "ACTIVE" | "COMPLETED" | "CA
 
 export default function OrderListPage() {
   const router = useRouter();
+  const { isAuthenticated, isPublicGuest, activeRole, isLoadingAuth } = useActiveRole();
   const repo = useDomainRepository();
   const { orders } = useServiceOrder();
   const {
     orders: serviceOrders05B,
     customerOrdersByTab: customerServiceOrdersByTab,
     customerTabCounts: customerServiceTabCounts,
+    confirmCustomerCompleted,
     syncBackendOrders: syncOrderJasa,
     isLoading: isOrderJasaLoading,
     hasLoadedBackend: hasLoadedServiceBackend,
@@ -91,6 +95,7 @@ export default function OrderListPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [initialLoading, setInitialLoading] = useState(false);
+  const [failedImageKeys, setFailedImageKeys] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const isDomainEmpty =
@@ -143,34 +148,59 @@ export default function OrderListPage() {
   const [selectedOrderForCancelConfirmed, setSelectedOrderForCancelConfirmed] = useState<MockMerchantOrder | null>(null);
   const [selectedOrderForRequestCancel, setSelectedOrderForRequestCancel] = useState<MockMerchantOrder | null>(null);
   const [selectedOrderForConfirmDelivered, setSelectedOrderForConfirmDelivered] = useState<MockMerchantOrder | null>(null);
+  const [selectedServiceOrderForCompletion, setSelectedServiceOrderForCompletion] = useState<ServiceOrder | null>(null);
+  const [isCompletingServiceOrder, setIsCompletingServiceOrder] = useState(false);
   const [selectedOrderForReceipt, setSelectedOrderForReceipt] = useState<MockMerchantOrder | null>(null);
   const [selectedOrderForTracking, setSelectedOrderForTracking] = useState<MockMerchantOrder | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastType, setToastType] = useState<"success" | "error" | "warning">("success");
 
+  const [hasLoadedMyReviews, setHasLoadedMyReviews] = useState(false);
+  const inFlightReviewsRef = React.useRef<Promise<void> | null>(null);
+
   const loadMyReviews = React.useCallback(async () => {
-    try {
-      const res = await afterSalesApi.customer.getMyReviewsList();
-      if (res.success && Array.isArray(res.data)) {
-        const map: Record<string, ReviewSubmission> = {};
-        for (const sub of res.data) {
-          if (sub.source_order_id) {
-            map[sub.source_order_id] = sub;
-          }
-          if (sub.source_merchant_order_id) {
-            map[sub.source_merchant_order_id] = sub;
-          }
-        }
-        setMyReviewsByKey(map);
-      }
-    } catch {
-      // ignore unauthenticated or offline errors
+    if (isLoadingAuth || !isAuthenticated || isPublicGuest || activeRole !== "CUSTOMER") {
+      return;
     }
-  }, []);
+    if (inFlightReviewsRef.current) {
+      return inFlightReviewsRef.current;
+    }
+    const promise = (async () => {
+      try {
+        const res = await afterSalesApi.customer.getMyReviewsList();
+        if (res.success && Array.isArray(res.data)) {
+          const map: Record<string, ReviewSubmission> = {};
+          for (const sub of res.data) {
+            if (sub.source_order_id) {
+              map[sub.source_order_id] = sub;
+            }
+            if (sub.source_merchant_order_id) {
+              map[sub.source_merchant_order_id] = sub;
+            }
+          }
+          setMyReviewsByKey(map);
+          setHasLoadedMyReviews(true);
+        }
+      } catch {
+        // ignore unauthenticated or offline errors
+      } finally {
+        inFlightReviewsRef.current = null;
+      }
+    })();
+    inFlightReviewsRef.current = promise;
+    return promise;
+  }, [isLoadingAuth, isAuthenticated, isPublicGuest, activeRole]);
+
+  const hasCompletedAnyOrder =
+    customerOrdersByTab.SELESAI.length > 0 ||
+    customerServiceOrdersByTab.SELESAI.length > 0 ||
+    productFilterTab === "PENILAIAN" ||
+    customerServiceTab === "PENILAIAN";
 
   useEffect(() => {
+    if (!hasCompletedAnyOrder || hasLoadedMyReviews) return;
     loadMyReviews();
-  }, [loadMyReviews]);
+  }, [hasCompletedAnyOrder, hasLoadedMyReviews, loadMyReviews]);
 
   // Check URL query param for domain and status tab on initial mount
   useEffect(() => {
@@ -778,24 +808,37 @@ export default function OrderListPage() {
                     </div>
 
                     <div className="space-y-2.5">
-                      {order.items.map((it) => (
-                        <div key={it.id} className="flex items-center gap-3.5">
-                          <div className="w-14 h-14 rounded-2xl bg-slate-100 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center">
-                            {(it as any).imageUrl || it.thumbnailUrl ? (
-                              <img src={(it as any).imageUrl || it.thumbnailUrl} alt={it.title} className="w-full h-full object-cover" />
-                            ) : (
-                              <Package size={22} weight="duotone" className="text-slate-400" />
-                            )}
+                      {order.items.map((it) => {
+                        const productThumb = (it as any).imageUrl || it.thumbnailUrl;
+                        const productImgKey = `prd-rev-${order.id}-${it.id}`;
+                        const showProductThumb = Boolean(productThumb && !failedImageKeys[productImgKey]);
+
+                        return (
+                          <div key={it.id} className="flex items-center gap-3.5">
+                            <div className="w-14 h-14 rounded-2xl bg-slate-100 border border-slate-200 overflow-hidden shrink-0 flex items-center justify-center">
+                              {showProductThumb ? (
+                                <img
+                                  src={productThumb}
+                                  alt={it.title}
+                                  onError={() =>
+                                    setFailedImageKeys((prev) => ({ ...prev, [productImgKey]: true }))
+                                  }
+                                  className="w-full h-full object-cover"
+                                />
+                              ) : (
+                                <Package size={22} weight="duotone" className="text-slate-400" />
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">{it.title}</h4>
+                              <p className="text-[11px] text-slate-500">
+                                {it.quantity}x • Rp {(it.unitPrice || 0).toLocaleString("id-ID")}
+                                {it.variantName ? ` • ${it.variantName}` : ""}
+                              </p>
+                            </div>
                           </div>
-                          <div className="min-w-0 flex-1">
-                            <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">{it.title}</h4>
-                            <p className="text-[11px] text-slate-500">
-                              {it.quantity}x • Rp {(it.unitPrice || 0).toLocaleString("id-ID")}
-                              {it.variantName ? ` • ${it.variantName}` : ""}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
                     <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -840,6 +883,7 @@ export default function OrderListPage() {
                                 price: it.unitPrice,
                               })),
                               existingSubmission: existingReview,
+                              skipExistingReviewCheck: hasLoadedMyReviews,
                             })
                           }
                           className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
@@ -972,8 +1016,19 @@ export default function OrderListPage() {
                     </div>
 
                     <div className="flex items-center gap-3.5">
-                      <div className="w-14 h-14 rounded-2xl bg-sky-50 border border-sky-200 flex items-center justify-center shrink-0 text-[#0F4C81]">
-                        <Wrench size={24} weight="duotone" />
+                      <div className="w-14 h-14 rounded-2xl bg-sky-50 border border-sky-200 overflow-hidden flex items-center justify-center shrink-0 text-[#0F4C81]">
+                        {order.serviceSnapshot?.thumbnailUrl && !failedImageKeys[`srv-rev-${order.id}`] ? (
+                          <img
+                            src={order.serviceSnapshot.thumbnailUrl}
+                            alt={order.serviceSnapshot.title}
+                            onError={() =>
+                              setFailedImageKeys((prev) => ({ ...prev, [`srv-rev-${order.id}`]: true }))
+                            }
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <Wrench size={24} weight="duotone" />
+                        )}
                       </div>
                       <div className="min-w-0 flex-1">
                         <h4 className="text-xs sm:text-sm font-bold text-slate-900 truncate">
@@ -1021,12 +1076,14 @@ export default function OrderListPage() {
                                   orderItemId: order.id,
                                   targetId: (order as any).serviceId || order.serviceSnapshot.id || order.id,
                                   title: order.serviceSnapshot.title,
+                                  imageUrl: order.serviceSnapshot.thumbnailUrl,
                                   quantity: 1,
                                   variantLabel: order.serviceSnapshot.categoryName,
                                   price: (order as any).pricing?.finalTotal ?? order.paymentSummary?.executionPayment?.amount ?? (order.serviceSnapshot as any).minPrice,
                                 },
                               ],
                               existingSubmission: existingReview,
+                              skipExistingReviewCheck: hasLoadedMyReviews,
                             })
                           }
                           className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
@@ -1052,6 +1109,22 @@ export default function OrderListPage() {
                   order={order}
                   role="CUSTOMER"
                   onPrimaryAction={(o) => {
+                    const isTerminal =
+                      o.status === "COMPLETED" ||
+                      o.status === "CANCELLED" ||
+                      o.subStatus === "COMPLETED_NORMAL" ||
+                      o.subStatus === "AUTO_COMPLETED_72H" ||
+                      o.subStatus.startsWith("CANCELLED_");
+                    const isReadyForCompletion =
+                      !isTerminal &&
+                      (o.subStatus === "VISIT_CLOSED" ||
+                        (o.subStatus === "AWAITING_CUSTOMER_CONFIRMATION" && o.visit?.status === "CLOSED") ||
+                        (o.paymentSummary?.executionPayment?.status === "PAID" && o.visit?.status === "CLOSED"));
+
+                    if (isReadyForCompletion) {
+                      setSelectedServiceOrderForCompletion(o);
+                      return;
+                    }
                     router.push(`/orders/${o.id}`);
                   }}
                 />
@@ -1133,6 +1206,39 @@ export default function OrderListPage() {
           setProductFilterTab("SELESAI");
           setToastMessage("Pesanan telah berhasil dikonfirmasi selesai! Terima kasih. Dana telah diteruskan ke toko.");
           setToastType("success");
+        }}
+      />
+
+      <ConfirmServiceCompletionModal
+        order={selectedServiceOrderForCompletion}
+        isOpen={!!selectedServiceOrderForCompletion}
+        isSubmitting={isCompletingServiceOrder}
+        onClose={() => {
+          if (!isCompletingServiceOrder) {
+            setSelectedServiceOrderForCompletion(null);
+          }
+        }}
+        onConfirm={async (orderId) => {
+          setIsCompletingServiceOrder(true);
+          const targetOrder = selectedServiceOrderForCompletion;
+          try {
+            await confirmCustomerCompleted(orderId);
+            setSelectedServiceOrderForCompletion(null);
+            setCustomerServiceTab("SELESAI");
+            const wDays = targetOrder?.serviceSnapshot?.warrantyDurationDays ?? 0;
+            setToastMessage(
+              wDays > 0
+                ? `Pesanan selesai! Pekerjaan terkonfirmasi berfungsi baik & garansi resmi ${wDays} hari kini aktif.`
+                : "Pesanan selesai! Pekerjaan terkonfirmasi tuntas & bekerja dengan baik."
+            );
+            setToastType("success");
+            syncOrderJasa(true).catch(() => {});
+          } catch (err: any) {
+            setToastMessage(err?.message || "Gagal mengonfirmasi penyelesaian pesanan jasa.");
+            setToastType("error");
+          } finally {
+            setIsCompletingServiceOrder(false);
+          }
         }}
       />
 

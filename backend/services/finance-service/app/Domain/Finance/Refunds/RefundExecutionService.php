@@ -46,7 +46,9 @@ class RefundExecutionService
             ];
         }
 
-        $allocation = PaymentAllocation::where('merchant_order_id', $merchantOrderId)->first();
+        $allocation = PaymentAllocation::where('merchant_order_id', $merchantOrderId)
+            ->orWhere('merchant_order_id', 'LIKE', $merchantOrderId . '%')
+            ->first();
         if (!$allocation) {
             throw new HttpException(404, "Alokasi pesanan {$merchantOrderId} tidak ditemukan.");
         }
@@ -295,7 +297,9 @@ class RefundExecutionService
             ];
         }
 
-        $allocation = PaymentAllocation::where('merchant_order_id', $merchantOrderId)->first();
+        $allocation = PaymentAllocation::where('merchant_order_id', $merchantOrderId)
+            ->orWhere('merchant_order_id', 'LIKE', $merchantOrderId . '%')
+            ->first();
 
         // Strict ownership and limit validation
         if ($allocation) {
@@ -387,6 +391,33 @@ class RefundExecutionService
                     'locked_after_idr' => $customerAccount->withdrawal_locked_idr,
                     'created_at' => now(),
                 ]);
+
+                // Debit business organization balance if exists (merchant or service provider)
+                $merchantOrgId = $allocation?->merchant_org_id;
+                if (!empty($merchantOrgId)) {
+                    $bizAccount = SPayAccount::where('owner_external_id', $merchantOrgId)->first();
+                    if ($bizAccount) {
+                        $bizBefore = $bizAccount->available_idr;
+                        $bizAccount->available_idr = max(0, $bizAccount->available_idr - $refundAmountIdr);
+                        $bizAfter = $bizAccount->available_idr;
+                        $bizAccount->last_movement_at = now();
+                        $bizAccount->save();
+
+                        SPayMovement::create([
+                            'spay_account_id' => $bizAccount->id,
+                            'movement_type' => 'REFUND_MERCHANT_DEBIT',
+                            'direction' => 'DEBIT',
+                            'amount_idr' => $refundAmountIdr,
+                            'source_type' => 'RefundTransaction',
+                            'source_id' => $refundTx->id,
+                            'available_before_idr' => $bizBefore,
+                            'available_after_idr' => $bizAfter,
+                            'locked_before_idr' => $bizAccount->withdrawal_locked_idr,
+                            'locked_after_idr' => $bizAccount->withdrawal_locked_idr,
+                            'created_at' => now(),
+                        ]);
+                    }
+                }
 
                 FinanceAuditLog::create([
                     'actor_service' => 'after-sales-service',

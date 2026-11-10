@@ -375,14 +375,33 @@ function LegacyCustomerServiceOrderDetail({ rawParamId }: { rawParamId: string }
 
         {/* Header Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap shrink-0">
-          <button
-            type="button"
-            onClick={() => router.push("/chat/conv-01")}
-            className="px-3.5 py-2 rounded-xl border border-slate-200 text-neutral-dark text-xs font-bold hover:bg-slate-50 transition-colors flex items-center gap-1.5 shadow-servio-xs"
-          >
-            <ChatCircleText size={16} weight="bold" />
-            <span>Chat Teknisi</span>
-          </button>
+          {/* Dual-Path Chat Action: Provider vs Worker */}
+          {order.assignedWorker ? (
+            <>
+              <Link
+                href={`/chat?partner_id=${encodeURIComponent(order.assignedWorker.id || "acfdfc27-9ba5-472f-bec1-3c372f47fff6")}&partner_type=worker&partner_name=${encodeURIComponent(order.assignedWorker.name || "Ahmad Teknisi")}&provider_name=${encodeURIComponent(order.providerName || "sukses gembira")}&ctx_type=order_jasa&ctx_id=${encodeURIComponent(order.id)}&ctx_title=${encodeURIComponent(order.serviceTitle)}&ctx_status=${encodeURIComponent(order.status)}&ctx_price=${encodeURIComponent(order.pricing?.totalAmount || 150000)}&ctx_thumb=${encodeURIComponent("https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=400&auto=format&fit=crop&q=80")}&ctx_summary=${encodeURIComponent(`Teknisi: ${order.assignedWorker.name || "Ahmad Teknisi"} • Jadwal: ${order.scheduledDate || "9 Nov 2026"} (${order.scheduledTimeSlot || "10:00 WIB"})`)}&ctx_url=${encodeURIComponent(`/orders/${order.id}`)}`}
+                className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold hover:bg-amber-100 transition-colors flex items-center gap-1.5 shadow-servio-xs"
+              >
+                <ChatCircleText size={16} weight="bold" className="text-amber-700" />
+                <span>Chat Teknisi ({order.assignedWorker.name})</span>
+              </Link>
+              <Link
+                href={`/chat?partner_id=${encodeURIComponent(order.providerId || "0740d857-b665-4191-aaf5-d7dd3611dc1d")}&partner_type=provider&partner_name=${encodeURIComponent(order.providerName || "sukses gembira")}&ctx_type=order_jasa&ctx_id=${encodeURIComponent(order.id)}&ctx_title=${encodeURIComponent(order.serviceTitle)}&ctx_status=${encodeURIComponent(order.status)}&ctx_price=${encodeURIComponent(order.pricing?.totalAmount || 150000)}&ctx_thumb=${encodeURIComponent("https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=400&auto=format&fit=crop&q=80")}&ctx_summary=${encodeURIComponent(`Penyedia: ${order.providerName || "sukses gembira"} • Biaya: Rp ${(order.pricing?.totalAmount || 150000).toLocaleString("id-ID")}`)}&ctx_url=${encodeURIComponent(`/orders/${order.id}`)}`}
+                className="px-3 py-2 rounded-xl border border-slate-200 text-neutral-dark text-xs font-bold hover:bg-slate-50 transition-colors flex items-center gap-1.5 shadow-servio-xs"
+              >
+                <Storefront size={16} weight="bold" className="text-purple-600" />
+                <span>Chat Provider</span>
+              </Link>
+            </>
+          ) : (
+            <Link
+              href={`/chat?partner_id=${encodeURIComponent(order.providerId || "0740d857-b665-4191-aaf5-d7dd3611dc1d")}&partner_type=provider&partner_name=${encodeURIComponent(order.providerName || "sukses gembira")}&ctx_type=order_jasa&ctx_id=${encodeURIComponent(order.id)}&ctx_title=${encodeURIComponent(order.serviceTitle)}&ctx_status=${encodeURIComponent(order.status)}&ctx_price=${encodeURIComponent(order.pricing?.totalAmount || 150000)}&ctx_thumb=${encodeURIComponent("https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=400&auto=format&fit=crop&q=80")}&ctx_summary=${encodeURIComponent(`Penyedia: ${order.providerName || "sukses gembira"} • Biaya: Rp ${(order.pricing?.totalAmount || 150000).toLocaleString("id-ID")}`)}&ctx_url=${encodeURIComponent(`/orders/${order.id}`)}`}
+              className="px-3 py-2 rounded-xl border border-purple-200 bg-purple-50 text-purple-900 text-xs font-bold hover:bg-purple-100 transition-colors flex items-center gap-1.5 shadow-servio-xs"
+            >
+              <ChatCircleText size={16} weight="bold" className="text-purple-700" />
+              <span>Chat Provider Jasa</span>
+            </Link>
+          )}
 
           <Link
             href="/support"
@@ -1892,6 +1911,10 @@ function LegacyCustomerServiceOrderDetail({ rawParamId }: { rawParamId: string }
               orderItemId: String(order.id || rawParamId),
               targetId: order.serviceId || "srv-ac-cuci",
               title: order.serviceTitle || "Layanan Servis",
+              imageUrl:
+                (order as any).unitPhotoUrl ||
+                (order as any).serviceSnapshot?.thumbnailUrl ||
+                "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?w=500&auto=format&fit=crop&q=80",
               quantity: 1,
               price: order.pricing?.serviceFee || 0,
             },
